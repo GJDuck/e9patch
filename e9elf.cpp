@@ -398,29 +398,34 @@ static size_t emitLoader(const RefactorSet &refactors,
     off_t prev_offset = -1;
     size_t prev_len   = SIZE_MAX;
     int prev_prot     = PROT_READ | PROT_EXEC;
+    std::vector<Bounds> bounds;
     for (auto mapping: mappings)
     {
         stat_num_physical_bytes += mapping->size;
         off_t offset_0  = mapping->offset;
         for (; mapping != nullptr; mapping = mapping->merged)
         {
-            Bounds b = getVirtualBounds(mapping);
-            intptr_t base = mapping->base + b.lb;
-            size_t len    = b.ub - b.lb;
-            off_t offset  = offset_0 + b.lb;
-            int prot      = mapping->prot;
-            debug("load trampoline: mmap(%s0x%lx, %zu, %s%s%s0, "
-                "MAP_FIXED | MAP_PRIVATE, fd, +%zd)",
-                (base < 0? "-": ""), std::abs(base), len,
-                (prot & PROT_READ? "PROT_READ | ": ""),
-                (prot & PROT_WRITE? "PROT_WRITE | ": ""),
-                (prot & PROT_EXEC? "PROT_EXEC | ": ""), offset);
-            stat_num_virtual_bytes += len;
-            size += emitLoaderMmap(data + size, pic, base, len, prev_len,
-                prot, prev_prot, offset, prev_offset);
-            prev_len    = len;
-            prev_offset = offset;
-            prev_prot   = prot;
+            bounds.clear();
+            getVirtualBounds(mapping, bounds);
+            for (const auto b: bounds)
+            {
+                intptr_t base = mapping->base + b.lb;
+                size_t len    = b.ub - b.lb;
+                off_t offset  = offset_0 + b.lb;
+                int prot      = mapping->prot;
+                debug("load trampoline: mmap(%s0x%lx, %zu, %s%s%s0, "
+                    "MAP_FIXED | MAP_PRIVATE, fd, +%zd)",
+                    (base < 0? "-": ""), std::abs(base), len,
+                    (prot & PROT_READ? "PROT_READ | ": ""),
+                    (prot & PROT_WRITE? "PROT_WRITE | ": ""),
+                    (prot & PROT_EXEC? "PROT_EXEC | ": ""), offset);
+                stat_num_virtual_bytes += len;
+                size += emitLoaderMmap(data + size, pic, base, len, prev_len,
+                    prot, prev_prot, offset, prev_offset);
+                prev_len    = len;
+                prev_offset = offset;
+                prev_prot   = prot;
+            }
         }
     }
     for (const auto &refactor: refactors)

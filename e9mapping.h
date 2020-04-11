@@ -43,6 +43,6 @@ void buildMappings(const Allocator &allocator, const size_t MAPPING_SIZE,
     MappingSet &mappings);
 void optimizeMappings(MappingSet &mappings);
 void flattenMapping(uint8_t *buf, const Mapping *mapping, uint8_t fill);
-Bounds getVirtualBounds(const Mapping *mapping);
+void getVirtualBounds(const Mapping *mapping, std::vector<Bounds> &bounds);
 
 #endif

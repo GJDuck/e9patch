@@ -335,11 +335,7 @@ static Node *next(Node *n)
 
 void Allocator::iterator::operator++()
 {
-    do
-    {
-        node = next(node);
-    }
-    while (node != nullptr && node->alloc.T == nullptr);
+    node = next(node);
 }
 
 Allocator::iterator Allocator::begin() const
@@ -349,8 +345,6 @@ Allocator::iterator Allocator::begin() const
         return end();
     while (n->entry.left != nullptr)
         n = n->entry.left;
-    while (n != nullptr && n->alloc.T == nullptr)
-        n = next(n);
     Allocator::iterator i = {n};
     return i;
 }
@@ -367,8 +361,6 @@ Allocator::iterator Allocator::find(intptr_t addr) const
         else
             break;
     }
-    while (n != nullptr && n->alloc.T == nullptr)
-        n = next(n);
     Allocator::iterator i = {n};
     return i;
 }

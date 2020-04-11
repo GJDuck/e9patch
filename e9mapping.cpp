@@ -109,6 +109,8 @@ static Key calculateKey(const Allocator &allocator, const size_t MAPPING_SIZE,
         assert(a->lb >= BASE);
         if (a->lb >= END)
             return key;
+        if (a->T == nullptr)
+            continue;
 
         size_t preamble   = a->lb - BASE;
         size_t postscript = (a->ub >= END? 0: END - a->ub);
@@ -139,6 +141,8 @@ static Bounds calculateBounds(const Mapping *mapping)
         const Alloc *a = *i;
         if (a->lb >= END)
             break;
+        if (a->T == nullptr)
+            continue;
         intptr_t lb1 = (a->lb < BASE? 0: a->lb - BASE);
         intptr_t ub1 = (a->ub > END ? END - BASE: a->ub - BASE);
         lb = std::min(lb, lb1);
@@ -162,6 +166,8 @@ static int calculateProtections(const Mapping *mapping)
         const Alloc *a = *i;
         if (a->lb >= END)
             break;
+        if (a->T == nullptr)
+            continue;
         prot |= a->T->prot;
     }
     return prot;
@@ -225,6 +231,8 @@ void buildMappings(const Allocator &allocator, const size_t MAPPING_SIZE,
     for (auto i = allocator.begin(), iend = allocator.end(); i != iend; ++i)
     {
         const Alloc *a = *i;
+        if (a->T == nullptr)
+            continue;
         if (a->lb >= base + (intptr_t)MAPPING_SIZE)
         {
             base = a->lb - a->lb % MAPPING_SIZE;
@@ -610,6 +618,8 @@ void flattenMapping(uint8_t *buf, const Mapping *mapping, uint8_t fill)
             a = *i;
             if (a->lb >= END)
                 break;
+            if (a->T == nullptr)
+                continue;
 
             flattenTrampoline(buf, SIZE, BASE, END, a->lb, a->ub, a->T, a->I);
         }
@@ -619,13 +629,40 @@ void flattenMapping(uint8_t *buf, const Mapping *mapping, uint8_t fill)
 /*
  * Get the virtual bounds of a mapping.
  */
-Bounds getVirtualBounds(const Mapping *mapping)
+static void pushBounds(intptr_t lb, intptr_t ub, std::vector<Bounds> &bounds)
 {
-    intptr_t lb = mapping->lb - mapping->lb % PAGE_SIZE;
-    intptr_t ub = mapping->ub;
+    if (lb == INTPTR_MAX || ub == INTPTR_MIN)
+        return;
+    lb = lb - lb % PAGE_SIZE;
     if (ub % PAGE_SIZE != 0)
         ub = (ub + PAGE_SIZE) - (ub % PAGE_SIZE);
-
-    return {lb, ub};
+    bounds.push_back({lb, ub});
+}
+void getVirtualBounds(const Mapping *mapping, std::vector<Bounds> &bounds)
+{
+    intptr_t lb = INTPTR_MAX, ub = INTPTR_MIN;
+    const size_t   SIZE = mapping->size;
+    const intptr_t BASE = mapping->base;
+    const intptr_t END  = BASE + SIZE;
+    auto iend = Allocator::end();
+    for (auto i = mapping->i; i != iend; ++i)
+    {
+        const Alloc *a = *i;
+        if (a->lb >= END)
+            break;
+        if (a->T == nullptr)
+        {
+            // Reserved memory.  We must split into two separate mappings.
+            pushBounds(lb, ub, bounds);
+            lb = INTPTR_MAX;
+            ub = INTPTR_MIN;
+            continue;
+        }
+        intptr_t lb1 = (a->lb < BASE? 0: a->lb - BASE);
+        intptr_t ub1 = (a->ub > END ? END - BASE: a->ub - BASE);
+        lb = std::min(lb, lb1);
+        ub = std::max(ub, ub1);
+    }
+    pushBounds(lb, ub, bounds);
 }
 
