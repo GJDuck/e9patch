@@ -284,6 +284,10 @@ bool reserve(Allocator &allocator, intptr_t lb, intptr_t ub)
     if (allocator.tree.root == nullptr)
         allocator.tree.root = n;
     rebalanceInsert(&allocator.tree, n);
+
+    Alloc *A = &n->alloc;
+    A->T = nullptr;
+    A->I = nullptr;
     return true;
 }
 
