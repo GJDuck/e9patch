@@ -45,6 +45,7 @@ enum Method
 enum ParamName
 {
     PARAM_UNKNOWN,
+    PARAM_ABSOLUTE,
     PARAM_ADDRESS,
     PARAM_BYTES,
     PARAM_FILENAME,

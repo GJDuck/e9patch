@@ -250,6 +250,8 @@ static size_t emitLoaderMmap(uint8_t *data, bool pic, intptr_t addr,
     size_t size = 0;
 
     // Step (1): Load the address into %rdi
+    bool absolute = IS_ABSOLUTE(addr);
+    addr = BASE_ADDRESS(addr);
     if (addr >= 0 && addr <= INT32_MAX)
     {
         // mov $addr32,%edi
@@ -265,7 +267,7 @@ static size_t emitLoaderMmap(uint8_t *data, bool pic, intptr_t addr,
         memcpy(data + size, &addr, sizeof(addr));
         size += sizeof(addr);
     }
-    if (pic)
+    if (pic && !absolute)
     {
         // addq %r12,%rdi
         data[size++] = 0x4c; data[size++] = 0x01; data[size++] = 0xe7;
@@ -352,6 +354,8 @@ static size_t emitLoaderMmap(uint8_t *data, bool pic, intptr_t addr,
 static size_t emitLoadFuncPtrIntoRAX(uint8_t *data, bool pic, intptr_t fptr)
 {
     size_t size = 0;
+    bool absolute = IS_ABSOLUTE(fptr);
+    fptr = BASE_ADDRESS(fptr);
     if (fptr <= INT32_MAX)
     {
         // mov $fptr32,%eax
@@ -367,7 +371,7 @@ static size_t emitLoadFuncPtrIntoRAX(uint8_t *data, bool pic, intptr_t fptr)
         memcpy(data + size, &fptr, sizeof(fptr));
         size += sizeof(fptr);
     }
-    if (pic)
+    if (pic && !absolute)
     {
         // addq %r12,%rax
         data[size++] = 0x4c; data[size++] = 0x01; data[size++] = 0xe0;
@@ -413,9 +417,9 @@ static size_t emitLoader(const RefactorSet &refactors,
                 size_t len    = b.ub - b.lb;
                 off_t offset  = offset_0 + b.lb;
                 int prot      = mapping->prot;
-                debug("load trampoline: mmap(%s0x%lx, %zu, %s%s%s0, "
-                    "MAP_FIXED | MAP_PRIVATE, fd, +%zd)",
-                    (base < 0? "-": ""), std::abs(base), len,
+                debug("load trampoline: mmap(" ADDRESS_FORMAT ", %zu, "
+                    "%s%s%s0, MAP_FIXED | MAP_PRIVATE, fd, +%zd)",
+                    ADDRESS(base), len,
                     (prot & PROT_READ? "PROT_READ | ": ""),
                     (prot & PROT_WRITE? "PROT_WRITE | ": ""),
                     (prot & PROT_EXEC? "PROT_EXEC | ": ""), offset);
@@ -434,9 +438,9 @@ static size_t emitLoader(const RefactorSet &refactors,
         size_t len    = refactor.size;
         off_t offset  = refactor.patched.offset;
         int prot      = PROT_READ | PROT_EXEC;
-        debug("load refactoring: mmap(%s0x%lx, %zu, %s%s%s0, "
+        debug("load refactoring: mmap(" ADDRESS_FORMAT ", %zu, %s%s%s0, "
             "MAP_FIXED | MAP_PRIVATE, fd, +%zd)",
-            (base < 0? "-": ""), std::abs(base), len,
+            ADDRESS(base), len,
             (prot & PROT_READ? "PROT_READ | ": ""),
             (prot & PROT_WRITE? "PROT_WRITE | ": ""),
             (prot & PROT_EXEC? "PROT_EXEC | ": ""), offset);

@@ -505,9 +505,8 @@ static void buildBytes(const Trampoline *T, const Instr *I,
                         off_t rel_target = rel + (target - J->addr);
                         if (rel_target >= INT32_MIN && rel_target <= INT32_MAX)
                         {
-                            debug("bypass 0x%lx and jump directly to %s0x%lx",
-                                J->addr, (target < 0? "-": ""),
-                                std::abs(target));
+                            debug("bypass 0x%lx and jump directly to "
+                                ADDRESS_FORMAT, J->addr, ADDRESS(target));
                             rel = rel_target;
                         }
                     }

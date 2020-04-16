@@ -430,6 +430,7 @@ static bool validateParam(Method method, ParamName paramName)
         case METHOD_RESERVE:
             switch (paramName)
             {
+                case PARAM_ABSOLUTE:
                 case PARAM_ADDRESS:
                 case PARAM_LENGTH:
                 case PARAM_BYTES:
@@ -871,6 +872,8 @@ static void parseParams(Parser &parser, Message &msg)
             case 'a':
                 if (strcmp(parser.s, "address") == 0)
                     name = PARAM_ADDRESS;
+                else if (strcmp(parser.s, "absolute") == 0)
+                    name = PARAM_ABSOLUTE;
                 break;
             case 'b':
                 if (strcmp(parser.s, "bytes") == 0)
@@ -954,6 +957,7 @@ static void parseParams(Parser &parser, Message &msg)
                     else
                         value.integer = stringToNumber(parser);
                     break;
+                case PARAM_ABSOLUTE:
                 case PARAM_OPTION_DISABLE_B1:
                 case PARAM_OPTION_DISABLE_B2:
                 case PARAM_OPTION_DISABLE_T1:

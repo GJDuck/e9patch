@@ -32,9 +32,6 @@
 #include "e9patch.h"
 #include "e9trampoline.h"
 
-#define ADDRESS_MAX         0x1FFFFFFFFFFFF000ll
-#define ADDRESS_MIN         (-(ADDRESS_MAX))
-
 #define BLACK       0       // RB-tree black
 #define RED         1       // RB-tree red
 
@@ -228,15 +225,17 @@ static Node *insert(Node *root, intptr_t lb, intptr_t ub, size_t size)
 }
 
 /*
- * Clamp `b` to global interval tree bounds.
+ * Verify bounds.
  */
-static intptr_t bound(intptr_t b)
+static bool verify(intptr_t lb, intptr_t ub)
 {
-    if (b <= ADDRESS_MIN)
-        return ADDRESS_MIN;
-    if (b >= ADDRESS_MAX)
-        return ADDRESS_MAX;
-    return b;
+    if (lb > ub)
+        return false;
+    if (IS_RELATIVE(lb))
+        return IS_RELATIVE(ub);
+    if (IS_ABSOLUTE(lb))
+        return IS_ABSOLUTE(ub);
+    return false;
 }
 
 /*
@@ -246,13 +245,13 @@ static intptr_t bound(intptr_t b)
 const Alloc *allocate(Allocator &allocator, intptr_t lb, intptr_t ub,
     const Trampoline *T, const Instr *I)
 {
+    if (!verify(lb, ub + TRAMPOLINE_MAX))
+        return nullptr;
     int r = getTrampolineSize(T, I);
     if (r < 0)
         return nullptr;
     size_t size = (size_t)r;
     ub += size;
-    lb = bound(lb);
-    ub = bound(ub);
     Node *n = insert</*LEFT=*/true>(allocator.tree.root, lb, ub, size);
     if (n == nullptr)
         return nullptr;
@@ -272,8 +271,8 @@ const Alloc *allocate(Allocator &allocator, intptr_t lb, intptr_t ub,
  */
 bool reserve(Allocator &allocator, intptr_t lb, intptr_t ub)
 {
-    lb = bound(lb);
-    ub = bound(ub);
+    if (!verify(lb, ub))
+        return false;
     lb -= (lb % PAGE_SIZE);
     ub += (ub % PAGE_SIZE == 0? 0: PAGE_SIZE - ub % PAGE_SIZE);
     if (ub - lb <= 0)

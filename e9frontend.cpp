@@ -436,12 +436,19 @@ static unsigned sendEmitMessage(FILE *out, const char *filename,
 /*
  * Send a "reserve" message.
  */
-static unsigned sendReserveMessage(FILE *out, intptr_t addr, size_t len)
+static unsigned sendReserveMessage(FILE *out, intptr_t addr, size_t len,
+    bool absolute = false)
 {
     sendMessageHeader(out, "reserve");
     sendParamHeader(out, "address");
     sendInteger(out, addr);
     sendSeparator(out);
+    if (absolute)
+    {
+        sendParamHeader(out, "absolute");
+        fprintf(out, "true");
+        sendSeparator(out);
+    }
     sendParamHeader(out, "length");
     sendInteger(out, (intptr_t)len);
     sendSeparator(out, /*last=*/true);
@@ -452,7 +459,8 @@ static unsigned sendReserveMessage(FILE *out, intptr_t addr, size_t len)
  * Send a "reserve" message.
  */
 static unsigned sendReserveMessage(FILE *out, intptr_t addr,
-    const uint8_t *data, size_t len, int prot, intptr_t init)
+    const uint8_t *data, size_t len, int prot, intptr_t init,
+    bool absolute = false)
 {
     sendMessageHeader(out, "reserve");
     sendParamHeader(out, "address");
@@ -468,6 +476,12 @@ static unsigned sendReserveMessage(FILE *out, intptr_t addr,
     {
         sendParamHeader(out, "init");
         sendInteger(out, init);
+        sendSeparator(out);
+    }
+    if (absolute)
+    {
+        sendParamHeader(out, "absolute");
+        fprintf(out, "true");
         sendSeparator(out);
     }
     sendParamHeader(out, "bytes");

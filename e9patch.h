@@ -387,4 +387,10 @@ extern void debugImpl(const char *msg, ...);
             debugImpl((msg), ##__VA_ARGS__);                            \
     } while (false)
 
+#define ADDRESS_FORMAT              "%s%s0x%lx"
+#define ADDRESS(p)                                                      \
+    (IS_ABSOLUTE(p)? "[absolute] ": ""),                                \
+    ((p) < 0? "-": ""),                                                 \
+    std::abs(BASE_ADDRESS(p))
+
 #endif

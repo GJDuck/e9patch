@@ -419,17 +419,23 @@ static void parseEmit(Binary *B, const Message &msg)
  */
 static void parseReserve(Binary *B, const Message &msg)
 {
+    bool absolute     = false;
     intptr_t address  = 0;
     intptr_t init     = 0;
     size_t length     = 0;
     Trampoline *bytes = nullptr;
     int protection    = PROT_READ | PROT_EXEC;
     bool have_address = false, have_protection = false, have_init = false,
-        have_length = false, dup = false;
+        have_length = false, have_absolute = false, dup = false;
     for (unsigned i = 0; i < msg.num_params; i++)
     {
         switch (msg.params[i].name)
         {
+            case PARAM_ABSOLUTE:
+                dup = dup || have_absolute;
+                absolute = msg.params[i].value.boolean;
+                have_absolute = true;
+                break;
             case PARAM_ADDRESS:
                 dup = dup || have_address;
                 address = (intptr_t)msg.params[i].value.integer;
@@ -468,13 +474,17 @@ static void parseReserve(Binary *B, const Message &msg)
         error("failed to parse \"reserve\" message (id=%u); only one of "
             "the \"bytes\" or \"length\" parameters can be specified",
             msg.id);
+    if (absolute && B->elf.pic)
+        address = ABSOLUTE_ADDRESS(address);
     if (have_init)
     {
+        if (absolute && B->elf.pic)
+            init = ABSOLUTE_ADDRESS(init);
         if (bytes == nullptr || init < address ||
                 init >= address + bytes->entries[0].length)
             error("failed to parse \"reserve\" message (id=%u); \"init\" "
-                "parameter value (%s0x%lx) is out-of-bounds", msg.id,
-                (address < 0? "-": ""), std::abs(address));
+                "parameter value (" ADDRESS_FORMAT ") is out-of-bounds",
+                msg.id, ADDRESS(address));
         B->inits.push_back(init);
     }
     if (dup)
@@ -488,14 +498,14 @@ static void parseReserve(Binary *B, const Message &msg)
         const Alloc *A = allocate(B->allocator, address, address, bytes,
             nullptr);
         if (A == nullptr)
-            error("failed to reserve address space at address %s0x%lx",
-                (address < 0? "-": ""), std::abs(address));
+            error("failed to reserve address space at address "
+                ADDRESS_FORMAT, ADDRESS(address));
     }
     if (have_length)
     {
         if (!reserve(B->allocator, address, address + length))
-            error("failed to reserve address space at address %s0x%lx",
-                (address < 0? "-": ""), std::abs(address));
+            error("failed to reserve address space at address "
+                ADDRESS_FORMAT, ADDRESS(address));
     }
 }
 

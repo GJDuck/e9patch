@@ -732,9 +732,8 @@ bool patch(Binary &B, Instr *I, const Trampoline *T)
     }
 
     debug("patched instruction 0x%lx [size=%zu, tactic=%s, "
-        "trampoline=%s0x%lx]",
-        I->addr, I->size, getTacticName(P->tactic),
-        (I->trampoline < 0? "-": ""), std::abs(I->trampoline));
+        "trampoline=" ADDRESS_FORMAT "]",
+        I->addr, I->size, getTacticName(P->tactic), ADDRESS(I->trampoline));
     printf("\33[32m.\33[0m");
     commit(P);
     return true;            // Success!
