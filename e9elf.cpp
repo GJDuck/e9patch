@@ -129,7 +129,7 @@ void parseElf(Allocator &allocator, const char *filename, uint8_t *data,
         // Only PIEs can use the negative address range.  Other PIC such
         // as shared objects cannot use this range since the dynamic
         // linker tends to use it for other libraries.
-        if (!reserve(allocator, INTPTR_MIN, 0x0))
+        if (!reserve(allocator, RELATIVE_ADDRESS_MIN, 0x0))
             error("failed to reserve negative-address range");
     }
 
