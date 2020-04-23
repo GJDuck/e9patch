@@ -1287,6 +1287,7 @@ int main(int argc, char **argv)
      */
     bool have_print = false, have_passthru = false, have_trap = false;
     std::map<const char *, ELF *, CStrCmp> files;
+    intptr_t file_addr = elf.free_addr + 0x1000000;     // XXX
     for (const auto action: option_actions)
     {
         switch (action->kind)
@@ -1308,7 +1309,7 @@ int main(int argc, char **argv)
                 if (i == files.end())
                 {
                     // Load the called ELF file into the address space:
-                    intptr_t free_addr = elf.free_addr + 8 * PAGE_SIZE;
+                    intptr_t free_addr = file_addr + 8 * PAGE_SIZE;
                     free_addr = (free_addr % PAGE_SIZE == 0? free_addr:
                         (free_addr + PAGE_SIZE) - (free_addr % PAGE_SIZE));
                     target_elf = new ELF;
@@ -1317,7 +1318,7 @@ int main(int argc, char **argv)
                     files.insert({action->filename, target_elf});
                     size_t size = (size_t)target_elf->free_addr;
                     free_addr += size;
-                    elf.free_addr = free_addr;
+                    file_addr = free_addr;
                 }
                 else
                     target_elf = i->second;

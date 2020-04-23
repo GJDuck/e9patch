@@ -459,8 +459,8 @@ static unsigned sendReserveMessage(FILE *out, intptr_t addr, size_t len,
  * Send a "reserve" message.
  */
 static unsigned sendReserveMessage(FILE *out, intptr_t addr,
-    const uint8_t *data, size_t len, int prot, intptr_t init,
-    bool absolute = false)
+    const uint8_t *data, size_t len, int prot, intptr_t init = 0x0,
+    intptr_t mmap = 0x0, bool absolute = false)
 {
     sendMessageHeader(out, "reserve");
     sendParamHeader(out, "address");
@@ -476,6 +476,12 @@ static unsigned sendReserveMessage(FILE *out, intptr_t addr,
     {
         sendParamHeader(out, "init");
         sendInteger(out, init);
+        sendSeparator(out);
+    }
+    if (mmap != 0x0)
+    {
+        sendParamHeader(out, "mmap");
+        sendInteger(out, mmap);
         sendSeparator(out);
     }
     if (absolute)
@@ -833,7 +839,7 @@ static intptr_t lookupSymbol(const ELF &elf, const char *symbol)
  * Embed an ELF file.
  */
 static void sendELFFile(FILE *out, const char *filename, intptr_t base,
-    ELF &elf)
+    ELF &elf, bool absolute = false)
 {
     /*
      * Parse the ELF file.
@@ -845,9 +851,10 @@ static void sendELFFile(FILE *out, const char *filename, intptr_t base,
     elf.base = base;
 
     /*
-     * Check for initialization routine.
+     * Check for special routines.
      */
     intptr_t init = lookupSymbol(elf, "init");
+    intptr_t mmap = lookupSymbol(elf, "mmap");
 
     /*
      * Send segments.
@@ -869,11 +876,24 @@ static void sendELFFile(FILE *out, const char *filename, intptr_t base,
         sendParamHeader(out, "address");
         sendInteger(out, phdr_base);
         sendSeparator(out);
+        if (absolute)
+        {
+            sendParamHeader(out, "absolute");
+            fprintf(out, "true");
+            sendSeparator(out);
+        }
         if ((phdr->p_flags & PF_X) != 0 && init >= phdr_base &&
                 init <= phdr_end)
         {
             sendParamHeader(out, "init");
             sendInteger(out, init);
+            sendSeparator(out);
+        }
+        if ((phdr->p_flags & PF_X) != 0 && mmap >= phdr_base &&
+                mmap <= phdr_end)
+        {
+            sendParamHeader(out, "mmap");
+            sendInteger(out, mmap);
             sendSeparator(out);
         }
         sendParamHeader(out, "protection");

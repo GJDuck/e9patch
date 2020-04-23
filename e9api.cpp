@@ -422,11 +422,13 @@ static void parseReserve(Binary *B, const Message &msg)
     bool absolute     = false;
     intptr_t address  = 0;
     intptr_t init     = 0;
+    intptr_t mmap     = 0;
     size_t length     = 0;
     Trampoline *bytes = nullptr;
     int protection    = PROT_READ | PROT_EXEC;
     bool have_address = false, have_protection = false, have_init = false,
-        have_length = false, have_absolute = false, dup = false;
+        have_mmap = false, have_length = false, have_absolute = false,
+        dup = false;
     for (unsigned i = 0; i < msg.num_params; i++)
     {
         switch (msg.params[i].name)
@@ -454,6 +456,11 @@ static void parseReserve(Binary *B, const Message &msg)
                 dup = dup || have_length;
                 length = (size_t)msg.params[i].value.integer;
                 have_length = true;
+                break;
+            case PARAM_MMAP:
+                dup = dup || have_mmap;
+                mmap = (intptr_t)msg.params[i].value.integer;
+                have_mmap = true;
                 break;
             case PARAM_PROTECTION:
                 dup = dup || have_protection;
@@ -487,6 +494,20 @@ static void parseReserve(Binary *B, const Message &msg)
                 msg.id, ADDRESS(address));
         B->inits.push_back(init);
     }
+    if (have_mmap)
+    {
+        if (absolute && B->elf.pic)
+            mmap = ABSOLUTE_ADDRESS(mmap);
+        if (bytes == nullptr || mmap < address ||
+                mmap >= address + bytes->entries[0].length)
+            error("failed to parse \"reserve\" message (id=%u); \"mmap\" "
+                "parameter value (" ADDRESS_FORMAT ") is out-of-bounds",
+                msg.id, ADDRESS(address));
+        if (B->mmap != INTPTR_MIN)
+            error("failed to parse \"reserve\" message (id=%u); a mmap "
+                "function was previously defined", msg.id);
+        B->mmap = mmap;
+    }
     if (dup)
         error("failed to parse \"reserve\" message (id=%u); duplicate "
             "parameters detected", msg.id);
@@ -495,6 +516,7 @@ static void parseReserve(Binary *B, const Message &msg)
         bytes->prot = protection;
     if (bytes != nullptr)
     {
+        bytes->preload = true;
         const Alloc *A = allocate(B->allocator, address, address, bytes,
             nullptr);
         if (A == nullptr)

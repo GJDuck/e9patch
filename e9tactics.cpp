@@ -257,6 +257,10 @@ static Bounds makeBounds(const Trampoline *T, const Instr *I, const Instr *J,
         lo = std::max(lo, target_lo);
         hi = std::min(hi, target_hi);
     }
+
+    // Step (7): Apply the user-specified bounds (if any).
+    lo = std::max(lo, option_lb);
+    hi = std::min(hi, option_ub);
  
     return {lo, hi};
 }

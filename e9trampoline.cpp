@@ -57,6 +57,7 @@ void __attribute__((__constructor__(8000))) evicteeTrampolineInit(void)
     Trampoline *T        = (Trampoline *)ptr;
     T->prot              = PROT_READ | PROT_EXEC;
     T->num_entries       = num_entries;
+    T->preload           = false;
     T->entries[0].kind   = ENTRY_INSTRUCTION;
     T->entries[0].length = 0;
     T->entries[0].bytes  = nullptr;

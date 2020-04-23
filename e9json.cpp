@@ -432,9 +432,10 @@ static bool validateParam(Method method, ParamName paramName)
             {
                 case PARAM_ABSOLUTE:
                 case PARAM_ADDRESS:
-                case PARAM_LENGTH:
                 case PARAM_BYTES:
                 case PARAM_INIT:
+                case PARAM_LENGTH:
+                case PARAM_MMAP:
                 case PARAM_PROTECTION:
                     return true;
                 default:
@@ -760,6 +761,7 @@ static Trampoline *parseTrampoline(Parser &parser)
         new uint8_t[sizeof(Trampoline) + num_entries * sizeof(Entry)];
     Trampoline *T  = (Trampoline *)ptr;
     T->prot        = PROT_READ | PROT_EXEC;
+    T->preload     = false;
     T->num_entries = num_entries;
     memcpy(T->entries, &entries[0], num_entries * sizeof(Entry));
 
@@ -795,6 +797,7 @@ static Trampoline *parseBytes(Parser &parser)
     Trampoline *T  = (Trampoline *)ptr;
     T->prot        = PROT_READ | PROT_EXEC;
     T->num_entries = num_entries;
+    T->preload     = false;
     T->entries[0]  = makeBytesEntry(bytes);
     
     return T;
@@ -920,6 +923,8 @@ static void parseParams(Parser &parser, Message &msg)
                     name = PARAM_MAPPING_SIZE;
                 else if (strcmp(parser.s, "mode") == 0)
                     name = PARAM_MODE;
+                else if (strcmp(parser.s, "mmap") == 0)
+                    name = PARAM_MMAP;
                 break;
             case 'n':
                 if (strcmp(parser.s, "name") == 0)
@@ -949,6 +954,7 @@ static void parseParams(Parser &parser, Message &msg)
                 case PARAM_OFFSET:
                 case PARAM_LENGTH:
                 case PARAM_INIT:
+                case PARAM_MMAP:
                 case PARAM_MAPPING_SIZE:
                 case PARAM_OPTION_AGGRESSIVENESS:
                     token = expectToken2(parser, TOKEN_NUMBER, TOKEN_STRING);

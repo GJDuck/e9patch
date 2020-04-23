@@ -97,8 +97,6 @@ asm (
     "\tleaq _entry(%rip), %r12\n"           // base into %r12
     "\tmovabs $" STRING(LOADER_ADDRESS) ",%rdx\n"
     "\tsubq %rdx,%r12\n"
-    "\tmov $" STRING(PROT_READ|PROT_EXEC) ", %edx\n"    // prot into %rdx
-    "\tmov $" STRING(MAP_PRIVATE|MAP_FIXED) ", %r10d\n" // flags into %r10
     "\tmov $9, %r13d\n"                     // SYS_MMAP into %r13
     "\tleaq .LMMAP_ERROR(%rip), %r14\n"     // mmap error handler into %r14
 

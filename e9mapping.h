@@ -28,6 +28,7 @@ struct Mapping
     size_t size;                // Size of mapping in bytes.
     Allocator::iterator i;      // Virtual memory contents.
     int prot;                   // Protections.
+    bool preload;               // Preload mapping?
 
     // Physical memory:
     off_t offset;               // Physical file offet.

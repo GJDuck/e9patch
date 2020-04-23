@@ -150,7 +150,8 @@ struct Entry
 struct Trampoline
 {
     const char *name;                   // Name (if applicable)
-    int prot;                           // Protections.
+    int prot:31;                        // Protections.
+    int preload:1;                      // Pre-load trampoline?
     unsigned num_entries;               // Number of entries.
                                         // Entries.
     Entry entries[];
@@ -345,6 +346,7 @@ struct Binary
     Allocator allocator;                // Virtual address allocation.
 
     InitSet inits;                      // Initialization functions.
+    intptr_t mmap = INTPTR_MIN;         // Mmap function.
 };
 
 /*
@@ -359,6 +361,8 @@ extern bool option_disable_T2;
 extern bool option_disable_T3;
 extern bool option_dynamic_loader;
 extern int option_aggressiveness;
+extern intptr_t option_lb;
+extern intptr_t option_ub;
 
 /*
  * Global statistics.

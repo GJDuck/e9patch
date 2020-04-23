@@ -240,7 +240,7 @@ static size_t emitRefactoredPatch(const uint8_t *original, uint8_t *data,
  */
 static size_t emitLoaderMmap(uint8_t *data, bool pic, intptr_t addr,
     size_t len, size_t prev_len, int prot, int prev_prot, off_t offset,
-    off_t prev_offset)
+    off_t prev_offset, bool user_mmap = false)
 {
     // The e9loader is assumed to have:
     // (1) placed the fd into %r8
@@ -314,13 +314,19 @@ static size_t emitLoaderMmap(uint8_t *data, bool pic, intptr_t addr,
         }
     }
 
-    // Step (5): Execute the system call.
+    // Step (5): Execute the system call (or user mmap call).
+    if (!user_mmap)
     {
         // mov %r13d,%eax  # mov SYS_MMAP into %rax
         data[size++] = 0x44; data[size++] = 0x89; data[size++] = 0xe8;
 
         // syscall
         data[size++] = 0x0f; data[size++] = 0x05; 
+    }
+    else
+    {
+        // call *%r15
+        data[size++] = 0x41; data[size++] = 0xff; data[size++] = 0xd7;
     }
 
     // Step (6): Check for error.
@@ -384,7 +390,7 @@ static size_t emitLoadFuncPtrIntoRAX(uint8_t *data, bool pic, intptr_t fptr)
  */
 static size_t emitLoader(const RefactorSet &refactors,
     const MappingSet &mappings, uint8_t *data, intptr_t entry, bool pic,
-    const InitSet &inits, Mode mode)
+    const InitSet &inits, intptr_t mmap, Mode mode)
 {
     /*
      * Stage #1
@@ -398,37 +404,67 @@ static size_t emitLoader(const RefactorSet &refactors,
      * Stage #2
      */
 
+    // Step (1): Setup mmap() prot/flags parameters.
+    int32_t prot = PROT_READ | PROT_EXEC, flags = MAP_PRIVATE | MAP_FIXED;
+
+    // mov $prot,%edx
+    data[size++] = 0xba;
+    memcpy(data + size, &prot, sizeof(prot));
+    size += sizeof(prot);
+
+    // mov $flags,%r10d
+    data[size++] = 0x41; data[size++] = 0xba;
+    memcpy(data + size, &flags, sizeof(flags));
+    size += sizeof(flags);
+
+    size_t mmap_idx = 0;
+    if (mmap != INTPTR_MIN)
+    {
+        // lea mmap(%rip),%r15
+        data[size++] = 0x4c; data[size++] = 0x8d; data[size++] = 0x3d;
+        data[size++] = 0x00; data[size++] = 0x00; data[size++] = 0x00;
+        data[size++] = 0x00;
+        mmap_idx = size;
+    }
+
     // Step (2): Emit calls to mmap() that load trampoline pages:
     off_t prev_offset = -1;
     size_t prev_len   = SIZE_MAX;
-    int prev_prot     = PROT_READ | PROT_EXEC;
+    int prev_prot     = prot;
     std::vector<Bounds> bounds;
-    for (auto mapping: mappings)
+    for (int preload = 1; preload >= false; preload--)
     {
-        stat_num_physical_bytes += mapping->size;
-        off_t offset_0  = mapping->offset;
-        for (; mapping != nullptr; mapping = mapping->merged)
+        for (auto mapping: mappings)
         {
-            bounds.clear();
-            getVirtualBounds(mapping, bounds);
-            for (const auto b: bounds)
+            if (preload == false)
+                stat_num_physical_bytes += mapping->size;
+            off_t offset_0  = mapping->offset;
+            for (; mapping != nullptr; mapping = mapping->merged)
             {
-                intptr_t base = mapping->base + b.lb;
-                size_t len    = b.ub - b.lb;
-                off_t offset  = offset_0 + b.lb;
-                int prot      = mapping->prot;
-                debug("load trampoline: mmap(" ADDRESS_FORMAT ", %zu, "
-                    "%s%s%s0, MAP_FIXED | MAP_PRIVATE, fd, +%zd)",
-                    ADDRESS(base), len,
-                    (prot & PROT_READ? "PROT_READ | ": ""),
-                    (prot & PROT_WRITE? "PROT_WRITE | ": ""),
-                    (prot & PROT_EXEC? "PROT_EXEC | ": ""), offset);
-                stat_num_virtual_bytes += len;
-                size += emitLoaderMmap(data + size, pic, base, len, prev_len,
-                    prot, prev_prot, offset, prev_offset);
-                prev_len    = len;
-                prev_offset = offset;
-                prev_prot   = prot;
+                if (mapping->preload != (bool)preload)
+                    continue;
+                bounds.clear();
+                getVirtualBounds(mapping, bounds);
+                for (const auto b: bounds)
+                {
+                    intptr_t base = mapping->base + b.lb;
+                    size_t len    = b.ub - b.lb;
+                    off_t offset  = offset_0 + b.lb;
+                    int prot      = mapping->prot;
+                    debug("load trampoline: mmap(" ADDRESS_FORMAT ", %zu, "
+                        "%s%s%s0, MAP_FIXED | MAP_PRIVATE, fd, +%zd)",
+                        ADDRESS(base), len,
+                        (prot & PROT_READ? "PROT_READ | ": ""),
+                        (prot & PROT_WRITE? "PROT_WRITE | ": ""),
+                        (prot & PROT_EXEC? "PROT_EXEC | ": ""), offset);
+                    stat_num_virtual_bytes += len;
+                    size += emitLoaderMmap(data + size, pic, base, len,
+                        prev_len, prot, prev_prot, offset, prev_offset,
+                        (!preload && mmap != INTPTR_MIN));
+                    prev_len    = len;
+                    prev_offset = offset;
+                    prev_prot   = prot;
+                }
             }
         }
     }
@@ -526,6 +562,66 @@ static size_t emitLoader(const RefactorSet &refactors,
     // jmpq *rax
     data[size++] = 0xff; data[size++] = 0xe0;
 
+    /*
+     * Stage #3 (mmap wrapper)
+     */
+
+    // Emit the user-mmap wrapper (if necessary).
+    if (mmap != INTPTR_MIN)
+    {
+        int32_t diff32 = size - mmap_idx;
+        memcpy(data + mmap_idx - sizeof(int32_t), &diff32, sizeof(diff32));
+
+        // This wrapper function translates from the syscall ABI into the
+        // SYSV ABI, and preserves the necessary registers.
+
+        // mov %r10, %rcx
+        data[size++] = 0x4c; data[size++] = 0x89; data[size++] = 0xd1;
+
+        // push scratch registers that we care about
+        data[size++] = 0x57;                        // pushq %rdi
+        data[size++] = 0x56;                        // pushq %rsi
+        data[size++] = 0x52;                        // pushq %rdx
+        data[size++] = 0x41; data[size++] = 0x50;   // pushq %r8
+        data[size++] = 0x41; data[size++] = 0x51;   // pushq %r9
+        data[size++] = 0x41; data[size++] = 0x52;   // pushq %r10
+
+        if (mmap >= 0 && mmap <= INT32_MAX)
+        {
+            // mov $mmap32,%eax
+            int32_t mmap32 = (int32_t)mmap;
+            data[size++] = 0xb8;
+            memcpy(data + size, &mmap32, sizeof(mmap32));
+            size += sizeof(mmap32);
+        }
+        else
+        {
+            // movabs $mmap,%rax
+            data[size++] = 0x48; data[size++] = 0xb8;
+            memcpy(data + size, &mmap, sizeof(mmap));
+            size += sizeof(mmap);
+        }
+        if (pic && !IS_ABSOLUTE(mmap))
+        {
+            // addq %r12,%rax
+            data[size++] = 0x4c; data[size++] = 0x01; data[size++] = 0xe0;
+        }
+
+        // call *%rax
+        data[size++] = 0xff; data[size++] = 0xd0;
+
+        // pop scratch registers
+        data[size++] = 0x41; data[size++] = 0x5a;      // popq %r10
+        data[size++] = 0x41; data[size++] = 0x59;      // popq %r9
+        data[size++] = 0x41; data[size++] = 0x58;      // popq %r8
+        data[size++] = 0x5a;                           // popq %rdx
+        data[size++] = 0x5e;                           // popq %rsi
+        data[size++] = 0x5f;                           // popq %rdi
+
+        // retq
+        data[size++] = 0xc3;
+    }
+
     return size;
 }
 
@@ -599,7 +695,7 @@ size_t emitElf(const Binary *B, const MappingSet &mappings,
     // Step (5): Emit the loader:
     off_t loader_offset = (off_t)size;
     size_t loader_size  = emitLoader(refactors, mappings, data + size,
-        old_entry, B->elf.pic, B->inits, B->mode);
+        old_entry, B->elf.pic, B->inits, B->mmap, B->mode);
     size += loader_size;
 
     // Step (6): Modify the PHDR to load the loader.

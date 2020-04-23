@@ -174,6 +174,28 @@ static int calculateProtections(const Mapping *mapping)
 }
 
 /*
+ * Calculate the PRELOAD flag of a mapping.
+ */
+static bool calculatePreload(const Mapping *mapping)
+{
+    const size_t   SIZE = mapping->size;
+    const intptr_t BASE = mapping->base;
+    const intptr_t END  = BASE + SIZE;
+    auto iend = Allocator::end();
+    for (auto i = mapping->i; i != iend; ++i)
+    {
+        const Alloc *a = *i;
+        if (a->lb >= END)
+            break;
+        if (a->T == nullptr)
+            continue;
+        if (a->T->preload)
+            return true;
+    }
+    return false;
+}
+
+/*
  * Allocate a new mapping.
  */
 static Mapping *allocMapping(Allocator::iterator i, size_t size, intptr_t base)
@@ -186,6 +208,7 @@ static Mapping *allocMapping(Allocator::iterator i, size_t size, intptr_t base)
     mapping->ub      = size;
     mapping->offset  = -1;
     mapping->prot    = PROT_NONE;
+    mapping->preload = false;
     mapping->i       = i;
     mapping->next    = nullptr;
     mapping->merged  = nullptr;
@@ -213,6 +236,7 @@ static void saveMapping(const Allocator &allocator, const size_t MAPPING_SIZE,
     mapping->lb = b.lb;
     mapping->ub = b.ub;
     mapping->prot = calculateProtections(mapping);
+    mapping->preload = calculatePreload(mapping);
     insertMapping(mapping, mappings);
     stat_num_virtual_mappings++;
 }

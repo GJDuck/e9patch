@@ -37,6 +37,8 @@ bool option_disable_T1     = false;
 bool option_disable_T2     = false;
 bool option_disable_T3     = false;
 bool option_dynamic_loader = false;
+intptr_t option_lb         = INTPTR_MIN;
+intptr_t option_ub         = INTPTR_MAX;
 int option_aggressiveness  = 100;
 
 /*
@@ -116,13 +118,41 @@ enum Option
 {
     OPTION_AGGRESSIVENESS,
     OPTION_DEBUG,
+    OPTION_DISABLE_SHRINK,
     OPTION_DISABLE_B1,
     OPTION_DISABLE_B2,
     OPTION_DISABLE_T1,
     OPTION_DISABLE_T2,
     OPTION_DISABLE_T3,
+    OPTION_LB,
     OPTION_DYNAMIC_LOADER,
+    OPTION_UB,
 };
+
+/*
+ * Parse an integer from an optarg.
+ */
+static intptr_t parseIntOptArg(const char *option, const char *optarg,
+    intptr_t lb, intptr_t ub)
+{
+    const char *optarg_0 = optarg;
+    bool neg = (optarg[0] == '-');
+    if (neg)
+        optarg++;
+    int base = 10;
+    if (optarg[0] == '0' && optarg[1] == 'x')
+        base = 16;
+    errno = 0;
+    char *end = nullptr;
+    intptr_t r = (intptr_t)strtoul(optarg, &end, base);
+    r = (neg? -r: r);
+    if (errno != 0 || end == optarg ||
+            (end != nullptr && *end != '\0') || r < lb || r > ub)
+        error("failed to parse argument \"%s\" to option "
+            "`%s'; expected a number %zd..%zd",
+            option, optarg_0, lb, ub);
+    return r;
+}
 
 /*
  * The real entry point.
@@ -151,6 +181,8 @@ int realMain(int argc, char **argv)
         {"disable-T2",     false, nullptr, OPTION_DISABLE_T2},
         {"disable-T3",     false, nullptr, OPTION_DISABLE_T3},
         {"dynamic-loader", false, nullptr, OPTION_DYNAMIC_LOADER},
+        {"lb",             true,  nullptr, OPTION_LB},
+        {"ub",             true,  nullptr, OPTION_UB},
         {nullptr,          false, nullptr, 0}
     };
 
@@ -163,18 +195,9 @@ int realMain(int argc, char **argv)
         switch (opt)
         {
             case OPTION_AGGRESSIVENESS:
-            {
-                errno = 0;
-                char *end = nullptr;
-                unsigned long r = strtoul(optarg, &end, 10);
-                if (errno != 0 || end == optarg ||
-                        (end != nullptr && *end != '\0') || r > 100)
-                    error("failed to parse argument \"%s\" to option "
-                        "`--aggressiveness'; expected a number 0..100",
-                        optarg);
-                option_aggressiveness = r;
+                option_aggressiveness = parseIntOptArg("--aggressiveness",
+                    optarg, 0, 100);
                 break;
-            }
             case OPTION_DEBUG:
                 option_debug = true;
                 break;
@@ -195,6 +218,14 @@ int realMain(int argc, char **argv)
                 break;
             case OPTION_DYNAMIC_LOADER:
                 option_dynamic_loader = true;
+                break;
+            case OPTION_LB:
+                option_lb = parseIntOptArg("--lb", optarg, INTPTR_MIN,
+                    INTPTR_MAX);
+                break;
+            case OPTION_UB:
+                option_ub = parseIntOptArg("--ub", optarg, INTPTR_MIN,
+                    INTPTR_MAX);
                 break;
             default:
                 error("failed to parse command-line options");
