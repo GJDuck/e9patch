@@ -87,8 +87,15 @@ RB_GENERATE_STATIC(Tree, Node, entry, compare);
 #define rebalanceInsert(t, n)       Tree_RB_INSERT_COLOR((t), (n))
 #define rebalanceRemove(t, n)       Tree_RB_REMOVE((t), (n))
 
-template <bool LEFT>
-static Node *insert(Node *root, intptr_t lb, intptr_t ub, size_t size);
+#define FLAG_LB                     0x1
+#define FLAG_UB                     0x2
+#define FLAG_SAME_PAGE              0x4
+
+#define flag_set(flags, flag, val)  \
+    ((val)? (flags) | (flag): (flags) & ~(flag))
+
+static Node *insert(Node *root, intptr_t lb, intptr_t ub, size_t size,
+    uint32_t flags);
 
 /*
  * Allocate a node.
@@ -107,24 +114,44 @@ static Node *alloc()
 /*
  * Allocate and initialize a new interval tree node.
  */
-static Node *node(Node *parent, bool left, intptr_t lb, intptr_t ub,
-    size_t size)
+static Node *node(Node *parent, intptr_t lb, intptr_t ub, size_t size,
+    uint32_t flags)
 {
-    Node *n = alloc();
-    if (left)
+    bool alloc_left = ((flags & FLAG_LB) != 0 || (flags & FLAG_UB) == 0);
+    intptr_t LB, UB;
+    if (alloc_left)
     {
-        n->alloc.lb = lb;
-        n->alloc.ub = lb + size;
-        n->lb       = lb;
-        n->ub       = lb + size;
+        LB = lb;
+        UB = lb + size;
     }
     else
     {
-        n->alloc.lb = ub - size;
-        n->alloc.ub = ub;
-        n->lb       = ub - size;
-        n->ub       = ub;
+        LB = ub - size;
+        UB = ub;
     }
+
+    bool same_page   = ((flags & FLAG_SAME_PAGE) != 0);
+    bool spans_pages = (LB / PAGE_SIZE != (UB-1) / PAGE_SIZE);
+    if (same_page && spans_pages)
+    {
+        off_t offset = (alloc_left?
+            PAGE_SIZE - std::abs(lb % PAGE_SIZE):
+            -std::abs(ub % PAGE_SIZE));
+        LB += offset;
+        UB += offset;
+        assert(LB / PAGE_SIZE == (UB-1) / PAGE_SIZE);
+        if (LB < lb || UB > ub)
+        {
+            // Cannot fit into the current page == fail.
+            return nullptr;
+        }
+    }
+
+    Node *n = alloc();
+    n->alloc.lb     = LB;
+    n->alloc.ub     = UB;
+    n->lb           = LB;
+    n->ub           = UB;
     n->entry.parent = parent;
     n->entry.left   = nullptr;
     n->entry.right  = nullptr;
@@ -136,55 +163,61 @@ static Node *node(Node *parent, bool left, intptr_t lb, intptr_t ub,
 /*
  * Insert left-child helper.
  */
-template <bool LEFT>
-static Node *insertLeftChild(Node *root, intptr_t lb, intptr_t ub, size_t size)
+static Node *insertLeftChild(Node *root, intptr_t lb, intptr_t ub, size_t size,
+    uint32_t flags)
 {
+    ub = std::min(ub, root->alloc.lb);
     if ((intptr_t)size > ub - lb)
         return nullptr;
+    flags = flag_set(flags, FLAG_UB,
+        (root->alloc.lb - ub < (ssize_t)PAGE_SIZE));
     Node *n;
     if (root->entry.left == nullptr)
-        n = root->entry.left = node(root, LEFT, lb, ub, size);
+        n = root->entry.left = node(root, lb, ub, size, flags);
     else
-        n = insert<LEFT>(root->entry.left, lb, ub, size);
+        n = insert(root->entry.left, lb, ub, size, flags);
     return n;
 }
 
 /*
  * Insert right-child helper.
  */
-template <bool LEFT>
-static Node *insertRightChild(Node *root, intptr_t lb, intptr_t ub, size_t size)
+static Node *insertRightChild(Node *root, intptr_t lb, intptr_t ub,
+    size_t size, uint32_t flags)
 {
+    lb = std::max(lb, root->alloc.ub);
     if ((intptr_t)size > ub - lb)
         return nullptr;
+    flags = flag_set(flags, FLAG_LB,
+        (lb - root->alloc.ub < (ssize_t)PAGE_SIZE));
     Node *n;
     if (root->entry.right == nullptr)
-        n = root->entry.right = node(root, LEFT, lb, ub, size);
+        n = root->entry.right = node(root, lb, ub, size, flags);
     else
-        n = insert<LEFT>(root->entry.right, lb, ub, size);
+        n = insert(root->entry.right, lb, ub, size, flags);
     return n;
 }
 
 /*
  * Insert a new allocation or reservation into the interval tree node `root`.
  */
-template <bool LEFT>
-static Node *insert(Node *root, intptr_t lb, intptr_t ub, size_t size)
+static Node *insert(Node *root, intptr_t lb, intptr_t ub, size_t size,
+    uint32_t flags)
 {
     if ((intptr_t)size > ub - lb)
         return nullptr;
     if (root == nullptr)
-        return node(nullptr, LEFT, lb, ub, size);
+        return node(nullptr, lb, ub, size, flags);
 
     Node *n = nullptr;
     if (n == nullptr && ub <= root->lb)
-        n = insertLeftChild<LEFT>(root, lb, ub, size);
+        n = insertLeftChild(root, lb, ub, size, flags);
     if (n == nullptr && lb >= root->ub)
-        n = insertRightChild<LEFT>(root, lb, ub, size);
-    if (n == nullptr && lb < root->lb)
-        n = insertLeftChild</*LEFT=*/false>(root, lb, root->lb, size);
-    if (n == nullptr && ub > root->ub)
-        n = insertRightChild</*LEFT=*/true>(root, root->ub, ub, size);
+        n = insertRightChild(root, lb, ub, size, flags);
+    if (n == nullptr && lb < root->lb && ub > root->lb)
+        n = insertLeftChild(root, lb, root->lb, size, flags);
+    if (n == nullptr && ub > root->ub && lb < root->ub)
+        n = insertRightChild(root, root->ub, ub, size, flags);
     if (n == nullptr)
     {
         uint64_t range = (uint64_t)root->ub - (uint64_t)root->lb;
@@ -197,23 +230,19 @@ static Node *insert(Node *root, intptr_t lb, intptr_t ub, size_t size)
             bool once = (range >= UINT32_MAX? false:
                 100 * full >= option_aggressiveness * range);
 
-            if (LEFT)
+            if ((flags & FLAG_LB) != 0 || (flags & FLAG_UB) != 0)
             {
                 if (n == nullptr && internal)
-                    n = insertLeftChild</*LEFT=*/false>(root,
-                        lb, std::min(ub, root->alloc.lb), size);
+                    n = insertLeftChild(root, lb, ub, size, flags);
                 if (n == nullptr && internal && !once)
-                    n = insertRightChild</*LEFT=*/true>(root,
-                        std::max(lb, root->alloc.ub), ub, size);
+                    n = insertRightChild(root, lb, ub, size, flags);
             }
             else
             {
                 if (n == nullptr && internal)
-                    n = insertRightChild</*LEFT=*/true>(root,
-                        std::max(lb, root->alloc.ub), ub, size);
+                    n = insertRightChild(root, lb, ub, size, flags);
                 if (n == nullptr && internal && !once)
-                    n = insertLeftChild</*LEFT=*/false>(root,
-                        lb, std::min(ub, root->alloc.lb), size);
+                    n = insertLeftChild(root, lb, ub, size, flags);
             }
         }
     }
@@ -243,7 +272,7 @@ static bool verify(intptr_t lb, intptr_t ub)
  * range [lb..ub].  Returns the allocation, or nullptr on failure.
  */
 const Alloc *allocate(Allocator &allocator, intptr_t lb, intptr_t ub,
-    const Trampoline *T, const Instr *I)
+    const Trampoline *T, const Instr *I, bool same_page)
 {
     if (!verify(lb, ub + TRAMPOLINE_MAX))
         return nullptr;
@@ -252,7 +281,8 @@ const Alloc *allocate(Allocator &allocator, intptr_t lb, intptr_t ub,
         return nullptr;
     size_t size = (size_t)r;
     ub += size;
-    Node *n = insert</*LEFT=*/true>(allocator.tree.root, lb, ub, size);
+    uint32_t flags = (same_page? FLAG_SAME_PAGE: 0);
+    Node *n = insert(allocator.tree.root, lb, ub, size, flags);
     if (n == nullptr)
         return nullptr;
     if (allocator.tree.root == nullptr)
@@ -277,7 +307,8 @@ bool reserve(Allocator &allocator, intptr_t lb, intptr_t ub)
     ub += (ub % PAGE_SIZE == 0? 0: PAGE_SIZE - ub % PAGE_SIZE);
     if (ub - lb <= 0)
         return false;
-    Node *n = insert</*LEFT=*/true>(allocator.tree.root, lb, ub, (ub - lb));
+    uint32_t flags = 0;
+    Node *n = insert(allocator.tree.root, lb, ub, (ub - lb), flags);
     if (n == nullptr)
         return false;
     if (allocator.tree.root == nullptr)

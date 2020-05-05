@@ -272,7 +272,7 @@ static void sendInteger(FILE *out, intptr_t i)
     {
         bool neg = (i < 0);
         uint64_t x = (uint64_t)(neg? -i: i);
-        fprintf(out, "\"0x%s%lx\"", (neg? "-": ""), x);
+        fprintf(out, "\"%s0x%lx\"", (neg? "-": ""), x);
     }
 }
 

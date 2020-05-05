@@ -37,6 +37,7 @@ bool option_disable_T1     = false;
 bool option_disable_T2     = false;
 bool option_disable_T3     = false;
 bool option_dynamic_loader = false;
+bool option_same_page      = false;
 intptr_t option_lb         = INTPTR_MIN;
 intptr_t option_ub         = INTPTR_MAX;
 int option_aggressiveness  = 100;
@@ -126,6 +127,7 @@ enum Option
     OPTION_DISABLE_T3,
     OPTION_LB,
     OPTION_DYNAMIC_LOADER,
+    OPTION_SAME_PAGE,
     OPTION_UB,
 };
 
@@ -181,6 +183,7 @@ int realMain(int argc, char **argv)
         {"disable-T2",     false, nullptr, OPTION_DISABLE_T2},
         {"disable-T3",     false, nullptr, OPTION_DISABLE_T3},
         {"dynamic-loader", false, nullptr, OPTION_DYNAMIC_LOADER},
+        {"same-page",      false, nullptr, OPTION_SAME_PAGE},
         {"lb",             true,  nullptr, OPTION_LB},
         {"ub",             true,  nullptr, OPTION_UB},
         {nullptr,          false, nullptr, 0}
@@ -218,6 +221,9 @@ int realMain(int argc, char **argv)
                 break;
             case OPTION_DYNAMIC_LOADER:
                 option_dynamic_loader = true;
+                break;
+            case OPTION_SAME_PAGE:
+                option_same_page = true;
                 break;
             case OPTION_LB:
                 option_lb = parseIntOptArg("--lb", optarg, INTPTR_MIN,
@@ -301,66 +307,85 @@ int realMain(int argc, char **argv)
         stat_time * 1000 / CLOCKS_PER_SEC);
     printf("-----------------------------------------------\n");
 
-    return 0;
+    exit(EXIT_SUCCESS);
 }
 
 /*
  * The initial entry point.
+ *
+ * This includes a test-suite for e9test.sh.  The test suite includes some
+ * jumps that are calculated dynamically, which is no problem for e9patch.
  */
-#include <math.h>
-static uintptr_t target;
-int __attribute__((__section__(".text"))) main(int argc, char **argv)
-{
-    asm (
-        "nop\n"
-        "nop\n"
-        "nop\n"
-    );
+asm (
+    /*
+     * Test #2: the jrcxz instruction:
+     */
+    ".Ltest_2:\n"
+    "xor %ecx,%ecx\n"
+    "inc %ecx\n"
+    ".Ljrcx_loop:\n"
+    "jrcxz .Lrcx_is_zero\n"
+    "dec %ecx\n"
+    "jmp .Ljrcx_loop\n"
+    ".Lrcx_is_zero:\n"
+    "jmp .Ltest_3\n"
 
     /*
-     * Test #1: the jrcxz instruction:
+     * Test #1: indirect jump that depends on argc:
      */
-    asm volatile (
-        "xor %ecx,%ecx\n"
-        "inc %ecx\n"
-        ".Ljrcx_loop:\n"
-        "jrcxz .Lrcx_is_zero\n"
-        "dec %ecx\n"
-        "jmp .Ljrcx_loop\n"
-        ".Lrcx_is_zero:\n"
-    );
+    ".Ltest_1:\n"
+    "mov %rdi,%r11\n"
+    "sar $48,%r11\n"
+    "lea (.Ltest_2-777)(%rip),%r10\n"
+    "lea 777(%r10,%r11,8),%r10\n"
+    "push %r10\n"
+    "ret\n"
+    "ud2\n"
 
     /*
-     * Test #2: Dynamically calculated jump target:
+     * Entry point:
      */
-    off_t x;
-    asm volatile (
-        ".Lbase:\n"
-        "leaq .Lbase(%%rip),%0\n"
-        "mov %0,%1\n"
-        "mov $(.Ltarget-.Lbase)*(.Ltarget-.Lbase),%0\n" : "=r"(x),
-            "=m"(target)
-    );
-    float y = (float)x;
-    y = sqrt(y);
-    x = (off_t)y;
-    target += x;
-    asm volatile (
-        "jmp *%0\n"
-        ".Ltarget:\n" : : "m"(target)
-    );
+    ".globl main\n"
+    ".type main,@function\n"
+    "main:\n"
+    "test %rsi,%rsi\n"
+    "jz .Lskip_123\n"
+    "cmp $0xFFFF,%rdi\n"
+    "jb .Lskip_123\n"
+    "jmp .Ltest_1\n"
+    ".Lskip_123:\n"
 
     /*
-     * Test #3: a semi-obsfuscated indirect jump to realMain().
+     * Test #4: a semi-obsfuscated indirect jump to realMain().
      */
-    asm volatile (
-        "movabs $(realMain-main)-0x14159265, %rax\n"
-        "leaq main+0x6b1db77(%rip), %rbp\n"
-        "leaq 0xd63b6ee(%rbp, %rax), %rax\n"
-        "jmpq *%rax\n"
-        "ud2\n"
-    );
+    ".Ltest_4:\n"
+    "nop\n"
+    "nop\n"
+    "nop\n"
+    "nop\n"
+    "nop\n"
+    "nop\n"
+    "movabs $(realMain-main)-0x14159265, %rax\n"
+    "leaq main+0x6b1db77(%rip), %rbp\n"
+    "leaq 0xd63b6ee(%rbp, %rax), %rax\n"
+    "jmpq *%rax\n"
 
-    __builtin_unreachable();
-}
+    /*
+     * Test #3: Dynamically calculated jump target:
+     */
+    ".Ltest_3:\n"
+    "leaq .Ltest_3(%rip),%r10\n"
+    "mov $(.Ltest_3-.Ltest_4)*(.Ltest_3-.Ltest_4),%rax\n"
+    "pxor %xmm0,%xmm0\n"
+    "cvtsi2ss %rax,%xmm0\n"
+    "sqrtss %xmm0,%xmm1\n"
+    "comiss %xmm1,%xmm1\n"
+    "cvttss2si %xmm1,%rax\n"
+    "neg %rax\n"
+    "lea 4(%r10,%rax),%rax\n"
+    "cmp $255,%rax\n"
+    "jle .Lskip\n"
+    "jmp *%rax\n"
+    ".Lskip:\n"
+);
 

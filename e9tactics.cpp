@@ -272,7 +272,7 @@ static const Alloc *allocatePunnedJump(Binary &B, const Instr *I,
     unsigned prefix, const Instr *J, const Trampoline *T)
 {
     auto b = makeBounds(T, I, J, prefix);
-    return allocate(B.allocator, b.lb, b.ub, T, J);
+    return allocate(B.allocator, b.lb, b.ub, T, J, option_same_page);
 }
 
 /*
@@ -736,8 +736,9 @@ bool patch(Binary &B, Instr *I, const Trampoline *T)
     }
 
     debug("patched instruction 0x%lx [size=%zu, tactic=%s, "
-        "trampoline=" ADDRESS_FORMAT "]",
-        I->addr, I->size, getTacticName(P->tactic), ADDRESS(I->trampoline));
+        "trampoline=" ADDRESS_FORMAT ".." ADDRESS_FORMAT "]",
+        I->addr, I->size, getTacticName(P->tactic), ADDRESS(I->trampoline),
+            ADDRESS(I->trampoline + getTrampolineSize(T, I)));
     printf("\33[32m.\33[0m");
     commit(P);
     return true;            // Success!
