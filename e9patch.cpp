@@ -40,7 +40,6 @@ bool option_dynamic_loader = false;
 bool option_same_page      = false;
 intptr_t option_lb         = INTPTR_MIN;
 intptr_t option_ub         = INTPTR_MAX;
-int option_aggressiveness  = 100;
 
 /*
  * Global statistics.
@@ -117,7 +116,6 @@ void debugImpl(const char *msg, ...)
  */
 enum Option
 {
-    OPTION_AGGRESSIVENESS,
     OPTION_DEBUG,
     OPTION_DISABLE_SHRINK,
     OPTION_DISABLE_B1,
@@ -175,7 +173,6 @@ int realMain(int argc, char **argv)
 
     static const struct option long_options[] =
     {
-        {"aggressiveness", true,  nullptr, OPTION_AGGRESSIVENESS},
         {"debug",          false, nullptr, OPTION_DEBUG},
         {"disable-B1",     false, nullptr, OPTION_DISABLE_B1},
         {"disable-B2",     false, nullptr, OPTION_DISABLE_B2},
@@ -197,10 +194,6 @@ int realMain(int argc, char **argv)
             break;
         switch (opt)
         {
-            case OPTION_AGGRESSIVENESS:
-                option_aggressiveness = parseIntOptArg("--aggressiveness",
-                    optarg, 0, 100);
-                break;
             case OPTION_DEBUG:
                 option_debug = true;
                 break;

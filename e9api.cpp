@@ -577,23 +577,17 @@ static void parseTrampoline(Binary *B, const Message &msg)
  */
 static void parseOptions(const Message &msg)
 {
-    int64_t aggressiveness = 0;
     bool disable_B1 = false, disable_B2 = false,
          disable_T1 = false, disable_T2 = false,
          disable_T3 = false;
     bool have_disable_B1 = false, have_disable_B2 = false,
          have_disable_T1 = false, have_disable_T2 = false,
          have_disable_T3 = false;
-    bool have_aggressiveness = false, dup = false;
+    bool dup = false;
     for (unsigned i = 0; i < msg.num_params; i++)
     {
         switch (msg.params[i].name)
         {
-            case PARAM_OPTION_AGGRESSIVENESS:
-                dup = dup || have_aggressiveness;
-                aggressiveness = msg.params[i].value.integer;
-                have_aggressiveness = true;
-                break;
             case PARAM_OPTION_DISABLE_B1:
                 dup = dup || have_disable_B1;
                 disable_B1 = msg.params[i].value.boolean;
@@ -623,16 +617,9 @@ static void parseOptions(const Message &msg)
                 break;
         }
     }
-    if (have_aggressiveness && (aggressiveness < 0 ||
-            aggressiveness > 100))
-        error("failed to parse \"option\" message (id=%u); "
-            "\"aggressiveness\" parameter must be within the range"
-            "0..100", msg.id);
     if (dup)
         error("failed to parse \"option\" message (id=%u); duplicate "
             "parameters detected", msg.id);
-    if (have_aggressiveness)
-        option_aggressiveness = (int)aggressiveness;
     if (have_disable_B1)
         option_disable_B1 = disable_B1;
     if (have_disable_B2)

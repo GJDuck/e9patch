@@ -453,7 +453,6 @@ static bool validateParam(Method method, ParamName paramName)
         case METHOD_OPTION:
             switch (paramName)
             {
-                case PARAM_OPTION_AGGRESSIVENESS:
                 case PARAM_OPTION_DISABLE_B1:
                 case PARAM_OPTION_DISABLE_B2:
                 case PARAM_OPTION_DISABLE_T1:
@@ -936,10 +935,6 @@ static void parseParams(Parser &parser, Message &msg)
                 else if (strcmp(parser.s, "template") == 0)
                     name = PARAM_TEMPLATE;
                 break;
-            case 'v':
-                if (strcmp(parser.s, "aggressiveness") == 0)
-                    name = PARAM_OPTION_AGGRESSIVENESS;
-                break;
         }
         expectToken(parser, ':');
         if (!validateParam(msg.method, name))
@@ -956,7 +951,6 @@ static void parseParams(Parser &parser, Message &msg)
                 case PARAM_INIT:
                 case PARAM_MMAP:
                 case PARAM_MAPPING_SIZE:
-                case PARAM_OPTION_AGGRESSIVENESS:
                     token = expectToken2(parser, TOKEN_NUMBER, TOKEN_STRING);
                     if (token == TOKEN_NUMBER)
                         value.integer = (intptr_t)parser.i;

@@ -35,8 +35,6 @@
 #define BLACK       0       // RB-tree black
 #define RED         1       // RB-tree red
 
-#define MIN_SIZE    /*sizeof(jmpq)=*/5
-
 /*
  * Interval tree node.
  */
@@ -44,7 +42,7 @@ struct Node
 {
     Alloc alloc;            // Allocation
     RB_ENTRY(Node) entry;   // RB-tree entry
-    uint64_t full:63;       // Number of allocation bytes in (ub - lb)
+    uint64_t gap:63;        // Largest free gap in sub-tree (ub - lb)
     uint64_t color:1;       // RB-tree node color
     intptr_t lb;            // tree lower bound
     intptr_t ub;            // tree upper bound
@@ -74,9 +72,12 @@ static void fix(Node *n)
     intptr_t rub = (r != nullptr? r->ub: INTPTR_MIN);
     n->lb = std::min(llb, n->alloc.lb);
     n->ub = std::max(rub, n->alloc.ub);
-    uint64_t lfull = (l == nullptr? 0: l->full);
-    uint64_t rfull = (r == nullptr? 0: r->full);
-    n->full = (n->alloc.ub - n->alloc.lb) + lfull + rfull;
+    uint64_t lgap = (l == nullptr? 0: l->gap);
+    uint64_t rgap = (r == nullptr? 0: r->gap);
+    uint64_t gap  = std::max(lgap, rgap);
+    gap = std::max(gap, (uint64_t)(l == nullptr? 0: n->alloc.lb - l->ub));
+    gap = std::max(gap, (uint64_t)(r == nullptr? 0: r->lb - n->alloc.ub));
+    n->gap = gap;
 }
 
 /*
@@ -156,7 +157,7 @@ static Node *node(Node *parent, intptr_t lb, intptr_t ub, size_t size,
     n->entry.left   = nullptr;
     n->entry.right  = nullptr;
     n->color        = RB_RED;
-    n->full         = size;
+    n->gap          = 0;
     return n;
 }
 
@@ -210,42 +211,19 @@ static Node *insert(Node *root, intptr_t lb, intptr_t ub, size_t size,
         return node(nullptr, lb, ub, size, flags);
 
     Node *n = nullptr;
-    if (n == nullptr && ub <= root->lb)
-        n = insertLeftChild(root, lb, ub, size, flags);
-    if (n == nullptr && lb >= root->ub)
-        n = insertRightChild(root, lb, ub, size, flags);
-    if (n == nullptr && lb < root->lb && ub > root->lb)
-        n = insertLeftChild(root, lb, root->lb, size, flags);
-    if (n == nullptr && ub > root->ub && lb < root->ub)
-        n = insertRightChild(root, root->ub, ub, size, flags);
-    if (n == nullptr)
+    if (size <= root->gap)
     {
-        uint64_t range = (uint64_t)root->ub - (uint64_t)root->lb;
-        uint64_t full  = root->full;
-        bool internal  = (range - full >= size);
-        if (internal)
-        {
-            // As an optimization, we may only explore one branch if the node
-            // is too full:
-            bool once = (range >= UINT32_MAX? false:
-                100 * full >= option_aggressiveness * range);
-
-            if ((flags & FLAG_LB) != 0 || (flags & FLAG_UB) != 0)
-            {
-                if (n == nullptr && internal)
-                    n = insertLeftChild(root, lb, ub, size, flags);
-                if (n == nullptr && internal && !once)
-                    n = insertRightChild(root, lb, ub, size, flags);
-            }
-            else
-            {
-                if (n == nullptr && internal)
-                    n = insertRightChild(root, lb, ub, size, flags);
-                if (n == nullptr && internal && !once)
-                    n = insertLeftChild(root, lb, ub, size, flags);
-            }
-        }
+        intptr_t rlb = std::max(lb, root->lb);
+        intptr_t rub = std::min(ub, root->ub);
+        if (n == nullptr)
+            n = insertRightChild(root, rlb, rub, size, flags);
+        if (n == nullptr)
+            n = insertLeftChild(root, rlb, rub, size, flags);
     }
+    if (n == nullptr && ub > root->ub)
+        n = insertRightChild(root, std::max(lb, root->ub), ub, size, flags);
+    if (n == nullptr && lb < root->lb)
+        n = insertLeftChild(root, lb, std::min(ub, root->lb), size, flags);
 
     if (n != nullptr)
         fix(root);
