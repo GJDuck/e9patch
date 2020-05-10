@@ -208,7 +208,6 @@ static void parseInstruction(Binary *B, const Message &msg)
     intptr_t address = 0;
     size_t   length  = 0;
     off_t    offset  = 0;
-    Metadata *meta   = nullptr;
     bool have_address = false, have_length = false, have_offset = false,
         dup = false;
     for (unsigned i = 0; i < msg.num_params; i++)
@@ -229,10 +228,6 @@ static void parseInstruction(Binary *B, const Message &msg)
                 dup = dup || have_offset;
                 offset = (off_t)msg.params[i].value.integer;
                 have_offset = true;
-                break;
-            case PARAM_METADATA:
-                dup = dup || (meta != nullptr);
-                meta = msg.params[i].value.metadata;
                 break;
             default:
                 break;
@@ -273,8 +268,8 @@ static void parseInstruction(Binary *B, const Message &msg)
             pcrel32_idx = pcrel_idx;    // Must be pcrel32
     }
     Instr *I = new Instr(offset, address, length, B->original.bytes + offset,
-        B->patched.bytes + offset, B->patched.state + offset, meta,
-        pcrel32_idx, pcrel8_idx, B->elf.pic);
+        B->patched.bytes + offset, B->patched.state + offset, pcrel32_idx,
+        pcrel8_idx, B->elf.pic);
     insertInstruction(B, I);
 }
 
@@ -285,6 +280,7 @@ static void parsePatch(Binary *B, const Message &msg)
 {
     const char *trampoline = nullptr;
     off_t offset = 0;
+    Metadata *meta = nullptr;
     bool have_offset = false, dup = false;
     for (unsigned i = 0; i < msg.num_params; i++)
     {
@@ -298,6 +294,10 @@ static void parsePatch(Binary *B, const Message &msg)
                 dup = dup || have_offset;
                 offset = (off_t)msg.params[i].value.integer;
                 have_offset = true;
+                break;
+            case PARAM_METADATA:
+                dup = dup || (meta != nullptr);
+                meta = msg.params[i].value.metadata;
                 break;
             default:
                 break;
@@ -318,6 +318,7 @@ static void parsePatch(Binary *B, const Message &msg)
         error("failed to parse \"patch\" message (id=%u); no matching "
             "instruction at offset (%zd)", msg.id, offset);
     Instr *I = i->second;
+    I->metadata = meta;
 
     auto j = B->Ts.find(trampoline);
     if (j == B->Ts.end())

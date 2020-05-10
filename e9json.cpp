@@ -403,7 +403,6 @@ static bool validateParam(Method method, ParamName paramName)
                 case PARAM_ADDRESS:
                 case PARAM_LENGTH:
                 case PARAM_OFFSET:
-                case PARAM_METADATA:
                     return true;
                 default:
                     return false;
@@ -411,6 +410,7 @@ static bool validateParam(Method method, ParamName paramName)
         case METHOD_PATCH:
             switch (paramName)
             {
+                case PARAM_METADATA:
                 case PARAM_OFFSET:
                 case PARAM_TRAMPOLINE:
                     return true;

@@ -44,6 +44,8 @@
 
 #define PAGE_SIZE       4096
 
+#define MAX_ACTIONS     (1 << 10)
+
 #include "e9frontend.cpp"
 
 /*
@@ -55,6 +57,24 @@ static bool option_debug     = false;
 static std::string option_format("binary");
 static std::string option_output("a.out");
 static std::string option_syntax("att");
+
+/*
+ * Instruction location.
+ */
+struct Location
+{
+    const uint64_t offset:48;
+    const uint64_t size:4;
+    uint64_t       emitted:1;
+    const uint64_t patch:1;
+    const uint64_t action:10;
+
+    Location(off_t offset, size_t size, bool patch, unsigned action) :
+        offset(offset), size(size), emitted(0), patch(patch), action(action)
+    {
+        ;
+    }
+};
 
 /*
  * C-string comparator.
@@ -714,9 +734,31 @@ static bool matchAction(csh handle, const Action *action, const cs_insn *I,
 }
 
 /*
+ * Send an instruction message (if necessary).
+ */
+static bool sendInstructionMessage(FILE *out, Location &loc, intptr_t addr,
+    intptr_t text_addr, off_t text_offset)
+{
+    if (std::abs((intptr_t)(text_addr + loc.offset) - addr) >
+            INT8_MAX + /*sizeof(short jmp)=*/2 + /*max instruction size=*/15)
+        return false;
+
+    if (loc.emitted)
+        return true;
+    loc.emitted = true;
+
+    addr = text_addr + loc.offset;
+    off_t offset = text_offset + loc.offset;
+    size_t size = loc.size;
+
+    sendInstructionMessage(out, addr, size, offset);
+    return true;
+}
+
+/*
  * Build the ASM string of the given instruction.
  */
-static char *buildAsmStr(char *buf, size_t len, const cs_insn *I,
+static void buildAsmStr(char *buf, size_t len, const cs_insn *I,
     bool newline = false)
 {
     unsigned i;
@@ -732,50 +774,25 @@ static char *buildAsmStr(char *buf, size_t len, const cs_insn *I,
         buf[i++] = '\0';
     else
         buf[len] = '\0';
-
-    return buf;
 }
 
 /*
- * Send an instruction message (if necessary).
+ * Build metadata.
  */
-static bool sendInstructionMessage(FILE *out, bool *emitted,
-    const Actions &actions, const cs_insn *Is, size_t i, size_t j,
-    intptr_t text_addr, off_t text_offset)
+static Metadata *buildMetadata(const Action *action, const cs_insn *J,
+    Metadata *metadata, char *asm_str, size_t asm_str_len)
 {
-    const cs_insn *I = Is + i, *J = Is + j;
-    if (std::abs((intptr_t)J->address - (intptr_t)I->address) >
-            INT8_MAX + /*sizeof(short jmp)=*/2 + /*max instruction size=*/15)
-        return false;
-
-    if (emitted[j])
-        return true;
-    emitted[j] = true;
-    
-    off_t offset = (off_t)(J->address - text_addr) + text_offset;
-    
-    auto p = actions.find(j);
-    const Action *action = nullptr;
-    if (p != actions.end())
-        action = p->second;
-
     if (action == nullptr || action->kind == ACTION_PASSTHRU ||
             action->kind == ACTION_TRAP ||
             (action->kind == ACTION_CALL && action->args.size() == 0))
     {
-        sendInstructionMessage(out, J, offset, nullptr);
-        return true;
+        return nullptr;
     }
-    
-    Metadata metadata[MAX_ARGNO+1];
-    char asm_str_buf[256];
-    char *asm_str = nullptr;
 
     switch (action->kind)
     {
         case ACTION_PRINT:
-            asm_str = buildAsmStr(asm_str_buf, sizeof(asm_str_buf)-1,
-                J, /*newline=*/true);
+            buildAsmStr(asm_str, asm_str_len, J, /*newline=*/true);
 
             metadata[0].name   = "$asmStr";
             metadata[0].kind   = METADATA_STRING;
@@ -792,6 +809,7 @@ static bool sendInstructionMessage(FILE *out, bool *emitted,
 
         case ACTION_CALL:
         {
+            bool asm_str_inited = false;
             unsigned i = 0;
             for (auto arg: action->args)
             {
@@ -799,16 +817,16 @@ static bool sendInstructionMessage(FILE *out, bool *emitted,
                 switch (arg)
                 {
                     case ARGUMENT_ASM_STR:
-                        asm_str = (asm_str == nullptr?
-                            buildAsmStr(asm_str_buf, sizeof(asm_str_buf)-1, J):
-                            asm_str);
+                        if (!asm_str_inited)
+                            buildAsmStr(asm_str, asm_str_len, J);
+                        asm_str_inited = true;
                         metadata[i].kind   = METADATA_STRING;
                         metadata[i].string = asm_str;
                         break;
                     case ARGUMENT_ASM_STR_LEN:
-                        asm_str = (asm_str == nullptr?
-                            buildAsmStr(asm_str_buf, sizeof(asm_str_buf)-1, J):
-                            asm_str);
+                        if (!asm_str_inited)
+                            buildAsmStr(asm_str, asm_str_len, J);
+                        asm_str_inited = true;
                         metadata[i].kind   = METADATA_INT32;
                         metadata[i].int32  = strlen(asm_str);
                         break;
@@ -837,8 +855,7 @@ static bool sendInstructionMessage(FILE *out, bool *emitted,
             break;
     }
     
-    sendInstructionMessage(out, J, offset, metadata);
-    return true;
+    return metadata;
 }
 
 /*
@@ -1246,6 +1263,9 @@ int main(int argc, char **argv)
         error("missing input file; try `--help' for more information");
         return EXIT_FAILURE;
     }
+    if (option_actions.size() > MAX_ACTIONS)
+        error("too many actions (%zu); the maximum is %zu",
+            option_actions.size(), MAX_ACTIONS);
 
     /*
      * Parse the ELF file.
@@ -1362,55 +1382,67 @@ int main(int argc, char **argv)
     /*
      * Disassemble the ELF file.
      */
-    cs_insn *Is = nullptr;
     csh handle;
     cs_err err = cs_open(CS_ARCH_X86, CS_MODE_64, &handle);
     if (err != 0)
         error("failed to open capstone handle (err = %u)", err);
-    size_t count = disassembleELF(handle, option_detail,
-        (option_syntax == "intel"), elf, &Is);
-    intptr_t start = elf.text_addr, end = elf.text_addr;
-    if (count > 0)
-        end = Is[count-1].address + Is[count-1].size;
-    if (end != elf.text_addr + (ssize_t)elf.text_size)
-        error("failed to disassemble the full (.text) section 0x%lx..0x%lx; "
-            "could only disassemble the range 0x%lx..0x%lx",
-            elf.text_addr, elf.text_addr + elf.text_size, start, end);
+    if (option_detail)
+        cs_option(handle, CS_OPT_DETAIL, CS_OPT_ON);
+    if (option_syntax != "intel")
+        cs_option(handle, CS_OPT_SYNTAX, CS_OPT_SYNTAX_ATT);
+    cs_option(handle, CS_OPT_SKIPDATA, CS_OPT_ON);
 
-    /*
-     * Find all instructions that need to be patched.
-     */
-    bool *emitted = new bool[count];
-    memset(emitted, false, count * sizeof(bool));
-    Actions actions;
+    std::vector<Location> locs;
+    const uint8_t *start = elf.data + elf.text_offset;
+    const uint8_t *code  = start, *end = start + elf.text_size;
+    size_t size = elf.text_size;
+    uint64_t address = elf.text_addr;
+    cs_insn *I = cs_malloc(handle);
     bool failed = false;
-    for (size_t i = 0; i < count; i++)
+    unsigned sync = 0;
+    while (cs_disasm_iter(handle, &code, &size, &address, I))
     {
-        const cs_insn *I = Is + i;
+        if (sync > 0)
+        {
+            sync--;
+            continue;
+        }
         if (I->mnemonic[0] == '.')
         {
             warning("failed to disassemble (%s %s) at address 0x%lx",
                 I->mnemonic, I->op_str, I->address);
             failed = true;
-            i += (option_sync >= 0? option_sync: 0);
+            sync = option_sync;
             continue;
         }
+
+        bool patch = false;
+        unsigned index = 0;
         for (const auto action: option_actions)
         {
             if (matchAction(handle, action, I, elf.text_addr, elf.text_offset))
             {
-                actions.insert(std::make_pair(i, action));
+                patch = true;
                 break;
             }
+            index++;
         }
+
+        off_t offset = ((intptr_t)I->address - elf.text_addr);
+        Location loc(offset, I->size, patch, index);
+        locs.push_back(loc);
     }
-    cs_close(&handle);
+    if (code != end)
+        error("failed to disassemble the full (.text) section 0x%lx..0x%lx; "
+            "could only disassemble the range 0x%lx..0x%lx",
+            elf.text_addr, elf.text_addr + elf.text_size, elf.text_addr,
+                elf.text_addr + (code - start));
     if (failed)
     {
         if (option_sync < 0)
             error("failed to disassemble the .text section of \"%s\"; "
                 "this may be caused by (1) data in the .text section, or (2) "
-                "bugs in the third party disassembler (capstone)", filename);
+                "a bug in the third party disassembler (capstone)", filename);
         else
             warning("failed to disassemble the .text section of \"%s\"; "
                 "the rewritten binary may be corrupt", filename);
@@ -1419,24 +1451,43 @@ int main(int argc, char **argv)
     /*
      * Send instructions & patches.  Note: this MUST be done in reverse!
      */
-    for (auto r = actions.rbegin(), rend = actions.rend(); r != rend; ++r)
+    size_t count = locs.size();
+    for (ssize_t i = (ssize_t)count - 1; i >= 0; i--)
     {
-        size_t i = r->first;
-        const Action *action = r->second;
+        Location &loc = locs[i];
+        if (!loc.patch)
+            continue;
+
+        off_t offset = (off_t)loc.offset;
+        intptr_t addr = elf.text_addr + offset;
+        offset += elf.text_offset;
+
+        // Disassmble the instruction again.
+        const uint8_t *code = elf.data + offset;
+        uint64_t address = (uint64_t)addr;
+        size_t size = loc.size;
+        bool ok = cs_disasm_iter(handle, &code, &size, &address, I);
+        if (!ok)
+            error("failed to disassemble instruction at address 0x%lx", addr);
 
         bool done = false;
         for (ssize_t j = i; !done && j >= 0; j--)
-            done = !sendInstructionMessage(backend.out, emitted, actions, Is,
-                i, (size_t)j, elf.text_addr, elf.text_offset);
+            done = !sendInstructionMessage(backend.out, locs[j], addr,
+                elf.text_addr, elf.text_offset);
         done = false;
         for (size_t j = i + 1; !done && j < count; j++)
-            done = !sendInstructionMessage(backend.out, emitted, actions, Is,
-                i, j, elf.text_addr, elf.text_offset);
+            done = !sendInstructionMessage(backend.out, locs[j], addr,
+                elf.text_addr, elf.text_offset);
 
-        const cs_insn *I = Is + i;
-        off_t offset = (off_t)(I->address - elf.text_addr) + elf.text_offset;
-        sendPatchMessage(backend.out, action->name, offset);
+        const Action *action = option_actions[loc.action];
+        char asm_str_buf[256];
+        Metadata metadata_buf[MAX_ARGNO+1];
+        Metadata *metadata = buildMetadata(action, I, metadata_buf,
+            asm_str_buf, sizeof(asm_str_buf)-1);
+        sendPatchMessage(backend.out, action->name, offset, metadata);
     }
+    cs_free(I, 1);
+    cs_close(&handle);
 
     /*
      * Emit the final binary/patch file.

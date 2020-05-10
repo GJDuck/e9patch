@@ -206,15 +206,15 @@ struct Instr
 
     } patched;
 
-    const Metadata * const metadata;    // The instruction metadata.
+    const Metadata *metadata = nullptr; // The instruction metadata.
     Instr *prev = nullptr;              // The previous instruction.
     Instr *next = nullptr;              // The next instruction.
 
     Instr(off_t offset, intptr_t addr, size_t size, const uint8_t *original,
-            uint8_t *bytes, uint8_t *state, Metadata *meta, 
-            size_t pcrel32_idx, size_t pcrel8_idx, bool pic) :
+            uint8_t *bytes, uint8_t *state,  size_t pcrel32_idx,
+            size_t pcrel8_idx, bool pic) :
         offset((size_t)offset), addr(addr), size(size), original(original),
-        patched(bytes, state), metadata(meta), pcrel32_idx(pcrel32_idx),
+        patched(bytes, state), pcrel32_idx(pcrel32_idx),
         pcrel8_idx(pcrel8_idx), pic(pic)
     {
         ;

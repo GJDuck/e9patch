@@ -1,7 +1,7 @@
 #CC=clang
 #CXX=clang++
 
-CXXFLAGS = -std=c++11 -Wall -Wno-reorder -fPIC -pie -ffast-math
+CXXFLAGS = -std=c++11 -Wall -Wno-reorder -fPIC -pie
 
 OBJS=\
     e9alloc.o \

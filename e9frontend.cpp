@@ -39,9 +39,6 @@
 
 #include <elf.h>
 
-#include <capstone/platform.h>
-#include <capstone/capstone.h>
-
 #define NO_RETURN       __attribute__((__noreturn__))
 
 #define MAX_ARGNO       6
@@ -334,10 +331,32 @@ static unsigned sendBinaryMessage(FILE *out, const char *mode, const char *filen
 /*
  * Send an "instruction" message.
  */
-static unsigned sendInstructionMessage(FILE *out, const cs_insn *I,
-    off_t offset, const Metadata *metadata = nullptr)
+static unsigned sendInstructionMessage(FILE *out, intptr_t addr,
+    size_t size, off_t offset)
 {
     sendMessageHeader(out, "instruction");
+    sendParamHeader(out, "address");
+    sendInteger(out, addr);
+    sendSeparator(out);
+    sendParamHeader(out, "length");
+    sendInteger(out, (intptr_t)size);
+    sendSeparator(out);
+    sendParamHeader(out, "offset");
+    sendInteger(out, (intptr_t)offset);
+    sendSeparator(out, /*last=*/true);
+    return sendMessageFooter(out);
+}
+
+/*
+ * Send a "patch" message.
+ */
+static unsigned sendPatchMessage(FILE *out, const char *trampoline,
+    off_t offset, const Metadata *metadata = nullptr)
+{
+    sendMessageHeader(out, "patch");
+    sendParamHeader(out, "trampoline");
+    sendString(out, trampoline);
+    sendSeparator(out);
     if (metadata != nullptr)
     {
         sendParamHeader(out, "metadata");
@@ -386,28 +405,6 @@ static unsigned sendInstructionMessage(FILE *out, const cs_insn *I,
         sendMetadataFooter(out);
         sendSeparator(out);
     }
-    sendParamHeader(out, "address");
-    sendInteger(out, (intptr_t)I->address);
-    sendSeparator(out);
-    sendParamHeader(out, "length");
-    sendInteger(out, (intptr_t)I->size);
-    sendSeparator(out);
-    sendParamHeader(out, "offset");
-    sendInteger(out, (intptr_t)offset);
-    sendSeparator(out, /*last=*/true);
-    return sendMessageFooter(out);
-}
-
-/*
- * Send a "patch" message.
- */
-static unsigned sendPatchMessage(FILE *out, const char *trampoline,
-    off_t offset)
-{
-    sendMessageHeader(out, "patch");
-    sendParamHeader(out, "trampoline");
-    sendString(out, trampoline);
-    sendSeparator(out);
     sendParamHeader(out, "offset");
     sendInteger(out, (intptr_t)offset);
     sendSeparator(out, /*last=*/true);
@@ -1439,30 +1436,6 @@ static const char *getArgumentName(Argument arg)
         default:
             return "???";
     }
-}
-
-/*
- * Disassemble the ELF file.
- */
-static size_t disassembleELF(csh handle, bool detail, bool intel,
-    const ELF &elf, cs_insn **Is)
-{
-    if (elf.text_size == 0)
-        return 0;
-
-    if (detail)
-        cs_option(handle, CS_OPT_DETAIL, CS_OPT_ON);
-    if (!intel)
-        cs_option(handle, CS_OPT_SYNTAX, CS_OPT_SYNTAX_ATT);
-    cs_option(handle, CS_OPT_SKIPDATA, CS_OPT_ON);
-
-    const uint8_t *code = elf.data + elf.text_offset;
-    size_t count = cs_disasm(handle, code, elf.text_size,
-        (uint64_t)elf.text_addr, 0, Is);
-    if (count == 0)
-        error("failed to disassemble ELF file \"%s\"", elf.filename);
-
-    return count;
 }
 
 /*
