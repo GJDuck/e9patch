@@ -181,7 +181,7 @@ static size_t emitRefactoredPatch(const uint8_t *original, uint8_t *data,
     size_t size, size_t mapping_size, const InstrSet &Is,
     RefactorSet &refactors)
 {
-    if (!option_dynamic_loader)
+    if (option_static_loader)
         return 0;
 
     assert(size % PAGE_SIZE == 0);

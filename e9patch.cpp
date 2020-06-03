@@ -29,17 +29,17 @@
 /*
  * Global options.
  */
-bool option_is_tty         = false;
-bool option_debug          = false;
-bool option_disable_B1     = false;
-bool option_disable_B2     = false;
-bool option_disable_T1     = false;
-bool option_disable_T2     = false;
-bool option_disable_T3     = false;
-bool option_dynamic_loader = false;
-bool option_same_page      = false;
-intptr_t option_lb         = INTPTR_MIN;
-intptr_t option_ub         = INTPTR_MAX;
+bool option_is_tty        = false;
+bool option_debug         = false;
+bool option_disable_B1    = false;
+bool option_disable_B2    = false;
+bool option_disable_T1    = false;
+bool option_disable_T2    = false;
+bool option_disable_T3    = false;
+bool option_static_loader = false;
+bool option_same_page     = false;
+intptr_t option_lb        = INTPTR_MIN;
+intptr_t option_ub        = INTPTR_MAX;
 
 /*
  * Global statistics.
@@ -123,9 +123,12 @@ enum Option
     OPTION_DISABLE_T1,
     OPTION_DISABLE_T2,
     OPTION_DISABLE_T3,
+    OPTION_HELP,
+    OPTION_INPUT,
     OPTION_LB,
-    OPTION_DYNAMIC_LOADER,
+    OPTION_OUTPUT,
     OPTION_SAME_PAGE,
+    OPTION_STATIC_LOADER,
     OPTION_UB,
 };
 
@@ -155,6 +158,52 @@ static intptr_t parseIntOptArg(const char *option, const char *optarg,
 }
 
 /*
+ * Usage.
+ */
+static void usage(FILE *stream, const char *progname)
+{
+    fprintf(stream, "usage: %s [OPTIONS]\n\n", progname);
+    fputs("OPTIONS:\n", stream);
+    fputs("\t--debug\n", stream);
+    fputs("\t\tEnable debug log messages.\n", stream);
+    fputc('\n', stream);
+    fputs("\t--disable-B1, --disable-B2, --disable-T1, --disable-T2 "
+        "--disable-T3\n", stream);
+    fputs("\t\tDisable the corresponding tactic (B1/B2/T1/T2/T3).\n",
+        stream);
+    fputc('\n', stream);
+    fputs("\t--help, -h\n", stream);
+    fputs("\t\tPrint this help message.\n", stream);
+    fputc('\n', stream);
+    fputs("\t--input FILE, -i FILE\n", stream);
+    fputs("\t\tRead input from FILE instead of stdin.\n", stream);
+    fputc('\n', stream);
+    fputs("\t--lb LB\n", stream);
+    fputs("\t\tSet LB to be the minimum allowable trampoline address.\n",
+        stream);
+    fputc('\n', stream);
+    fputs("\t--output FILE, -o FILE\n", stream);
+    fputs("\t\tWrite output to FILE instead of stdout.\n", stream);
+    fputc('\n', stream);
+    fputs("\t--same-page\n", stream);
+    fputs("\t\tDisallow trampolines from crossing page boundaries.\n", stream);
+    fputc('\n', stream);
+    fputs("\t--static-loader\n", stream);
+    fputs("\t\tReplace patched pages statically.  By default, patched "
+        "pages\n", stream);
+    fputs("\t\tare loaded during program initialization as this is more\n",
+        stream);
+    fputs("\t\treliable for large/complex binaries.  However, this may "
+        "bloat\n", stream);
+    fputs("\t\tthe size of the output patched binary.\n", stream);
+    fputc('\n', stream);
+    fputs("\t--ub UB\n", stream);
+    fputs("\t\tSet UB to be the maximum allowable trampoline address.\n",
+        stream);
+    fputc('\n', stream);
+}
+
+/*
  * The real entry point.
  */
 extern "C"
@@ -173,23 +222,27 @@ int realMain(int argc, char **argv)
 
     static const struct option long_options[] =
     {
-        {"debug",          false, nullptr, OPTION_DEBUG},
-        {"disable-B1",     false, nullptr, OPTION_DISABLE_B1},
-        {"disable-B2",     false, nullptr, OPTION_DISABLE_B2},
-        {"disable-T1",     false, nullptr, OPTION_DISABLE_T1},
-        {"disable-T2",     false, nullptr, OPTION_DISABLE_T2},
-        {"disable-T3",     false, nullptr, OPTION_DISABLE_T3},
-        {"dynamic-loader", false, nullptr, OPTION_DYNAMIC_LOADER},
-        {"same-page",      false, nullptr, OPTION_SAME_PAGE},
-        {"lb",             true,  nullptr, OPTION_LB},
-        {"ub",             true,  nullptr, OPTION_UB},
-        {nullptr,          false, nullptr, 0}
+        {"debug",         false, nullptr, OPTION_DEBUG},
+        {"disable-B1",    false, nullptr, OPTION_DISABLE_B1},
+        {"disable-B2",    false, nullptr, OPTION_DISABLE_B2},
+        {"disable-T1",    false, nullptr, OPTION_DISABLE_T1},
+        {"disable-T2",    false, nullptr, OPTION_DISABLE_T2},
+        {"disable-T3",    false, nullptr, OPTION_DISABLE_T3},
+        {"help",          false, nullptr, OPTION_HELP},
+        {"input",         true,  nullptr, OPTION_INPUT},
+        {"lb",            true,  nullptr, OPTION_LB},
+        {"output",        true,  nullptr, OPTION_OUTPUT},
+        {"same-page",     false, nullptr, OPTION_SAME_PAGE},
+        {"static-loader", false, nullptr, OPTION_STATIC_LOADER},
+        {"ub",            true,  nullptr, OPTION_UB},
+        {nullptr,         false, nullptr, 0}
     };
 
+    std::string option_input("-"), option_output("-");
     while (true)
     {
         int idx;
-        int opt = getopt_long(argc, argv, "", long_options, &idx);
+        int opt = getopt_long(argc, argv, "hi:o:", long_options, &idx);
         if (opt < 0)
             break;
         switch (opt)
@@ -212,11 +265,23 @@ int realMain(int argc, char **argv)
             case OPTION_DISABLE_T3:
                 option_disable_T3 = true;
                 break;
-            case OPTION_DYNAMIC_LOADER:
-                option_dynamic_loader = true;
+            case 'h':
+            case OPTION_HELP:
+                usage(stdout, argv[0]);
+                return EXIT_SUCCESS;
+            case 'i':
+            case OPTION_INPUT:
+                option_input = optarg;
+                break;
+            case 'o':
+            case OPTION_OUTPUT:
+                option_output = optarg;
                 break;
             case OPTION_SAME_PAGE:
                 option_same_page = true;
+                break;
+            case OPTION_STATIC_LOADER:
+                option_static_loader = true;
                 break;
             case OPTION_LB:
                 option_lb = parseIntOptArg("--lb", optarg, INTPTR_MIN,
@@ -227,10 +292,25 @@ int realMain(int argc, char **argv)
                     INTPTR_MAX);
                 break;
             default:
-                error("failed to parse command-line options");
+                error("failed to parse command-line options; try `--help' "
+                    "for more information");
         }
     }
 
+    if (option_input != "-")
+    {
+        FILE *input = freopen(option_input.c_str(), "r", stdin);
+        if (input == nullptr)
+            error("failed to open file \"%s\" for reading: %s",
+                option_input.c_str(), strerror(errno));
+    }
+    if (option_output != "-")
+    {
+        FILE *output = freopen(option_output.c_str(), "w", stdout);
+        if (output == nullptr)
+            error("failed to open file \"%s\" for writing: %s",
+                option_output.c_str(), strerror(errno));
+    }
     if (isatty(STDIN_FILENO))
         warning("reading JSON-RPC from a terminal (this is probably not "
             "what you want, please use an E9PATCH frontend instead!)");

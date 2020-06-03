@@ -1278,8 +1278,8 @@ int main(int argc, char **argv)
      * The ELF file seems OK, spawn and initialize the e9patch backend.
      */
     Backend backend;
-    if (!option_static_loader)
-        option_options.push_back(strDup("--dynamic-loader"));
+    if (option_static_loader)
+        option_options.push_back(strDup("--static-loader"));
     if (option_format == "json")
     {
         // Pseudo-backend:
