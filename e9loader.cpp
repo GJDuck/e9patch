@@ -343,44 +343,49 @@ static NO_INLINE int e9binary(char *path_buf)
     if (fd < 0)
         return fd;
     uint8_t buf[BUFSIZ];
-    int len = e9getdents64(fd, (struct linux_dirent64 *)buf, BUFSIZ);
-    e9close(fd);
-    if (len < 0)
-        return len;
 
     // Step (2): Search for an entry corresponding to the enclosing function.
     intptr_t code = (intptr_t)&e9binary;
     bool found = false;
-    for (int i = 0; !found && i < len; )
+    while (!found)
     {
-        struct linux_dirent64 *entry = (struct linux_dirent64 *)(buf + i);
-        i += entry->d_reclen;
-        if (entry->d_type != DT_LNK)
-            continue;
-        const char *name = entry->d_name;
-        intptr_t lo = e9hexstr2num(&name);
-        if (code < lo)
-            continue;
-        intptr_t hi = e9hexstr2num(&name);
-        if (code <= hi)
+        int len = e9getdents64(fd, (struct linux_dirent64 *)buf, sizeof(buf));
+        if (len < 0)
         {
-            int j;
-            for (j = 0; mapsname[j] != '\0'; j++)
-                path_buf[j] = mapsname[j];
-            name = entry->d_name;
-            for (int k = 0; name[k] != '\0'; k++)
-                path_buf[j++] = name[k];
-            path_buf[j] = '\0';
-            found = true;
+            e9close(fd);
+            return len;
+        }
+
+        for (int i = 0; !found && i < len; )
+        {
+            struct linux_dirent64 *entry = (struct linux_dirent64 *)(buf + i);
+            i += entry->d_reclen;
+            if (entry->d_type != DT_LNK)
+                continue;
+
+            const char *name = entry->d_name;
+            intptr_t lo = e9hexstr2num(&name);
+            if (code < lo)
+                continue;
+            intptr_t hi = e9hexstr2num(&name);
+            if (code <= hi)
+            {
+                int j;
+                for (j = 0; mapsname[j] != '\0'; j++)
+                    path_buf[j] = mapsname[j];
+                name = entry->d_name;
+                for (int k = 0; name[k] != '\0'; k++)
+                    path_buf[j++] = name[k];
+                path_buf[j] = '\0';
+                found = true;
+            }
         }
     }
-    if (!found)
-        return ENOENT;
 
     // Step (3): Read the link.
     // Note: this is necessary since Linux does not allow the path to be
     //       opened directy.
-    len = e9readlink(path_buf, path_buf, BUFSIZ);
+    int len = e9readlink(path_buf, path_buf, BUFSIZ);
     if (len < 0)
         return len;
     path_buf[len] = '\0';
