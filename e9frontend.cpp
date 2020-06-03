@@ -659,7 +659,7 @@ static void parseELF(const char *filename, ELF &elf)
     if (ehdr->e_machine != EM_X86_64)
         error("failed to parse ELF file \"%s\"; file is not x86_64",
             filename);
-    if (ehdr->e_phoff < sizeof(Elf64_Ehdr))
+    if (ehdr->e_phoff < sizeof(Elf64_Ehdr) || ehdr->e_phoff >= size)
         error("failed to parse ELF file \"%s\"; invalid program header "
             "offset", filename);
     if (ehdr->e_phnum > PN_XNUM)

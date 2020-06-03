@@ -252,7 +252,7 @@ static void parseInstruction(Binary *B, const Message &msg)
         error("failed to parse \"instruction\" message (id=%u); the "
             "instruction offset+length (%zd+%zu) overflows "
             "the end-of-file \"%s\" (with size %zu)", msg.id, offset, length,
-            B->size, B->filename);
+            B->filename, B->size);
     if (dup)
         error("failed to parse \"instruction\" message (id=%u); duplicate "
             "parameters detected", msg.id);
