@@ -154,13 +154,15 @@ struct Action
     std::vector<Argument> args;
     bool clean;
     bool before;
+    bool replace;
 
     Action(ActionEntries &&entries, ActionKind kind, const char *name, 
             const char *filename, const char *symbol,
-            const std::vector<Argument> &&args,  bool clean, bool before) :
+            const std::vector<Argument> &&args,  bool clean, bool before,
+            bool replace) :
         entries(std::move(entries)), kind(kind), name(name),
             filename(filename), symbol(symbol), args(args), clean(clean),
-            before(before)
+            before(before), replace(replace)
     {
         ;
     }
@@ -339,7 +341,7 @@ static Action *parseAction(const char *str)
 
     // Step (5): parse call (if necessary):
     bool option_clean = false, option_naked = false, option_before = false,
-         option_after = false;
+         option_after = false, option_replace = false;
     const char *symbol   = nullptr;
     const char *filename = nullptr;
     std::vector<Argument> args;
@@ -369,6 +371,10 @@ static Action *parseAction(const char *str)
                     case 'n':
                         if (strcmp(parser.s, "naked") == 0)
                             ok = option_naked = true;
+                        break;
+                    case 'r':
+                        if (strcmp(parser.s, "replace") == 0)
+                            ok = option_replace = true;
                         break;
                 }
                 if (!ok)
@@ -470,9 +476,9 @@ static Action *parseAction(const char *str)
             error("failed to parse call action; `clean' and `naked' "
                 "attributes cannot be used together");
         option_clean = (option_clean? true: !option_naked);
-        if (option_before && option_after)
-            error("failed to parse call action; `before' and `after' "
-                "attributes cannot be used together");
+        if ((int)option_before + (int)option_after + (int)option_replace > 1)
+            error("failed to parse call action; only one of the `before', "
+                "`after' and `replace' attributes can be used together");
         option_before = (option_before? true: !option_after);
     }
     else if (parser.getToken() != '\0')
@@ -496,7 +502,7 @@ static Action *parseAction(const char *str)
         {
             std::string call_name("call_");
             call_name += (option_clean? 'C': 'N');
-            call_name += (option_before? 'B': 'A');
+            call_name += (option_replace? 'R': (option_before? 'B': 'A'));
             call_name += '_';
             call_name += symbol;
             call_name += '_';
@@ -509,7 +515,7 @@ static Action *parseAction(const char *str)
     }
 
     Action *action = new Action(std::move(entries), kind, name, filename,
-        symbol, std::move(args), option_clean, option_before);
+        symbol, std::move(args), option_clean, option_before, option_replace);
     return action;
 }
 
@@ -989,8 +995,11 @@ static void usage(FILE *stream, const char *progname)
     fputc('\n', stream);
     fputs("\t\t\t- OPTION is one of:\n", stream);
     fputs("\t\t\t  * \"clean\"/\"naked\" for clean/naked calls.\n", stream);
-    fputs("\t\t\t  * \"before\"/\"after\" for inserting the call\n", stream);
-    fputs("\t\t\t    before/after the instruction.\n", stream);
+    fputs("\t\t\t  * \"before\"/\"after\"/\"replace\" for inserting the\n",
+        stream);
+    fputs("\t\t\t    call before/after the instruction, or replacing\n",
+        stream);
+    fputs("\t\t\t    the instruction by the call.\n", stream);
     fputs("\t\t\t- ARG is one of:\n", stream);
     fputs("\t\t\t  * \"instrAsmStr\" is a pointer to the string\n", stream);
     fputs("\t\t\t    representation of the instruction.\n", stream);
@@ -1008,7 +1017,12 @@ static void usage(FILE *stream, const char *progname)
     fputs("\t\t\t  NOTE: a maximum of 6 arguments are supported.\n", stream);
     fputs("\t\t\t- FUNCTION is the name of the function to call from\n",
         stream);
-    fputs("\t\t\t  BINARY.\n", stream);
+    fputs("\t\t\t  the binary.\n", stream);
+    fputs("\t\t\t- BINARY is a suitable ELF binary file.  You can use\n",
+        stream);
+    fputs("\t\t\t  the `e9compile.sh' script to compile C programs into\n",
+        stream);
+    fputs("\t\t\t  the correct binary format.\n", stream);
     fputc('\n', stream);
     fputs("\t\tIt is possible to specify multiple actions that will be\n",
         stream);
@@ -1346,7 +1360,8 @@ int main(int argc, char **argv)
                 // Step (2): Create the trampoline:
                 sendELFTrampoline(backend.out, *target_elf, action->filename,
                     action->symbol, action->name, action->args,
-                    option_trap_all, action->clean, action->before);
+                    option_trap_all, action->clean, action->before,
+                    action->replace);
                 break;
             }
             default:

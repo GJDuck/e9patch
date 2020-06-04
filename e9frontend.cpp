@@ -1278,7 +1278,8 @@ static void sendArgumentData(FILE *out, Argument arg, unsigned argno)
 static unsigned sendELFTrampoline(FILE *out, const ELF &elf,
     const char *filename, const char *symbol, const char *name,
     const std::vector<Argument> args,
-    bool int3 = false, bool clean = true, bool before = true)
+    bool int3 = false, bool clean = true, bool before = true,
+    bool replace = false)
 {
     intptr_t addr = lookupSymbol(elf, symbol);
     if (addr < 0)
@@ -1293,7 +1294,7 @@ static unsigned sendELFTrampoline(FILE *out, const ELF &elf,
     putc('[', out);
     if (int3)
         fprintf(out, "%u,", 0xcc);                  // int3
-    if (!before)
+    if (!replace && !before)
         fprintf(out, "\"$instruction\",");
 
     int32_t rsp_offset32 = 0;
@@ -1400,7 +1401,7 @@ static unsigned sendELFTrampoline(FILE *out, const ELF &elf,
     }
     fprintf(out, ",%u,%u,%u,%u,%u,%u,%u,%u",        // lea 0x4000(%rsp),%rsp
         0x48, 0x8d, 0xa4, 0x24, 0x00, 0x40, 0x00, 0x00);
-    if (before)
+    if (!replace && before)
         fprintf(out, ",\"$instruction\"");
     fprintf(out, ",\"$continue\"");
     argno = 0;
