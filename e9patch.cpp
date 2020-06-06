@@ -38,6 +38,7 @@ bool option_disable_T2    = false;
 bool option_disable_T3    = false;
 bool option_static_loader = false;
 bool option_same_page     = false;
+bool option_use_stack     = false;
 intptr_t option_lb        = INTPTR_MIN;
 intptr_t option_ub        = INTPTR_MAX;
 
@@ -130,6 +131,7 @@ enum Option
     OPTION_SAME_PAGE,
     OPTION_STATIC_LOADER,
     OPTION_UB,
+    OPTION_USE_STACK,
 };
 
 /*
@@ -201,6 +203,12 @@ static void usage(FILE *stream, const char *progname)
     fputs("\t\tSet UB to be the maximum allowable trampoline address.\n",
         stream);
     fputc('\n', stream);
+    fputs("\t--use-stack\n", stream);
+    fputs("\t\tAllow the stack to be used as scratch space.  This allows\n",
+        stream);
+    fputs("\t\tfaster code to be emitted, but may break transparency.\n",
+        stream);
+    fputc('\n', stream);
 }
 
 /*
@@ -235,6 +243,7 @@ int realMain(int argc, char **argv)
         {"same-page",     false, nullptr, OPTION_SAME_PAGE},
         {"static-loader", false, nullptr, OPTION_STATIC_LOADER},
         {"ub",            true,  nullptr, OPTION_UB},
+        {"use-stack",     false, nullptr, OPTION_USE_STACK},
         {nullptr,         false, nullptr, 0}
     };
 
@@ -290,6 +299,9 @@ int realMain(int argc, char **argv)
             case OPTION_UB:
                 option_ub = parseIntOptArg("--ub", optarg, INTPTR_MIN,
                     INTPTR_MAX);
+                break;
+            case OPTION_USE_STACK:
+                option_use_stack = true;
                 break;
             default:
                 error("failed to parse command-line options; try `--help' "

@@ -203,7 +203,7 @@ static void pushReturnAddress(intptr_t addr, intptr_t offset, unsigned size,
         buf.push(0x68);
         buf.push((const uint8_t *)&target32, sizeof(target32));
     }
-    else
+    else if (!option_use_stack)
     {
         // For PIC we must calculate the return address.
         // (wihout using memory or affecting the flags).
@@ -226,6 +226,32 @@ static void pushReturnAddress(intptr_t addr, intptr_t offset, unsigned size,
         // xchg %rax,(%rsp)
         buf.push(0x48); buf.push(0x87); buf.push(0x04);
         buf.push(0x24);
+    }
+    else
+    {
+        // We can avoid the slow xchg instruction if the stack can be used
+        // as scratch space.
+
+        // mov %rax,-0x4000(%rsp)
+        buf.push(0x48); buf.push(0x89); buf.push(0x84);
+        buf.push(0x24); buf.push(0x00); buf.push(0xc0);
+        buf.push(0xff); buf.push(0xff);
+
+        // lea diff32(%rip),%rax
+        intptr_t diff   = target -
+            (addr + offset + buf.size() + /*sizeof(leaq)=*/7);
+        assert(diff >= INT32_MIN && diff <= INT32_MAX);
+        int32_t diff32  = (int32_t)diff;
+        buf.push(0x48); buf.push(0x8d); buf.push(0x05);
+        buf.push((const uint8_t *)&diff32, sizeof(diff32));
+
+        // push %rax
+        buf.push(0x50);
+
+        // mov -0x3ff8(%rsp),%rax
+        buf.push(0x48); buf.push(0x8b); buf.push(0x84);
+        buf.push(0x24); buf.push(0x08); buf.push(0xc0);
+        buf.push(0xff); buf.push(0xff);
     }
 }
 
