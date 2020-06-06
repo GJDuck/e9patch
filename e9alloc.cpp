@@ -136,8 +136,8 @@ static Node *node(Node *parent, intptr_t lb, intptr_t ub, size_t size,
     if (same_page && spans_pages)
     {
         off_t offset = (alloc_left?
-            (off_t)PAGE_SIZE - std::abs(lb % PAGE_SIZE):
-            -std::abs(ub % PAGE_SIZE));
+            (off_t)PAGE_SIZE - std::abs((intptr_t)(lb % PAGE_SIZE)):
+            -std::abs((intptr_t)(ub % PAGE_SIZE)));
         LB += offset;
         UB += offset;
         assert(LB / PAGE_SIZE == (UB-1) / PAGE_SIZE);
