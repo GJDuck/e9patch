@@ -1140,7 +1140,7 @@ static void sendLeaRSPR64(FILE *out, unsigned argno)
  * Send an argument.
  */
 static void sendArgument(FILE *out, Argument arg, unsigned argno,
-    int8_t rdi_offset8, int32_t rsp_offset32)
+    int8_t rdi_offset8, int32_t rsp_offset32, bool before)
 {
     if (argno > MAX_ARGNO)
         error("failed to send argument; maximum number of function call "
@@ -1235,7 +1235,8 @@ static void sendArgument(FILE *out, Argument arg, unsigned argno,
         }
         case ARGUMENT_RIP:
             sendLeaRIPR64(out, argno);
-            fprintf(out, "{\"rel32\":\".Lcontinue\"},");
+            fprintf(out, "{\"rel32\":\".L%s\"},",
+                (before? "instruction": "continue"));
             break;
         case ARGUMENT_RSP:
             sendLeaRSPR64(out, argno);
@@ -1350,7 +1351,8 @@ static unsigned sendELFTrampoline(FILE *out, const ELF &elf,
     }
     unsigned argno = 0;
     for (auto arg: args)
-        sendArgument(out, arg, argno++, rdi_offset8, rsp_offset32);
+        sendArgument(out, arg, argno++, rdi_offset8, rsp_offset32,
+            replace || before);
     fprintf(out, "%u", 0xe8);                       // callq ...
     fprintf(out, ",{\"rel32\":");
     sendInteger(out, addr);
