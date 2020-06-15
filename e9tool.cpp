@@ -1051,6 +1051,13 @@ static void usage(FILE *stream, const char *progname)
     fputs("\t\tEND.  By default, the whole (.text) section is patched.\n",
         stream);
     fputc('\n', stream);
+    fputs("\t--executable\n", stream);
+    fputs("\t\tTreat the input file as an executable, even if it appears "
+        "to\n", stream);
+    fputs("\t\tbe a shared library.  See the `--shared' option for more\n",
+        stream);
+    fputs("\t\tinformation.\n", stream);
+    fputc('\n', stream);
     fputs("\t--format FORMAT\n", stream);
     fputs("\t\tSet the output format to FORMAT which is one of {binary,\n",
         stream);
@@ -1078,13 +1085,16 @@ static void usage(FILE *stream, const char *progname)
     fputs("\t\t\"a.out\".\n", stream);
     fputc('\n', stream);
     fputs("\t--shared\n", stream);
-    fputs("\t\tTreat the input file as a shared object, even if it appears "
+    fputs("\t\tTreat the input file as a shared library, even if it appears "
         "to\n", stream);
     fputs("\t\tbe an executable.  By default, the input file will only be\n",
         stream);
-    fputs("\t\ttreated as a shared object if (1) it is a dynamic "
+    fputs("\t\ttreated as a shared library if (1) it is a dynamic "
         "executable\n", stream);
-    fputs("\t\t(ET_DYN) and (2) has no interpreter (PT_INTERP).\n", stream);
+    fputs("\t\t(ET_DYN) and (2) has a filename of the form:\n",
+        stream);
+    fputc('\n', stream);
+    fputs("\t\t\t[PATH/]lib*.so[.VERSION]\n", stream);
     fputc('\n', stream);
     fputs("\t--start START\n", stream);
     fputs("\t\tOnly patch the (.text) section beginning from address or "
@@ -1134,6 +1144,7 @@ enum Option
     OPTION_COMPRESSION,
     OPTION_DEBUG,
     OPTION_END,
+    OPTION_EXECUTABLE,
     OPTION_FORMAT,
     OPTION_HELP,
     OPTION_OPTION,
@@ -1161,6 +1172,7 @@ int main(int argc, char **argv)
         {"compression",    true,  nullptr, OPTION_COMPRESSION},
         {"debug",          false, nullptr, OPTION_DEBUG},
         {"end",            true,  nullptr, OPTION_END},
+        {"executable",     false, nullptr, OPTION_EXECUTABLE},
         {"format",         true,  nullptr, OPTION_FORMAT},
         {"help",           false, nullptr, OPTION_HELP},
         {"option",         true,  nullptr, OPTION_OPTION},
@@ -1178,7 +1190,8 @@ int main(int argc, char **argv)
     std::vector<char *> option_options;
     unsigned option_compression_level = 9;
     ssize_t option_sync = -1;
-    bool option_shared = false, option_static_loader = false;
+    bool option_executable = false, option_shared = false,
+        option_static_loader = false;
     std::string option_start(""), option_end(""), option_backend("./e9patch");
     while (true)
     {
@@ -1210,6 +1223,9 @@ int main(int argc, char **argv)
                 break;
             case OPTION_END:
                 option_end = optarg;
+                break;
+            case OPTION_EXECUTABLE:
+                option_executable = true;
                 break;
             case OPTION_FORMAT:
                 option_format = optarg;
@@ -1280,6 +1296,9 @@ int main(int argc, char **argv)
     if (option_actions.size() > MAX_ACTIONS)
         error("too many actions (%zu); the maximum is %zu",
             option_actions.size(), MAX_ACTIONS);
+    if (option_shared && option_executable)
+        error("both `--shared' and `--executable' cannot be used at the "
+            "same time");
 
     /*
      * Parse the ELF file.
@@ -1313,7 +1332,10 @@ int main(int argc, char **argv)
     }
     else
         spawnBackend(option_backend.c_str(), option_options, backend);
-    const char *mode = (option_shared || elf.dso? "dso": "exe");
+    const char *mode = 
+        (option_executable? "exe":
+        (option_shared?     "dso":
+        (elf.dso? "dso": "exe")));
     sendBinaryMessage(backend.out, mode, filename);
 
     /*

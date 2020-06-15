@@ -612,6 +612,34 @@ static unsigned sendTrapTrampolineMessage(FILE *out, bool int3 = false)
 }
 
 /*
+ * Attempt to guess if the filename is a library or not.
+ */
+static bool isLibraryFilename(const char *filename)
+{
+    const char *str;
+    while ((str = strchr(filename, '/')) != nullptr)
+        filename = str+1;
+    str = strstr(filename, "lib");
+    if (str == nullptr)
+        return false;
+    str = strstr(str, ".so");
+    if (str == nullptr)
+        return false;
+    str += 3;
+    while (*str != '\0')
+    {
+        if (*str != '.')
+            return false;
+        str++;
+        if (!isdigit(*str++))
+            return false;
+        while (isdigit(*str))
+            str++;
+    }
+    return true;
+}
+
+/*
  * Parse an ELF file.
  */
 static void parseELF(const char *filename, ELF &elf)
@@ -678,11 +706,14 @@ static void parseELF(const char *filename, ELF &elf)
             filename);
 
     bool pic = false;
+    bool exe = false;
     switch (ehdr->e_type)
     {
         case ET_DYN:
             pic = true;
+            break;
         case ET_EXEC:
+            exe = true;
             break;
         default:
             error("failed to parse ELF file \"%s\"; file is not executable",
@@ -746,7 +777,6 @@ static void parseELF(const char *filename, ELF &elf)
     size_t phnum = (size_t)ehdr->e_phnum;
     off_t text_offset = -1;
     intptr_t free_addr = INTPTR_MIN;
-    bool exe = false;
     for (size_t i = 0; i < phnum; i++)
     {
         const Elf64_Phdr *phdr = phdrs + i;
@@ -767,7 +797,9 @@ static void parseELF(const char *filename, ELF &elf)
                 break;
             }
             case PT_INTERP:
-                exe = true;
+                if (!exe && !isLibraryFilename(filename))
+                    exe = true;
+                break;
             default:
                 break;
         }

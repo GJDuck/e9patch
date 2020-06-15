@@ -350,6 +350,9 @@ int realMain(int argc, char **argv)
         strcmp(percent, "100.00") == 0);
 
     printf("\n\n-----------------------------------------------\n");
+    printf("input_binary          = %s\n", B->filename);
+    printf("input_mode            = %s\n",
+        (B->mode == MODE_EXECUTABLE?  "EXECUTABLE": "SHARED_OBJECT"));
     printf("num_patched           = %zu / %zu (%s%s%%)\n",
         stat_num_patched, stat_num_total, (approx? "~": ""),
         percent);
