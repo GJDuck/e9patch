@@ -335,6 +335,8 @@ int realMain(int argc, char **argv)
         B = parseMessage(B, msg);
         lineno = msg.lineno;
     }
+    if (B == nullptr)
+        exit(EXIT_SUCCESS);
 
     clock_t c1 = clock();
 
