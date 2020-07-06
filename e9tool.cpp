@@ -39,13 +39,11 @@
 
 #include <elf.h>
 
-#include <capstone/platform.h>
-#include <capstone/capstone.h>
-
 #define PAGE_SIZE       4096
 
 #define MAX_ACTIONS     (1 << 10)
 
+#include "e9plugin.h"
 #include "e9frontend.cpp"
 
 /*
@@ -113,6 +111,7 @@ enum ActionKind
     ACTION_INVALID,
     ACTION_CALL,
     ACTION_PASSTHRU,
+    ACTION_PLUGIN,
     ACTION_PRINT,
     ACTION_TRAP,
 };
@@ -151,6 +150,12 @@ struct Action
     const char * const name;
     const char * const filename;
     const char * const symbol;
+    void *handle;
+    PluginInit initFunc;
+    PluginInstr instrFunc;
+    PluginPatch patchFunc;
+    PluginFini finiFunc;
+    void *context;
     std::vector<Argument> args;
     bool clean;
     bool before;
@@ -161,7 +166,9 @@ struct Action
             const std::vector<Argument> &&args,  bool clean, bool before,
             bool replace) :
         entries(std::move(entries)), kind(kind), name(name),
-            filename(filename), symbol(symbol), args(args), clean(clean),
+            filename(filename), symbol(symbol), handle(nullptr),
+            initFunc(nullptr), instrFunc(nullptr), patchFunc(nullptr),
+            context(nullptr), args(args), clean(clean),
             before(before), replace(replace)
     {
         ;
@@ -329,6 +336,11 @@ static Action *parseAction(const char *str)
                 kind = ACTION_PASSTHRU;
             else if (strcmp(parser.s, "print") == 0)
                 kind = ACTION_PRINT;
+            else if (strcmp(parser.s, "plugin") == 0)
+            {
+                option_detail = true;
+                kind = ACTION_PLUGIN;
+            }
             break;
         case 't':
             if (strcmp(parser.s, "trap") == 0)
@@ -345,7 +357,13 @@ static Action *parseAction(const char *str)
     const char *symbol   = nullptr;
     const char *filename = nullptr;
     std::vector<Argument> args;
-    if (kind == ACTION_CALL)
+    if (kind == ACTION_PLUGIN)
+    {
+        while (isspace(parser.buf[parser.i]))
+            parser.i++;
+        filename = strDup(parser.buf + parser.i);
+    }
+    else if (kind == ACTION_CALL)
     {
         char c = parser.getToken();
         if (c == '[')
@@ -508,6 +526,13 @@ static Action *parseAction(const char *str)
             call_name += '_';
             call_name += filename;
             name = strDup(call_name.c_str());
+            break;
+        }
+        case ACTION_PLUGIN:
+        {
+            std::string plugin_name("plugin_");
+            plugin_name += filename;
+            name = strDup(plugin_name.c_str());
             break;
         }
         default:
@@ -975,6 +1000,8 @@ static void usage(FILE *stream, const char *progname)
     fputs("\t\t\t- \"trap\"    : SIGTRAP instrumentation.\n", stream);
     fputs("\t\t\t- CALL      : call user instrumentation (see below).\n",
         stream);
+    fputs("\t\t\t- PLUGIN    : plugin instrumentation (see below).\n",
+        stream);
     fputc('\n', stream);
     fputs("\t\tThe CALL INSTRUMENTATION makes it possible to invoke a\n",
         stream);
@@ -1024,9 +1051,22 @@ static void usage(FILE *stream, const char *progname)
         stream);
     fputs("\t\t\t  the correct binary format.\n", stream);
     fputc('\n', stream);
+    fputs("\t\tThe PLUGIN INSTRUMENTATION lets a shared object plugin "
+        "drive\n", stream);
+    fputs("\t\tthe binary instrumentation/rewriting.  The syntax for "
+        "PLUGIN\n", stream);
+    fputs("\t\tis:\n", stream);
+    fputc('\n', stream);
+    fputs("\t\t\tPLUGIN ::= 'plugin' FILENAME\n", stream);
+    fputc('\n', stream);
+    fputs("\t\twhere FILENAME is the path to the plugin shared object.  "
+        "See\n", stream);
+    fputs("\t\tthe `e9plugin.h' file for the plugin API documentation.\n",
+        stream);
+    fputc('\n', stream);
     fputs("\t\tIt is possible to specify multiple actions that will be\n",
         stream);
-    fputs("\t\tapplied in command-line order.\n", stream);
+    fputs("\t\tapplied in the command-line order.\n", stream);
     fputc('\n', stream);
     fputs("\t--backend PROG\n", stream);
     fputs("\t\tUse PROG as the backend.  The default is \"e9patch\".\n",
@@ -1305,7 +1345,7 @@ int main(int argc, char **argv)
      */
     const char *filename = argv[optind];
     ELF elf;
-    parseELF(filename, elf);
+    parseELF(filename, 0x0, elf);
 
     /*
      * The ELF file seems OK, spawn and initialize the e9patch backend.
@@ -1369,8 +1409,12 @@ int main(int argc, char **argv)
                     free_addr = (free_addr % PAGE_SIZE == 0? free_addr:
                         (free_addr + PAGE_SIZE) - (free_addr % PAGE_SIZE));
                     target_elf = new ELF;
-                    sendELFFile(backend.out, action->filename, free_addr,
-                        *target_elf);
+    
+                    parseELF(action->filename, free_addr, *target_elf);
+                    if (!target_elf->pie)
+                        error("failed to parse ELF file \"%s\"; file is "
+                            "not a dynamic executable", action->filename);
+                    sendELFFileMessage(backend.out, *target_elf);
                     files.insert({action->filename, target_elf});
                     size_t size = (size_t)target_elf->free_addr;
                     free_addr += size;
@@ -1380,10 +1424,37 @@ int main(int argc, char **argv)
                     target_elf = i->second;
 
                 // Step (2): Create the trampoline:
-                sendELFTrampoline(backend.out, *target_elf, action->filename,
-                    action->symbol, action->name, action->args,
-                    option_trap_all, action->clean, action->before,
-                    action->replace);
+                sendCallTrampolineMessage(backend.out, *target_elf,
+                    action->filename, action->symbol, action->name,
+                    action->args, option_trap_all, action->clean,
+                    action->before, action->replace);
+                break;
+            }
+            case ACTION_PLUGIN:
+            {
+                void *handle = dlopen(action->filename,
+                    RTLD_LOCAL | RTLD_LAZY);
+                if (handle == nullptr)
+                    error("failed to load plugin \"%s\": %s", action->filename,
+                        dlerror());
+                action->initFunc = (PluginInit)dlsym(handle,
+                    "e9_plugin_init_v1");
+                action->instrFunc = (PluginInstr)dlsym(handle,
+                    "e9_plugin_instr_v1");
+                action->patchFunc = (PluginPatch)dlsym(handle,
+                    "e9_plugin_patch_v1");
+                action->finiFunc = (PluginFini)dlsym(handle,
+                    "e9_plugin_fini_v1");
+                if (action->initFunc == nullptr &&
+                        action->instrFunc == nullptr &&
+                        action->patchFunc == nullptr &&
+                        action->finiFunc == nullptr)
+                    error("failed to load plugin \"%s\"; the shared "
+                        "object does not export any plugin API functions",
+                        action->filename);
+                if (action->initFunc != nullptr)
+                    action->context = action->initFunc(backend.out, &elf);
+                action->handle = handle;
                 break;
             }
             default:
@@ -1454,18 +1525,23 @@ int main(int argc, char **argv)
         }
 
         bool patch = false;
-        unsigned index = 0;
+        unsigned i = 0, index = 0;
+        off_t offset = ((intptr_t)I->address - elf.text_addr);
         for (const auto action: option_actions)
         {
-            if (matchAction(handle, action, I, elf.text_addr, elf.text_offset))
+            bool veto_patch = false;
+            if (action->kind == ACTION_PLUGIN && action->instrFunc != nullptr)
+                veto_patch = !action->instrFunc(backend.out, &elf, handle,
+                    offset, I, action->context);
+            if (!patch && !veto_patch &&
+                matchAction(handle, action, I, elf.text_addr, elf.text_offset))
             {
+                index = i;
                 patch = true;
-                break;
             }
-            index++;
+            i++;
         }
 
-        off_t offset = ((intptr_t)I->address - elf.text_addr);
         Location loc(offset, I->size, patch, index);
         locs.push_back(loc);
     }
@@ -1517,14 +1593,38 @@ int main(int argc, char **argv)
                 elf.text_addr, elf.text_offset);
 
         const Action *action = option_actions[loc.action];
-        char asm_str_buf[256];
-        Metadata metadata_buf[MAX_ARGNO+1];
-        Metadata *metadata = buildMetadata(action, I, metadata_buf,
-            asm_str_buf, sizeof(asm_str_buf)-1);
-        sendPatchMessage(backend.out, action->name, offset, metadata);
+        if (action->kind == ACTION_PLUGIN &&
+            action->patchFunc != nullptr)
+        {
+            // Special handling for plugins:
+            action->patchFunc(backend.out, &elf, handle, offset, I,
+                action->context);
+        }
+        else
+        {
+            // Builtin actions:
+            char asm_str_buf[256];
+            Metadata metadata_buf[MAX_ARGNO+1];
+            Metadata *metadata = buildMetadata(action, I, metadata_buf,
+                asm_str_buf, sizeof(asm_str_buf)-1);
+            sendPatchMessage(backend.out, action->name, offset, metadata);
+        }
     }
     cs_free(I, 1);
     cs_close(&handle);
+
+    /*
+     * Finalize all plugins.
+     */
+    for (const auto action: option_actions)
+    {
+        if (action->kind != ACTION_PLUGIN)
+            continue;
+        if (action->finiFunc != nullptr)
+            action->finiFunc(backend.out, &elf, action->context);
+        action->context = nullptr;
+        dlclose(action->handle);
+    }
 
     /*
      * Emit the final binary/patch file.

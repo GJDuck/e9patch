@@ -38,39 +38,17 @@
 #include <unistd.h>
 #include <sys/wait.h>
 
+#include <dlfcn.h>
 #include <elf.h>
 
-#define NO_RETURN       __attribute__((__noreturn__))
+#include "e9frontend.h"
 
-#define MAX_ARGNO       6
+using namespace e9frontend;
 
 /*
  * Options.
  */
 static bool option_is_tty = false;
-
-/*
- * ELF file.
- */
-struct ELF
-{
-    const char *filename;           // Filename.
-    const uint8_t *data;            // File data.
-    size_t size;                    // File size.
-    intptr_t base;                  // Base address.
-    const Elf64_Phdr *phdrs;        // Elf PHDRs.
-    size_t phnum;                   // Number of PHDRs.
-    off_t    text_offset;           // (.text) section offset.
-    intptr_t text_addr;             // (.text) section address.
-    size_t   text_size;             // (.text) section size.
-    const char *dynamic_strtab;     // Dynamic string table.
-    size_t dynamic_strsz;           // Dynamic string table size.
-    const Elf64_Sym *dynamic_symtab;// Dynamic symbol table.
-    size_t dynamic_symsz;           // Dynamic symbol table size.
-    intptr_t free_addr;             // First unused address.
-    bool     pie;                   // PIE?   
-    bool     dso;                   // Shared object?
-};
 
 /*
  * Backend info.
@@ -82,75 +60,9 @@ struct Backend
 };
 
 /*
- * Metadata kinds.
- */
-enum MetadataKind
-{
-    METADATA_END,                   // Metadata terminal.
-    METADATA_BOOL,                  // Boolean value.
-    METADATA_INT8,                  // 8-bit integer value.
-    METADATA_INT16,                 // 16-bit integer value.
-    METADATA_INT32,                 // 32-bit integer value.
-    METADATA_INT64,                 // 64-bit integer value.
-    METADATA_STRING,                // String value.
-    METADATA_DATA,                  // Raw value.
-};
-
-/*
- * Metadata.
- */
-struct Metadata
-{
-    const char *name;               // Metadata name.
-    MetadataKind kind;              // Metadata kind.
-    unsigned length;                // Length of `data' if used.
-    union
-    {
-        bool boolean;               // Boolean value.
-        int8_t int8;                // 8-bit integer value.
-        int16_t int16;              // 16-bit integer value.
-        int32_t int32;              // 32-bit integer value.
-        int64_t int64;              // 64-bit integer value.
-        const char *string;         // String value.
-        const uint8_t *data;        // Raw data.
-    };
-};
-
-/*
- * Arguments.
- */
-enum Argument
-{
-    ARGUMENT_INVALID,               // Invalid argument
-    ARGUMENT_ADDR,                  // Instruction address
-    ARGUMENT_ASM_STR,               // Assembly string
-    ARGUMENT_ASM_STR_LEN,           // Assembly string length
-    ARGUMENT_BYTES,                 // Instruction bytes
-    ARGUMENT_BYTES_LEN,             // Instruction bytes length
-    ARGUMENT_RAX,                   // %rax register
-    ARGUMENT_RBX,                   // %rbx register
-    ARGUMENT_RCX,                   // %rcx register
-    ARGUMENT_RDX,                   // %rdx register
-    ARGUMENT_RBP,                   // %rbp register
-    ARGUMENT_RDI,                   // %rdi register
-    ARGUMENT_RSI,                   // %rsi register
-    ARGUMENT_R8,                    // %r8 register
-    ARGUMENT_R9,                    // %r9 register
-    ARGUMENT_R10,                   // %r10 register
-    ARGUMENT_R11,                   // %r11 register
-    ARGUMENT_R12,                   // %r12 register
-    ARGUMENT_R13,                   // %r13 register
-    ARGUMENT_R14,                   // %r14 register
-    ARGUMENT_R15,                   // %r15 register
-    ARGUMENT_RFLAGS,                // %rflags register
-    ARGUMENT_RIP,                   // %rip register
-    ARGUMENT_RSP,                   // %rsp register
-};
-
-/*
  * Report an error and exit.
  */
-static void NO_RETURN error(const char *msg, ...)
+void NO_RETURN e9frontend::error(const char *msg, ...)
 {
     fprintf(stderr, "%serror%s: ",
         (option_is_tty? "\33[31m": ""),
@@ -169,7 +81,7 @@ static void NO_RETURN error(const char *msg, ...)
 /*
  * Print a warning message.
  */
-static void warning(const char *msg, ...)
+void e9frontend::warning(const char *msg, ...)
 {
     fprintf(stderr, "%swarning%s: ",
         (option_is_tty? "\33[33m": ""),
@@ -198,7 +110,7 @@ static char *strDup(const char *old_str, size_t n = SIZE_MAX)
 /*
  * Send message header.
  */
-static void sendMessageHeader(FILE *out, const char *method)
+void e9frontend::sendMessageHeader(FILE *out, const char *method)
 {
     fprintf(out, "{\"jsonrpc\":\"2.0\",\"method\":\"%s\",\"params\":{",
         method);
@@ -207,7 +119,7 @@ static void sendMessageHeader(FILE *out, const char *method)
 /*
  * Send message footer.
  */
-static unsigned sendMessageFooter(FILE *out, bool sync = false)
+unsigned e9frontend::sendMessageFooter(FILE *out, bool sync)
 {
     static unsigned next_id = 0;
     unsigned id = next_id;
@@ -221,7 +133,7 @@ static unsigned sendMessageFooter(FILE *out, bool sync = false)
 /*
  * Send parameter header.
  */
-static void sendParamHeader(FILE *out, const char *name)
+void e9frontend::sendParamHeader(FILE *out, const char *name)
 {
     fprintf(out, "\"%s\":", name);
 }
@@ -229,7 +141,7 @@ static void sendParamHeader(FILE *out, const char *name)
 /*
  * Send parameter separator.
  */
-static void sendSeparator(FILE *out, bool last = false)
+void e9frontend::sendSeparator(FILE *out, bool last)
 {
     fprintf(out, "%s", (last? "": ","));
 }
@@ -237,7 +149,7 @@ static void sendSeparator(FILE *out, bool last = false)
 /*
  * Send metadata header.
  */
-static void sendMetadataHeader(FILE *out)
+void e9frontend::sendMetadataHeader(FILE *out)
 {
     putc('{', out);
 }
@@ -246,7 +158,7 @@ static void sendMetadataHeader(FILE *out)
 /*
  * Send metadata footer.
  */
-static void sendMetadataFooter(FILE *out)
+void e9frontend::sendMetadataFooter(FILE *out)
 {
     putc('}', out);
 }
@@ -254,7 +166,7 @@ static void sendMetadataFooter(FILE *out)
 /*
  * Send definition header.
  */
-static void sendDefinitionHeader(FILE *out, const char *name)
+void e9frontend::sendDefinitionHeader(FILE *out, const char *name)
 {
     fprintf(out, "\"%s\":", name);
 }
@@ -262,7 +174,7 @@ static void sendDefinitionHeader(FILE *out, const char *name)
 /*
  * Send an integer parameter.
  */
-static void sendInteger(FILE *out, intptr_t i)
+void e9frontend::sendInteger(FILE *out, intptr_t i)
 {
     if (i >= INT32_MIN && i <= INT32_MAX)
         fprintf(out, "%ld", i);
@@ -277,7 +189,7 @@ static void sendInteger(FILE *out, intptr_t i)
 /*
  * Send a string parameter.
  */
-static void sendString(FILE *out, const char *s)
+void e9frontend::sendString(FILE *out, const char *s)
 {
     putc('\"', out);
     for (unsigned i = 0; s[i] != '\0'; i++)
@@ -317,7 +229,8 @@ static void sendString(FILE *out, const char *s)
 /*
  * Send a "binary" message.
  */
-static unsigned sendBinaryMessage(FILE *out, const char *mode, const char *filename)
+static unsigned sendBinaryMessage(FILE *out, const char *mode,
+    const char *filename)
 {
     sendMessageHeader(out, "binary");
     sendParamHeader(out, "filename");
@@ -351,8 +264,8 @@ static unsigned sendInstructionMessage(FILE *out, intptr_t addr,
 /*
  * Send a "patch" message.
  */
-static unsigned sendPatchMessage(FILE *out, const char *trampoline,
-    off_t offset, const Metadata *metadata = nullptr)
+unsigned e9frontend::sendPatchMessage(FILE *out, const char *trampoline,
+    off_t offset, const Metadata *metadata)
 {
     sendMessageHeader(out, "patch");
     sendParamHeader(out, "trampoline");
@@ -434,8 +347,8 @@ static unsigned sendEmitMessage(FILE *out, const char *filename,
 /*
  * Send a "reserve" message.
  */
-static unsigned sendReserveMessage(FILE *out, intptr_t addr, size_t len,
-    bool absolute = false)
+unsigned e9frontend::sendReserveMessage(FILE *out, intptr_t addr, size_t len,
+    bool absolute)
 {
     sendMessageHeader(out, "reserve");
     sendParamHeader(out, "address");
@@ -456,9 +369,9 @@ static unsigned sendReserveMessage(FILE *out, intptr_t addr, size_t len,
 /*
  * Send a "reserve" message.
  */
-static unsigned sendReserveMessage(FILE *out, intptr_t addr,
-    const uint8_t *data, size_t len, int prot, intptr_t init = 0x0,
-    intptr_t mmap = 0x0, bool absolute = false)
+unsigned e9frontend::sendReserveMessage(FILE *out, intptr_t addr,
+    const uint8_t *data, size_t len, int prot, intptr_t init, intptr_t mmap,
+    bool absolute)
 {
     sendMessageHeader(out, "reserve");
     sendParamHeader(out, "address");
@@ -500,21 +413,9 @@ static unsigned sendReserveMessage(FILE *out, intptr_t addr,
 }
 
 /*
- * Send an "option" message.
- */
-static unsigned sendOptionMessage(FILE *out, unsigned aggressiveness)
-{
-    sendMessageHeader(out, "option");
-    sendParamHeader(out, "aggressiveness");
-    sendInteger(out, (intptr_t)aggressiveness);
-    sendSeparator(out, /*last=*/true);
-    return sendMessageFooter(out, /*sync=*/true);
-}
-
-/*
  * Send a "passthru" "trampoline" message.
  */
-static unsigned sendPassthruTrampolineMessage(FILE *out, bool int3 = false)
+unsigned e9frontend::sendPassthruTrampolineMessage(FILE *out, bool int3)
 {
     sendMessageHeader(out, "trampoline");
     sendParamHeader(out, "name");
@@ -532,7 +433,7 @@ static unsigned sendPassthruTrampolineMessage(FILE *out, bool int3 = false)
 /*
  * Send a "print" "trampoline" message.
  */
-static unsigned sendPrintTrampolineMessage(FILE *out, bool int3 = false)
+unsigned e9frontend::sendPrintTrampolineMessage(FILE *out, bool int3)
 {
     sendMessageHeader(out, "trampoline");
     sendParamHeader(out, "name");
@@ -596,7 +497,7 @@ static unsigned sendPrintTrampolineMessage(FILE *out, bool int3 = false)
 /*
  * Send a "trap" "trampoline" message.
  */
-static unsigned sendTrapTrampolineMessage(FILE *out, bool int3 = false)
+unsigned e9frontend::sendTrapTrampolineMessage(FILE *out, bool int3)
 {
     sendMessageHeader(out, "trampoline");
     sendParamHeader(out, "name");
@@ -642,7 +543,7 @@ static bool isLibraryFilename(const char *filename)
 /*
  * Parse an ELF file.
  */
-static void parseELF(const char *filename, ELF &elf)
+void e9frontend::parseELF(const char *filename, intptr_t base, ELF &elf)
 {
     int fd = open(filename, O_RDONLY, 0);
     if (fd < 0)
@@ -826,7 +727,7 @@ static void parseELF(const char *filename, ELF &elf)
     elf.filename       = strDup(filename);
     elf.data           = data;
     elf.size           = size;
-    elf.base           = 0x0;
+    elf.base           = base;
     elf.phdrs          = phdrs;
     elf.phnum          = phnum;
     elf.text_offset    = text_offset;
@@ -844,7 +745,7 @@ static void parseELF(const char *filename, ELF &elf)
 /*
  * Lookup the address of a symbol, or INTPTR_MIN if not found.
  */
-static intptr_t lookupSymbol(const ELF &elf, const char *symbol)
+intptr_t e9frontend::lookupSymbol(const ELF &elf, const char *symbol)
 {
     if (elf.dynamic_symtab == nullptr || elf.dynamic_symsz == 0 ||
             elf.dynamic_strtab == nullptr || elf.dynamic_strsz == 0)
@@ -868,18 +769,8 @@ static intptr_t lookupSymbol(const ELF &elf, const char *symbol)
 /*
  * Embed an ELF file.
  */
-static void sendELFFile(FILE *out, const char *filename, intptr_t base,
-    ELF &elf, bool absolute = false)
+void e9frontend::sendELFFileMessage(FILE *out, const ELF &elf, bool absolute)
 {
-    /*
-     * Parse the ELF file.
-     */
-    parseELF(filename, elf);
-    if (!elf.pie)
-        error("failed to parse ELF file \"%s\"; file is not dynamic",
-            filename);
-    elf.base = base;
-
     /*
      * Check for special routines.
      */
@@ -895,7 +786,7 @@ static void sendELFFile(FILE *out, const char *filename, intptr_t base,
         const Elf64_Phdr *phdr = phdrs + i;
         if (phdr->p_type != PT_LOAD)
             continue;
-        intptr_t phdr_base  = (intptr_t)phdr->p_vaddr + base;
+        intptr_t phdr_base  = (intptr_t)phdr->p_vaddr + elf.base;
         intptr_t phdr_end   = phdr_base + phdr->p_memsz;
         char prot[4] = "---";
         prot[0] = ((phdr->p_flags & PF_R) != 0? 'r': '-');
@@ -1308,11 +1199,10 @@ static void sendArgumentData(FILE *out, Argument arg, unsigned argno)
 /*
  * Send an ELF trampoline.
  */
-static unsigned sendELFTrampoline(FILE *out, const ELF &elf,
+unsigned e9frontend::sendCallTrampolineMessage(FILE *out, const ELF &elf,
     const char *filename, const char *symbol, const char *name,
-    const std::vector<Argument> args,
-    bool int3 = false, bool clean = true, bool before = true,
-    bool replace = false)
+    const std::vector<Argument> args, bool int3, bool clean, bool before,
+    bool replace)
 {
     intptr_t addr = lookupSymbol(elf, symbol);
     if (addr < 0)

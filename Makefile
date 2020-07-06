@@ -26,7 +26,8 @@ debug: $(OBJS)
 
 tool: CXXFLAGS += -O2 -I capstone/include/ -Wno-unused-function
 tool: e9tool.o e9frontend.cpp
-	$(CXX) $(CXXFLAGS) e9tool.o -o e9tool capstone/libcapstone.a
+	$(CXX) $(CXXFLAGS) e9tool.o -o e9tool capstone/libcapstone.a \
+        -Wl,--export-dynamic -ldl
 	strip e9tool
 
 tool.debug: CXXFLAGS += -O0 -g -I capstone/include/ -Wno-unused-function
