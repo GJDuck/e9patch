@@ -415,7 +415,7 @@ unsigned e9frontend::sendReserveMessage(FILE *out, intptr_t addr,
 /*
  * Send a "passthru" "trampoline" message.
  */
-unsigned e9frontend::sendPassthruTrampolineMessage(FILE *out, bool int3)
+unsigned e9frontend::sendPassthruTrampolineMessage(FILE *out)
 {
     sendMessageHeader(out, "trampoline");
     sendParamHeader(out, "name");
@@ -423,8 +423,6 @@ unsigned e9frontend::sendPassthruTrampolineMessage(FILE *out, bool int3)
     sendSeparator(out);
     sendParamHeader(out, "template");
     putc('[', out);
-    if (int3)
-        fprintf(out, "%u,", 0xcc);                  // int3
     fprintf(out, "\"$instruction\",\"$continue\"]");
     sendSeparator(out, /*last=*/true);
     return sendMessageFooter(out, /*sync=*/true);
@@ -433,7 +431,7 @@ unsigned e9frontend::sendPassthruTrampolineMessage(FILE *out, bool int3)
 /*
  * Send a "print" "trampoline" message.
  */
-unsigned e9frontend::sendPrintTrampolineMessage(FILE *out, bool int3)
+unsigned e9frontend::sendPrintTrampolineMessage(FILE *out)
 {
     sendMessageHeader(out, "trampoline");
     sendParamHeader(out, "name");
@@ -441,8 +439,6 @@ unsigned e9frontend::sendPrintTrampolineMessage(FILE *out, bool int3)
     sendSeparator(out);
     sendParamHeader(out, "template");
     putc('[', out);
-    if (int3)
-        fprintf(out, "%u,", 0xcc);                  // int3
 
     /*
      * Print instrumentation works by setting up a SYS_write system call that
@@ -497,7 +493,7 @@ unsigned e9frontend::sendPrintTrampolineMessage(FILE *out, bool int3)
 /*
  * Send a "trap" "trampoline" message.
  */
-unsigned e9frontend::sendTrapTrampolineMessage(FILE *out, bool int3)
+unsigned e9frontend::sendTrapTrampolineMessage(FILE *out)
 {
     sendMessageHeader(out, "trampoline");
     sendParamHeader(out, "name");
@@ -505,8 +501,6 @@ unsigned e9frontend::sendTrapTrampolineMessage(FILE *out, bool int3)
     sendSeparator(out);
     sendParamHeader(out, "template");
     putc('[', out);
-    if (int3)
-        fprintf(out, "%u,", 0xcc);                  // int3
     fprintf(out, "%u]", 0xcc);
     sendSeparator(out, /*last=*/true);
     return sendMessageFooter(out, /*sync=*/true);
@@ -1201,8 +1195,7 @@ static void sendArgumentData(FILE *out, Argument arg, unsigned argno)
  */
 unsigned e9frontend::sendCallTrampolineMessage(FILE *out, const ELF &elf,
     const char *filename, const char *symbol, const char *name,
-    const std::vector<Argument> args, bool int3, bool clean, bool before,
-    bool replace)
+    const std::vector<Argument> args, bool clean, bool before, bool replace)
 {
     intptr_t addr = lookupSymbol(elf, symbol);
     if (addr < 0)
@@ -1215,8 +1208,6 @@ unsigned e9frontend::sendCallTrampolineMessage(FILE *out, const ELF &elf,
     sendSeparator(out);
     sendParamHeader(out, "template");
     putc('[', out);
-    if (int3)
-        fprintf(out, "%u,", 0xcc);                  // int3
     if (!replace && !before)
         fprintf(out, "\"$instruction\",");
 

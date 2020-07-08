@@ -661,7 +661,8 @@ type_error:
         case ENTRY_REL32:
         {
             char token = expectToken2(parser, TOKEN_NUMBER, TOKEN_STRING);
-            if (token == TOKEN_STRING && parser.s[0] == '.' && parser.s[1] == 'L')
+            if (token == TOKEN_STRING && parser.s[0] == '.' &&
+                    parser.s[1] == 'L')
             {
                 entry.use_label = true;
                 entry.label = dupString(parser.s);
@@ -688,10 +689,13 @@ type_error:
 /*
  * Parse a template object.
  */
-static Trampoline *parseTrampoline(Parser &parser)
+static Trampoline *parseTrampoline(Parser &parser, bool int3 = false)
 {
     std::vector<uint8_t> bytes;
     std::vector<Entry> entries;
+
+    if (int3)
+        bytes.push_back(0xCC);          // INT3 instruction
 
     char token = getToken(parser);
     bool once  = true;
@@ -973,7 +977,8 @@ static void parseParams(Parser &parser, Message &msg)
                     value.string = dupString(parser.s);
                     break;
                 case PARAM_TEMPLATE:
-                    value.trampoline = parseTrampoline(parser);
+                    value.trampoline = parseTrampoline(parser,
+                        option_trap_all);
                     break;
                 case PARAM_METADATA:
                     value.metadata = parseMetadata(parser);

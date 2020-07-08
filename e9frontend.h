@@ -147,14 +147,13 @@ extern unsigned sendReserveMessage(FILE *out, intptr_t addr,
     intptr_t mmap = 0x0, bool absolute = false);
 extern void sendELFFileMessage(FILE *out, const ELF &elf,
     bool absolute = false);
-extern unsigned sendPassthruTrampolineMessage(FILE *out, bool int3 = false);
-extern unsigned sendPrintTrampolineMessage(FILE *out, bool int3 = false);
-extern unsigned sendTrapTrampolineMessage(FILE *out, bool int3 = false);
+extern unsigned sendPassthruTrampolineMessage(FILE *out);
+extern unsigned sendPrintTrampolineMessage(FILE *out);
+extern unsigned sendTrapTrampolineMessage(FILE *out);
 extern unsigned sendCallTrampolineMessage(FILE *out, const ELF &elf,
     const char *filename, const char *symbol, const char *name,
     const std::vector<Argument> args,
-    bool int3 = false, bool clean = true, bool before = true,
-    bool replace = false);
+    bool clean = true, bool before = true, bool replace = false);
 
 /*
  * Misc. functions:

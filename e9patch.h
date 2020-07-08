@@ -361,6 +361,7 @@ extern bool option_disable_T2;
 extern bool option_disable_T3;
 extern bool option_static_loader;
 extern bool option_same_page;
+extern bool option_trap_all;
 extern bool option_use_stack;
 extern intptr_t option_lb;
 extern intptr_t option_ub;

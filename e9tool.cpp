@@ -1353,6 +1353,8 @@ int main(int argc, char **argv)
     Backend backend;
     if (option_static_loader)
         option_options.push_back(strDup("--static-loader"));
+    if (option_trap_all)
+        option_options.push_back(strDup("--trap-all"));
     if (option_format == "json")
     {
         // Pseudo-backend:
@@ -1426,8 +1428,8 @@ int main(int argc, char **argv)
                 // Step (2): Create the trampoline:
                 sendCallTrampolineMessage(backend.out, *target_elf,
                     action->filename, action->symbol, action->name,
-                    action->args, option_trap_all, action->clean,
-                    action->before, action->replace);
+                    action->args, action->clean, action->before,
+                    action->replace);
                 break;
             }
             case ACTION_PLUGIN:
@@ -1462,11 +1464,11 @@ int main(int argc, char **argv)
         }
     }
     if (have_passthru)
-        sendPassthruTrampolineMessage(backend.out, option_trap_all);
+        sendPassthruTrampolineMessage(backend.out);
     if (have_print)
-        sendPrintTrampolineMessage(backend.out, option_trap_all);
+        sendPrintTrampolineMessage(backend.out);
     if (have_trap)
-        sendTrapTrampolineMessage(backend.out, option_trap_all);
+        sendTrapTrampolineMessage(backend.out);
 
     /*
      * Find the offset to disassemble from, if any.
