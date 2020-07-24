@@ -3,13 +3,25 @@
 E9Patch is a low-level static binary rewriting tool for x86-64 Linux ELF
 executables and shared objects.
 This document is intended for tool/frontend developers.
-If you are user and merely wish to use E9Patch to rewrite
+If you are a user and merely wish to use E9Patch to rewrite
 binaries, we recommend you read the documentation for E9Tool instead.
 
-There are two main ways to integrate E9Patch into your project:
+There are three main ways to integrate E9Patch into your project:
 
 * [Using the E9Patch JSON-RPC interface](#json-rpc-interface)
+  [very advanced, very flexible]
 * [Implementing an E9Tool plugin](#e9tool-plugin)
+  [advanced, flexible]
+* [Using E9Tool call instrumentation](#e9tool-call)
+  [very simple, least flexible]
+
+For prototyping or if performance is not an issue,
+then we recommend using [E9Tool call instrumentation](e9tool-call).
+For serious applications, we recommend using
+an [E9Tool plugin](#e9tool-plugin) or
+the [E9Patch JSON-RPC interface](#json-rpc-interface).
+
+---
 
 ---
 ## <a id="json-rpc-interface">E9Patch JSON-RPC API</a>
@@ -43,7 +55,7 @@ The main JSON-RPC messages are:
 * [Reserve Message](#reserve-message)
 * [Instruction Message](#instruction-message)
 * [Patch Message](#patch-message)
-* [Emit Message](#binary-message)
+* [Emit Message](#emit-message)
 
 The E9Patch JSON-RPC parser does not yet support the full JSON syntax, but
 implements a reasonable subset.
@@ -141,7 +153,7 @@ Several builtin macros are implicitly defined, including:
 * `"$bytes"`: The original byte sequence of the instruction that was patched
 * `"$instruction"`: A byte sequence of instructions that emulates the
   patched instruction.
-  Note that this usually equivalent to `"$bytes"` except for
+  Note that this is usually equivalent to `"$bytes"` except for
   instructions that are position-dependent.
 * `"$continue"`: A byte sequence of instructions that will return
   control-flow to the next instruction after the patched instruction.
@@ -399,6 +411,8 @@ The `"emit"` message instructs E9Patch to emit the patched binary file.
         }
 
 ---
+
+---
 ## <a id="e9tool-plugin">E9Tool Plugin System</a>
 
 E9Tool is the default frontend for E9Patch.  Although it is possible to
@@ -475,12 +489,202 @@ The `e9_plugin_instr_v1()` function will do the following:
 The `e9_plugin_patch_v1()` function will do the following:
 
 1. Setup additional trampolines (if necessary)
-2. Send a "patch" JSON-RPC message with appropriate meta data.
+2. Send a "patch" JSON-RPC message with appropriate metadata.
 
 The `e9_plugin_fini_v1()` function will do any cleanup if necessary.
 
-See the `e9frontend.h` file for useful functions that can assist in these
+See the `e9frontend.h` file for useful functions that can assist with these
 tasks.  Otherwise, there are no limitations on what these functions can do,
 just provided the E9Patch backend can parse the JSON-RPC messages sent by
 the plugin.  This makes the plugin API very powerful.
+
+---
+### Using a Plugin
+
+Plugins can be used by E9Tool and the `--action` option.
+For example:
+
+        ./e9tool --action='asm=j.*:plugin plugin.so' `which xterm` -o a.out
+
+The syntax is as follows:
+
+* "`--action=`": Selects the E9Tool "action" command-line option.
+  This tells E9Tool what patching/instrumentation action to do.
+* "`asm=j.*`": Specifies that we want to patch/instrument all instructions
+  whose assembly syntax matches the regular expression `j.*`.
+  For the `x86_64`, only jump instructions begin with `j`, so this
+  syntax selects all jump instructions, e.g.
+  `jmp`, `jnz`, `jg`, etc.
+* "`plugin plugin.so`": Specifies that instrument the program using the
+  `plugin.so` plugin.
+
+---
+
+---
+## E9Tool Call Instrumentation
+
+E9Tool supports a generic instruction patching capability in the form of
+*call instrumentation*.
+This is by far the simplest way to build a new application using E9Patch.
+However, it is also the least flexible, and also the least optimized.
+
+To use call instrumentation, you simply implement the instrumentation
+as a function using a suitable programming language (e.g., `C`).
+For example, the following code defines a function that increments a
+counter.
+Once the counter exceeds some predefined maximum value, the function
+will execute the `int3` instruction, causing `SIGTRAP` to be sent to
+the program.
+
+        static unsigned long counter = 0;
+        static unsigned long max = 100000;
+        void entry(void)
+        {
+            counter++;
+            if (counter >= max)
+                asm volatile ("int3");
+        }
+
+Once defined, the instrumentation will need to be compiled accordingly.
+For this, the `e9compile.sh` script has been included which invokes
+`gcc` with the correct options.
+The main limitation is that the instrumentation code cannot use dynamically
+linked libraries, including `libc.so`.
+
+        ./e9compile.sh counter.c
+
+This will build an ELF executable file `counter`.
+(Although the generated `counter` file is an ELF executable, it is not
+intended to be runnable, and it will crash if you attempt to execute it).
+
+Next, a binary can be instrumented using the `counter` executable.
+To do so, you simply use the `--action` option and select *call
+instrumentation*.
+For example, to instrument all jump instructions in `xterm` the command-line
+syntax is as follows:
+
+        ./e9tool --action='asm=j.*:call entry@counter' `which xterm` -o a.out
+
+The syntax is as follows:
+
+* "`--action=`": Selects the E9Tool "action" command-line option.
+  This tells E9Tool what patching/instrumentation action to do.
+* "`asm=j.*`": Specifies that we want to patch/instrument all instructions
+  whose assembly syntax matches the regular expression `j.*`.
+  For the `x86_64`, only jump instructions begin with `j`, so this
+  syntax selects all jump instructions, e.g.
+  `jmp`, `jnz`, `jg`, etc.
+* "`call entry@counter`": Specifies that the trampoline should call
+  the function `entry()` in the `counter` executable.
+
+Note that *call instrumentation* handles all low-level details, such as
+saving and restoring the CPU state.
+E9Tool will also embed the `counter` executable inside the patched
+binary.
+
+The instrumented `a.out` file will then call the `counter` function each
+time a jump instruction is executed.
+After 100000 jumps, the program will terminate with `SIGTRAP`.
+
+---
+### Initialization
+
+It is also possible to define an initialization function.
+For example:
+
+        void init(int argc, char **argv, char **envp)
+        {
+            for (; envp && *envp != NULL; envp++)
+            {
+                char *var = *envp;
+                if (var[0] == 'M' && var[1] == 'A' && var[2] == 'X' &&
+                    var[3] == '\0')
+                {
+                    max = 0;
+                    for (unsigned i = 4; var[i] >= '0' && var[i] <= '9'; i++)
+                        max = 10 * max + (var[i] - '0');
+                    break;
+                }
+            }
+        }
+
+The initialization function must be named "`init`", and will be called
+once during the patched program's initialization.
+For patched executables, the command line arguments (`argc` and `argv`) and
+the environment pointer (`envp`) will be passed as arguments to the function.
+This only applied when patching executables, the `argc`/`argv`/`envp`
+arguments will not be passed to patched shared objects.
+
+In the example above, the initialization function searches for an
+environment variable "`MAX`", and sets the max counter accordingly.
+
+---
+### Advanced Options
+
+*Call instrumentation* supports advanced options that
+are specified in square brackets after the "`call`" token
+in the `--action` option.
+For example:
+
+        ./e9tool --action='asm=j.*:call[after] entry@counter' `which xterm` -o a.out
+
+This specifies the "`after`" option, which means the `entry()`
+function should be called after the patched instruction
+(the default is before).
+
+The options are:
+
+* "`clean`"/"`naked`" for clean/naked calls.
+* "`before`"/"`after`"/"`replace`" for inserting the
+  call before/after the instruction, or replacing
+  the instruction by the call.
+
+Here the "naked" option indicates that the called function will be
+responsible for preserving the CPU state, and not E9Tool.
+This usually means the function must be implemented in assembly.
+For some applications, this can enable more optimized code.
+
+The "`before`"/"`after`"/"`replace`" option specifies where the
+instrumented call should be placed.
+For "`replace`", the original instruction is essentially deleted
+from the patched binary, and it is up to the called function to
+execute/emulate a replacement.
+
+---
+### Arguments
+
+E9Tool also supports passing arguments to the called function.
+The syntax uses the `C`-style round brackets.
+For example:
+
+        ./e9tool --action='asm=j.*:call entry(rip)@counter' `which xterm` -o a.out
+
+This specifies that the current value of the instruction pointer
+(`%rip`) should be passed as the first argument to the function
+`entry()`.
+The called function can use this argument, e.g.:
+
+
+        void entry(void *rip)
+        {
+            counter++;
+            if (counter >= max || (unsigned long)rip < 0x10000000)
+                asm volatile ("int3");
+        }
+
+The modified function will now immediately trap for any instruction
+that is less than the address `0x10000000` (e.g., to enforce PIC code).
+
+Several arguments are supported:
+
+* "`instrAsmStr`" is a pointer to the string
+  representation of the instruction.
+* "`instrAsmStrLen`" is the length of "`instrAsmStr`".
+* "`instrAddr`" is the address of the instruction.
+* "`instrBytes`" is the bytes of the instruction.
+* "`instrBytesLen`" is the length of "`instrBytes`".
+* "`rax`"..."`r15`", "`rip`", "`rflags`" is the
+  corresponding register value.
+
+Note that the current E9Tool supports a maximum of 6 arguments.
 
