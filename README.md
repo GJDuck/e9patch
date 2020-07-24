@@ -105,6 +105,13 @@ instrumentation:
         $ cd chrome
         $ FREQ=10000000 ./chrome
 
+Patch mulitple address or reges:
+instrumentation:
+
+        $ ./e9tool --action='addr=0x4f2257 addr=0x4589dd asm=j.*:passthru' `which xterm`
+        $ ./a.out
+
+
 *Notes*:
 
 * Tested for `XTerm(322)`

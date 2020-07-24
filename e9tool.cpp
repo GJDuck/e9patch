@@ -733,6 +733,7 @@ static bool matchAction(csh handle, const Action *action, const cs_insn *I,
 
     Stream stream;
     std::cmatch cmatch;
+    bool isFound = false;
     for (auto &entry: action->entries)
     {
         const char *match_str = makeMatchString(handle, entry.match, I,
@@ -745,23 +746,26 @@ static bool matchAction(csh handle, const Action *action, const cs_insn *I,
                 (option_is_tty? "\33[33m": ""),
                 entry.regex_str.c_str(),
                 (option_is_tty? "\33[0m": ""));
-        if (!std::regex_match(match_str, cmatch, entry.regex))
+        if (std::regex_match(match_str, cmatch, entry.regex))
         {
             if (option_debug)
-                fprintf(stderr, "%s*** FAILED ***%s\n\n",
+		fprintf(stderr, "%spassed%s\n",
+                    (option_is_tty? "\33[32m": ""),
+                    (option_is_tty? "\33[0m": ""));
+	    isFound = true;
+        }
+        else 
+	{
+	    if (option_debug)
+	        fprintf(stderr, "%s*** FAILED ***%s\n\n",
                     (option_is_tty? "\33[31m": ""),
                     (option_is_tty? "\33[0m": ""));
-            return false;
-        }
-        else if (option_debug)
-            fprintf(stderr, "%spassed%s\n",
-                (option_is_tty? "\33[32m": ""),
-                (option_is_tty? "\33[0m": ""));
-        stream.clear();
+	}
+	stream.clear();
     }
     if (option_debug)
         fputc('\n', stderr);
-    return true;
+    return isFound;
 }
 
 /*
