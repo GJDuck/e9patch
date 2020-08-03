@@ -831,7 +831,7 @@ void e9frontend::sendELFFileMessage(FILE *out, const ELF &elf, bool absolute)
 /*
  * Send a `mov %r64,%r64' instruction.
  */
-static void sendMovR64R64(FILE *out, Argument arg, unsigned argno)
+static void sendMovR64R64(FILE *out, ArgumentKind arg, unsigned argno)
 {
     switch (arg)
     {
@@ -957,9 +957,9 @@ static void sendMovZWLRSPR32(FILE *out, int8_t offset8, unsigned argno)
 }
 
 /*
- * Send a `mov $i32,%r64' instruction opcode.
+ * Send a `mov $i32,%r32' instruction opcode.
  */
-static void sendMovI32R64(FILE *out, unsigned argno)
+static void sendMovI32R32(FILE *out, unsigned argno)
 {
     switch (argno)
     {
@@ -980,6 +980,68 @@ static void sendMovI32R64(FILE *out, unsigned argno)
             break;
         case 5:
             fprintf(out, "%u,%u,", 0x41, 0xb9);     // mov ...,%r9d
+            break;
+    }
+}
+
+/*
+ * Send a `mov $i32,%r64' instruction opcode.
+ */
+static void sendMovI32R64(FILE *out, unsigned argno)
+{
+    switch (argno)
+    {
+        case 0:
+            fprintf(out, "%u,%u,%u,",
+                0x48, 0xc7, 0xc7);                  // mov ...,%rdi
+            break;
+        case 1:
+            fprintf(out, "%u,%u,%u,",
+                0x48, 0xc7, 0xc6);                  // mov ...,%rsi
+            break;
+        case 2:
+            fprintf(out, "%u,%u,%u,",
+                0x48, 0xc7, 0xc2);                  // mov ...,%rdx
+            break;
+        case 3:
+            fprintf(out, "%u,%u,%u,",
+                0x48, 0xc7, 0xc1);                  // mov ...,%rcx
+            break;
+        case 4:
+            fprintf(out, "%u,%u,%u,",
+                0x49, 0xc7, 0xc0);                  // mov ...,%r8
+            break;
+        case 5:
+            fprintf(out, "%u,%u,%u,",
+                0x49, 0xc7, 0xc1);                  // mov ...,%r9
+            break;
+    }
+}
+
+/*
+ * Send a `movabs $i64,%r64' instruction opcode.
+ */
+static void sendMovI64R64(FILE *out, unsigned argno)
+{
+    switch (argno)
+    {
+        case 0:
+            fprintf(out, "%u,%u,", 0x48, 0xbf);     // movabs ...,%rdi
+            break;
+        case 1:
+            fprintf(out, "%u,%u,", 0x48, 0xbe);     // movabs ...,%rsi
+            break;
+        case 2:
+            fprintf(out, "%u,%u,", 0x48, 0xba);     // movabs ...,%rdx
+            break;
+        case 3:
+            fprintf(out, "%u,%u,", 0x48, 0xb9);     // movabs ...,%rcx
+            break;
+        case 4:
+            fprintf(out, "%u,%u,", 0x49, 0xb8);     // movabs ...,%r8
+            break;
+        case 5:
+            fprintf(out, "%u,%u,", 0x49, 0xb9);     // movabs ...,%r9
             break;
     }
 }
@@ -1056,8 +1118,8 @@ static void sendLeaRSPR64(FILE *out, unsigned argno)
 /*
  * Send an argument.
  */
-static void sendArgument(FILE *out, Argument arg, unsigned argno,
-    int8_t rdi_offset8, int32_t rsp_offset32, bool before)
+static void sendArgument(FILE *out, ArgumentKind arg, intptr_t value,
+    unsigned argno, int8_t rdi_offset8, int32_t rsp_offset32, bool before)
 {
     if (argno > MAX_ARGNO)
         error("failed to send argument; maximum number of function call "
@@ -1065,6 +1127,25 @@ static void sendArgument(FILE *out, Argument arg, unsigned argno,
 
     switch (arg)
     {
+        case ARGUMENT_INTEGER:
+            if (value >= INT32_MIN && value < 0)
+            {
+                sendMovI32R64(out, argno);
+                fprintf(out, "{\"int32\":");
+            }
+            else if (value >= 0 && value <= INT32_MAX)
+            {
+                sendMovI32R32(out, argno);
+                fprintf(out, "{\"int32\":");
+            }
+            else
+            {
+                sendMovI64R64(out, argno);
+                fprintf(out, "{\"int64\":");
+            }
+            sendInteger(out, value);
+            fprintf(out, "},");
+            break;
         case ARGUMENT_ADDR:
             sendLeaRIPR64(out, argno);
             fprintf(out, "{\"rel32\":\".Linstruction\"},");
@@ -1074,7 +1155,7 @@ static void sendArgument(FILE *out, Argument arg, unsigned argno,
             fprintf(out, "{\"rel32\":\".LasmStr\"},");
             break;
         case ARGUMENT_ASM_STR_LEN:
-            sendMovI32R64(out, argno);
+            sendMovI32R32(out, argno);
             fprintf(out, "\"$asmStrLen\",");
             break;
         case ARGUMENT_BYTES:
@@ -1082,7 +1163,7 @@ static void sendArgument(FILE *out, Argument arg, unsigned argno,
             fprintf(out, "{\"rel32\":\".Lbytes\"},");
             break;
         case ARGUMENT_BYTES_LEN:
-            sendMovI32R64(out, argno);
+            sendMovI32R32(out, argno);
             fprintf(out, "\"$bytesLen\",");
             break;
         case ARGUMENT_RAX: case ARGUMENT_RBX: case ARGUMENT_RCX:
@@ -1175,7 +1256,7 @@ static void sendArgument(FILE *out, Argument arg, unsigned argno,
 /*
  * Send argument data.
  */
-static void sendArgumentData(FILE *out, Argument arg, unsigned argno)
+static void sendArgumentData(FILE *out, ArgumentKind arg, unsigned argno)
 {
     switch (arg)
     {
@@ -1264,8 +1345,8 @@ unsigned e9frontend::sendCallTrampolineMessage(FILE *out, const ELF &elf,
     }
     unsigned argno = 0;
     for (auto arg: args)
-        sendArgument(out, arg, argno++, rdi_offset8, rsp_offset32,
-            replace || before);
+        sendArgument(out, arg.kind, arg.value, argno++, rdi_offset8,
+            rsp_offset32, replace || before);
     fprintf(out, "%u", 0xe8);                       // callq ...
     fprintf(out, ",{\"rel32\":");
     sendInteger(out, addr);
@@ -1325,7 +1406,7 @@ unsigned e9frontend::sendCallTrampolineMessage(FILE *out, const ELF &elf,
     {
         if (!seen[argno])
         {
-            sendArgumentData(out, arg, argno);
+            sendArgumentData(out, arg.kind, argno);
             seen[argno] = true;
         }
         argno++;
@@ -1338,7 +1419,7 @@ unsigned e9frontend::sendCallTrampolineMessage(FILE *out, const ELF &elf,
 /*
  * Get argument name.
  */
-static const char *getArgumentName(Argument arg)
+static const char *getArgumentName(ArgumentKind arg)
 {
     switch (arg)
     {

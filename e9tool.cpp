@@ -207,7 +207,7 @@ struct Parser
             default:
                 break;
         }
-        if (isalpha(c) || buf[i] == '_')
+        if (isalnum(c) || buf[i] == '_' || buf[i] == '-')
         {
             unsigned j = 0;
             s[j++] = c;
@@ -418,70 +418,89 @@ static Action *parseAction(const char *str)
             while (true)
             {
                 c = parser.getToken();
-                Argument arg = ARGUMENT_INVALID;
+                const char *s = parser.s;
+                ArgumentKind arg = ARGUMENT_INVALID;
+                intptr_t value = 0x0;
                 switch (c)
                 {
                     case 'i':
-                        if (strcmp(parser.s, "instrAsmStr") == 0)
+                        if (strcmp(s, "instrAsmStr") == 0)
                             arg = ARGUMENT_ASM_STR;
-                        else if (strcmp(parser.s, "instrAsmStrLen") == 0)
+                        else if (strcmp(s, "instrAsmStrLen") == 0)
                             arg = ARGUMENT_ASM_STR_LEN;
-                        else if (strcmp(parser.s, "instrAddr") == 0)
+                        else if (strcmp(s, "instrAddr") == 0)
                             arg = ARGUMENT_ADDR;
-                        else if (strcmp(parser.s, "instrBytes") == 0)
+                        else if (strcmp(s, "instrBytes") == 0)
                             arg = ARGUMENT_BYTES;
-                        else if (strcmp(parser.s, "instrBytesLen") == 0)
+                        else if (strcmp(s, "instrBytesLen") == 0)
                             arg = ARGUMENT_BYTES_LEN;
                         break;
                     case 'r':
-                        if (strcmp(parser.s, "rax") == 0)
+                        if (strcmp(s, "rax") == 0)
                             arg = ARGUMENT_RAX;
-                        else if (strcmp(parser.s, "rbx") == 0)
+                        else if (strcmp(s, "rbx") == 0)
                             arg = ARGUMENT_RBX;
-                        else if (strcmp(parser.s, "rcx") == 0)
+                        else if (strcmp(s, "rcx") == 0)
                             arg = ARGUMENT_RCX;
-                        else if (strcmp(parser.s, "rdx") == 0)
+                        else if (strcmp(s, "rdx") == 0)
                             arg = ARGUMENT_RDX;
-                        else if (strcmp(parser.s, "rbp") == 0)
+                        else if (strcmp(s, "rbp") == 0)
                             arg = ARGUMENT_RBP;
-                        else if (strcmp(parser.s, "rdi") == 0)
+                        else if (strcmp(s, "rdi") == 0)
                             arg = ARGUMENT_RDI;
-                        else if (strcmp(parser.s, "rsi") == 0)
+                        else if (strcmp(s, "rsi") == 0)
                             arg = ARGUMENT_RSI;
-                        else if (strcmp(parser.s, "r8") == 0)
+                        else if (strcmp(s, "r8") == 0)
                             arg = ARGUMENT_R8;
-                        else if (strcmp(parser.s, "r9") == 0)
+                        else if (strcmp(s, "r9") == 0)
                             arg = ARGUMENT_R9;
-                        else if (strcmp(parser.s, "r10") == 0)
+                        else if (strcmp(s, "r10") == 0)
                             arg = ARGUMENT_R10;
-                        else if (strcmp(parser.s, "r11") == 0)
+                        else if (strcmp(s, "r11") == 0)
                             arg = ARGUMENT_R11;
-                        else if (strcmp(parser.s, "r12") == 0)
+                        else if (strcmp(s, "r12") == 0)
                             arg = ARGUMENT_R12;
-                        else if (strcmp(parser.s, "r13") == 0)
+                        else if (strcmp(s, "r13") == 0)
                             arg = ARGUMENT_R13;
-                        else if (strcmp(parser.s, "r14") == 0)
+                        else if (strcmp(s, "r14") == 0)
                             arg = ARGUMENT_R14;
-                        else if (strcmp(parser.s, "r15") == 0)
+                        else if (strcmp(s, "r15") == 0)
                             arg = ARGUMENT_R15;
-                        else if (strcmp(parser.s, "rflags") == 0)
+                        else if (strcmp(s, "rflags") == 0)
                             arg = ARGUMENT_RFLAGS;
-                        else if (strcmp(parser.s, "rip") == 0)
+                        else if (strcmp(s, "rip") == 0)
                             arg = ARGUMENT_RIP;
-                        else if (strcmp(parser.s, "rsp") == 0)
+                        else if (strcmp(s, "rsp") == 0)
                             arg = ARGUMENT_RSP;
                         break;
+                    case '0': case '1': case '2': case '3': case '4':
+                    case '5': case '6': case '7': case '8': case '9':
+                    case '-':
+                    {
+                        const char *t = s;
+                        bool neg = (t[0] == '-');
+                        if (neg)
+                            t++;
+                        int base = (t[0] == '0' && t[1] == 'x'? 16: 10);
+                        char *end = nullptr;
+                        value = (intptr_t)strtoull(t, &end, base);
+                        if (end == nullptr || *end != '\0')
+                            break;
+                        value = (neg? -value: value);
+                        arg = ARGUMENT_INTEGER;
+                        break;
+                    }
                 }
                 if (arg == ARGUMENT_INVALID)
                     error("failed to parse call action; expected call "
-                        "argument, found `%s'", parser.s);
-                args.push_back(arg);
+                        "argument, found `%s'", s);
+                args.push_back({arg, value});
                 c = parser.getToken();
                 if (c == ')')
                     break;
                 if (c != ',')
                     error("failed to parse call action; expected `)' or `,', "
-                        "found `%s'", parser.s);
+                        "found `%s'", s);
             }
             c = parser.getToken();
         }
@@ -845,8 +864,8 @@ static Metadata *buildMetadata(const Action *action, const cs_insn *J,
             unsigned i = 0;
             for (auto arg: action->args)
             {
-                metadata[i].name = getArgumentName(arg);
-                switch (arg)
+                metadata[i].name = getArgumentName(arg.kind);
+                switch (arg.kind)
                 {
                     case ARGUMENT_ASM_STR:
                         if (!asm_str_inited)
@@ -1042,6 +1061,7 @@ static void usage(FILE *stream, const char *progname)
     fputs("\t\t\t  * \"rax\"...\"r15\", \"rip\", \"rflags\" is the\n",
         stream);
     fputs("\t\t\t    corresponding register value.\n", stream);
+    fputs("\t\t\t  * An integer constant.\n", stream);
     fputs("\t\t\t  NOTE: a maximum of 6 arguments are supported.\n", stream);
     fputs("\t\t\t- FUNCTION is the name of the function to call from\n",
         stream);

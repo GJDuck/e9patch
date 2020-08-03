@@ -94,9 +94,10 @@ struct Metadata
 /*
  * Arguments.
  */
-enum Argument
+enum ArgumentKind
 {
     ARGUMENT_INVALID,               // Invalid argument
+    ARGUMENT_INTEGER,               // Constant integer argument
     ARGUMENT_ADDR,                  // Instruction address
     ARGUMENT_ASM_STR,               // Assembly string
     ARGUMENT_ASM_STR_LEN,           // Assembly string length
@@ -120,6 +121,12 @@ enum Argument
     ARGUMENT_RFLAGS,                // %rflags register
     ARGUMENT_RIP,                   // %rip register
     ARGUMENT_RSP,                   // %rsp register
+};
+
+struct Argument
+{
+    ArgumentKind kind;              // Argument kind.
+    intptr_t value;                 // Argument value.
 };
 
 /*

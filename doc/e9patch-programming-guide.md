@@ -234,6 +234,7 @@ Several arguments are supported:
 * `instrBytesLen` is the length of `instrBytes`.
 * `rax`...`r15`, `rip`, `rflags` is the
   corresponding register value.
+* An integer constant.
 
 Note that the current E9Tool supports a maximum of 6 arguments.
 
