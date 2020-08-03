@@ -27,6 +27,7 @@
 #include <cstring>
 
 #include <regex>
+#include <set>
 #include <string>
 
 #include <fcntl.h>
@@ -1385,6 +1386,7 @@ int main(int argc, char **argv)
      */
     bool have_print = false, have_passthru = false, have_trap = false;
     std::map<const char *, ELF *, CStrCmp> files;
+    std::set<const char *, CStrCmp> have_call;
     intptr_t file_addr = elf.free_addr + 0x1000000;     // XXX
     for (const auto action: option_actions)
     {
@@ -1426,10 +1428,15 @@ int main(int argc, char **argv)
                     target_elf = i->second;
 
                 // Step (2): Create the trampoline:
-                sendCallTrampolineMessage(backend.out, *target_elf,
-                    action->filename, action->symbol, action->name,
-                    action->args, action->clean, action->before,
-                    action->replace);
+                auto j = have_call.find(action->name);
+                if (j == have_call.end())
+                {
+                    sendCallTrampolineMessage(backend.out, *target_elf,
+                        action->filename, action->symbol, action->name,
+                        action->args, action->clean, action->before,
+                        action->replace);
+                    have_call.insert(action->name);
+                }
                 break;
             }
             case ACTION_PLUGIN:
