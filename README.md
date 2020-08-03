@@ -1,21 +1,126 @@
-E9Patch - A Powerful Static Binary Rewriter
-===========================================
+# E9Patch - A Powerful Static Binary Rewriter
 
-E9Patch is a scalable static binary rewriting tool for `x86_64` Linux ELF
+E9Patch is a powerful static binary rewriting tool for `x86_64` Linux ELF
 binaries.
+E9Patch is:
 
-Building
---------
+* *Scalable*: E9Patch can reliably rewrite large/complex binaries
+  including web browsers (>100MB in size).
+  The rewritten binary should run stable with very rare exceptions (e.g.,
+  self-modifying code).
+* *Compatible*: The rewritten binary is a drop-in replacement of the
+  original, with no additional dependencies.
+* *Fast*: E9Patch is fast and can rewrite most binaries in a few seconds.
+* *Low Overheads*: The rewritten binaries are typically faster
+  than emulation and other dynamic methods.
+* *Programmable*: E9Patch is designed so that it can be easily integrated
+  into other projects.
+  See the [E9Patch Programmer's Guide](https://github.com/GJDuck/e9patch/blob/master/doc/e9patch-programming-guide.md)
+  for more information.
 
-To build E9Patch, simply run the `build.sh` script.
+## Background
 
-This should build two tools:
+*Static binary rewriting* takes as input a binary file
+(ELF executable or shared object, e.g. `a.out`) and outputs a new binary
+file (e.g., `b.out`) with some patch/modification applied to it.
+The patched `b.out` can then be used as a drop-in replacement of
+the original `a.out`.
+Typical binary rewriting applications include
+instrumentation (the addition of new instructions)
+or patching (replacing binary code with a new version).
+
+Static binary rewriting is notoriously difficult.
+One problem is that space for the new instructions must be allocated,
+and this typically means that existing instructions will need to be moved
+in order to make room.
+However, some of these existing instructions may also be *jump targets*,
+meaning that the all jump/call instructions in the original binary
+will also need to be adjusted in the rewritten binary.
+Unfortunately, things get complicated very quickly:
+
+* The complete set of targets cannot be determined statically
+  (it is an undecidable problem in the general case of indirect
+   calls or jumps).
+* Cross-binary calls/jumps are not uncommon, for example the `compare`
+  function pointer argument to libc's `qsort()`.
+  Since code pointers cannot be reliably distinguished from other data
+  in the general case,
+  this can mean that the entire shared library dependency tree also needs
+  to be rewritten.
+
+Unless all jumps and calls are perfectly adjusted, the rewritten binary
+will likely crash or otherwise misbehave.
+This is why existing static binary rewriting tools tend to scale poorly.
+
+### How E9Patch is Different
+
+E9Patch is different to other tools in that it can statically
+rewrite `x86_64` Linux ELF binaries
+***without modifying the set of jump targets***.
+To do so, E9Patch uses a set of novel low-level binary rewriting
+techniques, such as *instruction punning, padding and eviction* that can
+insert or replace binary code *without the need to move existing
+instructions*.
+Since existing instructions are not moved, the set of jump targets
+remains unchanged, meaning that calls/jumps do not need to be corrected
+(including cross binary calls/jumps).
+
+E9Patch is therefore highly scalable by design, and can reliably rewrite very
+large binaries such as Google Chrome and FireFox (>100MB in size).
+
+To find out more on how E9Patch works, please see our PLDI'2020 paper:
+
+* Gregory J. Duck, Xiang Gao, Abhik Roychoudhury, [Binary Rewriting without Control Flow Recovery](https://comp.nus.edu.sg/~gregory/papers/e9patch.pdf),
+  Programming Language Design and Implementation (PLDI), 2020.
+  [PLDI'2020 Presentation](https://www.youtube.com/watch?v=qK2ZCEStoG0)
+
+### Additional Notes
+
+The key to E9Patch's scalability is that it makes minimal assumptions
+about the input binary.
+However, E9Patch is not 100% assumption-free, and does assume:
+
+* The binary can be *disassembled* and does not use *overlapping
+  instructions*.
+  The default E9Tool frontend uses the
+  [Capstone disassembler](http://www.capstone-engine.org/).
+* The binary does not read from, or write, to the patched executable
+  segments.
+  For example, *self-modifying code* is not supported.
+
+Most off-the-self `x86_64` Linux binaries will satisfy these assumptions.
+
+The instruction patching methodology that E9Patch uses is not
+guaranteed to work for every instruction.
+As such, the *coverage* of the patching may not be 100%.
+E9Patch will print coverage information after the rewriting process,
+e.g.:
+
+        num_patched = 2766 / 2766 (100.00%)
+
+Most applications can expect at or near 100% coverage.
+However, coverage can be diminished by several factors, including:
+
+* Patching single-byte instructions such as `ret`s, `push`es and `pop`s.
+  These are difficult to patch, affecting coverage.
+* Patching too many instructions.
+* Binaries with large static code or data segments that limit the space
+  available for trampolines.
+
+A patched binary with less than 100% coverage will still run
+correctly, albeit with some instructions remaining unpatched.
+Whether or not this is an issue depends largely on the application.
+
+## Building
+
+Building E9Patch is very easy: simply run the `build.sh` script.
+
+This should automatically build two tools:
 
 1. `e9patch`: the binary rewriter backend; and
 2. `e9tool`: a basic frontend for `e9patch`.
 
-Usage
------
+## Examples
 
 The `e9patch` tool is usable via the `e9tool` front-end.
 
@@ -41,8 +146,7 @@ For a full list of supported options and modes, see:
 
         $ ./e9tool --help
 
-More Examples
--------------
+### More Examples
 
 Patch all jump instructions with "empty" (a.k.a. "passthru")
 instrumentation:
@@ -110,51 +214,37 @@ instrumentation:
 * Tested for `XTerm(322)`
 * Tested for Google Chrome version `80.0.3987.132 (Official Build) (64-bit)`.
 
-Documentation
--------------
+## Documentation
 
-TODO
+If you just want to test E9Patch out, then please try the above examples.
 
-* Try the examples.
-* Try (`e9tool --help`) for a full list of options.
+E9Patch is a low-level tool that is designed to be integrable into other
+projects.
+To find out more, please see the following documentation:
 
-How it Works
-------------
+* [E9Patch Programmer's Guide](https://github.com/GJDuck/e9patch/blob/master/doc/e9patch-programming-guide.md)
 
-TODO
+## Bugs
 
-* See the paper (below).
+E9Patch should be considered alpha-quality software.
+Bugs can be reported here:
 
-Bugs
-----
+* [https://github.com/GJDuck/e9patch/issues](https://github.com/GJDuck/e9patch/issues)
 
-E9Patch should be considered alpha-quality software.  Bugs can be reported
-here:
-[https://github.com/GJDuck/e9patch/issues](https://github.com/GJDuck/e9patch/issues)
-
-Versions
---------
-
-TODO
+## Versions
 
 The released version is an improved version of the original prototype
 evaluated in the paper.
+The implementation of the *Physical Page Grouping* space optimization
+has been improved.
 
-License
--------
+## License
 
-GPLv3
+This software has been released under the GNU Public License (GPL) Version 3.
 
-Further Reading
----------------
-
-* Gregory J. Duck, Xiang Gao, Abhik Roychoudhury, [Binary Rewriting without Control Flow Recovery](https://comp.nus.edu.sg/~gregory/papers/e9patch.pdf),
-  Programming Language Design and Implementation (PLDI), 2020.
-
-Acknowledgements
-----------------
+## Acknowledgements
 
 This work was partially supported by the National Satellite of Excellence in
 Trustworthy Software Systems, funded by National Research Foundation (NRF)
-Singapore under National Cybersecurity R&D (NCR) programme.
+Singapore under the National Cybersecurity R&D (NCR) programme.
 
