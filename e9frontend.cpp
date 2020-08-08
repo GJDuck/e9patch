@@ -275,46 +275,11 @@ unsigned e9frontend::sendPatchMessage(FILE *out, const char *trampoline,
     {
         sendParamHeader(out, "metadata");
         sendMetadataHeader(out);
-        for (unsigned i = 0; metadata[i].kind != METADATA_END; i++)
+        for (unsigned i = 0; metadata[i].name != nullptr; i++)
         {
             sendDefinitionHeader(out, metadata[i].name);
-            switch (metadata[i].kind)
-            {
-                case METADATA_BOOL:
-                    fprintf(out, "%c", (metadata[i].boolean? '1': '0'));
-                    break;
-                case METADATA_INT8:
-                    fprintf(out, "%u", metadata[i].int8);
-                    break;
-                case METADATA_INT16:
-                    fprintf(out, "{\"int16\":");
-                    sendInteger(out, (intptr_t)metadata[i].int16);
-                    fputc('}', out);
-                    break;
-                case METADATA_INT32:
-                    fprintf(out, "{\"int32\":");
-                    sendInteger(out, (intptr_t)metadata[i].int32);
-                    fputc('}', out);
-                    break;
-                case METADATA_INT64:
-                    fprintf(out, "{\"int64\":");
-                    sendInteger(out, (intptr_t)metadata[i].int64);
-                    fputc('}', out);
-                    break;
-                case METADATA_STRING:
-                    sendString(out, metadata[i].string);
-                    break;
-                case METADATA_DATA:
-                    fputc('[', out);
-                    for (unsigned j = 0; j < metadata[i].length; j++)
-                        fprintf(out, "%s%u", (j == 0? "": ","),
-                            metadata[i].data[j]);
-                    fputc(']', out);
-                    break;
-                default:
-                    break;
-            }
-            sendSeparator(out, (metadata[i+1].kind == METADATA_END));
+            fputs(metadata[i].data, out);
+            sendSeparator(out, (metadata[i+1].name == nullptr));
         }
         sendMetadataFooter(out);
         sendSeparator(out);
@@ -985,6 +950,36 @@ static void sendMovI32R32(FILE *out, unsigned argno)
 }
 
 /*
+ * Send a `xor %r32,%r32` instruction.
+ */
+static void sendZeroR32(FILE *out, unsigned argno)
+{
+    switch (argno)
+    {
+        case 0:
+            fprintf(out, "%u,%u,", 0x31, 0xff);     // xor %edi,%edi
+            break;
+        case 1:
+            fprintf(out, "%u,%u,", 0x31, 0xf6);     // xor %esi,%esi
+            break;
+        case 2:
+            fprintf(out, "%u,%u,", 0x31, 0xd2);     // xor %edx,%edx
+            break;
+        case 3:
+            fprintf(out, "%u,%u,", 0x31, 0xc9);     // xor %ecx,%ecx
+            break;
+        case 4:
+            fprintf(out, "%u,%u,%u,",
+                0x45, 0x31, 0xc0);                  // xor %r8d,%r8d
+            break;
+        case 5:
+            fprintf(out, "%u,%u,%u,",
+                0x45, 0x31, 0xc9);                  // xor %r9d,%r9d
+            break;
+    }
+}
+
+/*
  * Send a `mov $i32,%r64' instruction opcode.
  */
 static void sendMovI32R64(FILE *out, unsigned argno)
@@ -1116,10 +1111,35 @@ static void sendLeaRSPR64(FILE *out, unsigned argno)
 }
 
 /*
+ * Get load target name.
+ */
+static const char *getLoadTargetName(int argno)
+{
+    switch (argno)
+    {
+        case 0:
+            return "$loadTargetRDI";
+        case 1:
+            return "$loadTargetRSI";
+        case 2:
+            return "$loadTargetRDX";
+        case 3:
+            return "$loadTargetRCX";
+        case 4:
+            return "$loadTargetR8";
+        case 5:
+            return "$loadTargetR9";
+        default:
+            return nullptr;
+    }
+}
+
+/*
  * Send an argument.
  */
 static void sendArgument(FILE *out, ArgumentKind arg, intptr_t value,
-    unsigned argno, int8_t rdi_offset8, int32_t rsp_offset32, bool before)
+    unsigned argno, int8_t rdi_offset8, int32_t rsp_offset32, bool before,
+    bool flags)
 {
     if (argno > MAX_ARGNO)
         error("failed to send argument; maximum number of function call "
@@ -1128,7 +1148,12 @@ static void sendArgument(FILE *out, ArgumentKind arg, intptr_t value,
     switch (arg)
     {
         case ARGUMENT_INTEGER:
-            if (value >= INT32_MIN && value < 0)
+            if (value == 0 && !flags)
+            {
+                sendZeroR32(out, argno);
+                break;
+            }
+            else if (value >= INT32_MIN && value < 0)
             {
                 sendMovI32R64(out, argno);
                 fprintf(out, "{\"int32\":");
@@ -1150,6 +1175,10 @@ static void sendArgument(FILE *out, ArgumentKind arg, intptr_t value,
             sendLeaRIPR64(out, argno);
             fprintf(out, "{\"rel32\":\".Linstruction\"},");
             break;
+        case ARGUMENT_NEXT:
+            sendLeaRIPR64(out, argno);
+            fprintf(out, "{\"rel32\":\".Lcontinue\"},");
+            break;
         case ARGUMENT_ASM_STR:
             sendLeaRIPR64(out, argno);
             fprintf(out, "{\"rel32\":\".LasmStr\"},");
@@ -1165,6 +1194,9 @@ static void sendArgument(FILE *out, ArgumentKind arg, intptr_t value,
         case ARGUMENT_BYTES_LEN:
             sendMovI32R32(out, argno);
             fprintf(out, "\"$bytesLen\",");
+            break;
+        case ARGUMENT_TARGET:
+            fprintf(out, "\"%s\",", getLoadTargetName(argno));
             break;
         case ARGUMENT_RAX: case ARGUMENT_RBX: case ARGUMENT_RCX:
         case ARGUMENT_RDX: case ARGUMENT_RBP: case ARGUMENT_RDI:
@@ -1298,6 +1330,7 @@ unsigned e9frontend::sendCallTrampolineMessage(FILE *out, const ELF &elf,
     rsp_offset32 += 0x4000;
     
     int8_t rdi_offset8;
+    bool flags = false;
     if (clean)
     {
         // Save the state:
@@ -1342,11 +1375,12 @@ unsigned e9frontend::sendCallTrampolineMessage(FILE *out, const ELF &elf,
                 break;
         }
         rdi_offset8 = 0;
+        flags = true;
     }
     unsigned argno = 0;
     for (auto arg: args)
         sendArgument(out, arg.kind, arg.value, argno++, rdi_offset8,
-            rsp_offset32, replace || before);
+            rsp_offset32, replace || before, flags);
     fprintf(out, "%u", 0xe8);                       // callq ...
     fprintf(out, ",{\"rel32\":");
     sendInteger(out, addr);
@@ -1401,13 +1435,13 @@ unsigned e9frontend::sendCallTrampolineMessage(FILE *out, const ELF &elf,
         fprintf(out, ",\"$instruction\"");
     fprintf(out, ",\"$continue\"");
     argno = 0;
-    bool seen[MAX_ARGNO] = {false};
+    bool seen[ARGUMENT_MAX] = {false};
     for (auto arg: args)
     {
-        if (!seen[argno])
+        if (!seen[arg.kind])
         {
             sendArgumentData(out, arg.kind, argno);
-            seen[argno] = true;
+            seen[arg.kind] = true;
         }
         argno++;
     }

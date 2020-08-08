@@ -42,7 +42,7 @@ static char *byte_to_str(unsigned char x, char *str)
 /*
  * Entry point.
  *
- * call entry(instrAddr,instrAsmStr,instrBytes,instrBytesLen)@print
+ * call entry(addr,asmStr,instr,instrLen)@print
  */
 void entry(void *addr, const char *string,
     const unsigned char *bytes, unsigned length)

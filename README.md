@@ -179,7 +179,7 @@ Patch all jump instructions with instruction count instrumentation:
 Patch all jump instructions with pretty print instrumentation:
 
         $ ./e9compile.sh examples/print.c
-        $ ./e9tool --action='asm=j.*:call entry(instrAddr,instrAsmStr,instrBytes,instrBytesLen)@print' `which xterm`
+        $ ./e9tool --action='asm=j.*:call entry(addr,asmStr,instr,instrLen)@print' `which xterm`
         $ ./a.out
 
 Patch all jump instructions with "delay" instrumentation to slow the

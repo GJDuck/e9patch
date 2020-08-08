@@ -32,7 +32,8 @@ tool: e9tool.o e9frontend.cpp
 
 tool.debug: CXXFLAGS += -O0 -g -I capstone/include/ -Wno-unused-function
 tool.debug: e9tool.o e9frontend.cpp
-	$(CXX) $(CXXFLAGS) e9tool.o -o e9tool capstone/libcapstone.a
+	$(CXX) $(CXXFLAGS) e9tool.o -o e9tool capstone/libcapstone.a \
+        -Wl,--export-dynamic -ldl
 
 loader:
 	$(CXX) -std=c++11 -Wall -fno-stack-protector -fpie -Os -c e9loader.cpp

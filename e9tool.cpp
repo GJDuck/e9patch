@@ -178,6 +178,11 @@ struct Action
 typedef std::map<size_t, Action *> Actions;
 
 /*
+ * Metadata implementation.
+ */
+#include "e9metadata.cpp"
+
+/*
  * Action string parser.
  */
 struct Parser
@@ -423,17 +428,23 @@ static Action *parseAction(const char *str)
                 intptr_t value = 0x0;
                 switch (c)
                 {
-                    case 'i':
-                        if (strcmp(s, "instrAsmStr") == 0)
+                    case 'a':
+                        if (strcmp(s, "asmStr") == 0)
                             arg = ARGUMENT_ASM_STR;
-                        else if (strcmp(s, "instrAsmStrLen") == 0)
+                        else if (strcmp(s, "asmStrLen") == 0)
                             arg = ARGUMENT_ASM_STR_LEN;
-                        else if (strcmp(s, "instrAddr") == 0)
+                        else if (strcmp(s, "addr") == 0)
                             arg = ARGUMENT_ADDR;
-                        else if (strcmp(s, "instrBytes") == 0)
+                        break;
+                    case 'i':
+                        if (strcmp(s, "instr") == 0)
                             arg = ARGUMENT_BYTES;
-                        else if (strcmp(s, "instrBytesLen") == 0)
+                        else if (strcmp(s, "instrLen") == 0)
                             arg = ARGUMENT_BYTES_LEN;
+                        break;
+                    case 'n':
+                        if (strcmp(s, "next") == 0)
+                            arg = ARGUMENT_NEXT;
                         break;
                     case 'r':
                         if (strcmp(s, "rax") == 0)
@@ -472,6 +483,13 @@ static Action *parseAction(const char *str)
                             arg = ARGUMENT_RIP;
                         else if (strcmp(s, "rsp") == 0)
                             arg = ARGUMENT_RSP;
+                        break;
+                    case 't':
+                        if (strcmp(s, "target") == 0)
+                        {
+                            option_detail = true;
+                            arg = ARGUMENT_TARGET;
+                        }
                         break;
                     case '0': case '1': case '2': case '3': case '4':
                     case '5': case '6': case '7': case '8': case '9':
@@ -807,109 +825,6 @@ static bool sendInstructionMessage(FILE *out, Location &loc, intptr_t addr,
 }
 
 /*
- * Build the ASM string of the given instruction.
- */
-static void buildAsmStr(char *buf, size_t len, const cs_insn *I,
-    bool newline = false)
-{
-    unsigned i;
-    for (i = 0; i < len && I->mnemonic[i] != '\0'; i++)
-        buf[i] = I->mnemonic[i];
-    if (I->op_str[0] != '\0' && i < sizeof(buf)-1)
-        buf[i++] = ' ';
-    for (unsigned j = 0; i < len && I->op_str[j] != '\0'; i++, j++)
-    buf[i] = I->op_str[j];
-    if (newline && i < len)
-        buf[i++] = '\n';
-    if (i < len)
-        buf[i++] = '\0';
-    else
-        buf[len] = '\0';
-}
-
-/*
- * Build metadata.
- */
-static Metadata *buildMetadata(const Action *action, const cs_insn *J,
-    Metadata *metadata, char *asm_str, size_t asm_str_len)
-{
-    if (action == nullptr || action->kind == ACTION_PASSTHRU ||
-            action->kind == ACTION_TRAP ||
-            (action->kind == ACTION_CALL && action->args.size() == 0))
-    {
-        return nullptr;
-    }
-
-    switch (action->kind)
-    {
-        case ACTION_PRINT:
-            buildAsmStr(asm_str, asm_str_len, J, /*newline=*/true);
-
-            metadata[0].name   = "$asmStr";
-            metadata[0].kind   = METADATA_STRING;
-            metadata[0].string = asm_str;
-
-            metadata[1].name   = "$asmStrLen";
-            metadata[1].kind   = METADATA_INT32;
-            metadata[1].int32  = strlen(asm_str);
-
-            metadata[2].name   = nullptr;
-            metadata[2].kind   = METADATA_END;
-
-            break;
-
-        case ACTION_CALL:
-        {
-            bool asm_str_inited = false;
-            unsigned i = 0;
-            for (auto arg: action->args)
-            {
-                metadata[i].name = getArgumentName(arg.kind);
-                switch (arg.kind)
-                {
-                    case ARGUMENT_ASM_STR:
-                        if (!asm_str_inited)
-                            buildAsmStr(asm_str, asm_str_len, J);
-                        asm_str_inited = true;
-                        metadata[i].kind   = METADATA_STRING;
-                        metadata[i].string = asm_str;
-                        break;
-                    case ARGUMENT_ASM_STR_LEN:
-                        if (!asm_str_inited)
-                            buildAsmStr(asm_str, asm_str_len, J);
-                        asm_str_inited = true;
-                        metadata[i].kind   = METADATA_INT32;
-                        metadata[i].int32  = strlen(asm_str);
-                        break;
-                    case ARGUMENT_BYTES:
-                        metadata[i].kind   = METADATA_DATA;
-                        metadata[i].length = J->size;
-                        metadata[i].data   = J->bytes;
-                        break;
-                    case ARGUMENT_BYTES_LEN:
-                        metadata[i].kind   = METADATA_INT32;
-                        metadata[i].int32  = J->size;
-                        break;
-                    default:
-                        continue;
-                }
-                i++;
-            }
-            metadata[i].name = nullptr;
-            metadata[i].kind = METADATA_END;
-            break;
-        }
-
-        default:
-            metadata[0].name = nullptr;
-            metadata[0].kind = METADATA_END;
-            break;
-    }
-    
-    return metadata;
-}
-
-/*
  * Convert a positon into an address.
  */
 static intptr_t positionToAddr(const ELF &elf, const char *option,
@@ -1048,15 +963,19 @@ static void usage(FILE *stream, const char *progname)
         stream);
     fputs("\t\t\t    the instruction by the call.\n", stream);
     fputs("\t\t\t- ARG is one of:\n", stream);
-    fputs("\t\t\t  * \"instrAsmStr\" is a pointer to the string\n", stream);
+    fputs("\t\t\t  * \"asmStr\" is a pointer to the string\n", stream);
     fputs("\t\t\t    representation of the instruction.\n", stream);
-    fputs("\t\t\t  * \"instrAsmStrLen\" is the length of \"instrAsmStr\".\n",
+    fputs("\t\t\t  * \"asmStrLen\" is the length of \"asmStr\".\n",
         stream);
-    fputs("\t\t\t  * \"instrAddr\" is the address of the instruction.\n",
+    fputs("\t\t\t  * \"addr\" is the address of the instruction.\n",
         stream);
-    fputs("\t\t\t  * \"instrBytes\" is the bytes of the instruction.\n",
+    fputs("\t\t\t  * \"instr\" is the bytes of the instruction.\n",
         stream);
-    fputs("\t\t\t  * \"instrBytesLen\" is the length of \"instrBytes\".\n",
+    fputs("\t\t\t  * \"instrLen\" is the length of \"instr\".\n",
+        stream);
+    fputs("\t\t\t  * \"next\" is the address of the next instruction.\n",
+        stream);
+    fputs("\t\t\t  * \"target\" is the jump/call target, else -1.\n",
         stream);
     fputs("\t\t\t  * \"rax\"...\"r15\", \"rip\", \"rflags\" is the\n",
         stream);
@@ -1632,10 +1551,10 @@ int main(int argc, char **argv)
         else
         {
             // Builtin actions:
-            char asm_str_buf[256];
+            char buf[4096];
             Metadata metadata_buf[MAX_ARGNO+1];
             Metadata *metadata = buildMetadata(action, I, metadata_buf,
-                asm_str_buf, sizeof(asm_str_buf)-1);
+                buf, sizeof(buf)-1);
             sendPatchMessage(backend.out, action->name, offset, metadata);
         }
     }

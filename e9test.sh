@@ -23,7 +23,7 @@ for ACTION in \
     '=.*:passthru' \
     '=.*:call entry@nop' \
     '=.*:call[naked,after] entry@nop' \
-    '=.*:call entry(instrAsmStr,instrBytes,rflags,rdi,rip,instrAddr)@nop' \
+    '=.*:call entry(asmStr,instr,rflags,rdi,rip,addr)@nop' \
     '=.*:print'
 do
     # Step (1): duplicate the tools

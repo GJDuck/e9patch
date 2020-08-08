@@ -57,38 +57,12 @@ struct ELF
 };
 
 /*
- * Metadata kinds.
- */
-enum MetadataKind
-{
-    METADATA_END,                   // Metadata terminal.
-    METADATA_BOOL,                  // Boolean value.
-    METADATA_INT8,                  // 8-bit integer value.
-    METADATA_INT16,                 // 16-bit integer value.
-    METADATA_INT32,                 // 32-bit integer value.
-    METADATA_INT64,                 // 64-bit integer value.
-    METADATA_STRING,                // String value.
-    METADATA_DATA,                  // Raw value.
-};
-
-/*
  * Metadata.
  */
 struct Metadata
 {
     const char *name;               // Metadata name.
-    MetadataKind kind;              // Metadata kind.
-    unsigned length;                // Length of `data' if used.
-    union
-    {
-        bool boolean;               // Boolean value.
-        int8_t int8;                // 8-bit integer value.
-        int16_t int16;              // 16-bit integer value.
-        int32_t int32;              // 32-bit integer value.
-        int64_t int64;              // 64-bit integer value.
-        const char *string;         // String value.
-        const uint8_t *data;        // Raw data.
-    };
+    const char *data;               // Metadata data.
 };
 
 /*
@@ -99,10 +73,12 @@ enum ArgumentKind
     ARGUMENT_INVALID,               // Invalid argument
     ARGUMENT_INTEGER,               // Constant integer argument
     ARGUMENT_ADDR,                  // Instruction address
+    ARGUMENT_NEXT,                  // Next instruction address
     ARGUMENT_ASM_STR,               // Assembly string
     ARGUMENT_ASM_STR_LEN,           // Assembly string length
     ARGUMENT_BYTES,                 // Instruction bytes
     ARGUMENT_BYTES_LEN,             // Instruction bytes length
+    ARGUMENT_TARGET,                // Call/jump target.
     ARGUMENT_RAX,                   // %rax register
     ARGUMENT_RBX,                   // %rbx register
     ARGUMENT_RCX,                   // %rcx register
@@ -121,6 +97,8 @@ enum ArgumentKind
     ARGUMENT_RFLAGS,                // %rflags register
     ARGUMENT_RIP,                   // %rip register
     ARGUMENT_RSP,                   // %rsp register
+
+    ARGUMENT_MAX                    // Maximum argument value
 };
 
 struct Argument

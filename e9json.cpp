@@ -41,6 +41,7 @@
 #define NUMBER_MAX          12
 
 #define TOKEN_NONE          '\0'
+#define TOKEN_NULL          '0'
 #define TOKEN_BOOL          'B'
 #define TOKEN_STRING        'S'
 #define TOKEN_NUMBER        'N'
@@ -111,6 +112,8 @@ static const char *getTokenName(char token)
             return "<number>";
         case TOKEN_STRING:
             return "<string>";
+        case TOKEN_NULL:
+            return "<null>";
         default:
             return "???";
     }
@@ -161,6 +164,11 @@ static char peekToken(Parser &parser)
                 goto bad_token;
             parser.b = false;
             return (parser.peek = TOKEN_BOOL);
+        case 'n':
+            if (parser.getc() != 'u' || parser.getc() != 'l' ||
+                    parser.getc() != 'l')
+                goto bad_token;
+            return (parser.peek = TOKEN_NULL);
         case '-': case '0': case '1': case '2': case '3': case '4':
         case '5': case '6': case '7': case '8': case '9':
         {
@@ -743,6 +751,9 @@ static Trampoline *parseTrampoline(Parser &parser, bool int3 = false)
 
                 case '{':
                     entries.push_back(makeDataEntry(parser));
+                    break;
+ 
+                case TOKEN_NULL:
                     break;
 
                 default:
