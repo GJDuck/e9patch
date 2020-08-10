@@ -490,6 +490,8 @@ static Action *parseAction(const char *str)
                             option_detail = true;
                             arg = ARGUMENT_TARGET;
                         }
+                        else if (strcmp(s, "trampoline") == 0)
+                            arg = ARGUMENT_TRAMPOLINE;
                         break;
                     case '0': case '1': case '2': case '3': case '4':
                     case '5': case '6': case '7': case '8': case '9':
@@ -976,6 +978,8 @@ static void usage(FILE *stream, const char *progname)
     fputs("\t\t\t  * \"next\" is the address of the next instruction.\n",
         stream);
     fputs("\t\t\t  * \"target\" is the jump/call target, else -1.\n",
+        stream);
+    fputs("\t\t\t  * \"trampoline\" is the address of the trampoline.\n",
         stream);
     fputs("\t\t\t  * \"rax\"...\"r15\", \"rip\", \"rflags\" is the\n",
         stream);

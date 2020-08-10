@@ -78,7 +78,8 @@ enum ArgumentKind
     ARGUMENT_ASM_STR_LEN,           // Assembly string length
     ARGUMENT_BYTES,                 // Instruction bytes
     ARGUMENT_BYTES_LEN,             // Instruction bytes length
-    ARGUMENT_TARGET,                // Call/jump target.
+    ARGUMENT_TARGET,                // Call/jump target
+    ARGUMENT_TRAMPOLINE,            // Trampoline
     ARGUMENT_RAX,                   // %rax register
     ARGUMENT_RBX,                   // %rbx register
     ARGUMENT_RCX,                   // %rcx register

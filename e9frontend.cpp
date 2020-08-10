@@ -1198,6 +1198,10 @@ static void sendArgument(FILE *out, ArgumentKind arg, intptr_t value,
         case ARGUMENT_TARGET:
             fprintf(out, "\"%s\",", getLoadTargetName(argno));
             break;
+        case ARGUMENT_TRAMPOLINE:
+            sendLeaRIPR64(out, argno);
+            fprintf(out, "{\"rel32\":\".Ltrampoline\"},");
+            break;
         case ARGUMENT_RAX: case ARGUMENT_RBX: case ARGUMENT_RCX:
         case ARGUMENT_RDX: case ARGUMENT_RBP: case ARGUMENT_RDI:
         case ARGUMENT_RSI: case ARGUMENT_R8: case ARGUMENT_R9:
@@ -1323,6 +1327,15 @@ unsigned e9frontend::sendCallTrampolineMessage(FILE *out, const ELF &elf,
     putc('[', out);
     if (!replace && !before)
         fprintf(out, "\"$instruction\",");
+
+    for (const auto &arg: args)
+    {
+        if (arg.kind == ARGUMENT_TRAMPOLINE)
+        {
+            fputs("\".Ltrampoline\",", out);
+            break;
+        }
+    }
 
     int32_t rsp_offset32 = 0;
     fprintf(out, "%u,%u,%u,%u,%u,%u,%u,%u,",        // lea -0x4000(%rsp),%rsp

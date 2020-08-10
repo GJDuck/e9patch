@@ -233,6 +233,7 @@ Several arguments are supported:
 * `instrLen` is the length of `instrBytes`.
 * `next` is the address of the next instruction.
 * `target` is the jump/call target address, else -1.
+* `trampoline` is the address of the trampoline.
 * `rax`...`r15`, `rip`, `rflags` is the corresponding register value.
 * An integer constant.
 
