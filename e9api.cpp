@@ -91,6 +91,7 @@ void insertInstruction(Binary *B, Instr *I)
             case STATE_INSTRUCTION | STATE_LOCKED:
             case STATE_PATCHED:
             case STATE_PATCHED | STATE_LOCKED:
+            case STATE_QUEUED:
             case STATE_FREE:
                 error("failed to insert instruction at address (%p), the "
                     "corresponding virtual memory has already been patched",
@@ -102,6 +103,61 @@ void insertInstruction(Binary *B, Instr *I)
                     I->patched.state[i]);
         }
     }
+}
+
+/*
+ * Flush the patching queue up to the new cursor.
+ */
+static void queueFlush(Binary *B, intptr_t cursor)
+{
+    if (B->cursor <= cursor)
+        error("failed to patch instruction at address 0x%lx; \"patch\" "
+            "messages were not send in reverse order", cursor);
+    B->cursor = cursor;
+
+    cursor += /*max short jmp=*/ INT8_MAX + 2 + /*max instruction size=*/15 +
+        /*a bit extra=*/32;
+    while (!B->Q.empty() && B->Q.back().first->addr > cursor)
+    {
+        auto entry = B->Q.back();
+        B->Q.pop_back();
+        Instr *I            = entry.first;
+        const Trampoline *T = entry.second;
+        for (unsigned i = 0; i < I->size; i++)
+        {
+            assert(I->patched.state[i] == STATE_QUEUED);
+            I->patched.state[i] = STATE_INSTRUCTION;
+        }
+        if (patch(*B, I, T))
+            stat_num_patched++;
+        else
+            stat_num_failed++;
+    }
+}
+
+/*
+ * Queue an instruction for patching.
+ */
+static void queuePatch(Binary *B, Instr *I, const Trampoline *T)
+{
+    if (!option_experimental)
+    {
+        // Patch queues are experimental...
+        if (patch(*B, I, T))
+            stat_num_patched++;
+        else
+            stat_num_failed++;
+        return;
+    }
+
+    for (unsigned i = 0; i < I->size; i++)
+    {
+        assert(I->patched.state[i] == STATE_INSTRUCTION);
+        I->patched.state[i] = STATE_QUEUED;
+    }
+
+    B->Q.push_front({I, T});
+    queueFlush(B, I->addr);
 }
 
 /*
@@ -139,6 +195,7 @@ static Binary *parseBinary(const Message &msg)
     Binary *B = new Binary;
     B->filename = filename;
     B->mode     = mode;
+    B->cursor   = INTPTR_MAX;
 
     // Open the binary:
     int fd = open(filename, O_RDONLY);
@@ -325,10 +382,7 @@ static void parsePatch(Binary *B, const Message &msg)
         error("failed to parse \"patch\" message (id=%u); no matching "
             "trampoline with name \"%s\"", msg.id, trampoline);
     const Trampoline *T = j->second;
-    if (patch(*B, I, T))
-        stat_num_patched++;
-    else
-        stat_num_failed++;
+    queuePatch(B, I, T);
 }
 
 /*
@@ -376,6 +430,9 @@ static void parseEmit(Binary *B, const Message &msg)
         error("failed to parse \"emit\" message (id=%u); duplicate "
             "parameters detected");
 
+
+    // Flush the queue:
+    queueFlush(B, INTPTR_MIN);
     putchar('\n');
 
     // Create and optimize the mappings:

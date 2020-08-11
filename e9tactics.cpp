@@ -271,6 +271,9 @@ static Bounds makeBounds(const Trampoline *T, const Instr *I, const Instr *J,
 static const Alloc *allocatePunnedJump(Binary &B, const Instr *I,
     unsigned prefix, const Instr *J, const Trampoline *T)
 {
+    for (unsigned i = 0; i <= /*sizeof(jmpq)=*/5; i++)
+        if (I->patched.state[prefix + i] == STATE_QUEUED)
+            return nullptr;
     auto b = makeBounds(T, I, J, prefix);
     return allocate(B.allocator, b.lb, b.ub, T, J, option_same_page);
 }
@@ -333,6 +336,7 @@ static void patchJump(Patch *P, unsigned offset)
     }
     for (; i < sizeof(rel32); i++)
     {
+        assert(state[i] != STATE_QUEUED);
         assert(rel32p8[i] == bytes[i]);
         state[i] |= STATE_LOCKED;
     }
@@ -503,12 +507,21 @@ static Patch *tactic_T3b(Binary &B, Instr *I, const Trampoline *T)
             return nullptr;
     }
     int8_t rel8 = (int8_t)J->patched.bytes[0];
-    if (rel8 < 0)
+    if (!option_experimental && rel8 < 1)
         return nullptr;
     intptr_t target = I->addr + /*sizeof(short jmp)=*/2 + (intptr_t)rel8;
-    for (; J != nullptr && J->addr + J->size <= target; J = J->next)
-        ;
-    if (J == nullptr || target == J->addr)
+    if (target >= I->addr)
+    {
+        for (; J != nullptr && J->addr + J->size <= target; J = J->next)
+            ;
+    }
+    else
+    {
+        for (J = I->prev; J != nullptr && J->addr > target; J = J->prev)
+            ;
+    }
+    if (J == nullptr || target == J->addr ||
+            (J->addr < I->addr && J->addr + J->size > I->addr))
         return nullptr;
     unsigned i = target - J->addr;
     uint8_t state = J->patched.state[i];
@@ -554,6 +567,7 @@ static Patch *tactic_T3b(Binary &B, Instr *I, const Trampoline *T)
     assert(A != nullptr);
     Patch *Q = new Patch(I, TACTIC_T3);
     I->trampoline = A->lb;
+    assert(I->patched.state[0] == STATE_INSTRUCTION);
     I->patched.state[0] = STATE_PATCHED;
     I->patched.bytes[0] = /*short jmp opcode=*/0xEB;
     I->next->patched.state[0] |= STATE_LOCKED;
@@ -594,8 +608,8 @@ static Patch *tactic_T3(Binary &B, Instr *I, const Trampoline *T)
             continue;
         if (J == nullptr)
             break;
-        if (J->addr < I->addr)
-            break;          // XXX early exit!
+        if (!option_experimental && J->addr < I->addr)
+            break;
         if ((I->addr + /*sizeof(short jmp)=*/2) - (J->addr + J->size -1) >
                 -SHORT_JMP_MIN)
         {
@@ -618,8 +632,7 @@ static Patch *tactic_T3(Binary &B, Instr *I, const Trampoline *T)
                 continue;
         }
 
-        for (int i = (int)J->size - (J->addr > I->addr? 1: 5);
-                i >= 1 && P == nullptr; i--)
+        for (int i = (int)J->size - 1; i >= 1 && P == nullptr; i--)
         {
             if (J->addr > I->addr &&
                 (J->addr + i) - (I->addr + /*sizeof(short jmp)=*/2) >
@@ -628,8 +641,6 @@ static Patch *tactic_T3(Binary &B, Instr *I, const Trampoline *T)
                 // Out-of-range
                 continue;
             }
-            if (J->addr < I->addr && J->size < 5 + 1)
-                continue;
             if (J->addr < I->addr &&
                 (I->addr + /*sizeof(short jmp)=*/2) - (J->addr + i) >
                     -SHORT_JMP_MIN)

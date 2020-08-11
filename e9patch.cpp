@@ -36,6 +36,7 @@ bool option_disable_B2    = false;
 bool option_disable_T1    = false;
 bool option_disable_T2    = false;
 bool option_disable_T3    = false;
+bool option_experimental  = false;
 bool option_static_loader = false;
 bool option_same_page     = false;
 bool option_trap_all      = false;
@@ -125,6 +126,7 @@ enum Option
     OPTION_DISABLE_T1,
     OPTION_DISABLE_T2,
     OPTION_DISABLE_T3,
+    OPTION_EXPERIMENTAL,
     OPTION_HELP,
     OPTION_INPUT,
     OPTION_LB,
@@ -173,8 +175,10 @@ static void usage(FILE *stream, const char *progname)
     fputc('\n', stream);
     fputs("\t--disable-B1, --disable-B2, --disable-T1, --disable-T2 "
         "--disable-T3\n", stream);
-    fputs("\t\tDisable the corresponding tactic (B1/B2/T1/T2/T3).\n",
-        stream);
+    fputs("\t\tDisable the corresponding tactic (B1/B2/T1/T2/T3).\n", stream);
+    fputc('\n', stream);
+    fputs("\t--experimental\n", stream);
+    fputs("\t\tEnable experimental optimizations and extensions.\n", stream);
     fputc('\n', stream);
     fputs("\t--help, -h\n", stream);
     fputs("\t\tPrint this help message.\n", stream);
@@ -243,6 +247,7 @@ int realMain(int argc, char **argv)
         {"disable-T1",    false, nullptr, OPTION_DISABLE_T1},
         {"disable-T2",    false, nullptr, OPTION_DISABLE_T2},
         {"disable-T3",    false, nullptr, OPTION_DISABLE_T3},
+        {"experimental",  false, nullptr, OPTION_EXPERIMENTAL},
         {"help",          false, nullptr, OPTION_HELP},
         {"input",         true,  nullptr, OPTION_INPUT},
         {"lb",            true,  nullptr, OPTION_LB},
@@ -281,6 +286,9 @@ int realMain(int argc, char **argv)
                 break;
             case OPTION_DISABLE_T3:
                 option_disable_T3 = true;
+                break;
+            case OPTION_EXPERIMENTAL:
+                option_experimental = true;
                 break;
             case 'h':
             case OPTION_HELP:

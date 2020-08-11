@@ -26,6 +26,7 @@
 
 #include <elf.h>
 
+#include <deque>
 #include <map>
 #include <vector>
 
@@ -42,6 +43,7 @@
 #define STATE_PATCHED           0x2     // Used by a patched instruction.
 #define STATE_FREE              0x3     // Was used by instruction, now free.
 #define STATE_OVERFLOW          0x4     // Byte is past the end-of-file.
+#define STATE_QUEUED            0x5     // Byte is queued for patching.
 #define STATE_LOCKED            0x10    // Byte is locked (read-only).
 
 /*
@@ -319,6 +321,7 @@ enum Mode
  * Binary representation.
  */
 typedef std::map<off_t, Instr *> InstrSet;
+typedef std::deque<std::pair<Instr *, const Trampoline *>> PatchQueue;
 typedef std::map<const char *, Trampoline *, CStrCmp> TrampolineSet;
 typedef std::vector<intptr_t> InitSet;
 struct Binary
@@ -340,6 +343,9 @@ struct Binary
         size_t size;                    // The patched binary size.
     } patched;
 
+    intptr_t cursor;                    // Patching cursor.
+    PatchQueue Q;                       // Instructions queued for patching.
+
     InstrSet Is;                        // All (known) instructions.
     TrampolineSet Ts;                   // All current trampoline templates.
     
@@ -359,6 +365,7 @@ extern bool option_disable_B2;
 extern bool option_disable_T1;
 extern bool option_disable_T2;
 extern bool option_disable_T3;
+extern bool option_experimental;
 extern bool option_static_loader;
 extern bool option_same_page;
 extern bool option_trap_all;
