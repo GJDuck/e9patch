@@ -25,22 +25,27 @@ CC=gcc
 DIRNAME=`dirname $1`
 BASENAME=`basename $1 .c`
 
-shift
-
-set -e
-
 echo "$CC -fno-stack-protector -fpie -O2 -c -Wall $@ \"$DIRNAME/$BASENAME.c\""
-$CC -fno-stack-protector -fpie -O2 -c -Wall $@ "$DIRNAME/$BASENAME.c"
+if ! $CC -fno-stack-protector -fpie -O2 -c -Wall $@ "$DIRNAME/$BASENAME.c"
+then
+	echo >&2
+    echo "${RED}error${OFF}: compilation of (${YELLOW}$BASENAME${OFF}) failed" >&2
+	echo >&2
+    exit 1
+fi
 
 echo "$CC \"$BASENAME.o\" -o \"$BASENAME\" -pie -nostdlib -Wl,-z -Wl,max-page-size=4096 -Wl,--export-dynamic -Wl,--entry=0x0 -Wl,--strip-all"
-$CC "$BASENAME.o" -o "$BASENAME" -pie -nostdlib -Wl,-z -Wl,max-page-size=4096 \
-    -Wl,--export-dynamic -Wl,--entry=0x0 -Wl,--strip-all
+if !  $CC "$BASENAME.o" -o "$BASENAME" -pie -nostdlib -Wl,-z -Wl,max-page-size=4096 -Wl,--export-dynamic -Wl,--entry=0x0 -Wl,--strip-all
+then
+    echo >&2
+    echo "${RED}error${OFF}: linking (${YELLOW}$BASENAME${OFF}) failed" >&2
+	echo >&2
+    exit 1
+fi
 
 RELOCS=`readelf -r "$BASENAME" | head -n 10 | grep 'R_X86_64_'`
-if [ -z "$RELOCS" ]
+if [ ! -z "$RELOCS" ]
 then
-    exit 0
-else
 	echo >&2
     echo "${RED}error${OFF}: the generated file (${YELLOW}$BASENAME${OFF}) contains relocations" >&2
 	echo >&2
@@ -63,4 +68,6 @@ else
     echo >&2
 	exit 1
 fi
+
+exit 0
 

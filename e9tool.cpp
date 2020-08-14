@@ -1358,9 +1358,6 @@ int main(int argc, char **argv)
                     target_elf = new ELF;
     
                     parseELF(action->filename, free_addr, *target_elf);
-                    if (!target_elf->pie)
-                        error("failed to parse ELF file \"%s\"; file is "
-                            "not a dynamic executable", action->filename);
                     sendELFFileMessage(backend.out, *target_elf);
                     files.insert({action->filename, target_elf});
                     size_t size = (size_t)target_elf->free_addr;

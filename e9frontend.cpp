@@ -43,6 +43,33 @@
 
 #include "e9frontend.h"
 
+/*
+ * ELF file.
+ */
+namespace e9frontend
+{
+    struct ELF
+    {
+        const char *filename;           // Filename.
+        const uint8_t *data;            // File data.
+        size_t size;                    // File size.
+        intptr_t base;                  // Base address.
+        const Elf64_Phdr *phdrs;        // Elf PHDRs.
+        size_t phnum;                   // Number of PHDRs.
+        off_t    text_offset;           // (.text) section offset.
+        intptr_t text_addr;             // (.text) section address.
+        size_t   text_size;             // (.text) section size.
+        const char *dynamic_strtab;     // Dynamic string table.
+        size_t dynamic_strsz;           // Dynamic string table size.
+        const Elf64_Sym *dynamic_symtab;// Dynamic symbol table.
+        size_t dynamic_symsz;           // Dynamic symbol table size.
+        intptr_t free_addr;             // First unused address.
+        bool pie;                       // PIE?
+        bool dso;                       // Shared object?
+        bool reloc;                     // Needs relocation?
+    };
+};
+
 using namespace e9frontend;
 
 /*
@@ -601,6 +628,7 @@ void e9frontend::parseELF(const char *filename, intptr_t base, ELF &elf)
     size_t shnum = (size_t)ehdr->e_shnum;
     const Elf64_Shdr *shdr_text = nullptr, *shdr_dynsym = nullptr,
         *shdr_dynstr = nullptr;
+    bool reloc = false;
     for (size_t i = 0; i < shnum; i++)
     {
         const Elf64_Shdr *shdr = shdrs + i;
@@ -619,6 +647,10 @@ void e9frontend::parseELF(const char *filename, intptr_t base, ELF &elf)
             case SHT_STRTAB:
                 if (strcmp(strtab + shdr->sh_name, ".dynstr") == 0)
                     shdr_dynstr = shdr;
+                break;
+            case SHT_REL:
+            case SHT_RELA:
+                reloc = true;
                 break;
             default:
                 break;
@@ -699,6 +731,7 @@ void e9frontend::parseELF(const char *filename, intptr_t base, ELF &elf)
     elf.free_addr      = free_addr;
     elf.pie            = (pic && exe);
     elf.dso            = (pic && !exe);
+    elf.reloc          = reloc;
 }
 
 /*
@@ -730,6 +763,16 @@ intptr_t e9frontend::lookupSymbol(const ELF &elf, const char *symbol)
  */
 void e9frontend::sendELFFileMessage(FILE *out, const ELF &elf, bool absolute)
 {
+    /*
+     * Sanity checks.
+     */
+    if (!elf.pie)
+        error("failed to embed ELF file \"%s\"; file is not a dynamic "
+            "executable", elf.filename);
+    if (elf.reloc)
+        error("failed to embed ELF file \"%s\"; file uses relocations",
+            elf.filename);
+
     /*
      * Check for special routines.
      */

@@ -36,25 +36,7 @@ namespace e9frontend
 /*
  * ELF file.
  */
-struct ELF
-{
-    const char *filename;           // Filename.
-    const uint8_t *data;            // File data.
-    size_t size;                    // File size.
-    intptr_t base;                  // Base address.
-    const Elf64_Phdr *phdrs;        // Elf PHDRs.
-    size_t phnum;                   // Number of PHDRs.
-    off_t    text_offset;           // (.text) section offset.
-    intptr_t text_addr;             // (.text) section address.
-    size_t   text_size;             // (.text) section size.
-    const char *dynamic_strtab;     // Dynamic string table.
-    size_t dynamic_strsz;           // Dynamic string table size.
-    const Elf64_Sym *dynamic_symtab;// Dynamic symbol table.
-    size_t dynamic_symsz;           // Dynamic symbol table size.
-    intptr_t free_addr;             // First unused address.
-    bool     pie;                   // PIE?   
-    bool     dso;                   // Shared object?
-};
+struct ELF;
 
 /*
  * Metadata.
