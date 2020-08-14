@@ -25,12 +25,14 @@ CC=gcc
 DIRNAME=`dirname $1`
 BASENAME=`basename $1 .c`
 
+shift
+
 echo "$CC -fno-stack-protector -fpie -O2 -c -Wall $@ \"$DIRNAME/$BASENAME.c\""
 if ! $CC -fno-stack-protector -fpie -O2 -c -Wall $@ "$DIRNAME/$BASENAME.c"
 then
-	echo >&2
+    echo >&2
     echo "${RED}error${OFF}: compilation of (${YELLOW}$BASENAME${OFF}) failed" >&2
-	echo >&2
+    echo >&2
     exit 1
 fi
 
@@ -39,34 +41,34 @@ if !  $CC "$BASENAME.o" -o "$BASENAME" -pie -nostdlib -Wl,-z -Wl,max-page-size=4
 then
     echo >&2
     echo "${RED}error${OFF}: linking (${YELLOW}$BASENAME${OFF}) failed" >&2
-	echo >&2
+    echo >&2
     exit 1
 fi
 
 RELOCS=`readelf -r "$BASENAME" | head -n 10 | grep 'R_X86_64_'`
 if [ ! -z "$RELOCS" ]
 then
-	echo >&2
+    echo >&2
     echo "${RED}error${OFF}: the generated file (${YELLOW}$BASENAME${OFF}) contains relocations" >&2
-	echo >&2
+    echo >&2
     echo "EXPLANATION:" >&2
-	echo >&2
-	echo "    E9Tool's call instrumentation does not support relocations.  These are" >&2
-	echo "    usually caused by global variables that contain pointers, e.g.:" >&2
-	echo >&2
-	echo "      ${YELLOW}const char *days[] = {\"mon\", \"tue\", \"wed\", \"thu\", \"fri\", \"sat\", \"sun\"};${OFF}" >&2
     echo >&2
-	echo "    Here, the global variable days[] is an array-of-pointers which usually" >&2
+    echo "    E9Tool's call instrumentation does not support relocations.  These are" >&2
+    echo "    usually caused by global variables that contain pointers, e.g.:" >&2
+    echo >&2
+    echo "      ${YELLOW}const char *days[] = {\"mon\", \"tue\", \"wed\", \"thu\", \"fri\", \"sat\", \"sun\"};${OFF}" >&2
+    echo >&2
+    echo "    Here, the global variable days[] is an array-of-pointers which usually" >&2
     echo "    results in relocations in the instrumentation binary.  Currently, E9Tool's" >&2
-	echo "    call instrumentation does not apply relocations, meaning that the final" >&2
-	echo "    patched binary using the instrumentation may crash." >&2
-	echo >&2
+    echo "    call instrumentation does not apply relocations, meaning that the final" >&2
+    echo "    patched binary using the instrumentation may crash." >&2
+    echo >&2
     echo "    It may be possible to rewrite code to avoid relocations in exchange for" >&2
-	echo "    extra padding, e.g.:" >&2
+    echo "    extra padding, e.g.:" >&2
     echo >&2
-	echo "      ${YELLOW}const char days[][4] = {\"mon\", \"tue\", \"wed\", \"thu\", \"fri\", \"sat\", \"sun\"};${OFF}" >&2
+    echo "      ${YELLOW}const char days[][4] = {\"mon\", \"tue\", \"wed\", \"thu\", \"fri\", \"sat\", \"sun\"};${OFF}" >&2
     echo >&2
-	exit 1
+    exit 1
 fi
 
 exit 0
