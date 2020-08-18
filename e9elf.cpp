@@ -546,6 +546,7 @@ static size_t emitLoader(const RefactorSet &refactors,
         0x5e,                           // popq %rsi
         0x5a,                           // popq %rdx
         0x59,                           // popq %rcx
+        0x41, 0x58,                     // popq %r8
         0x41, 0x59,                     // popq %r9
         0x41, 0x5a,                     // popq %r10
         0x41, 0x5b,                     // popq %r11
@@ -553,7 +554,6 @@ static size_t emitLoader(const RefactorSet &refactors,
         0x41, 0x5d,                     // popq %r13
         0x41, 0x5e,                     // popq %r14
         0x41, 0x5f,                     // popq %r15
-        0x41, 0x58,                     // popq %r8
     };
     memcpy(data + size, restore_state, sizeof(restore_state));
     size += sizeof(restore_state);

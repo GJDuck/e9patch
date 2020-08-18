@@ -381,10 +381,11 @@ static NO_INLINE int e9binary(char *path_buf)
             }
         }
     }
+    e9close(fd);
 
     // Step (3): Read the link.
     // Note: this is necessary since Linux does not allow the path to be
-    //       opened directy.
+    //       opened directly.
     int len = e9readlink(path_buf, path_buf, BUFSIZ);
     if (len < 0)
         return len;
