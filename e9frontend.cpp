@@ -1214,6 +1214,10 @@ static void sendArgument(FILE *out, ArgumentKind arg, intptr_t value,
             sendInteger(out, value);
             fprintf(out, "},");
             break;
+        case ARGUMENT_OFFSET:
+            sendMovI32R32(out, argno);
+            fprintf(out, "\"$offset\",");
+            break;
         case ARGUMENT_ADDR:
             sendLeaRIPR64(out, argno);
             fprintf(out, "{\"rel32\":\".Linstruction\"},");
@@ -1513,6 +1517,8 @@ static const char *getArgumentName(ArgumentKind arg)
 {
     switch (arg)
     {
+        case ARGUMENT_OFFSET:
+            return "$offset";
         case ARGUMENT_ASM_STR:
             return "$asmStr";
         case ARGUMENT_ASM_STR_LEN:

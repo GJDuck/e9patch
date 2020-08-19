@@ -442,7 +442,7 @@ static const char *buildMetadataString(FILE *out, char *buf, long *pos)
  * Build metadata.
  */
 static Metadata *buildMetadata(const Action *action, const cs_insn *I,
-    Metadata *metadata, char *buf, size_t size)
+    off_t offset, Metadata *metadata, char *buf, size_t size)
 {
     if (action == nullptr || action->kind == ACTION_PASSTHRU ||
             action->kind == ACTION_TRAP || action->kind == ACTION_PLUGIN ||
@@ -480,58 +480,71 @@ static Metadata *buildMetadata(const Action *action, const cs_insn *I,
         }
         case ACTION_CALL:
         {
-            const char *asm_str     = nullptr;
-            const char *asm_str_len = nullptr;
-            const char *bytes       = nullptr;
-            const char *bytes_len   = nullptr;
+            const char *md_offset      = nullptr;
+            const char *md_asm_str     = nullptr;
+            const char *md_asm_str_len = nullptr;
+            const char *md_bytes       = nullptr;
+            const char *md_bytes_len   = nullptr;
             int i = 0, argno = 0;
             for (auto &arg: action->args)
             {
                 switch (arg.kind)
                 {
+                    case ARGUMENT_OFFSET:
+                        if (md_offset == nullptr)
+                        {
+                            sendIntegerData(out, 32, offset);
+                            md_offset = buildMetadataString(out, buf, &pos);
+                            metadata[i].name = "$offset";
+                            metadata[i].data = md_offset;
+                            i++;
+                        }
+                        break;
+
                     case ARGUMENT_ASM_STR:
-                        if (asm_str == nullptr)
+                        if (md_asm_str == nullptr)
                         {
                             sendAsmStrData(out, I);
-                            asm_str = buildMetadataString(out, buf, &pos);
+                            md_asm_str = buildMetadataString(out, buf, &pos);
                             metadata[i].name = "$asmStr";
-                            metadata[i].data = asm_str;
+                            metadata[i].data = md_asm_str;
                             i++;
                         }
                         break;
 
                     case ARGUMENT_ASM_STR_LEN:
-                        if (asm_str_len == nullptr)
+                        if (md_asm_str_len == nullptr)
                         {
                             intptr_t len = strlen(I->mnemonic) +
                                 (I->op_str[0] == '\0'? 0:
                                  1 + strlen(I->op_str));
                             sendIntegerData(out, 32, len);
-                            asm_str_len = buildMetadataString(out, buf, &pos);
+                            md_asm_str_len =
+                                buildMetadataString(out, buf, &pos);
                             metadata[i].name = "$asmStrLen";
-                            metadata[i].data = asm_str_len;
+                            metadata[i].data = md_asm_str_len;
                             i++;
                         }
                         break;
 
                     case ARGUMENT_BYTES:
-                        if (bytes == nullptr)
+                        if (md_bytes == nullptr)
                         {
                             sendBytesData(out, I->bytes, I->size);
-                            bytes = buildMetadataString(out, buf, &pos);
+                            md_bytes = buildMetadataString(out, buf, &pos);
                             metadata[i].name = "$bytes";
-                            metadata[i].data = bytes;
+                            metadata[i].data = md_bytes;
                             i++;
                         }
                         break;
 
                     case ARGUMENT_BYTES_LEN:
-                        if (bytes_len == nullptr)
+                        if (md_bytes_len == nullptr)
                         {
                             sendIntegerData(out, 32, I->size);
-                            bytes_len = buildMetadataString(out, buf, &pos);
+                            md_bytes_len = buildMetadataString(out, buf, &pos);
                             metadata[i].name = "$bytesLen";
-                            metadata[i].data = bytes_len;
+                            metadata[i].data = md_bytes_len;
                             i++;
                         }
                         break;
@@ -539,10 +552,10 @@ static Metadata *buildMetadata(const Action *action, const cs_insn *I,
                     case ARGUMENT_TARGET:
                     {
                         sendLoadTargetMetadata(out, I, action->clean, argno);
-                        const char *load_target =
+                        const char *md_load_target =
                             buildMetadataString(out, buf, &pos);
                         metadata[i].name = getLoadTargetName(argno);
-                        metadata[i].data = load_target;
+                        metadata[i].data = md_load_target;
                         i++;
                         break;
                     }

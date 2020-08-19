@@ -21,6 +21,7 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include <cassert>
 #include <cerrno>
 #include <cstdio>
 #include <cstdlib>
@@ -55,7 +56,7 @@ static bool option_detail    = false;
 static bool option_debug     = false;
 static std::string option_format("binary");
 static std::string option_output("a.out");
-static std::string option_syntax("att");
+static std::string option_syntax("ATT");
 
 /*
  * Instruction location.
@@ -92,16 +93,28 @@ struct CStrCmp
 enum MatchKind
 {
     MATCH_INVALID,
+    MATCH_TRUE,
+    MATCH_FALSE,
     MATCH_ASSEMBLY,
     MATCH_ADDRESS,
-    MATCH_BYTES,
-    MATCH_EMPTY,
-    MATCH_ATTRIBUTES,
     MATCH_OFFSET,
     MATCH_RANDOM,
-    MATCH_READ_REGS,
     MATCH_SIZE,
-    MATCH_WRITE_REGS,
+};
+
+/*
+ * Match comparison operator.
+ */
+enum MatchCmp
+{
+    MATCH_CMP_INVALID,
+    MATCH_CMP_NEQ_ZERO,
+    MATCH_CMP_EQ,
+    MATCH_CMP_NEQ,
+    MATCH_CMP_LT,
+    MATCH_CMP_LEQ,
+    MATCH_CMP_GT,
+    MATCH_CMP_GEQ
 };
 
 /*
@@ -118,35 +131,37 @@ enum ActionKind
 };
 
 /*
- * An action entry.
+ * A match entry.
  */
-struct ActionEntry
+struct MatchEntry
 {
-    const std::regex regex;
-    const std::string regex_str;
     const MatchKind match;
+    const MatchCmp  cmp;
+    const std::string string;
+    std::regex regex;
+    std::set<intptr_t> values;
 
-    ActionEntry(ActionEntry &&entry) :
-        regex(std::move(entry.regex)), regex_str(std::move(entry.regex_str)),
-            match(entry.match)
+    MatchEntry(MatchEntry &&entry) :
+        match(entry.match), cmp(entry.cmp), regex(std::move(entry.regex)),
+        string(std::move(entry.string)), values(std::move(entry.values))
     {
         ;
     }
 
-    ActionEntry(const char *regex, MatchKind match) :
-        regex(regex), regex_str(regex), match(match)
+    MatchEntry(MatchKind match, MatchCmp cmp, const char *s) :
+        string(s), cmp(cmp), match(match)
     {
         ;
     }
 };
-typedef std::vector<ActionEntry> ActionEntries;
+typedef std::vector<MatchEntry> MatchEntries;
 
 /*
  * Actions.
  */
 struct Action
 {
-    const ActionEntries entries;
+    const MatchEntries entries;
     const ActionKind kind;
     const char * const name;
     const char * const filename;
@@ -162,7 +177,7 @@ struct Action
     bool before;
     bool replace;
 
-    Action(ActionEntries &&entries, ActionKind kind, const char *name, 
+    Action(MatchEntries &&entries, ActionKind kind, const char *name, 
             const char *filename, const char *symbol,
             const std::vector<Argument> &&args,  bool clean, bool before,
             bool replace) :
@@ -178,7 +193,7 @@ struct Action
 typedef std::map<size_t, Action *> Actions;
 
 /*
- * Metadata implementation.
+ * Implementation.
  */
 #include "e9metadata.cpp"
 
@@ -228,109 +243,189 @@ struct Parser
 };
 
 /*
- * Parse an action.
+ * Parse an integer.
  */
-static Action *parseAction(const char *str)
+static const char *parseInt(const char *s, intptr_t &x)
 {
-    char buf[BUFSIZ];
-    unsigned i = 0;
-    const char *end = strchr(str, ':');
-    if (end == nullptr)
-        error("failed to parse action string \"%s\"; missing `:' separator",
-            str);
-    
-    ActionEntries entries;
+    bool neg = false;
+    if (s[0] == '+')
+        s++;
+    else if (s[0] == '-')
+    {
+        neg = true;
+        s++;
+    }
+    int base = (s[0] == '0' && s[1] == 'x'? 16: 10);
+    char *end = nullptr;
+    x = (intptr_t)strtoull(s, &end, base);
+    if (end == nullptr || end == s)
+        return nullptr;
+    x = (neg? -x: x);
+    return end;
+}
+
+/*
+ * Parse a list of values.
+ */
+static void parseValues(const char *s, std::set<intptr_t> &values)
+{
+    if (*s == '\0')
+        return;
     while (true)
     {
-        // Step (1): parse the match kind:
-        while (isspace(str[i]))
-            i++;
-        if (str[i] == ':')
-            break;
-        for (unsigned j = 0; i < sizeof(buf); i++, j++)
+        intptr_t x = 0;
+        const char *end = parseInt(s, x);
+        if (end == nullptr)
+            error("failed to parse integer from string \"%.30s%s\"", s,
+                (strlen(s) > 30? "...": ""));
+        values.insert(x);
+        switch (*end)
         {
-            if (!isalnum(str[i]) && str[i] != '.')
-            {
-                buf[j] = '\0';
+            case ',': case '|':
+                s = end+1;
                 break;
-            }
-            buf[j] = str[i];
-        }
-        while (isspace(str[i]))
-            i++;
-        if (str[i] != '=')
-            error("failed to parse action string \"%s\"; expected `=' "
-                "separator after \"%s\" match-kind", str, buf);
-        i++;
-        MatchKind match = MATCH_INVALID;
-        switch (buf[0])
-        {
             case '\0':
-                match = MATCH_EMPTY;
-                break;
-            case 'a':
-                if (strcmp(buf, "asm") == 0)
-                    match = MATCH_ASSEMBLY;
-                else if (strcmp(buf, "addr") == 0)
-                    match = MATCH_ADDRESS;
-                else if (strcmp(buf, "attr") == 0)
-                    match = MATCH_ATTRIBUTES;
-                break;
-            case 'b':
-                if (strcmp(buf, "bytes") == 0)
-                    match = MATCH_BYTES;
-                break;
-            case 'o':
-                if (strcmp(buf, "offset") == 0)
-                    match = MATCH_OFFSET;
-                break;
-            case 'r':
-                if (strcmp(buf, "rand") == 0)
-                    match = MATCH_RANDOM;
-                else if (strcmp(buf, "regs.read") == 0)
-                    match = MATCH_READ_REGS;
-                else if (strcmp(buf, "regs.write") == 0)
-                    match = MATCH_WRITE_REGS;
-                break;
-            case 's':
-                if (strcmp(buf, "size") == 0)
-                    match = MATCH_SIZE;
-                break;
-        }
-        switch (match)
-        {
-            case MATCH_INVALID:
-                error("failed to parse action string \"%s\"; invalid match-"
-                    "kind \"%s\"", str, buf);
-            case MATCH_ATTRIBUTES:
-            case MATCH_READ_REGS:
-            case MATCH_WRITE_REGS:
-                option_detail = true;
-                break;
+                return;
             default:
-                break;
+                error("failed to parse integer list; unexpected character "
+                    "`%c' in string \"%.30s%s\"", *end, s,
+                    (strlen(s) > 30? "...": ""));
         }
-
-        // Step (2): parse the regular-expression:
-        while (isspace(str[i]))
-            i++;
-        for (unsigned j = 0; j < sizeof(buf); i++, j++)
-        {
-            if (isspace(str[i]) || str[i] == ':')
-            {
-                buf[j] = '\0';
-                break;
-            }
-            buf[j] = str[i];
-        }
-
-        ActionEntry entry(buf, match);
-        entries.push_back(std::move(entry));
     }
+}
 
-    // Step (3): parse the instrumentation:
+/*
+ * Parse a match.
+ */
+static void parseMatch(const char *str, MatchEntries &entries)
+{
+    MatchKind match = MATCH_INVALID;
+    char name[32];
+    size_t i = 0;
+    for (; isspace(str[i]); i++)
+        ;
+    size_t j = 0;
+    for (; isalpha(str[i]) && str[i] != '\0' &&
+            j < sizeof(name)-1; i++, j++)
+        name[j] = str[i];
+    if (isalpha(str[i]))
+        error("failed to parse matching \"%s\"; name is too long", str);
+    name[j] = '\0';
+    for (; isspace(str[i]); i++)
+        ;
+    switch (name[0])
+    {
+        case 'a':
+            if (strcmp(name, "asm") == 0)
+                match = MATCH_ASSEMBLY;
+            else if (strcmp(name, "addr") == 0)
+                match = MATCH_ADDRESS;
+            break;
+        case 'f':
+            if (strcmp(name, "false") == 0)
+                match = MATCH_FALSE;
+            break;
+        case 'o':
+            if (strcmp(name, "offset") == 0)
+                match = MATCH_OFFSET;
+            break;
+        case 'r':
+            if (strcmp(name, "random") == 0)
+                match = MATCH_RANDOM;
+            break;
+        case 's':
+            if (strcmp(name, "size") == 0)
+                match = MATCH_SIZE;
+            break;
+        case 't':
+            if (strcmp(name, "true") == 0)
+                match = MATCH_TRUE;
+            break;
+    }
+    MatchCmp cmp = MATCH_CMP_INVALID;
+    switch (str[i++])
+    {
+        case '!':
+            if (str[i++] == '=')
+                cmp = MATCH_CMP_NEQ;
+            break;
+        case '<':
+            cmp = MATCH_CMP_LT;
+            if (str[i] == '=')
+            {
+                cmp = MATCH_CMP_LEQ;
+                i++;
+            }
+            break;
+        case '>':
+            cmp = MATCH_CMP_GT;
+            if (str[i] == '=')
+            {
+                cmp = MATCH_CMP_GEQ;
+                i++;
+            }
+            break;
+        case '=':
+            cmp = MATCH_CMP_EQ;
+            if (str[i] == '=')
+                i++;
+            break;
+        case '\0':
+            cmp = MATCH_CMP_NEQ_ZERO;
+            break;
+    }
+    if (cmp == MATCH_CMP_INVALID)
+        error("failed to parse matching \"%s\"; missing comparison "
+            "operator", str);
+    switch (match)
+    {
+        case MATCH_INVALID:
+            error("failed to parse matching \"%s\"; invalid match-"
+                "kind \"%s\"", name, str);
+        case MATCH_ASSEMBLY:
+            if (cmp != MATCH_CMP_EQ && cmp != MATCH_CMP_NEQ)
+                error("failed to parse matching \"%s\"; invalid match "
+                    "comparison operator for match-kind %s", str, name);
+            break;
+        default:
+            break;
+    }
+ 
+    for (; isspace(str[i]); i++)
+        ;
+    MatchEntry entry(match, cmp, str+i);
+    switch (match)
+    {
+        case MATCH_ASSEMBLY:
+            entry.regex = str+i;
+            break;
+        case MATCH_TRUE:
+        case MATCH_FALSE:
+        case MATCH_ADDRESS:
+        case MATCH_OFFSET:
+        case MATCH_RANDOM:
+        case MATCH_SIZE:
+            if (cmp == MATCH_CMP_NEQ_ZERO)
+                break;
+            parseValues(str+i, entry.values);
+            break;
+        default:
+            break;
+    }
+    entries.push_back(std::move(entry));
+}
+
+/*
+ * Parse an action.
+ */
+static Action *parseAction(const char *str, MatchEntries &entries)
+{
+    if (entries.size() == 0)
+        error("failed to parse action; the `--action' or `-A' option must be "
+            "preceded by one or more `--match' or `-M' options");
+
     ActionKind kind = ACTION_INVALID;
-    Parser parser(end+1);
+    Parser parser(str);
     switch (parser.getToken())
     {
         case 'c':
@@ -446,6 +541,10 @@ static Action *parseAction(const char *str)
                         if (strcmp(s, "next") == 0)
                             arg = ARGUMENT_NEXT;
                         break;
+                    case 'o':
+                        if (strcmp(s, "offset") == 0)
+                            arg = ARGUMENT_OFFSET;
+                        break;
                     case 'r':
                         if (strcmp(s, "rax") == 0)
                             arg = ARGUMENT_RAX;
@@ -497,16 +596,9 @@ static Action *parseAction(const char *str)
                     case '5': case '6': case '7': case '8': case '9':
                     case '-':
                     {
-                        const char *t = s;
-                        bool neg = (t[0] == '-');
-                        if (neg)
-                            t++;
-                        int base = (t[0] == '0' && t[1] == 'x'? 16: 10);
-                        char *end = nullptr;
-                        value = (intptr_t)strtoull(t, &end, base);
+                        const char *end = parseInt(s, value);
                         if (end == nullptr || *end != '\0')
                             break;
-                        value = (neg? -value: value);
                         arg = ARGUMENT_INTEGER;
                         break;
                     }
@@ -585,171 +677,52 @@ static Action *parseAction(const char *str)
 }
 
 /*
- * Fast stream object.
- */
-struct Stream
-{
-    static const unsigned MAX_SIZE = 1024;
-    unsigned i = 0;
-    char buf[MAX_SIZE + 1];
-
-    Stream()
-    {
-        buf[0] = '\0';
-    }
-
-    const char *push(char c)
-    {
-        if (i >= MAX_SIZE)
-            error("failed to push character into stream; maximum size (%zu) "
-                "exceeded", MAX_SIZE);
-        buf[i++] = c;
-        buf[i]   = '\0';
-        return buf;
-    }
-
-    const char *push(const char *str)
-    {
-        size_t len = strlen(str);
-        if (i + len > MAX_SIZE)
-            error("failed to push string into stream; maximum size (%zu) "
-                "exceeded", MAX_SIZE);
-        memcpy(buf + i, str, len + 1);
-        i += len;
-        return buf;
-    }
-
-    const char *pushFormat(const char *msg, ...)
-    {
-        va_list ap;
-        va_start(ap, msg);
-        int r = vsnprintf(buf + i, MAX_SIZE - i, msg, ap);
-        if (r >= (int)MAX_SIZE - (int)i)
-            error("failed to push formatted string into stream; maximum "
-                "size (%zu) exceeded", MAX_SIZE);
-        va_end(ap);
-        i += (int)r;
-        return buf;
-    }
-
-    const char *pushSep()
-    {
-        if (i == 0)
-            return buf;
-        return push(' ');
-    }
-
-    void clear()
-    {
-        i = 0;
-        buf[0] = '\0';
-    }
-};
-
-/*
  * Create match string.
  */
-static const char *makeMatchString(csh handle, MatchKind match,
-    const cs_insn *I, intptr_t text_addr, off_t text_offset, Stream &stream)
+static const char *makeMatchString(MatchKind match, const cs_insn *I,
+    char *buf, size_t buf_size)
 {
-    const cs_detail *detail = I->detail;
     switch (match)
     {
         case MATCH_ASSEMBLY:
             if (I->op_str[0] == '\0')
                 return I->mnemonic;
             else
-                return stream.pushFormat("%s %s", I->mnemonic, I->op_str);
-        case MATCH_ADDRESS:
-            return stream.pushFormat("0x%lx", I->address);
-        case MATCH_BYTES:
-            for (int i = 0; i < I->size-1; i++)
-                stream.pushFormat("0x%.2x ", I->bytes[i]);
-            return stream.pushFormat("0x%.2x", I->bytes[I->size-1]);
-        case MATCH_EMPTY:
-            return "";
-        case MATCH_OFFSET:
-        {
-            off_t offset = (off_t)(I->address - text_addr) + text_offset;
-            return stream.pushFormat("+%zd", offset);
-        }
-        case MATCH_RANDOM:
-        {
-            int r = rand() % 10000;
-            return stream.pushFormat("%.4u", r);
-        }
-        case MATCH_SIZE:
-            return stream.pushFormat("%u", I->size);
-        case MATCH_READ_REGS:
-            for (uint8_t i = 0; i < detail->regs_read_count; i++)
             {
-                stream.pushSep();
-                stream.push(cs_reg_name(handle, detail->regs_read[i]));
+                ssize_t r = snprintf(buf, buf_size, "%s %s",
+                    I->mnemonic, I->op_str);
+                if (r < 0 || r >= (ssize_t)buf_size)
+                    error("failed to create assembly string of size %zu",
+                        buf_size);
+                return buf;
             }
-            for (uint8_t i = 0; i < detail->x86.op_count; i++)
-            {
-                switch (detail->x86.operands[i].type)
-                {
-                    case X86_OP_REG:
-                        if ((detail->x86.operands[i].access & CS_AC_READ) == 0)
-                            continue;
-                        stream.pushSep();
-                        stream.push(cs_reg_name(handle,
-                            detail->x86.operands[i].reg));
-                        break;
-                    case X86_OP_MEM:
-                        if (detail->x86.operands[i].mem.segment !=
-                                X86_REG_INVALID)
-                        {
-                            stream.pushSep();
-                            stream.push(cs_reg_name(handle,
-                                detail->x86.operands[i].mem.segment));
-                        }
-                        if (detail->x86.operands[i].mem.base !=
-                                X86_REG_INVALID)
-                        {
-                            stream.pushSep();
-                            stream.push(cs_reg_name(handle,
-                                detail->x86.operands[i].mem.base));
-                        }
-                        if (detail->x86.operands[i].mem.index !=
-                                X86_REG_INVALID)
-                        {
-                            stream.pushSep();
-                            stream.push(cs_reg_name(handle,
-                                detail->x86.operands[i].mem.index));
-                        }
-                        break;
-                    default:
-                        break;
-                }
-            }
-            return stream.buf;
-        case MATCH_WRITE_REGS:
-            for (uint8_t i = 0; i < detail->regs_write_count; i++)
-            {
-                stream.pushSep();
-                stream.push(cs_reg_name(handle, detail->regs_write[i]));
-            }
-            for (uint8_t i = 0; i < detail->x86.op_count; i++)
-            {
-                if (detail->x86.operands[i].type != X86_OP_REG ||
-                        (detail->x86.operands[i].access & CS_AC_WRITE) == 0)
-                    continue;
-                stream.pushSep();
-                stream.push(cs_reg_name(handle,
-                    detail->x86.operands[i].reg));
-            }
-            return stream.buf;
-        case MATCH_ATTRIBUTES:
-            for (uint8_t i = 0; i < detail->groups_count; i++)
-            {
-                stream.pushSep();
-                stream.push(cs_group_name(handle, detail->groups[i]));
-            }
-            return stream.buf;
         default:
             return "";
+    }
+}
+
+/*
+ * Create match value.
+ */
+static intptr_t makeMatchValue(MatchKind match, const cs_insn *I,
+    intptr_t text_addr, off_t text_offset)
+{
+    switch (match)
+    {
+        case MATCH_TRUE:
+            return 1;
+        case MATCH_FALSE:
+            return 0;
+        case MATCH_ADDRESS:
+            return I->address;
+        case MATCH_OFFSET:
+            return (intptr_t)(I->address - text_addr) + text_offset;
+        case MATCH_RANDOM:
+            return (intptr_t)rand();
+        case MATCH_SIZE:
+            return I->size;
+        default:
+            return 0;
     }
 }
 
@@ -759,48 +732,64 @@ static const char *makeMatchString(csh handle, MatchKind match,
 static bool matchAction(csh handle, const Action *action, const cs_insn *I,
     intptr_t text_addr, off_t text_offset)
 {
-    if (option_debug)
-    {
-        fprintf(stderr, "%lx: %s%s",
-            I->address,
-            (option_is_tty? "\33[35m": ""),
-            I->mnemonic);
-        if (I->op_str[0] != '\0')
-            fprintf(stderr, " %s", I->op_str);
-        fprintf(stderr, "%s\n",
-            (option_is_tty? "\33[0m": ""));
-    }
-
-    Stream stream;
     std::cmatch cmatch;
     for (auto &entry: action->entries)
     {
-        const char *match_str = makeMatchString(handle, entry.match, I,
-            text_addr, text_offset, stream);
-        if (option_debug)
-            fprintf(stderr, "\tmatch %s\"%s\"%s against %s\"%s\"%s ",
-                (option_is_tty? "\33[33m": ""),
-                match_str,
-                (option_is_tty? "\33[0m": ""),
-                (option_is_tty? "\33[33m": ""),
-                entry.regex_str.c_str(),
-                (option_is_tty? "\33[0m": ""));
-        if (!std::regex_match(match_str, cmatch, entry.regex))
+        bool pass = false;
+        switch (entry.match)
         {
-            if (option_debug)
-                fprintf(stderr, "%s*** FAILED ***%s\n\n",
-                    (option_is_tty? "\33[31m": ""),
-                    (option_is_tty? "\33[0m": ""));
-            return false;
+            case MATCH_ASSEMBLY:
+            {
+                char buf[BUFSIZ];
+                const char *str = makeMatchString(entry.match, I, buf,
+                    sizeof(buf)-1);
+                pass = std::regex_match(str, cmatch, entry.regex);
+                pass = (entry.cmp == MATCH_CMP_NEQ? !pass: pass);
+                break;
+            }
+            case MATCH_TRUE:
+            case MATCH_FALSE:
+            case MATCH_ADDRESS:
+            case MATCH_OFFSET:
+            case MATCH_RANDOM:
+            case MATCH_SIZE:
+            {
+                intptr_t x = makeMatchValue(entry.match, I, text_addr,
+                    text_offset);
+                switch (entry.cmp)
+                {
+                    case MATCH_CMP_NEQ_ZERO:
+                        pass = (x != 0);
+                        break;
+                    case MATCH_CMP_EQ:
+                        pass = (entry.values.find(x) != entry.values.end());
+                        break;
+                    case MATCH_CMP_NEQ:
+                        pass = (entry.values.find(x) == entry.values.end());
+                        break;
+                    case MATCH_CMP_LT:
+                        pass = (x < *entry.values.rbegin());
+                        break;
+                    case MATCH_CMP_LEQ:
+                        pass = (x <= *entry.values.rbegin());
+                        break;
+                    case MATCH_CMP_GT:
+                        pass = (x > *entry.values.begin());
+                        break;
+                    case MATCH_CMP_GEQ:
+                        pass = (x >= *entry.values.begin());
+                        break;
+                    default:
+                        return false;
+                }
+                break;
+            }
+            default:
+                return false;
         }
-        else if (option_debug)
-            fprintf(stderr, "%spassed%s\n",
-                (option_is_tty? "\33[32m": ""),
-                (option_is_tty? "\33[0m": ""));
-        stream.clear();
+        if (!pass)
+            return false;
     }
-    if (option_debug)
-        fputc('\n', stderr);
     return true;
 }
 
@@ -878,58 +867,107 @@ static void usage(FILE *stream, const char *progname)
     fputs(" |  __/\\__, | || (_) | (_) | |\n", stream);
     fputs("  \\___|  /_/ \\__\\___/ \\___/|_|\n", stream);
     fputc('\n', stream);
-    fprintf(stream, "usage: %s [OPTIONS] input-file\n\n", progname);
-    fputs("OPTIONS:\n", stream);
+    fprintf(stream, "usage: %s [OPTIONS] --match MATCH --action ACTION ... "
+        "input-file\n\n", progname);
+    
+    fputs("MATCH\n", stream);
+    fputs("=====\n", stream);
+    fputc('\n', stream);
+    fputs("Matchings determine which instructions should be rewritten.  "
+        "Matchings are\n", stream);
+    fputs("specified using the `--match'/`-M' option:\n", stream);
+    fputc('\n', stream);
+    fputs("\t--match MATCH, -M MATCH\n", stream);
+    fputs("\t\tSpecifies an instruction matching MATCH in the following "
+        "form:\n", stream);
+    fputc('\n', stream);
+    fputs("\t\t\tMATCH     ::= ATTRIBUTE [ CMP VALUES ]\n", stream);
+    fputs("\t\t\tATTRIBUTE ::=   'true'\n", stream);
+    fputs("\t\t\t              | 'false'\n", stream);
+    fputs("\t\t\t              | 'asm'\n", stream);
+    fputs("\t\t\t              | 'addr'\n", stream);
+    fputs("\t\t\t              | 'offset'\n", stream);
+    fputs("\t\t\t              | 'random'\n", stream);
+    fputs("\t\t\t              | 'size'\n", stream);
+    fputs("\t\t\tCMP       ::=   '='\n", stream);
+    fputs("\t\t\t              | '=='\n", stream);
+    fputs("\t\t\t              | '!='\n", stream);
+    fputs("\t\t\t              | '>'\n", stream);
+    fputs("\t\t\t              | '>='\n", stream);
+    fputs("\t\t\t              | '<'\n", stream);
+    fputs("\t\t\t              | '<='\n", stream);
+    fputc('\n', stream);
+    fputs("\t\tHere ATTRIBUTE is an instruction attribute, such as assembly\n",
+        stream);
+    fputs("\t\tor address (see below), CMP is a comparison operator "
+        "(equal,\n", stream);
+    fputs("\t\tless-than, etc.) and VALUES is either a comma separated list\n",
+        stream);
+    fputs("\t\tof integers (for integer attributes) or a regular expression\n",
+        stream);
+    fputs("\t\t(for string attributes):\n", stream);
+    fputc('\n', stream);
+    fputs("\t\t\tVALUES ::=   REGULAR-EXPRESSION\n", stream);
+    fputs("\t\t\t           | INTEGER [ ',' INTEGER ] *\n", stream);
+    fputc('\n', stream);
+    fputs("\t\tIf the CMP and VALUES are omitted, it is treated the same as\n",
+        stream);
+    fputs("\t\tATTRIBUTE != 0.\n", stream);
+    fputc('\n', stream);
+    fputs("\t\tPossible ATTRIBUTEs and attribute TYPEs are:\n", stream);
+    fputc('\n', stream);
+    fputs("\t\t\t- \"true\"      : the value 1.\n", stream);
+    fputs("\t\t\t                TYPE: integer\n", stream);
+    fputs("\t\t\t- \"false\"     : the value 0.\n", stream);
+    fputs("\t\t\t                TYPE: integer\n", stream);
+    fputs("\t\t\t- \"asm\"       : the instruction assembly string.  E.g.:\n",
+        stream);
+    fputs("\t\t\t                \"cmpb %r11b, 0x436fe0(%rdi)\"\n", stream);
+    fputs("\t\t\t                TYPE: string\n", stream);
+    fputs("\t\t\t- \"addr\"      : the instruction address.  E.g.:\n", stream);
+    fputs("\t\t\t                0x4234a7\n", stream);
+    fputs("\t\t\t                TYPE: integer\n", stream);
+    fputs("\t\t\t- \"offset\"    : the instruction file offset.  E.g.:\n",
+        stream);
+    fputs("\t\t\t                +49521\n", stream);
+    fputs("\t\t\t                TYPE: integer\n", stream);
+    fprintf(stream, "\t\t\t- \"random\"    : a random value [0..%lu].\n",
+        (uintptr_t)RAND_MAX);
+    fputs("\t\t\t                TYPE: integer\n", stream);
+    fputs("\t\t\t- \"size\"      : the instruction size in bytes. E.g.: 3\n",
+        stream);
+    fputs("\t\t\t                TYPE: integer\n", stream);
+    fputc('\n', stream);
+    fputs("\t\tMultiple `--match'/`-M' options can be combined, which will\n",
+        stream);
+    fputs("\t\tbe interpreted as the logical AND of the matching conditions.\n",
+        stream);
+    fputs("\t\tThe sequence of `--match'/`-M' options must also be "
+        "terminated\n", stream);
+    fputs("\t\tby an `--action'/`-A' option, as described below.\n", stream);
+
+    fputc('\n', stream);
+    fputs("ACTION\n", stream);
+    fputs("======\n", stream);
+    fputc('\n', stream);
+    fputs("Actions determine how matching instructions should be rewritten.  "
+        "Actions are\n", stream);
+    fputs("specified using the `--action'/`-A' option:\n", stream);
+    fputc('\n', stream);
     fputs("\t--action ACTION, -A ACTION\n", stream);
-    fputs("\t\tSpecifies a binary rewriting action in the following form:\n",
+    fputs("\t\tThe ACTION specifies how instructions matching the preceding\n",
         stream);
+    fputs("\t\t`--match'/`-M' options are to be rewritten.  Possible ACTIONs\n",
+        stream);
+    fputs("\t\tinclude:\n", stream);
     fputc('\n', stream);
-    fputs("\t\t\tACTION ::= ( MATCH-KIND '='\n", stream);
-    fputs("\t\t\t             REGULAR-EXPRESSION ) *\n", stream);
-    fputs("\t\t\t             ':' INSTRUMENTATION\n", stream);
+    fputs("\t\t\tACTION ::=   'passthru'\n", stream);
+    fputs("\t\t\t           | 'print' \n", stream);
+    fputs("\t\t\t           | 'trap' \n", stream);
+    fputs("\t\t\t           | CALL \n", stream);
+    fputs("\t\t\t           | PLUGIN \n", stream);
     fputc('\n', stream);
-    fputs("\t\tHere, MATCH-KIND specifies an instruction attribute that can\n",
-        stream);
-    fputs("\t\tbe matched against.  Possible MATCH-KIND values are:\n",
-        stream);
-    fputc('\n', stream);
-    fputs("\t\t\t- \"asm\"       : match the assembly string of the\n",
-        stream);
-    fputs("\t\t\t                instruction.  E.g.,\n", stream);
-    fputs("\t\t\t                \"cmpb %r11b, 0x436fe0(%rdi)\".\n", stream);
-    fputs("\t\t\t- \"addr\"      : match the instruction address.  E.g.,\n",
-        stream);
-    fputs("\t\t\t                E.g., \"0x4234a7\"\n", stream);
-    fputs("\t\t\t- \"attr\"      : match instruction attributes.  E.g.,\n",
-        stream);
-    fputs("\t\t\t                \"branch_relative jump\".\n", stream);
-    fputs("\t\t\t- \"bytes\"     : match the instruction bytes.  E.g.,\n",
-        stream);
-    fputs("\t\t\t                \"0xe8 0xb7 0x31 0x1a 0x00\".\n", stream);
-    fputs("\t\t\t- \"off\"       : match the instruction file offset.\n",
-        stream);
-    fputs("\t\t\t                E.g., \"+49521\"\n", stream);
-    fputs("\t\t\t- \"rand\"      : match a (zero-padded) pseudo random\n",
-        stream);
-    fputs("\t\t\t                number from the range \"0000\"..."
-        "\"9999\".\n", stream);
-    fputs("\t\t\t- \"regs.read\" : match registers that are read from.\n",
-        stream);
-    fputs("\t\t\t                E.g. \"r11b rdi\".\n", stream);
-    fputs("\t\t\t- \"regs.write\": match registers that are written to.\n",
-        stream);
-    fputs("\t\t\t- \"size\"      : match the instruction size in bytes.\n",
-        stream);
-    fputs("\t\t\t                E.g., \"3\".\n", stream);
-    fputs("\t\t\t- \"\"          : match the empty string.\n", stream);
-    fputc('\n', stream);
-    fputs("\t\tIf the REGULAR-EXPRESSION matches the instruction attribute\n",
-        stream);
-    fputs("\t\tcorresponding to MATCH-KIND, then the instruction will be\n",
-        stream);
-    fputs("\t\tinstrumented using INSTRUMENTATION.  Possible values for\n",
-        stream);
-    fputs("\t\tINSTRUMENTATION are:\n", stream);
+    fputs("\t\tWhere:\n", stream);
     fputc('\n', stream);
     fputs("\t\t\t- \"passthru\": empty (NOP) instrumentation;\n", stream);
     fputs("\t\t\t- \"print\"   : instruction printing instrumentation.\n",
@@ -942,7 +980,7 @@ static void usage(FILE *stream, const char *progname)
     fputc('\n', stream);
     fputs("\t\tThe CALL INSTRUMENTATION makes it possible to invoke a\n",
         stream);
-    fputs("\t\tuser-function defined in a ELF file.  The ELF file can be\n",
+    fputs("\t\tuser-function defined in an ELF file.  The ELF file can be\n",
         stream);
     fputs("\t\timplemented in C and compiled using the special "
         "\"e9compile.sh\"\n", stream);
@@ -968,6 +1006,8 @@ static void usage(FILE *stream, const char *progname)
     fputs("\t\t\t  * \"asmStr\" is a pointer to the string\n", stream);
     fputs("\t\t\t    representation of the instruction.\n", stream);
     fputs("\t\t\t  * \"asmStrLen\" is the length of \"asmStr\".\n",
+        stream);
+    fputs("\t\t\t  * \"offset\" is the file offset of the instruction.\n",
         stream);
     fputs("\t\t\t  * \"addr\" is the address of the instruction.\n",
         stream);
@@ -1011,6 +1051,10 @@ static void usage(FILE *stream, const char *progname)
     fputs("\t\tIt is possible to specify multiple actions that will be\n",
         stream);
     fputs("\t\tapplied in the command-line order.\n", stream);
+
+    fputc('\n', stream);
+    fputs("OTHER OPTIONS\n", stream);
+    fputs("=============\n", stream);
     fputc('\n', stream);
     fputs("\t--backend PROG\n", stream);
     fputs("\t\tUse PROG as the backend.  The default is \"e9patch\".\n",
@@ -1106,10 +1150,10 @@ static void usage(FILE *stream, const char *progname)
     fputs("\t\tSelects the assembly syntax to be SYNTAX.  Possible values "
         "are:\n", stream);
     fputc('\n', stream);
-    fputs("\t\t\t- \"att\"  : X86_64 ATT asm syntax; or\n", stream);
+    fputs("\t\t\t- \"ATT\"  : X86_64 ATT asm syntax; or\n", stream);
     fputs("\t\t\t- \"intel\": X86_64 Intel asm syntax.\n", stream);
     fputc('\n', stream);
-    fputs("\t\tThe default syntax is \"att\".\n", stream);
+    fputs("\t\tThe default syntax is \"ATT\".\n", stream);
     fputc('\n', stream);
     fputs("\t--trap-all\n", stream);
     fputs("\t\tInsert a trap (int3) instruction at each trampoline entry.\n",
@@ -1131,6 +1175,7 @@ enum Option
     OPTION_EXECUTABLE,
     OPTION_FORMAT,
     OPTION_HELP,
+    OPTION_MATCH,
     OPTION_OPTION,
     OPTION_OUTPUT,
     OPTION_SHARED,
@@ -1159,6 +1204,7 @@ int main(int argc, char **argv)
         {"executable",     false, nullptr, OPTION_EXECUTABLE},
         {"format",         true,  nullptr, OPTION_FORMAT},
         {"help",           false, nullptr, OPTION_HELP},
+        {"match",          true,  nullptr, OPTION_MATCH},
         {"option",         true,  nullptr, OPTION_OPTION},
         {"output",         true,  nullptr, OPTION_OUTPUT},
         {"shared",         false, nullptr, OPTION_SHARED},
@@ -1177,10 +1223,11 @@ int main(int argc, char **argv)
     bool option_executable = false, option_shared = false,
         option_static_loader = false;
     std::string option_start(""), option_end(""), option_backend("./e9patch");
+    MatchEntries option_match;
     while (true)
     {
         int idx;
-        int opt = getopt_long(argc, argv, "A:c:ho:s", long_options, &idx);
+        int opt = getopt_long(argc, argv, "A:c:hM:o:s", long_options, &idx);
         if (opt < 0)
             break;
         switch (opt)
@@ -1188,7 +1235,7 @@ int main(int argc, char **argv)
             case OPTION_ACTION:
             case 'A':
             {
-                Action *action = parseAction(optarg);
+                Action *action = parseAction(optarg, option_match);
                 option_actions.push_back(action);
                 break;
             }
@@ -1228,8 +1275,13 @@ int main(int argc, char **argv)
             case 'h':
                 usage(stdout, argv[0]);
                 return EXIT_SUCCESS;
+
             case OPTION_OPTION:
                 option_options.push_back(strDup(optarg));
+                break;
+            case OPTION_MATCH:
+            case 'M':
+                parseMatch(optarg, option_match);
                 break;
             case OPTION_OUTPUT:
             case 'o':
@@ -1259,9 +1311,9 @@ int main(int argc, char **argv)
             }
             case OPTION_SYNTAX:
                 option_syntax = optarg;
-                if (option_syntax != "att" && option_syntax != "intel")
+                if (option_syntax != "ATT" && option_syntax != "intel")
                     error("bad value \"%s\" for `--syntax' option; "
-                        "expected \"att\" or \"intel\"", optarg);
+                        "expected \"ATT\" or \"intel\"", optarg);
                 break;
             case OPTION_TRAP_ALL:
                 option_trap_all = true;
@@ -1277,12 +1329,18 @@ int main(int argc, char **argv)
         error("missing input file; try `--help' for more information");
         return EXIT_FAILURE;
     }
+    if (option_match.size() != 0)
+        error("failed to parse command-line arguments; detected extraneous "
+            "matching option(s) (`--match' or `-M') that are not paired "
+            "with a corresponding action (`--action' or `-A')"); 
     if (option_actions.size() > MAX_ACTIONS)
-        error("too many actions (%zu); the maximum is %zu",
+        error("failed to parse command-line arguments; the total number of "
+            "actions (%zu) exceeds the maximum (%zu)",
             option_actions.size(), MAX_ACTIONS);
     if (option_shared && option_executable)
-        error("both `--shared' and `--executable' cannot be used at the "
-            "same time");
+        error("failed to parse command-line arguments; both the `--shared' "
+            "and `--executable' options cannot be used at the same time");
+    srand(0xe9e9e9e9);
 
     /*
      * Parse the ELF file.
@@ -1554,8 +1612,8 @@ int main(int argc, char **argv)
             // Builtin actions:
             char buf[4096];
             Metadata metadata_buf[MAX_ARGNO+1];
-            Metadata *metadata = buildMetadata(action, I, metadata_buf,
-                buf, sizeof(buf)-1);
+            Metadata *metadata = buildMetadata(action, I, offset,
+                metadata_buf, buf, sizeof(buf)-1);
             sendPatchMessage(backend.out, action->name, offset, metadata);
         }
     }

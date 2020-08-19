@@ -75,7 +75,7 @@
  *        passed to all other API calls.
  *      - e9_plugin_instr_v1() returns a Boolean `true' or `false'.  If
  *        `false' is returned, then the instruction will not be patched,
- *        regardless of the `--action' filter.  This effectively implements
+ *        regardless of the `--match' filter.  This effectively implements
  *        a veto.
  *
  * The API is meant to be highly flexible.  Basically, the plugin API

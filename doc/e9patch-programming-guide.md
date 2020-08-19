@@ -67,17 +67,20 @@ instrumentation*.
 For example, to instrument all jump instructions in `xterm` the command-line
 syntax is as follows:
 
-        ./e9tool --action='asm=j.*:call entry@counter' `which xterm` -o a.out
+        ./e9tool --match 'asm=j.*' --action 'call entry@counter' `which xterm` -o a.out
 
 The syntax is as follows:
 
-* `--action=`: Selects the E9Tool "action" command-line option.
-  This tells E9Tool what patching/instrumentation action to do.
+* `--match`: Selects the E9Tool "match" command-line option.
+   This is to specify which instructions to instrument/patch.
 * `asm=j.*`: Specifies that we want to patch/instrument all instructions
   whose assembly syntax matches the regular expression `j.*`.
   For the `x86_64`, only jump instructions begin with `j`, so this
   syntax selects all jump instructions, e.g.
   `jmp`, `jnz`, `jg`, etc.
+* `--action`: Selects the E9Tool "action" command-line option.
+  This tells E9Tool what patching/instrumentation action to perform on
+  matching instructions.
 * `call entry@counter`: Specifies that the trampoline should call
   the function `entry()` in the `counter` executable.
 
@@ -173,7 +176,7 @@ are specified in square brackets after the `call` token
 in the `--action` option.
 For example:
 
-        ./e9tool --action='asm=j.*:call[after] entry@counter' `which xterm` -o a.out
+        ./e9tool --match 'asm=j.*' --action 'call[after] entry@counter' `which xterm` -o a.out
 
 This specifies the `after` option, which means the `entry()`
 function should be called after the patched instruction
@@ -206,7 +209,7 @@ E9Tool also supports passing arguments to the called function.
 The syntax uses the `C`-style round brackets.
 For example:
 
-        ./e9tool --action='asm=j.*:call entry(rip)@counter' `which xterm` -o a.out
+        ./e9tool --match 'asm=j.*' --action 'call entry(rip)@counter' `which xterm` -o a.out
 
 This specifies that the current value of the instruction pointer
 (`%rip`) should be passed as the first argument to the function
@@ -689,7 +692,7 @@ Some API function return a value, including:
   passed to all other API calls.
 * `e9_plugin_instr_v1()` returns a Boolean `true` or `false`.  If
   `false` is returned, then the instruction will not be patched,
-  regardless of the `--action` filter.  This effectively implements
+  regardless of the `--match` filter.  This effectively implements
   a veto.
 
 The API is meant to be highly flexible.  Basically, the plugin API
@@ -732,17 +735,12 @@ the plugin.  This makes the plugin API very powerful.
 Plugins can be used by E9Tool and the `--action` option.
 For example:
 
-        ./e9tool --action='asm=j.*:plugin plugin.so' `which xterm` -o a.out
+        ./e9tool --match 'asm=j.*' --action 'plugin plugin.so' `which xterm` -o a.out
 
 The syntax is as follows:
 
-* `--action=`: Selects the E9Tool "action" command-line option.
+* `--action`: Selects the E9Tool "action" command-line option.
   This tells E9Tool what patching/instrumentation action to do.
-* `asm=j.*`: Specifies that we want to patch/instrument all instructions
-  whose assembly syntax matches the regular expression `j.*`.
-  For the `x86_64`, only jump instructions begin with `j`, so this
-  syntax selects all jump instructions, e.g.
-  `jmp`, `jnz`, `jg`, etc.
 * `plugin plugin.so`: Specifies that instrument the program using the
   `plugin.so` plugin.
 

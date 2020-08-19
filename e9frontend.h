@@ -54,6 +54,7 @@ enum ArgumentKind
 {
     ARGUMENT_INVALID,               // Invalid argument
     ARGUMENT_INTEGER,               // Constant integer argument
+    ARGUMENT_OFFSET,                // Instruction file offset
     ARGUMENT_ADDR,                  // Instruction address
     ARGUMENT_NEXT,                  // Next instruction address
     ARGUMENT_ASM_STR,               // Assembly string
