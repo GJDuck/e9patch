@@ -161,6 +161,7 @@ typedef std::vector<MatchEntry> MatchEntries;
  */
 struct Action
 {
+    const std::string string;
     const MatchEntries entries;
     const ActionKind kind;
     const char * const name;
@@ -177,12 +178,12 @@ struct Action
     bool before;
     bool replace;
 
-    Action(MatchEntries &&entries, ActionKind kind, const char *name, 
-            const char *filename, const char *symbol,
+    Action(const char *string, MatchEntries &&entries, ActionKind kind,
+            const char *name, const char *filename, const char *symbol,
             const std::vector<Argument> &&args,  bool clean, bool before,
             bool replace) :
-        entries(std::move(entries)), kind(kind), name(name),
-            filename(filename), symbol(symbol), handle(nullptr),
+            string(string), entries(std::move(entries)), kind(kind),
+            name(name), filename(filename), symbol(symbol), handle(nullptr),
             initFunc(nullptr), instrFunc(nullptr), patchFunc(nullptr),
             context(nullptr), args(args), clean(clean),
             before(before), replace(replace)
@@ -671,7 +672,7 @@ static Action *parseAction(const char *str, MatchEntries &entries)
             break;
     }
 
-    Action *action = new Action(std::move(entries), kind, name, filename,
+    Action *action = new Action(str, std::move(entries), kind, name, filename,
         symbol, std::move(args), option_clean, option_before, option_replace);
     return action;
 }
@@ -732,7 +733,6 @@ static intptr_t makeMatchValue(MatchKind match, const cs_insn *I,
 static bool matchAction(csh handle, const Action *action, const cs_insn *I,
     intptr_t text_addr, off_t text_offset)
 {
-    std::cmatch cmatch;
     for (auto &entry: action->entries)
     {
         bool pass = false;
@@ -743,6 +743,7 @@ static bool matchAction(csh handle, const Action *action, const cs_insn *I,
                 char buf[BUFSIZ];
                 const char *str = makeMatchString(entry.match, I, buf,
                     sizeof(buf)-1);
+                std::cmatch cmatch;
                 pass = std::regex_match(str, cmatch, entry.regex);
                 pass = (entry.cmp == MATCH_CMP_NEQ? !pass: pass);
                 break;
@@ -789,6 +790,27 @@ static bool matchAction(csh handle, const Action *action, const cs_insn *I,
         }
         if (!pass)
             return false;
+    }
+    if (option_debug)
+    {
+        fprintf(stderr, "%s0x%lx%s: match ",
+            (option_is_tty? "\33[32m": ""),
+            I->address,
+            (option_is_tty? "\33[0m": ""));
+        bool prev = false;
+        for (auto &entry: action->entries)
+        {
+            fprintf(stderr, "%s%s%s%s ",
+                (prev? "and ": ""),
+                (option_is_tty? "\33[33m": ""),
+                entry.string.c_str(),
+                (option_is_tty? "\33[0m": ""));
+            prev = true;
+        }
+        fprintf(stderr, "action %s%s%s\n",
+            (option_is_tty? "\33[33m": ""),
+            action->string.c_str(),
+            (option_is_tty? "\33[0m": ""));
     }
     return true;
 }
