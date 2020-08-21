@@ -239,6 +239,10 @@ Several arguments are supported:
 * `trampoline` is the address of the trampoline.
 * `rax`...`r15`, `rip`, `rflags` is the corresponding register value.
 * An integer constant.
+* A file lookup of the form `basename[index]` where
+  `basename` is the basename of a CSV file used in
+  the matching, and `index` is a column index.
+  Note that the matching must select a unique row.
 
 Note that the current E9Tool supports a maximum of 6 arguments.
 

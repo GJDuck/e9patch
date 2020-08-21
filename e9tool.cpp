@@ -47,6 +47,7 @@
 
 #include "e9plugin.h"
 #include "e9frontend.cpp"
+#include "e9csv.cpp"
 
 /*
  * Options.
@@ -73,17 +74,6 @@ struct Location
         offset(offset), size(size), emitted(0), patch(patch), action(action)
     {
         ;
-    }
-};
-
-/*
- * C-string comparator.
- */
-struct CStrCmp
-{
-    bool operator()(const char* a, const char* b) const
-    {
-        return (strcmp(a, b) < 0);
     }
 };
 
@@ -135,23 +125,29 @@ enum ActionKind
  */
 struct MatchEntry
 {
+    const std::string string;
     const MatchKind match;
     const MatchCmp  cmp;
-    const std::string string;
-    std::regex regex;
-    std::set<intptr_t> values;
+    const char *basename;
+    union
+    {
+        void *data;
+        std::regex *regex;
+        Index<intptr_t> *values;
+    };
 
     MatchEntry(MatchEntry &&entry) :
-        match(entry.match), cmp(entry.cmp), regex(std::move(entry.regex)),
-        string(std::move(entry.string)), values(std::move(entry.values))
+        string(std::move(entry.string)), match(entry.match), cmp(entry.cmp),
+        basename(entry.basename)
     {
-        ;
+        data = entry.data;
     }
 
-    MatchEntry(MatchKind match, MatchCmp cmp, const char *s) :
-        string(s), cmp(cmp), match(match)
+    MatchEntry(MatchKind match, MatchCmp cmp, const char *s,
+            const char *basename) :
+        string(s), match(match), cmp(cmp), basename(basename)
     {
-        ;
+        data = nullptr;
     }
 };
 typedef std::vector<MatchEntry> MatchEntries;
@@ -225,6 +221,15 @@ struct Parser
                 s[0] = c; s[1] = '\0';
                 i++;
                 return c;
+            case '!': case '<': case '>': case '=':
+                s[0] = c; s[1] = '\0';
+                i++;
+                if (buf[i] == '=')
+                {
+                    s[1] = '='; s[2] = '\0';
+                    i++;
+                }
+                return c;
             default:
                 break;
         }
@@ -248,6 +253,8 @@ struct Parser
  */
 static const char *parseInt(const char *s, intptr_t &x)
 {
+    while (isspace(*s))
+        s++;
     bool neg = false;
     if (s[0] == '+')
         s++;
@@ -262,13 +269,15 @@ static const char *parseInt(const char *s, intptr_t &x)
     if (end == nullptr || end == s)
         return nullptr;
     x = (neg? -x: x);
+    while (isspace(*end))
+        end++;
     return end;
 }
 
 /*
  * Parse a list of values.
  */
-static void parseValues(const char *s, std::set<intptr_t> &values)
+static void parseValues(const char *s, Index<intptr_t> &values)
 {
     if (*s == '\0')
         return;
@@ -279,10 +288,12 @@ static void parseValues(const char *s, std::set<intptr_t> &values)
         if (end == nullptr)
             error("failed to parse integer from string \"%.30s%s\"", s,
                 (strlen(s) > 30? "...": ""));
-        values.insert(x);
+        values.insert({x, nullptr});
+        while (isspace(*end))
+            end++;
         switch (*end)
         {
-            case ',': case '|':
+            case ',':
                 s = end+1;
                 break;
             case '\0':
@@ -300,76 +311,62 @@ static void parseValues(const char *s, std::set<intptr_t> &values)
  */
 static void parseMatch(const char *str, MatchEntries &entries)
 {
+    Parser parser(str);
     MatchKind match = MATCH_INVALID;
-    char name[32];
-    size_t i = 0;
-    for (; isspace(str[i]); i++)
-        ;
-    size_t j = 0;
-    for (; isalpha(str[i]) && str[i] != '\0' &&
-            j < sizeof(name)-1; i++, j++)
-        name[j] = str[i];
-    if (isalpha(str[i]))
-        error("failed to parse matching \"%s\"; name is too long", str);
-    name[j] = '\0';
-    for (; isspace(str[i]); i++)
-        ;
-    switch (name[0])
+    switch (parser.getToken())
     {
         case 'a':
-            if (strcmp(name, "asm") == 0)
+            if (strcmp(parser.s, "asm") == 0)
                 match = MATCH_ASSEMBLY;
-            else if (strcmp(name, "addr") == 0)
+            else if (strcmp(parser.s, "addr") == 0)
                 match = MATCH_ADDRESS;
             break;
         case 'f':
-            if (strcmp(name, "false") == 0)
+            if (strcmp(parser.s, "false") == 0)
                 match = MATCH_FALSE;
             break;
         case 'o':
-            if (strcmp(name, "offset") == 0)
+            if (strcmp(parser.s, "offset") == 0)
                 match = MATCH_OFFSET;
             break;
         case 'r':
-            if (strcmp(name, "random") == 0)
+            if (strcmp(parser.s, "random") == 0)
                 match = MATCH_RANDOM;
             break;
         case 's':
-            if (strcmp(name, "size") == 0)
+            if (strcmp(parser.s, "size") == 0)
                 match = MATCH_SIZE;
             break;
         case 't':
-            if (strcmp(name, "true") == 0)
+            if (strcmp(parser.s, "true") == 0)
                 match = MATCH_TRUE;
             break;
     }
+    std::string attrib(parser.s);
     MatchCmp cmp = MATCH_CMP_INVALID;
-    switch (str[i++])
+    switch (parser.getToken())
     {
         case '!':
-            if (str[i++] == '=')
+            if (strcmp(parser.s, "!=") == 0)
                 cmp = MATCH_CMP_NEQ;
             break;
         case '<':
-            cmp = MATCH_CMP_LT;
-            if (str[i] == '=')
-            {
+            if (strcmp(parser.s, "<") == 0)
+                cmp = MATCH_CMP_LT;
+            else if (strcmp(parser.s, "<=") == 0)
                 cmp = MATCH_CMP_LEQ;
-                i++;
-            }
             break;
         case '>':
-            cmp = MATCH_CMP_GT;
-            if (str[i] == '=')
-            {
+            if (strcmp(parser.s, ">") == 0)
+                cmp = MATCH_CMP_GT;
+            else if (strcmp(parser.s, ">=") == 0)
                 cmp = MATCH_CMP_GEQ;
-                i++;
-            }
             break;
         case '=':
-            cmp = MATCH_CMP_EQ;
-            if (str[i] == '=')
-                i++;
+            if (strcmp(parser.s, "=") == 0)
+                cmp = MATCH_CMP_EQ;
+            else if (strcmp(parser.s, "==") == 0)
+                cmp = MATCH_CMP_EQ;
             break;
         case '\0':
             cmp = MATCH_CMP_NEQ_ZERO;
@@ -381,25 +378,29 @@ static void parseMatch(const char *str, MatchEntries &entries)
     switch (match)
     {
         case MATCH_INVALID:
-            error("failed to parse matching \"%s\"; invalid match-"
-                "kind \"%s\"", name, str);
+            error("failed to parse matching \"%s\"; invalid attribute "
+                "\"%s\"", attrib.c_str(), str);
         case MATCH_ASSEMBLY:
             if (cmp != MATCH_CMP_EQ && cmp != MATCH_CMP_NEQ)
                 error("failed to parse matching \"%s\"; invalid match "
-                    "comparison operator for match-kind %s", str, name);
+                    "comparison operator for attribute \"%s\"", str,
+                    attrib.c_str());
             break;
         default:
             break;
     }
- 
-    for (; isspace(str[i]); i++)
+
+    const char *rhs = parser.buf + parser.i;
+    for (; isspace(*rhs); rhs++)
         ;
-    MatchEntry entry(match, cmp, str+i);
+ 
+    MatchEntry entry(match, cmp, str, nullptr);
     switch (match)
     {
         case MATCH_ASSEMBLY:
-            entry.regex = str+i;
-            break;
+            entry.regex = new std::regex(rhs);
+            entries.push_back(std::move(entry));
+            return;
         case MATCH_TRUE:
         case MATCH_FALSE:
         case MATCH_ADDRESS:
@@ -407,11 +408,44 @@ static void parseMatch(const char *str, MatchEntries &entries)
         case MATCH_RANDOM:
         case MATCH_SIZE:
             if (cmp == MATCH_CMP_NEQ_ZERO)
-                break;
-            parseValues(str+i, entry.values);
+            {
+                entries.push_back(std::move(entry));
+                return;
+            }
             break;
         default:
-            break;
+            return;
+    }
+
+    entry.values = new Index<intptr_t>;
+    if (isalpha(parser.getToken()))
+    {
+        // isalpha = CSV file
+        entry.basename = strDup(parser.s);
+        std::string filename(parser.s);
+        filename += ".csv";
+        if (parser.getToken() != '[')
+            error("failed to parse matching \"%s\"; expected `[' token "
+                "after CSV file basename", str);
+        intptr_t idx;
+        parser.getToken();
+        const char *end = parseInt(parser.s, idx);
+        if (end == nullptr || *end != '\0')
+            error("failed to parse matching \"%s\"; invalid CSV file column "
+                "index", str);
+        if (parser.getToken() != ']')
+            error("failed to parse matching \"%s\"; expected `]' token "
+                "after CSV file column index", str);
+        if (parser.getToken() != '\0')
+            error("failed to parse matching \"%s\"; unexpected token `%s'",
+                str, parser.s);
+        Data *data = parseCSV(filename.c_str());
+        buildIntIndex(filename.c_str(), *data, idx, *entry.values);
+    }
+    else
+    {
+        // else parse values directly from the string:
+        parseValues(rhs, *entry.values);
     }
     entries.push_back(std::move(entry));
 }
@@ -604,16 +638,44 @@ static Action *parseAction(const char *str, MatchEntries &entries)
                         break;
                     }
                 }
+                const char *basename = nullptr;
+                if (arg == ARGUMENT_INVALID && isalpha(s[0]))
+                {
+                    for (const auto &entry: entries)
+                    {
+                        if (entry.basename != nullptr &&
+                                strcmp(entry.basename, s) == 0)
+                        {
+                            basename = entry.basename;
+                            arg = ARGUMENT_USER;
+                            break;
+                        }
+                    }
+                    if (arg == ARGUMENT_USER)
+                    {
+                        if (parser.getToken() != '[')
+                            error("failed to parse call action; expected "
+                                "`[', found `%s'", parser.s);
+                        parser.getToken();
+                        const char *end = parseInt(parser.s, value);
+                        if (end == nullptr || *end != '\0')
+                            error("failed to parse call action; expected "
+                                "integer, found `%s'", parser.s);
+                        if (parser.getToken() != ']')
+                            error("failed to parse call action; expected "
+                                "`]', found `%s'", parser.s);
+                    }
+                }
                 if (arg == ARGUMENT_INVALID)
                     error("failed to parse call action; expected call "
-                        "argument, found `%s'", s);
-                args.push_back({arg, value});
+                        "argument, found `%s'", parser.s);
+                args.push_back({arg, value, basename});
                 c = parser.getToken();
                 if (c == ')')
                     break;
                 if (c != ',')
                     error("failed to parse call action; expected `)' or `,', "
-                        "found `%s'", s);
+                        "found `%s'", parser.s);
             }
             c = parser.getToken();
         }
@@ -706,7 +768,7 @@ static const char *makeMatchString(MatchKind match, const cs_insn *I,
  * Create match value.
  */
 static intptr_t makeMatchValue(MatchKind match, const cs_insn *I,
-    intptr_t text_addr, off_t text_offset)
+    intptr_t offset)
 {
     switch (match)
     {
@@ -717,7 +779,7 @@ static intptr_t makeMatchValue(MatchKind match, const cs_insn *I,
         case MATCH_ADDRESS:
             return I->address;
         case MATCH_OFFSET:
-            return (intptr_t)(I->address - text_addr) + text_offset;
+            return offset;
         case MATCH_RANDOM:
             return (intptr_t)rand();
         case MATCH_SIZE:
@@ -731,7 +793,7 @@ static intptr_t makeMatchValue(MatchKind match, const cs_insn *I,
  * Match an action.
  */
 static bool matchAction(csh handle, const Action *action, const cs_insn *I,
-    intptr_t text_addr, off_t text_offset)
+    intptr_t offset)
 {
     for (auto &entry: action->entries)
     {
@@ -744,7 +806,7 @@ static bool matchAction(csh handle, const Action *action, const cs_insn *I,
                 const char *str = makeMatchString(entry.match, I, buf,
                     sizeof(buf)-1);
                 std::cmatch cmatch;
-                pass = std::regex_match(str, cmatch, entry.regex);
+                pass = std::regex_match(str, cmatch, *entry.regex);
                 pass = (entry.cmp == MATCH_CMP_NEQ? !pass: pass);
                 break;
             }
@@ -755,30 +817,34 @@ static bool matchAction(csh handle, const Action *action, const cs_insn *I,
             case MATCH_RANDOM:
             case MATCH_SIZE:
             {
-                intptr_t x = makeMatchValue(entry.match, I, text_addr,
-                    text_offset);
+                if (entry.values->size() == 0 &&
+                        entry.cmp != MATCH_CMP_NEQ_ZERO)
+                    break;
+                intptr_t x = makeMatchValue(entry.match, I, offset);
                 switch (entry.cmp)
                 {
                     case MATCH_CMP_NEQ_ZERO:
                         pass = (x != 0);
                         break;
                     case MATCH_CMP_EQ:
-                        pass = (entry.values.find(x) != entry.values.end());
+                        pass = (entry.values->find(x) != entry.values->end());
                         break;
                     case MATCH_CMP_NEQ:
-                        pass = (entry.values.find(x) == entry.values.end());
+                        pass = (entry.values->size() == 1?
+                            entry.values->find(x) == entry.values->end():
+                            true);
                         break;
                     case MATCH_CMP_LT:
-                        pass = (x < *entry.values.rbegin());
+                        pass = (x < entry.values->rbegin()->first);
                         break;
                     case MATCH_CMP_LEQ:
-                        pass = (x <= *entry.values.rbegin());
+                        pass = (x <= entry.values->rbegin()->first);
                         break;
                     case MATCH_CMP_GT:
-                        pass = (x > *entry.values.begin());
+                        pass = (x > entry.values->begin()->first);
                         break;
                     case MATCH_CMP_GEQ:
-                        pass = (x >= *entry.values.begin());
+                        pass = (x >= entry.values->begin()->first);
                         break;
                     default:
                         return false;
@@ -923,14 +989,21 @@ static void usage(FILE *stream, const char *progname)
         stream);
     fputs("\t\tor address (see below), CMP is a comparison operator "
         "(equal,\n", stream);
-    fputs("\t\tless-than, etc.) and VALUES is either a comma separated list\n",
+    fputs("\t\tless-than, etc.) and VALUES is either a regular expression\n",
         stream);
-    fputs("\t\tof integers (for integer attributes) or a regular expression\n",
+    fputs("\t\t(for string attributes), comma separated list of integers "
+        "(for\n", stream);
+    fputs("\t\tinteger attributes), or values read from a Comma Separated\n",
         stream);
-    fputs("\t\t(for string attributes):\n", stream);
+    fputs("\t\tValue (CSV) file (for integer attributes):\n", stream);
     fputc('\n', stream);
     fputs("\t\t\tVALUES ::=   REGULAR-EXPRESSION\n", stream);
     fputs("\t\t\t           | INTEGER [ ',' INTEGER ] *\n", stream);
+    fputs("\t\t\t           | BASENAME '[' INTEGER ']'\n", stream);
+    fputc('\n', stream);
+    fputs("\t\tHere, BASENAME is the basename of a CSV file, and the "
+        "integer\n", stream);
+    fputs("\t\tis the column index.\n", stream);
     fputc('\n', stream);
     fputs("\t\tIf the CMP and VALUES are omitted, it is treated the same as\n",
         stream);
@@ -1013,7 +1086,10 @@ static void usage(FILE *stream, const char *progname)
     fputs("\t\t\tCALL ::= 'call' [OPTIONS] FUNCTION [ARGS] '@' BINARY\n",
         stream);
     fputs("\t\t\tOPTIONS ::= '[' OPTION ',' ... ']'\n", stream);
-    fputs("\t\t\tARGS ::= '(' ARG ',' ... ')'\n", stream);
+    fputs("\t\t\tARGS    ::= '(' ARG ',' ... ')'\n", stream);
+    fputs("\t\t\tARG     ::=   INTEGER\n", stream);
+    fputs("\t\t\t            | NAME\n", stream);
+    fputs("\t\t\t            | BASENAME '[' INTEGER ']'\n", stream);
     fputc('\n', stream);
     fputs("\t\tWhere:\n", stream);
     fputc('\n', stream);
@@ -1047,6 +1123,14 @@ static void usage(FILE *stream, const char *progname)
         stream);
     fputs("\t\t\t    corresponding register value.\n", stream);
     fputs("\t\t\t  * An integer constant.\n", stream);
+    fputs("\t\t\t  * A file lookup of the form \"basename[index]\" where\n",
+        stream);
+    fputs("\t\t\t    \"basename\" is the basename of a CSV file used in\n",
+        stream);
+    fputs("\t\t\t    the matching, and \"index\" is a column index.\n",
+        stream);
+    fputs("\t\t\t    Note that the matching must select a unique row.\n",
+        stream);
     fputs("\t\t\t  NOTE: a maximum of 6 arguments are supported.\n", stream);
     fputs("\t\t\t- FUNCTION is the name of the function to call from\n",
         stream);
@@ -1563,7 +1647,7 @@ int main(int argc, char **argv)
                 veto_patch = !action->instrFunc(backend.out, &elf, handle,
                     offset, I, action->context);
             if (!patch && !veto_patch &&
-                matchAction(handle, action, I, elf.text_addr, elf.text_offset))
+                matchAction(handle, action, I, offset))
             {
                 index = i;
                 patch = true;

@@ -349,11 +349,44 @@ static void sendLoadTargetMetadata(FILE *out, const cs_insn *I, bool clean,
 }
 
 /*
+ * Emits an instruction to load the given value into the corresponding
+ * argno register.
+ */
+static void sendLoadValueMetadata(FILE *out, intptr_t value, bool clean,
+    int argno)
+{
+    fputc('[', out);
+    if (value == 0 && clean)
+    {
+        sendZeroR32(out, argno);
+        fputs("null]", out);
+        return;
+    }
+    else if (value >= INT32_MIN && value < 0)
+    {
+        sendMovI32R64(out, argno);
+        fprintf(out, "{\"int32\":");
+    }
+    else if (value >= 0 && value <= INT32_MAX)
+    {
+        sendMovI32R32(out, argno);
+        fprintf(out, "{\"int32\":");
+    }
+    else
+    {
+        sendMovI64R64(out, argno);
+        fprintf(out, "{\"int64\":");
+    }
+    sendInteger(out, value);
+    fputs("}]", out);
+}
+
+/*
  * Send string character data.
  */
 static void sendStringCharData(FILE *out, char c)
 {
-	switch (c)
+    switch (c)
     {
         case '\\':
             fputs("\\\\", out);
@@ -389,12 +422,12 @@ static void sendAsmStrData(FILE *out, const cs_insn *I,
     bool newline = false)
 {
     fputc('\"', out);
-	for (unsigned i = 0; I->mnemonic[i] != '\0'; i++)
+    for (unsigned i = 0; I->mnemonic[i] != '\0'; i++)
         sendStringCharData(out, I->mnemonic[i]);
     if (I->op_str[0] != '\0')
     {
         sendStringCharData(out, ' ');
-	    for (unsigned i = 0; I->op_str[i] != '\0'; i++)
+        for (unsigned i = 0; I->op_str[i] != '\0'; i++)
             sendStringCharData(out, I->op_str[i]);
     }
     if (newline)
@@ -439,6 +472,56 @@ static const char *buildMetadataString(FILE *out, char *buf, long *pos)
 }
 
 /*
+ * Lookup a value from a CSV file based on the matching.
+ */
+static intptr_t makeMatchValue(MatchKind match, const cs_insn *I,
+    intptr_t offset);
+static intptr_t lookupValue(const Action *action, const cs_insn *I,
+    intptr_t offset, const char *basename, intptr_t idx)
+{
+    const Record *record = nullptr;
+    for (auto &entry: action->entries)
+    {
+        if (entry.cmp != MATCH_CMP_EQ || entry.basename == nullptr ||
+                strcmp(entry.basename, basename) != 0)
+            continue;
+        switch (entry.match)
+        {
+            case MATCH_TRUE:
+            case MATCH_FALSE:
+            case MATCH_ADDRESS:
+            case MATCH_OFFSET:
+            case MATCH_RANDOM:
+            case MATCH_SIZE:
+            {
+                intptr_t x = makeMatchValue(entry.match, I, offset);
+                auto i = entry.values->find(x);
+                if (record != nullptr && i->second != record)
+                    error("failed to lookup value from file \"%s.csv\"; "
+                        "matching is ambigious", basename);
+                record = i->second;
+                break;
+            }
+            default:
+                continue;
+        }
+    }
+    if (record == nullptr)
+        error("failed to lookup value from file \"%s.csv\"; matching is "
+            "ambigious", basename);
+    if (idx >= (intptr_t)record->size())
+        error("failed to lookup value from file \"%s.csv\"; index %zd is "
+            "out-of-range 0..%zu", basename, idx, record->size()-1);
+    const char *str = record->at(idx);
+    intptr_t x;
+    const char *end = parseInt(str, x);
+    if (end == nullptr || *end != '\0')
+        error("failed to lookup value from file \"%s.csv\"; value \"%s\" is "
+            "not a valid integer", basename, str);
+    return x;
+}
+
+/*
  * Build metadata.
  */
 static Metadata *buildMetadata(const Action *action, const cs_insn *I,
@@ -469,9 +552,9 @@ static Metadata *buildMetadata(const Action *action, const cs_insn *I,
             sendIntegerData(out, 32, len);
             const char *asm_str_len = buildMetadataString(out, buf, &pos);
 
-            metadata[0].name = "$asmStr";
+            metadata[0].name = "asmStr";
             metadata[0].data = asm_str;
-            metadata[1].name = "$asmStrLen";
+            metadata[1].name = "asmStrLen";
             metadata[1].data = asm_str_len;
             metadata[2].name = nullptr;
             metadata[2].data = nullptr;
@@ -490,12 +573,25 @@ static Metadata *buildMetadata(const Action *action, const cs_insn *I,
             {
                 switch (arg.kind)
                 {
+                    case ARGUMENT_USER:
+                    {
+                        intptr_t value = lookupValue(action, I, offset,
+                            arg.name, arg.value);
+                        sendLoadValueMetadata(out, value, action->clean,
+                            argno);
+                        const char *md_load_value =
+                            buildMetadataString(out, buf, &pos);
+                        metadata[i].name = arg.name;
+                        metadata[i].data = md_load_value;
+                        i++;
+                        break;
+                    }
                     case ARGUMENT_OFFSET:
                         if (md_offset == nullptr)
                         {
                             sendIntegerData(out, 32, offset);
                             md_offset = buildMetadataString(out, buf, &pos);
-                            metadata[i].name = "$offset";
+                            metadata[i].name = "offset";
                             metadata[i].data = md_offset;
                             i++;
                         }
@@ -506,7 +602,7 @@ static Metadata *buildMetadata(const Action *action, const cs_insn *I,
                         {
                             sendAsmStrData(out, I);
                             md_asm_str = buildMetadataString(out, buf, &pos);
-                            metadata[i].name = "$asmStr";
+                            metadata[i].name = "asmStr";
                             metadata[i].data = md_asm_str;
                             i++;
                         }
@@ -521,7 +617,7 @@ static Metadata *buildMetadata(const Action *action, const cs_insn *I,
                             sendIntegerData(out, 32, len);
                             md_asm_str_len =
                                 buildMetadataString(out, buf, &pos);
-                            metadata[i].name = "$asmStrLen";
+                            metadata[i].name = "asmStrLen";
                             metadata[i].data = md_asm_str_len;
                             i++;
                         }
@@ -532,7 +628,7 @@ static Metadata *buildMetadata(const Action *action, const cs_insn *I,
                         {
                             sendBytesData(out, I->bytes, I->size);
                             md_bytes = buildMetadataString(out, buf, &pos);
-                            metadata[i].name = "$bytes";
+                            metadata[i].name = "bytes";
                             metadata[i].data = md_bytes;
                             i++;
                         }
@@ -543,7 +639,7 @@ static Metadata *buildMetadata(const Action *action, const cs_insn *I,
                         {
                             sendIntegerData(out, 32, I->size);
                             md_bytes_len = buildMetadataString(out, buf, &pos);
-                            metadata[i].name = "$bytesLen";
+                            metadata[i].name = "bytesLen";
                             metadata[i].data = md_bytes_len;
                             i++;
                         }

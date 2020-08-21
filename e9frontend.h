@@ -53,6 +53,7 @@ struct Metadata
 enum ArgumentKind
 {
     ARGUMENT_INVALID,               // Invalid argument
+    ARGUMENT_USER,                  // User-defined argument
     ARGUMENT_INTEGER,               // Constant integer argument
     ARGUMENT_OFFSET,                // Instruction file offset
     ARGUMENT_ADDR,                  // Instruction address
@@ -88,7 +89,8 @@ enum ArgumentKind
 struct Argument
 {
     ArgumentKind kind;              // Argument kind.
-    intptr_t value;                 // Argument value.
+    intptr_t value;                 // Argument value (ARGUMENT_INTEGER/USER).
+    const char *name;               // Argument name  (ARGUMENT_USER).
 };
 
 /*

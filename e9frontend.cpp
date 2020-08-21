@@ -195,7 +195,7 @@ void e9frontend::sendMetadataFooter(FILE *out)
  */
 void e9frontend::sendDefinitionHeader(FILE *out, const char *name)
 {
-    fprintf(out, "\"%s\":", name);
+    fprintf(out, "\"$%s\":", name);
 }
 
 /*
@@ -1181,8 +1181,8 @@ static const char *getLoadTargetName(int argno)
  * Send an argument.
  */
 static void sendArgument(FILE *out, ArgumentKind arg, intptr_t value,
-    unsigned argno, int8_t rdi_offset8, int32_t rsp_offset32, bool before,
-    bool flags)
+    const char *name, unsigned argno, int8_t rdi_offset8,
+    int32_t rsp_offset32, bool before, bool flags)
 {
     if (argno > MAX_ARGNO)
         error("failed to send argument; maximum number of function call "
@@ -1190,6 +1190,9 @@ static void sendArgument(FILE *out, ArgumentKind arg, intptr_t value,
 
     switch (arg)
     {
+        case ARGUMENT_USER:
+            fprintf(out, "\"$%s\",", name);
+            break;
         case ARGUMENT_INTEGER:
             if (value == 0 && !flags)
             {
@@ -1439,8 +1442,8 @@ unsigned e9frontend::sendCallTrampolineMessage(FILE *out, const ELF &elf,
     }
     unsigned argno = 0;
     for (auto arg: args)
-        sendArgument(out, arg.kind, arg.value, argno++, rdi_offset8,
-            rsp_offset32, replace || before, flags);
+        sendArgument(out, arg.kind, arg.value, arg.name, argno++,
+            rdi_offset8, rsp_offset32, replace || before, flags);
     fprintf(out, "%u", 0xe8);                       // callq ...
     fprintf(out, ",{\"rel32\":");
     sendInteger(out, addr);
