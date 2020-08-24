@@ -23,12 +23,12 @@ then
     then
         echo -e "${GREEN}$0${OFF}: downloading capstone.zip..."
         wget -O capstone.zip \
-            https://github.com/aquynh/capstone/archive/e3f106739a6ae78d47772dff31062d644ea21078.zip
+            https://github.com/aquynh/capstone/archive/4.0.2.zip
     fi
 
     echo -e "${GREEN}$0${OFF}: extracting capstone.zip..."
     unzip capstone.zip
-    mv capstone-e3f106739a6ae78d47772dff31062d644ea21078 capstone
+    mv capstone-4.0.2 capstone
 
     echo -e "${GREEN}$0${OFF}: building capstone.zip..."
     cd capstone
