@@ -1593,7 +1593,7 @@ static void waitBackend(const Backend &backend)
 {
     fclose(backend.out);
     
-    if (backend.out == 0)
+    if (backend.pid == 0)
         return;
     int status;
     do

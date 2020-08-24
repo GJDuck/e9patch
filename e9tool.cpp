@@ -87,8 +87,12 @@ enum MatchKind
     MATCH_FALSE,
     MATCH_ASSEMBLY,
     MATCH_ADDRESS,
+    MATCH_CALL,
+    MATCH_JUMP,
+    MATCH_MNEMONIC,
     MATCH_OFFSET,
     MATCH_RANDOM,
+    MATCH_RETURN,
     MATCH_SIZE,
 };
 
@@ -98,6 +102,7 @@ enum MatchKind
 enum MatchCmp
 {
     MATCH_CMP_INVALID,
+    MATCH_CMP_EQ_ZERO,
     MATCH_CMP_NEQ_ZERO,
     MATCH_CMP_EQ,
     MATCH_CMP_NEQ,
@@ -313,7 +318,14 @@ static void parseMatch(const char *str, MatchEntries &entries)
 {
     Parser parser(str);
     MatchKind match = MATCH_INVALID;
-    switch (parser.getToken())
+    bool neg = false;
+    char c = parser.getToken();
+    if (c == '!')
+    {
+        neg = true;
+        c = parser.getToken();
+    }
+    switch (c)
     {
         case 'a':
             if (strcmp(parser.s, "asm") == 0)
@@ -321,9 +333,21 @@ static void parseMatch(const char *str, MatchEntries &entries)
             else if (strcmp(parser.s, "addr") == 0)
                 match = MATCH_ADDRESS;
             break;
+        case 'c':
+            if (strcmp(parser.s, "call") == 0)
+                match = MATCH_CALL;
+            break;
         case 'f':
             if (strcmp(parser.s, "false") == 0)
                 match = MATCH_FALSE;
+            break;
+        case 'j':
+            if (strcmp(parser.s, "jump") == 0)
+                match = MATCH_JUMP;
+            break;
+        case 'm':
+            if (strcmp(parser.s, "mnemonic") == 0)
+                match = MATCH_MNEMONIC;
             break;
         case 'o':
             if (strcmp(parser.s, "offset") == 0)
@@ -332,6 +356,8 @@ static void parseMatch(const char *str, MatchEntries &entries)
         case 'r':
             if (strcmp(parser.s, "random") == 0)
                 match = MATCH_RANDOM;
+            else if (strcmp(parser.s, "return") == 0)
+                match = MATCH_RETURN;
             break;
         case 's':
             if (strcmp(parser.s, "size") == 0)
@@ -375,17 +401,46 @@ static void parseMatch(const char *str, MatchEntries &entries)
     if (cmp == MATCH_CMP_INVALID)
         error("failed to parse matching \"%s\"; missing comparison "
             "operator", str);
+    if (neg)
+    {
+        switch (cmp)
+        {
+            case MATCH_CMP_EQ:
+                cmp = MATCH_CMP_NEQ; break;
+            case MATCH_CMP_NEQ:
+                cmp = MATCH_CMP_EQ; break;
+            case MATCH_CMP_LT:
+                cmp = MATCH_CMP_GEQ; break;
+            case MATCH_CMP_LEQ:
+                cmp = MATCH_CMP_GT; break;
+            case MATCH_CMP_GT:
+                cmp = MATCH_CMP_LEQ; break;
+            case MATCH_CMP_GEQ:
+                cmp = MATCH_CMP_LT; break;
+            case MATCH_CMP_NEQ_ZERO:
+                cmp = MATCH_CMP_EQ_ZERO; break;
+            case MATCH_CMP_EQ_ZERO:
+                cmp = MATCH_CMP_NEQ_ZERO; break;
+            default:
+                break;
+        }
+    }
     switch (match)
     {
         case MATCH_INVALID:
             error("failed to parse matching \"%s\"; invalid attribute "
                 "\"%s\"", attrib.c_str(), str);
         case MATCH_ASSEMBLY:
+        case MATCH_MNEMONIC:
             if (cmp != MATCH_CMP_EQ && cmp != MATCH_CMP_NEQ)
                 error("failed to parse matching \"%s\"; invalid match "
                     "comparison operator for attribute \"%s\"", str,
                     attrib.c_str());
             break;
+        case MATCH_CALL:
+        case MATCH_JUMP:
+        case MATCH_RETURN:
+            option_detail = true;
         default:
             break;
     }
@@ -398,16 +453,20 @@ static void parseMatch(const char *str, MatchEntries &entries)
     switch (match)
     {
         case MATCH_ASSEMBLY:
+        case MATCH_MNEMONIC:
             entry.regex = new std::regex(rhs);
             entries.push_back(std::move(entry));
             return;
         case MATCH_TRUE:
         case MATCH_FALSE:
         case MATCH_ADDRESS:
+        case MATCH_CALL:
+        case MATCH_JUMP:
         case MATCH_OFFSET:
         case MATCH_RANDOM:
+        case MATCH_RETURN:
         case MATCH_SIZE:
-            if (cmp == MATCH_CMP_NEQ_ZERO)
+            if (cmp == MATCH_CMP_EQ_ZERO || cmp == MATCH_CMP_NEQ_ZERO)
             {
                 entries.push_back(std::move(entry));
                 return;
@@ -759,6 +818,8 @@ static const char *makeMatchString(MatchKind match, const cs_insn *I,
                         buf_size);
                 return buf;
             }
+        case MATCH_MNEMONIC:
+            return I->mnemonic;
         default:
             return "";
     }
@@ -770,6 +831,7 @@ static const char *makeMatchString(MatchKind match, const cs_insn *I,
 static intptr_t makeMatchValue(MatchKind match, const cs_insn *I,
     intptr_t offset)
 {
+    const cs_detail *detail = I->detail;
     switch (match)
     {
         case MATCH_TRUE:
@@ -778,10 +840,25 @@ static intptr_t makeMatchValue(MatchKind match, const cs_insn *I,
             return 0;
         case MATCH_ADDRESS:
             return I->address;
+        case MATCH_CALL:
+            for (uint8_t i = 0; i < detail->groups_count; i++)
+                if (detail->groups[i] == CS_GRP_CALL)
+                    return 1;
+            return 0;
+        case MATCH_JUMP:
+            for (uint8_t i = 0; i < detail->groups_count; i++)
+                if (detail->groups[i] == CS_GRP_JUMP)
+                    return 1;
+            return 0;
         case MATCH_OFFSET:
             return offset;
         case MATCH_RANDOM:
             return (intptr_t)rand();
+        case MATCH_RETURN:
+            for (uint8_t i = 0; i < detail->groups_count; i++)
+                if (detail->groups[i] == CS_GRP_RET)
+                    return 1;
+            return 0;
         case MATCH_SIZE:
             return I->size;
         default:
@@ -801,6 +878,7 @@ static bool matchAction(csh handle, const Action *action, const cs_insn *I,
         switch (entry.match)
         {
             case MATCH_ASSEMBLY:
+            case MATCH_MNEMONIC:
             {
                 char buf[BUFSIZ];
                 const char *str = makeMatchString(entry.match, I, buf,
@@ -813,16 +891,23 @@ static bool matchAction(csh handle, const Action *action, const cs_insn *I,
             case MATCH_TRUE:
             case MATCH_FALSE:
             case MATCH_ADDRESS:
+            case MATCH_CALL:
+            case MATCH_JUMP:
             case MATCH_OFFSET:
             case MATCH_RANDOM:
+            case MATCH_RETURN:
             case MATCH_SIZE:
             {
-                if (entry.values->size() == 0 &&
-                        entry.cmp != MATCH_CMP_NEQ_ZERO)
+                if (entry.cmp != MATCH_CMP_EQ_ZERO &&
+                    entry.cmp != MATCH_CMP_NEQ_ZERO &&
+                        entry.values->size() == 0)
                     break;
                 intptr_t x = makeMatchValue(entry.match, I, offset);
                 switch (entry.cmp)
                 {
+                    case MATCH_CMP_EQ_ZERO:
+                        pass = (x == 0);
+                        break;
                     case MATCH_CMP_NEQ_ZERO:
                         pass = (x != 0);
                         break;
@@ -969,13 +1054,17 @@ static void usage(FILE *stream, const char *progname)
     fputs("\t\tSpecifies an instruction matching MATCH in the following "
         "form:\n", stream);
     fputc('\n', stream);
-    fputs("\t\t\tMATCH     ::= ATTRIBUTE [ CMP VALUES ]\n", stream);
+    fputs("\t\t\tMATCH     ::= [ '!' ] ATTRIBUTE [ CMP VALUES ]\n", stream);
     fputs("\t\t\tATTRIBUTE ::=   'true'\n", stream);
     fputs("\t\t\t              | 'false'\n", stream);
     fputs("\t\t\t              | 'asm'\n", stream);
     fputs("\t\t\t              | 'addr'\n", stream);
+    fputs("\t\t\t              | 'call'\n", stream);
+    fputs("\t\t\t              | 'jump'\n", stream);
+    fputs("\t\t\t              | 'mnemonic'\n", stream);
     fputs("\t\t\t              | 'offset'\n", stream);
     fputs("\t\t\t              | 'random'\n", stream);
+    fputs("\t\t\t              | 'return'\n", stream);
     fputs("\t\t\t              | 'size'\n", stream);
     fputs("\t\t\tCMP       ::=   '='\n", stream);
     fputs("\t\t\t              | '=='\n", stream);
@@ -1022,6 +1111,14 @@ static void usage(FILE *stream, const char *progname)
     fputs("\t\t\t- \"addr\"      : the instruction address.  E.g.:\n", stream);
     fputs("\t\t\t                0x4234a7\n", stream);
     fputs("\t\t\t                TYPE: integer\n", stream);
+    fputs("\t\t\t- \"call\"      : 1 for call instructions, else 0\n", stream);
+    fputs("\t\t\t                TYPE: integer [0..1]\n", stream);
+    fputs("\t\t\t- \"jump\"      : 1 for jump instructions, else 0\n", stream);
+    fputs("\t\t\t                TYPE: integer [0..1]\n", stream);
+    fputs("\t\t\t- \"mnemonic\"  : the instruction mnemomic.  E.g.:\n",
+        stream);
+    fputs("\t\t\t                \"cmpb\"\n", stream);
+    fputs("\t\t\t                TYPE: string\n", stream);
     fputs("\t\t\t- \"offset\"    : the instruction file offset.  E.g.:\n",
         stream);
     fputs("\t\t\t                +49521\n", stream);
@@ -1029,6 +1126,9 @@ static void usage(FILE *stream, const char *progname)
     fprintf(stream, "\t\t\t- \"random\"    : a random value [0..%lu].\n",
         (uintptr_t)RAND_MAX);
     fputs("\t\t\t                TYPE: integer\n", stream);
+    fputs("\t\t\t- \"return\"    : 1 for return instructions, else 0\n",
+        stream);
+    fputs("\t\t\t                TYPE: integer [0..1]\n", stream);
     fputs("\t\t\t- \"size\"      : the instruction size in bytes. E.g.: 3\n",
         stream);
     fputs("\t\t\t                TYPE: integer\n", stream);

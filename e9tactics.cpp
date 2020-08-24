@@ -172,17 +172,6 @@ static void undo(Binary &B, Patch *P)
 }
 
 /*
- * Mutate a patch.
- */
-static bool mutate(Patch *P)
-{
-    // TODO:
-    // One idea is to mutate patches in order to find new puns.
-    // However, this is not yet implemented...
-    return false;
-}
-
-/*
  * Calculate trampoline bounds.
  */
 static Bounds makeBounds(const Trampoline *T, const Instr *I, const Instr *J,
@@ -467,12 +456,8 @@ static Patch *tactic_T2(Binary &B, Instr *I, const Trampoline *T)
 
     // Step (2): Patch the instruction:
     Patch *P = nullptr;
-    do
-    {
-        P = (P == nullptr? tactic_B2(B, I, T, TACTIC_T2): P);
-        P = (P == nullptr? tactic_T1(B, I, T, TACTIC_T2): P);
-    }
-    while (P == nullptr && mutate(Q));
+    P = (P == nullptr? tactic_B2(B, I, T, TACTIC_T2): P);
+    P = (P == nullptr? tactic_T1(B, I, T, TACTIC_T2): P);
 
     if (P == nullptr)
     {
