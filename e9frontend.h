@@ -58,6 +58,8 @@ enum ArgumentKind
     ARGUMENT_OFFSET,                // Instruction file offset
     ARGUMENT_ADDR,                  // Instruction address
     ARGUMENT_NEXT,                  // Next instruction address
+    ARGUMENT_STATIC_ADDR,           // (Static) instruction address
+    ARGUMENT_STATIC_NEXT,           // (Static) next instruction address.
     ARGUMENT_ASM_STR,               // Assembly string
     ARGUMENT_ASM_STR_LEN,           // Assembly string length
     ARGUMENT_BYTES,                 // Instruction bytes

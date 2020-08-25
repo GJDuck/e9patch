@@ -1161,17 +1161,17 @@ static const char *getLoadTargetName(int argno)
     switch (argno)
     {
         case 0:
-            return "$loadTargetRDI";
+            return "loadTargetRDI";
         case 1:
-            return "$loadTargetRSI";
+            return "loadTargetRSI";
         case 2:
-            return "$loadTargetRDX";
+            return "loadTargetRDX";
         case 3:
-            return "$loadTargetRCX";
+            return "loadTargetRCX";
         case 4:
-            return "$loadTargetR8";
+            return "loadTargetR8";
         case 5:
-            return "$loadTargetR9";
+            return "loadTargetR9";
         default:
             return nullptr;
     }
@@ -1229,6 +1229,14 @@ static void sendArgument(FILE *out, ArgumentKind arg, intptr_t value,
             sendLeaRIPR64(out, argno);
             fprintf(out, "{\"rel32\":\".Lcontinue\"},");
             break;
+        case ARGUMENT_STATIC_ADDR:
+            sendMovI32R32(out, argno);
+            fprintf(out, "\"$staticAddr\",");
+            break;
+        case ARGUMENT_STATIC_NEXT:
+            sendMovI32R32(out, argno);
+            fprintf(out, "\"$staticNext\",");
+            break;
         case ARGUMENT_ASM_STR:
             sendLeaRIPR64(out, argno);
             fprintf(out, "{\"rel32\":\".LasmStr\"},");
@@ -1246,7 +1254,7 @@ static void sendArgument(FILE *out, ArgumentKind arg, intptr_t value,
             fprintf(out, "\"$bytesLen\",");
             break;
         case ARGUMENT_TARGET:
-            fprintf(out, "\"%s\",", getLoadTargetName(argno));
+            fprintf(out, "\"$%s\",", getLoadTargetName(argno));
             break;
         case ARGUMENT_TRAMPOLINE:
             sendLeaRIPR64(out, argno);
@@ -1511,28 +1519,6 @@ unsigned e9frontend::sendCallTrampolineMessage(FILE *out, const ELF &elf,
     fputc(']', out);
     sendSeparator(out, /*last=*/true);
     return sendMessageFooter(out, /*sync=*/true);
-}
-
-/*
- * Get argument name.
- */
-static const char *getArgumentName(ArgumentKind arg)
-{
-    switch (arg)
-    {
-        case ARGUMENT_OFFSET:
-            return "$offset";
-        case ARGUMENT_ASM_STR:
-            return "$asmStr";
-        case ARGUMENT_ASM_STR_LEN:
-            return "$asmStrLen";
-        case ARGUMENT_BYTES:
-            return "$bytes";
-        case ARGUMENT_BYTES_LEN:
-            return "$bytesLen";
-        default:
-            return "???";
-    }
 }
 
 /*

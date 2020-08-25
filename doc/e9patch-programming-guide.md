@@ -238,6 +238,8 @@ Several arguments are supported:
 * `target` is the jump/call target address, else -1.
 * `trampoline` is the address of the trampoline.
 * `rax`...`r15`, `rip`, `rflags` is the corresponding register value.
+* `staticAddr` is the (static) address of the instruction.
+* `staticNext` is the (static) address of the next instruction.
 * An integer constant.
 * A file lookup of the form `basename[index]` where
   `basename` is the basename of a CSV file used in

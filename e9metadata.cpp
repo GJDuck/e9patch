@@ -573,6 +573,8 @@ static Metadata *buildMetadata(const Action *action, const cs_insn *I,
             const char *md_asm_str_len = nullptr;
             const char *md_bytes       = nullptr;
             const char *md_bytes_len   = nullptr;
+            const char *md_static_addr = nullptr;
+            const char *md_static_next = nullptr;
             int i = 0, argno = 0;
             for (auto &arg: action->args)
             {
@@ -591,6 +593,7 @@ static Metadata *buildMetadata(const Action *action, const cs_insn *I,
                         i++;
                         break;
                     }
+
                     case ARGUMENT_OFFSET:
                         if (md_offset == nullptr)
                         {
@@ -660,6 +663,31 @@ static Metadata *buildMetadata(const Action *action, const cs_insn *I,
                         i++;
                         break;
                     }
+
+                    case ARGUMENT_STATIC_ADDR:
+                        if (md_static_addr == nullptr)
+                        {
+                            sendIntegerData(out, 32, I->address);
+                            md_static_addr = buildMetadataString(out, buf,
+                                &pos);
+                            metadata[i].name = "staticAddr";
+                            metadata[i].data = md_static_addr;
+                            i++;
+                        }
+                        break;
+
+                    case ARGUMENT_STATIC_NEXT:
+                        if (md_static_next == nullptr)
+                        {
+                            sendIntegerData(out, 32, I->address + I->size);
+                            md_static_next = buildMetadataString(out, buf,
+                                &pos);
+                            metadata[i].name = "staticNext";
+                            metadata[i].data = md_static_next;
+                            i++;
+                        }
+                        break;
+
                     default:
                         break;
                 }

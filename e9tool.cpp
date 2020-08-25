@@ -433,6 +433,8 @@ static void parseMatch(const char *str, MatchEntries &entries)
                 match = MATCH_ASSEMBLY;
             else if (strcmp(parser.s, "addr") == 0)
                 match = MATCH_ADDRESS;
+            else if (strcmp(parser.s, "address") == 0)
+                match = MATCH_ADDRESS;
             break;
         case 'c':
             if (strcmp(parser.s, "call") == 0)
@@ -763,6 +765,8 @@ static Action *parseAction(const char *str, MatchEntries &entries)
                             arg = ARGUMENT_ASM_STR_LEN;
                         else if (strcmp(s, "addr") == 0)
                             arg = ARGUMENT_ADDR;
+                        else if (strcmp(parser.s, "address") == 0)
+                            arg = ARGUMENT_ADDR;
                         break;
                     case 'i':
                         if (strcmp(s, "instr") == 0)
@@ -815,6 +819,12 @@ static Action *parseAction(const char *str, MatchEntries &entries)
                             arg = ARGUMENT_RIP;
                         else if (strcmp(s, "rsp") == 0)
                             arg = ARGUMENT_RSP;
+                        break;
+                    case 's':
+                        if (strcmp(s, "staticAddr") == 0)
+                            arg = ARGUMENT_STATIC_ADDR;
+                        else if (strcmp(s, "staticNext") == 0)
+                            arg = ARGUMENT_STATIC_NEXT;
                         break;
                     case 't':
                         if (strcmp(s, "target") == 0)
@@ -1374,6 +1384,12 @@ static void usage(FILE *stream, const char *progname)
     fputs("\t\t\t  * \"rax\"...\"r15\", \"rip\", \"rflags\" is the\n",
         stream);
     fputs("\t\t\t    corresponding register value.\n", stream);
+    fputs("\t\t\t  * \"staticAddr\" is the (static) address of the\n",
+        stream);
+    fputs("\t\t\t    instruction.\n", stream);
+    fputs("\t\t\t  * \"staticNext\" is the (static) address of the\n",
+        stream);
+    fputs("\t\t\t    next instruction.\n", stream);
     fputs("\t\t\t  * An integer constant.\n", stream);
     fputs("\t\t\t  * A file lookup of the form \"basename[index]\" where\n",
         stream);
