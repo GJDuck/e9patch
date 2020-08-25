@@ -475,7 +475,7 @@ static const char *buildMetadataString(FILE *out, char *buf, long *pos)
  * Lookup a value from a CSV file based on the matching.
  */
 static intptr_t makeMatchValue(MatchKind match, const cs_insn *I,
-    intptr_t offset);
+    intptr_t offset, intptr_t result);
 static intptr_t lookupValue(const Action *action, const cs_insn *I,
     intptr_t offset, const char *basename, intptr_t idx)
 {
@@ -490,11 +490,16 @@ static intptr_t lookupValue(const Action *action, const cs_insn *I,
             case MATCH_TRUE:
             case MATCH_FALSE:
             case MATCH_ADDRESS:
+            case MATCH_CALL:
+            case MATCH_JUMP:
             case MATCH_OFFSET:
+            case MATCH_PLUGIN:
             case MATCH_RANDOM:
+            case MATCH_RETURN:
             case MATCH_SIZE:
             {
-                intptr_t x = makeMatchValue(entry.match, I, offset);
+                intptr_t x = makeMatchValue(entry.match, I, offset,
+                    (entry.match == MATCH_PLUGIN? entry.plugin->result: 0));
                 auto i = entry.values->find(x);
                 if (record != nullptr && i->second != record)
                     error("failed to lookup value from file \"%s.csv\"; "

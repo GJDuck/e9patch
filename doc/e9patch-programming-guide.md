@@ -694,10 +694,9 @@ Some API function return a value, including:
 
 * `e9_plugin_init_v1()` returns an optional `context` that will be
   passed to all other API calls.
-* `e9_plugin_instr_v1()` returns a Boolean `true` or `false`.  If
-  `false` is returned, then the instruction will not be patched,
-  regardless of the `--match` filter.  This effectively implements
-  a veto.
+* `e9_plugin_instr_v1()` returns an integer value of the plugin's
+   choosing.  This integer value can be matched using by the `--match`
+   E9Tool command-line option, else the value will be ignored.
 
 The API is meant to be highly flexible.  Basically, the plugin API
 functions are expected to send JSON-RPC messages directly to the E9Patch
@@ -739,12 +738,22 @@ the plugin.  This makes the plugin API very powerful.
 Plugins can be used by E9Tool and the `--action` option.
 For example:
 
-        ./e9tool --match 'asm=j.*' --action 'plugin plugin.so' `which xterm` -o a.out
+        g++ -std=c++11 -fPIC -shared -o myPlugin.so myPlugin.cpp -I . -I capstone/include/
+        ./e9tool --match 'asm=j.*' --action 'plugin[myPlugin]' `which xterm` -o a.out
 
 The syntax is as follows:
 
 * `--action`: Selects the E9Tool "action" command-line option.
   This tells E9Tool what patching/instrumentation action to do.
-* `plugin plugin.so`: Specifies that instrument the program using the
-  `plugin.so` plugin.
+* `plugin[myPlugin]`: Specifies that instrument the program using the
+  `myPlugin.so` plugin.
+
+If `myPlugin.so` exports the `e9_plugin_instr_v1()` function, it is also
+possible to match against the return value.
+For example:
+
+        ./e9tool --match 'plugin[myPlugin] > 0x333' --action 'plugin[myPlugin]' `which xterm` -o a.out
+
+This command will only patch instructions where the `e9_plugin_instr_v1()`
+function returns a value greater than `0x333`.
 

@@ -19,11 +19,17 @@ set -e
 mkdir -p tmp
 ./e9compile.sh examples/nop.c >/dev/null 2>&1 
 
+# Setup the example.so plugin
+g++ -std=c++11 -fPIC -shared -o example.so -O2 \
+    examples/plugins/example.cpp -I . -I capstone/include/
+export LIMIT=99999999999
+
 for ACTION in \
     'passthru' \
     'call entry@nop' \
     'call[naked,after] entry@nop' \
     'call entry(asmStr,instr,rflags,rdi,rip,addr)@nop' \
+    'plugin[example]' \
     'print'
 do
     # Step (1): duplicate the tools

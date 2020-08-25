@@ -73,10 +73,9 @@
  *
  *      - e9_plugin_init_v1() returns an optional `context' that will be
  *        passed to all other API calls.
- *      - e9_plugin_instr_v1() returns a Boolean `true' or `false'.  If
- *        `false' is returned, then the instruction will not be patched,
- *        regardless of the `--match' filter.  This effectively implements
- *        a veto.
+ *      - e9_plugin_instr_v1() returns an integer value of the plugin's
+ *        choosing.  This integer value can be matched using by the `--match'
+ *        E9Tool command-line option, else the value will be ignored.
  *
  * The API is meant to be highly flexible.  Basically, the plugin API
  * functions are expected to send JSON-RPC messages directly to the E9Patch
@@ -116,7 +115,7 @@
 extern "C"
 {
     typedef void *(*PluginInit)(FILE *out, const e9frontend::ELF *elf);
-    typedef bool (*PluginInstr)(FILE *out, const e9frontend::ELF *elf,
+    typedef intptr_t (*PluginInstr)(FILE *out, const e9frontend::ELF *elf,
         csh handle, off_t offset, const cs_insn *I, void *context);
     typedef void (*PluginPatch)(FILE *out, const e9frontend::ELF *elf,
         csh handle, off_t offset, const cs_insn *I, void *context);
@@ -124,7 +123,7 @@ extern "C"
         void *context);
 
     extern void *e9_plugin_init_v1(FILE *out, const e9frontend::ELF *elf);
-    extern bool e9_plugin_instr_v1(FILE *out, const e9frontend::ELF *elf,
+    extern intptr_t e9_plugin_instr_v1(FILE *out, const e9frontend::ELF *elf,
         csh handle, off_t offset, const cs_insn *I, void *context);
     extern void e9_plugin_patch_v1(FILE *out, const e9frontend::ELF *elf,
         csh handle, off_t offset, const cs_insn *I, void *context);

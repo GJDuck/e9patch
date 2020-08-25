@@ -53,8 +53,8 @@
  * Options.
  */
 static bool option_trap_all = false;
-static bool option_detail    = false;
-static bool option_debug     = false;
+static bool option_detail   = false;
+static bool option_debug    = false;
 static std::string option_format("binary");
 static std::string option_output("a.out");
 static std::string option_syntax("ATT");
@@ -78,6 +78,21 @@ struct Location
 };
 
 /*
+ * Plugins.
+ */
+struct Plugin
+{
+    const char *filename;
+    void *handle;
+    void *context;
+    intptr_t result;
+    PluginInit initFunc;
+    PluginInstr instrFunc;
+    PluginPatch patchFunc;
+    PluginFini finiFunc;
+};
+
+/*
  * Match kinds.
  */
 enum MatchKind
@@ -85,6 +100,7 @@ enum MatchKind
     MATCH_INVALID,
     MATCH_TRUE,
     MATCH_FALSE,
+    MATCH_PLUGIN,
     MATCH_ASSEMBLY,
     MATCH_ADDRESS,
     MATCH_CALL,
@@ -134,6 +150,7 @@ struct MatchEntry
     const MatchKind match;
     const MatchCmp  cmp;
     const char *basename;
+    Plugin * const plugin;
     union
     {
         void *data;
@@ -143,14 +160,14 @@ struct MatchEntry
 
     MatchEntry(MatchEntry &&entry) :
         string(std::move(entry.string)), match(entry.match), cmp(entry.cmp),
-        basename(entry.basename)
+        basename(entry.basename), plugin(entry.plugin)
     {
         data = entry.data;
     }
 
     MatchEntry(MatchKind match, MatchCmp cmp, const char *s,
-            const char *basename) :
-        string(s), match(match), cmp(cmp), basename(basename)
+            Plugin *plugin, const char *basename) :
+        string(s), match(match), cmp(cmp), basename(basename), plugin(plugin)
     {
         data = nullptr;
     }
@@ -168,11 +185,7 @@ struct Action
     const char * const name;
     const char * const filename;
     const char * const symbol;
-    void *handle;
-    PluginInit initFunc;
-    PluginInstr instrFunc;
-    PluginPatch patchFunc;
-    PluginFini finiFunc;
+    Plugin *plugin;
     void *context;
     std::vector<Argument> args;
     bool clean;
@@ -181,13 +194,12 @@ struct Action
 
     Action(const char *string, MatchEntries &&entries, ActionKind kind,
             const char *name, const char *filename, const char *symbol,
-            const std::vector<Argument> &&args,  bool clean, bool before,
-            bool replace) :
+            Plugin *plugin, const std::vector<Argument> &&args, bool clean,
+            bool before, bool replace) :
             string(string), entries(std::move(entries)), kind(kind),
-            name(name), filename(filename), symbol(symbol), handle(nullptr),
-            initFunc(nullptr), instrFunc(nullptr), patchFunc(nullptr),
-            context(nullptr), args(args), clean(clean),
-            before(before), replace(replace)
+            name(name), filename(filename), symbol(symbol), plugin(plugin),
+            context(nullptr), args(args), clean(clean), before(before),
+            replace(replace)
     {
         ;
     }
@@ -198,6 +210,95 @@ typedef std::map<size_t, Action *> Actions;
  * Implementation.
  */
 #include "e9metadata.cpp"
+
+/*
+ * Open a new plugin object.
+ */
+static std::map<const char *, Plugin *, CStrCmp> plugins;
+static Plugin *openPlugin(const char *basename)
+{
+    std::string filename(basename);
+    if (!hasSuffix(filename, ".so"))
+        filename += ".so";
+    const char *pathname = realpath(filename.c_str(), nullptr);
+    if (pathname == nullptr)
+        error("failed to create path for plugin \"%s\"; %s", basename,
+            strerror(errno));
+    auto i = plugins.find(pathname);
+    if (i != plugins.end())
+    {
+        free((char *)pathname);
+        return i->second;
+    }
+
+    void *handle = dlopen(pathname, RTLD_LOCAL | RTLD_LAZY);
+    if (handle == nullptr)
+        error("failed to load plugin \"%s\": %s", pathname, dlerror());
+
+    Plugin *plugin = new Plugin;
+    plugin->filename  = pathname;
+    plugin->handle    = handle;
+    plugin->context   = nullptr;
+    plugin->result    = 0;
+    plugin->initFunc  = (PluginInit)dlsym(handle, "e9_plugin_init_v1");
+    plugin->instrFunc = (PluginInstr)dlsym(handle, "e9_plugin_instr_v1");
+    plugin->patchFunc = (PluginPatch)dlsym(handle, "e9_plugin_patch_v1");
+    plugin->finiFunc  = (PluginFini)dlsym(handle, "e9_plugin_fini_v1");
+    if (plugin->initFunc == nullptr &&
+            plugin->instrFunc == nullptr &&
+            plugin->patchFunc == nullptr &&
+            plugin->finiFunc == nullptr)
+        error("failed to load plugin \"%s\"; the shared "
+            "object does not export any plugin API functions",
+            plugin->filename);
+
+    plugins.insert({plugin->filename, plugin});
+    return plugin;
+}
+
+/*
+ * Notify all plugins of a new instruction.
+ */
+static void notifyPlugins(FILE *out, const ELF *elf, csh handle, off_t offset,
+    const cs_insn *I)
+{
+    for (auto i: plugins)
+    {
+        Plugin *plugin = i.second;
+        if (plugin->instrFunc == nullptr)
+            continue;
+        plugin->result = plugin->instrFunc(out, elf, handle, offset, I,
+            plugin->context);
+    }
+}
+
+/*
+ * Initialize all plugins.
+ */
+static void initPlugins(FILE *out, const ELF *elf)
+{
+    for (auto i: plugins)
+    {
+        Plugin *plugin = i.second;
+        if (plugin->initFunc == nullptr)
+            continue;
+        plugin->context = plugin->initFunc(out, elf);
+    }
+}
+
+/*
+ * Finalize all plugins.
+ */
+static void finiPlugins(FILE *out, const ELF *elf)
+{
+    for (auto i: plugins)
+    {
+        Plugin *plugin = i.second;
+        if (plugin->finiFunc == nullptr)
+            continue;
+        plugin->finiFunc(out, elf, plugin->context);
+    }
+}
 
 /*
  * Action string parser.
@@ -320,7 +421,7 @@ static void parseMatch(const char *str, MatchEntries &entries)
     MatchKind match = MATCH_INVALID;
     bool neg = false;
     char c = parser.getToken();
-    if (c == '!')
+    if (strcmp(parser.s, "!") == 0)
     {
         neg = true;
         c = parser.getToken();
@@ -353,6 +454,10 @@ static void parseMatch(const char *str, MatchEntries &entries)
             if (strcmp(parser.s, "offset") == 0)
                 match = MATCH_OFFSET;
             break;
+        case 'p':
+            if (strcmp(parser.s, "plugin") == 0)
+                match = MATCH_PLUGIN;
+            break;
         case 'r':
             if (strcmp(parser.s, "random") == 0)
                 match = MATCH_RANDOM;
@@ -369,6 +474,33 @@ static void parseMatch(const char *str, MatchEntries &entries)
             break;
     }
     std::string attrib(parser.s);
+    Plugin *plugin = nullptr;
+    switch (match)
+    {
+        case MATCH_INVALID:
+            error("failed to parse matching; expected attribute, found `%s'",
+                parser.s);
+        case MATCH_PLUGIN:
+        {
+            if (parser.getToken() != '[')
+                error("failed to parse matching; expected `[', found `%s'",
+                    parser.s);
+            if (!isalpha(parser.getToken()))
+                error("failed to parse matching; expected plugin name, found "
+                    "`%s'", parser.s);
+            plugin = openPlugin(parser.s);
+            if (parser.getToken() != ']')
+                error("failed to parse matching; expected `]', found `%s'",
+                    parser.s);
+            if (plugin->instrFunc == nullptr)
+                error("failed to parse matching; plugin \"%s\" does not "
+                    "export the \"e9_plugin_instr_v1\" function",
+                    plugin->filename);
+            break;
+        }
+        default:
+            break;
+    }
     MatchCmp cmp = MATCH_CMP_INVALID;
     switch (parser.getToken())
     {
@@ -399,8 +531,8 @@ static void parseMatch(const char *str, MatchEntries &entries)
             break;
     }
     if (cmp == MATCH_CMP_INVALID)
-        error("failed to parse matching \"%s\"; missing comparison "
-            "operator", str);
+        error("failed to parse matching; expected comparison operator, "
+            "found `%s'", parser.s);
     if (neg)
     {
         switch (cmp)
@@ -427,20 +559,19 @@ static void parseMatch(const char *str, MatchEntries &entries)
     }
     switch (match)
     {
-        case MATCH_INVALID:
-            error("failed to parse matching \"%s\"; invalid attribute "
-                "\"%s\"", attrib.c_str(), str);
         case MATCH_ASSEMBLY:
         case MATCH_MNEMONIC:
             if (cmp != MATCH_CMP_EQ && cmp != MATCH_CMP_NEQ)
-                error("failed to parse matching \"%s\"; invalid match "
-                    "comparison operator for attribute \"%s\"", str,
-                    attrib.c_str());
+                error("failed to parse matching; invalid match "
+                    "comparison operator `%s' for attribute `%s'",
+                    parser.s, attrib.c_str());
             break;
         case MATCH_CALL:
         case MATCH_JUMP:
         case MATCH_RETURN:
+        case MATCH_PLUGIN:
             option_detail = true;
+            break;
         default:
             break;
     }
@@ -449,7 +580,7 @@ static void parseMatch(const char *str, MatchEntries &entries)
     for (; isspace(*rhs); rhs++)
         ;
  
-    MatchEntry entry(match, cmp, str, nullptr);
+    MatchEntry entry(match, cmp, str, plugin, nullptr);
     switch (match)
     {
         case MATCH_ASSEMBLY:
@@ -463,6 +594,7 @@ static void parseMatch(const char *str, MatchEntries &entries)
         case MATCH_CALL:
         case MATCH_JUMP:
         case MATCH_OFFSET:
+        case MATCH_PLUGIN:
         case MATCH_RANDOM:
         case MATCH_RETURN:
         case MATCH_SIZE:
@@ -484,20 +616,20 @@ static void parseMatch(const char *str, MatchEntries &entries)
         std::string filename(parser.s);
         filename += ".csv";
         if (parser.getToken() != '[')
-            error("failed to parse matching \"%s\"; expected `[' token "
-                "after CSV file basename", str);
+            error("failed to parse matching; expected `[', found `%s'",
+                parser.s);
         intptr_t idx;
         parser.getToken();
         const char *end = parseInt(parser.s, idx);
         if (end == nullptr || *end != '\0')
-            error("failed to parse matching \"%s\"; invalid CSV file column "
-                "index", str);
+            error("failed to parse matching; expected CSV index, found `%s'",
+                parser.s);
         if (parser.getToken() != ']')
-            error("failed to parse matching \"%s\"; expected `]' token "
-                "after CSV file column index", str);
+            error("failed to parse matching; expected `]', found `%s'",
+                parser.s);
         if (parser.getToken() != '\0')
-            error("failed to parse matching \"%s\"; unexpected token `%s'",
-                str, parser.s);
+            error("failed to parse matching; expected end-of-input, found "
+                "`%s'", parser.s);
         Data *data = parseCSV(filename.c_str());
         buildIntIndex(filename.c_str(), *data, idx, *entry.values);
     }
@@ -532,10 +664,7 @@ static Action *parseAction(const char *str, MatchEntries &entries)
             else if (strcmp(parser.s, "print") == 0)
                 kind = ACTION_PRINT;
             else if (strcmp(parser.s, "plugin") == 0)
-            {
-                option_detail = true;
                 kind = ACTION_PLUGIN;
-            }
             break;
         case 't':
             if (strcmp(parser.s, "trap") == 0)
@@ -551,12 +680,22 @@ static Action *parseAction(const char *str, MatchEntries &entries)
          option_after = false, option_replace = false;
     const char *symbol   = nullptr;
     const char *filename = nullptr;
+    Plugin *plugin = nullptr;
     std::vector<Argument> args;
     if (kind == ACTION_PLUGIN)
     {
-        while (isspace(parser.buf[parser.i]))
-            parser.i++;
-        filename = strDup(parser.buf + parser.i);
+        if (parser.getToken() != '[')
+            error("failed to parse plugin action; expected `[', found `%s'",
+                parser.s);
+        if (!isalpha(parser.getToken()))
+            error("failed to parse plugin action; expected plugin "
+                "name, found `%s'", parser.s);
+        filename = strDup(parser.s);
+        plugin = openPlugin(parser.s);
+        if (parser.getToken() != ']')
+            error("failed to parse plugin action; expected `]', found `%s'",
+                parser.s);
+        option_detail = true;
     }
     else if (kind == ACTION_CALL)
     {
@@ -741,9 +880,10 @@ static Action *parseAction(const char *str, MatchEntries &entries)
         if (c != '@')
             error("failed to parse call action; expected `@', found `%s'",
                 parser.s);
-        filename = strDup(parser.buf + parser.i);
-        if (filename[0] == '\0')
-            error("failed to parse call action; expected filename");
+        if (!isalpha(parser.getToken()))
+            error("failed to parse call action; expected filename, "
+                "found `%s'", parser.s);
+        filename = strDup(parser.s);
         if (option_clean && option_naked)
             error("failed to parse call action; `clean' and `naked' "
                 "attributes cannot be used together");
@@ -753,8 +893,9 @@ static Action *parseAction(const char *str, MatchEntries &entries)
                 "`after' and `replace' attributes can be used together");
         option_before = (option_before? true: !option_after);
     }
-    else if (parser.getToken() != '\0')
-        error("failed to parse action; expected end-of-string, found `%s'",
+
+    if (parser.getToken() != '\0')
+        error("failed to parse action; expected end-of-input, found `%s'",
             parser.s);
 
     // Step(5): Build the action:
@@ -794,7 +935,8 @@ static Action *parseAction(const char *str, MatchEntries &entries)
     }
 
     Action *action = new Action(str, std::move(entries), kind, name, filename,
-        symbol, std::move(args), option_clean, option_before, option_replace);
+        symbol, plugin, std::move(args), option_clean, option_before,
+        option_replace);
     return action;
 }
 
@@ -829,7 +971,7 @@ static const char *makeMatchString(MatchKind match, const cs_insn *I,
  * Create match value.
  */
 static intptr_t makeMatchValue(MatchKind match, const cs_insn *I,
-    intptr_t offset)
+    intptr_t offset, intptr_t result)
 {
     const cs_detail *detail = I->detail;
     switch (match)
@@ -852,6 +994,8 @@ static intptr_t makeMatchValue(MatchKind match, const cs_insn *I,
             return 0;
         case MATCH_OFFSET:
             return offset;
+        case MATCH_PLUGIN:
+            return result;
         case MATCH_RANDOM:
             return (intptr_t)rand();
         case MATCH_RETURN:
@@ -894,6 +1038,7 @@ static bool matchAction(csh handle, const Action *action, const cs_insn *I,
             case MATCH_CALL:
             case MATCH_JUMP:
             case MATCH_OFFSET:
+            case MATCH_PLUGIN:
             case MATCH_RANDOM:
             case MATCH_RETURN:
             case MATCH_SIZE:
@@ -902,7 +1047,8 @@ static bool matchAction(csh handle, const Action *action, const cs_insn *I,
                     entry.cmp != MATCH_CMP_NEQ_ZERO &&
                         entry.values->size() == 0)
                     break;
-                intptr_t x = makeMatchValue(entry.match, I, offset);
+                intptr_t x = makeMatchValue(entry.match, I, offset,
+                    (entry.match == MATCH_PLUGIN? entry.plugin->result: 0));
                 switch (entry.cmp)
                 {
                     case MATCH_CMP_EQ_ZERO:
@@ -1066,6 +1212,7 @@ static void usage(FILE *stream, const char *progname)
     fputs("\t\t\t              | 'random'\n", stream);
     fputs("\t\t\t              | 'return'\n", stream);
     fputs("\t\t\t              | 'size'\n", stream);
+    fputs("\t\t\t              | 'plugin' '[' NAME ']'\n", stream);
     fputs("\t\t\tCMP       ::=   '='\n", stream);
     fputs("\t\t\t              | '=='\n", stream);
     fputs("\t\t\t              | '!='\n", stream);
@@ -1132,6 +1279,10 @@ static void usage(FILE *stream, const char *progname)
     fputs("\t\t\t- \"size\"      : the instruction size in bytes. E.g.: 3\n",
         stream);
     fputs("\t\t\t                TYPE: integer\n", stream);
+    fputs("\t\t\t- \"plugin[NAME]\"\n", stream);
+    fputs("\t\t\t              : the value returned by NAME.so's\n", stream);
+    fputs("\t\t\t                e9_plugin_instr_v1 function.\n", stream);
+    fputs("\t\t\t                TYPE: integer\n", stream);
     fputc('\n', stream);
     fputs("\t\tMultiple `--match'/`-M' options can be combined, which will\n",
         stream);
@@ -1160,7 +1311,7 @@ static void usage(FILE *stream, const char *progname)
     fputs("\t\t\t           | 'print' \n", stream);
     fputs("\t\t\t           | 'trap' \n", stream);
     fputs("\t\t\t           | CALL \n", stream);
-    fputs("\t\t\t           | PLUGIN \n", stream);
+    fputs("\t\t\t           | 'plugin' '[' NAME ']'\n", stream);
     fputc('\n', stream);
     fputs("\t\tWhere:\n", stream);
     fputc('\n', stream);
@@ -1170,7 +1321,8 @@ static void usage(FILE *stream, const char *progname)
     fputs("\t\t\t- \"trap\"    : SIGTRAP instrumentation.\n", stream);
     fputs("\t\t\t- CALL      : call user instrumentation (see below).\n",
         stream);
-    fputs("\t\t\t- PLUGIN    : plugin instrumentation (see below).\n",
+    fputs("\t\t\t- \"plugin[NAME]\"\n", stream);
+    fputs("\t\t\t            : plugin instrumentation (see below).\n",
         stream);
     fputc('\n', stream);
     fputs("\t\tThe CALL INSTRUMENTATION makes it possible to invoke a\n",
@@ -1241,18 +1393,11 @@ static void usage(FILE *stream, const char *progname)
         stream);
     fputs("\t\t\t  the correct binary format.\n", stream);
     fputc('\n', stream);
-    fputs("\t\tThe PLUGIN INSTRUMENTATION lets a shared object plugin "
-        "drive\n", stream);
-    fputs("\t\tthe binary instrumentation/rewriting.  The syntax for "
-        "PLUGIN\n", stream);
-    fputs("\t\tis:\n", stream);
-    fputc('\n', stream);
-    fputs("\t\t\tPLUGIN ::= 'plugin' FILENAME\n", stream);
-    fputc('\n', stream);
-    fputs("\t\twhere FILENAME is the path to the plugin shared object.  "
-        "See\n", stream);
-    fputs("\t\tthe `e9plugin.h' file for the plugin API documentation.\n",
+    fputs("\t\tPLUGIN instrumentation lets a shared object plugin "
+        "drive the\n", stream);
+    fputs("\t\tbinary instrumentation/rewriting.  See the plugin API\n",
         stream);
+    fputs("\t\tdocumentation for more information.\n", stream);
     fputc('\n', stream);
     fputs("\t\tIt is possible to specify multiple actions that will be\n",
         stream);
@@ -1589,6 +1734,11 @@ int main(int argc, char **argv)
     sendBinaryMessage(backend.out, mode, filename);
 
     /*
+     * Initialize all plugins:
+     */
+    initPlugins(backend.out, &elf);
+
+    /*
      * Send trampoline definitions:
      */
     bool have_print = false, have_passthru = false, have_trap = false;
@@ -1641,33 +1791,6 @@ int main(int argc, char **argv)
                         action->replace);
                     have_call.insert(action->name);
                 }
-                break;
-            }
-            case ACTION_PLUGIN:
-            {
-                void *handle = dlopen(action->filename,
-                    RTLD_LOCAL | RTLD_LAZY);
-                if (handle == nullptr)
-                    error("failed to load plugin \"%s\": %s", action->filename,
-                        dlerror());
-                action->initFunc = (PluginInit)dlsym(handle,
-                    "e9_plugin_init_v1");
-                action->instrFunc = (PluginInstr)dlsym(handle,
-                    "e9_plugin_instr_v1");
-                action->patchFunc = (PluginPatch)dlsym(handle,
-                    "e9_plugin_patch_v1");
-                action->finiFunc = (PluginFini)dlsym(handle,
-                    "e9_plugin_fini_v1");
-                if (action->initFunc == nullptr &&
-                        action->instrFunc == nullptr &&
-                        action->patchFunc == nullptr &&
-                        action->finiFunc == nullptr)
-                    error("failed to load plugin \"%s\"; the shared "
-                        "object does not export any plugin API functions",
-                        action->filename);
-                if (action->initFunc != nullptr)
-                    action->context = action->initFunc(backend.out, &elf);
-                action->handle = handle;
                 break;
             }
             default:
@@ -1738,21 +1861,17 @@ int main(int argc, char **argv)
         }
 
         bool patch = false;
-        unsigned i = 0, index = 0;
+        unsigned index = 0;
         off_t offset = ((intptr_t)I->address - elf.text_addr);
+        notifyPlugins(backend.out, &elf, handle, offset, I);
         for (const auto action: option_actions)
         {
-            bool veto_patch = false;
-            if (action->kind == ACTION_PLUGIN && action->instrFunc != nullptr)
-                veto_patch = !action->instrFunc(backend.out, &elf, handle,
-                    offset, I, action->context);
-            if (!patch && !veto_patch &&
-                matchAction(handle, action, I, offset))
+            if (matchAction(handle, action, I, offset))
             {
-                index = i;
                 patch = true;
+                break;
             }
-            i++;
+            index++;
         }
 
         Location loc(offset, I->size, patch, index);
@@ -1806,12 +1925,14 @@ int main(int argc, char **argv)
                 elf.text_addr, elf.text_offset);
 
         const Action *action = option_actions[loc.action];
-        if (action->kind == ACTION_PLUGIN &&
-            action->patchFunc != nullptr)
+        if (action->kind == ACTION_PLUGIN)
         {
             // Special handling for plugins:
-            action->patchFunc(backend.out, &elf, handle, offset, I,
-                action->context);
+            if (action->plugin->patchFunc != nullptr)
+            {
+                action->plugin->patchFunc(backend.out, &elf, handle, offset,
+                    I, action->context);
+            }
         }
         else
         {
@@ -1824,20 +1945,12 @@ int main(int argc, char **argv)
         }
     }
     cs_free(I, 1);
-    cs_close(&handle);
 
     /*
      * Finalize all plugins.
      */
-    for (const auto action: option_actions)
-    {
-        if (action->kind != ACTION_PLUGIN)
-            continue;
-        if (action->finiFunc != nullptr)
-            action->finiFunc(backend.out, &elf, action->context);
-        action->context = nullptr;
-        dlclose(action->handle);
-    }
+    finiPlugins(backend.out, &elf);
+    cs_close(&handle);
 
     /*
      * Emit the final binary/patch file.
