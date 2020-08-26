@@ -129,8 +129,8 @@ static void sendUnloadArgReg(FILE *out, x86_reg reg, int argno)
  * Emits instructions to load the jump/call target into the corresponding
  * argno register.  Else, if I is not a jump/call instruction, load -1.
  */
-static void sendLoadTargetMetadata(FILE *out, const cs_insn *I, bool clean,
-    int argno)
+static void sendLoadTargetMetadata(FILE *out, const cs_insn *I,
+    int32_t rsp_offset32, bool clean, int argno)
 {
     assert(argno < MAX_ARGNO);
     const cs_detail *detail = I->detail;
@@ -140,6 +140,18 @@ static void sendLoadTargetMetadata(FILE *out, const cs_insn *I, bool clean,
     fputc('[', out); 
     switch (I->id)
     {
+        case X86_INS_RET:
+        {
+            const uint8_t REX[MAX_ARGNO] =
+                {0x48, 0x48, 0x48, 0x48, 0x4c, 0x4c};
+            const uint8_t MODRM[MAX_ARGNO] =
+                {0xbc, 0xb4, 0x94, 0x8c, 0x84, 0x8c};
+ 
+            // mov rsp_offset32(%rsp),%rarg
+            fprintf(out, "%u,%u,%u,%u,{\"int32\":%d}]",
+                REX[argno], 0x8b, MODRM[argno], 0x24, rsp_offset32);
+            return;
+        }
         case X86_INS_CALL:
         case X86_INS_JMP:
         case X86_INS_JO: case X86_INS_JNO: case X86_INS_JB: case X86_INS_JAE:
@@ -655,7 +667,10 @@ static Metadata *buildMetadata(const Action *action, const cs_insn *I,
 
                     case ARGUMENT_TARGET:
                     {
-                        sendLoadTargetMetadata(out, I, action->clean, argno);
+                        int32_t rsp_offset32 = getRSPOffset(action->args,
+                            action->clean);
+                        sendLoadTargetMetadata(out, I, rsp_offset32,
+                            action->clean, argno);
                         const char *md_load_target =
                             buildMetadataString(out, buf, &pos);
                         metadata[i].name = getLoadTargetName(argno);

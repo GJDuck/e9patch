@@ -125,8 +125,8 @@ extern unsigned sendPrintTrampolineMessage(FILE *out);
 extern unsigned sendTrapTrampolineMessage(FILE *out);
 extern unsigned sendCallTrampolineMessage(FILE *out, const ELF &elf,
     const char *filename, const char *symbol, const char *name,
-    const std::vector<Argument> args,
-    bool clean = true, bool before = true, bool replace = false);
+    const std::vector<Argument> &args, bool clean = true, bool before = true,
+    bool replace = false);
 
 /*
  * Misc. functions:

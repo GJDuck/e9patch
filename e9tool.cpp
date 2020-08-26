@@ -1377,7 +1377,7 @@ static void usage(FILE *stream, const char *progname)
         stream);
     fputs("\t\t\t  * \"next\" is the address of the next instruction.\n",
         stream);
-    fputs("\t\t\t  * \"target\" is the jump/call target, else -1.\n",
+    fputs("\t\t\t  * \"target\" is the jump/call/return target, else -1.\n",
         stream);
     fputs("\t\t\t  * \"trampoline\" is the address of the trampoline.\n",
         stream);

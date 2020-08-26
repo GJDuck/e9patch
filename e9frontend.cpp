@@ -1370,7 +1370,7 @@ static void sendArgumentData(FILE *out, ArgumentKind arg, unsigned argno)
  */
 unsigned e9frontend::sendCallTrampolineMessage(FILE *out, const ELF &elf,
     const char *filename, const char *symbol, const char *name,
-    const std::vector<Argument> args, bool clean, bool before, bool replace)
+    const std::vector<Argument> &args, bool clean, bool before, bool replace)
 {
     intptr_t addr = lookupSymbol(elf, symbol);
     if (addr < 0)
@@ -1519,6 +1519,18 @@ unsigned e9frontend::sendCallTrampolineMessage(FILE *out, const ELF &elf,
     fputc(']', out);
     sendSeparator(out, /*last=*/true);
     return sendMessageFooter(out, /*sync=*/true);
+}
+
+/*
+ * Calculate the %rsp offset for call instrumentation.
+ * NOTE: This must sync with e9frontend::sendCallTrampolineMessage
+ */
+static int32_t getRSPOffset(const std::vector<Argument> &args, bool clean)
+{
+    if (clean)
+        return 0x4000 + 80;
+    else
+        return 0x4000 + 8 * args.size();
 }
 
 /*
