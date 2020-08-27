@@ -768,6 +768,10 @@ static Action *parseAction(const char *str, MatchEntries &entries)
                         else if (strcmp(parser.s, "address") == 0)
                             arg = ARGUMENT_ADDR;
                         break;
+                    case 'b':
+                        if (strcmp(s, "base") == 0)
+                            arg = ARGUMENT_BASE;
+                        break;
                     case 'i':
                         if (strcmp(s, "instr") == 0)
                             arg = ARGUMENT_BYTES;
@@ -823,8 +827,6 @@ static Action *parseAction(const char *str, MatchEntries &entries)
                     case 's':
                         if (strcmp(s, "staticAddr") == 0)
                             arg = ARGUMENT_STATIC_ADDR;
-                        else if (strcmp(s, "staticNext") == 0)
-                            arg = ARGUMENT_STATIC_NEXT;
                         break;
                     case 't':
                         if (strcmp(s, "target") == 0)

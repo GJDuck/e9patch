@@ -305,7 +305,15 @@ unsigned e9frontend::sendPatchMessage(FILE *out, const char *trampoline,
         for (unsigned i = 0; metadata[i].name != nullptr; i++)
         {
             sendDefinitionHeader(out, metadata[i].name);
-            fputs(metadata[i].data, out);
+            fputc('[', out);
+            const char *data = metadata[i].data;
+            size_t len = strlen(data);
+            while (len > 0 && isspace(data[len-1]))
+                len--;
+            if (len > 0 && data[len-1] == ',')
+                len--;
+            fwrite(data, sizeof(char), len, out);
+            fputc(']', out);
             sendSeparator(out, (metadata[i+1].name == nullptr));
         }
         sendMetadataFooter(out);
@@ -993,36 +1001,6 @@ static void sendMovI32R32(FILE *out, unsigned argno)
 }
 
 /*
- * Send a `xor %r32,%r32` instruction.
- */
-static void sendZeroR32(FILE *out, unsigned argno)
-{
-    switch (argno)
-    {
-        case 0:
-            fprintf(out, "%u,%u,", 0x31, 0xff);     // xor %edi,%edi
-            break;
-        case 1:
-            fprintf(out, "%u,%u,", 0x31, 0xf6);     // xor %esi,%esi
-            break;
-        case 2:
-            fprintf(out, "%u,%u,", 0x31, 0xd2);     // xor %edx,%edx
-            break;
-        case 3:
-            fprintf(out, "%u,%u,", 0x31, 0xc9);     // xor %ecx,%ecx
-            break;
-        case 4:
-            fprintf(out, "%u,%u,%u,",
-                0x45, 0x31, 0xc0);                  // xor %r8d,%r8d
-            break;
-        case 5:
-            fprintf(out, "%u,%u,%u,",
-                0x45, 0x31, 0xc9);                  // xor %r9d,%r9d
-            break;
-    }
-}
-
-/*
  * Send a `mov $i32,%r64' instruction opcode.
  */
 static void sendMovI32R64(FILE *out, unsigned argno)
@@ -1178,6 +1156,30 @@ static const char *getLoadTargetName(int argno)
 }
 
 /*
+ * Get load target name.
+ */
+static const char *getLoadNextName(int argno)
+{
+    switch (argno)
+    {
+        case 0:
+            return "loadNextRDI";
+        case 1:
+            return "loadNextRSI";
+        case 2:
+            return "loadNextRDX";
+        case 3:
+            return "loadNextRCX";
+        case 4:
+            return "loadNextR8";
+        case 5:
+            return "loadNextR9";
+        default:
+            return nullptr;
+    }
+}
+
+/*
  * Send an argument.
  */
 static void sendArgument(FILE *out, ArgumentKind arg, intptr_t value,
@@ -1194,19 +1196,9 @@ static void sendArgument(FILE *out, ArgumentKind arg, intptr_t value,
             fprintf(out, "\"$%s\",", name);
             break;
         case ARGUMENT_INTEGER:
-            if (value == 0 && !flags)
-            {
-                sendZeroR32(out, argno);
-                break;
-            }
-            else if (value >= INT32_MIN && value < 0)
+            if (value >= INT32_MIN && value <= INT32_MAX)
             {
                 sendMovI32R64(out, argno);
-                fprintf(out, "{\"int32\":");
-            }
-            else if (value >= 0 && value <= INT32_MAX)
-            {
-                sendMovI32R32(out, argno);
                 fprintf(out, "{\"int32\":");
             }
             else
@@ -1226,16 +1218,21 @@ static void sendArgument(FILE *out, ArgumentKind arg, intptr_t value,
             fprintf(out, "{\"rel32\":\".Linstruction\"},");
             break;
         case ARGUMENT_NEXT:
+            if (before)
+                fprintf(out, "\"$%s\",", getLoadNextName(argno));
+            else
+            {
+                sendLeaRIPR64(out, argno);
+                fprintf(out, "{\"rel32\":\".Lcontinue\"},");
+            }
+            break;
+        case ARGUMENT_BASE:
             sendLeaRIPR64(out, argno);
-            fprintf(out, "{\"rel32\":\".Lcontinue\"},");
+            fprintf(out, "{\"rel32\":0},");
             break;
         case ARGUMENT_STATIC_ADDR:
             sendMovI32R32(out, argno);
             fprintf(out, "\"$staticAddr\",");
-            break;
-        case ARGUMENT_STATIC_NEXT:
-            sendMovI32R32(out, argno);
-            fprintf(out, "\"$staticNext\",");
             break;
         case ARGUMENT_ASM_STR:
             sendLeaRIPR64(out, argno);

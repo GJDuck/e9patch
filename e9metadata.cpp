@@ -50,6 +50,31 @@ static int regToArgNo(x86_reg reg)
 }
 
 /*
+ * Convert an argno to a register name.
+ */
+static const char *argNoToRegName(int argno)
+{
+    switch (argno)
+    {
+        case 0:
+            return "RDI";
+        case 1:
+            return "RSI";
+        case 2:
+            return "RDX";
+        case 3:
+            return "RCX";
+        case 4:
+            return "R8";
+        case 5:
+            return "R9";
+        default:
+            return "???";
+    }
+}
+
+
+/*
  * Save & restore a register used as an argument.
  */
 static int8_t sendLoadArgReg(FILE *out, bool clean, int8_t offset,
@@ -126,8 +151,9 @@ static void sendUnloadArgReg(FILE *out, x86_reg reg, int argno)
 }
 
 /*
- * Emits instructions to load the jump/call target into the corresponding
- * argno register.  Else, if I is not a jump/call instruction, load -1.
+ * Emits instructions to load the jump/call/return target into the
+ * corresponding argno register.  Else, if I is not a jump/call/return
+ * instruction, load -1.
  */
 static void sendLoadTargetMetadata(FILE *out, const cs_insn *I,
     int32_t rsp_offset32, bool clean, int argno)
@@ -137,7 +163,6 @@ static void sendLoadTargetMetadata(FILE *out, const cs_insn *I,
     const cs_x86 *x86       = &detail->x86;
     const cs_x86_op *op     = &x86->operands[0];
 
-    fputc('[', out); 
     switch (I->id)
     {
         case X86_INS_RET:
@@ -148,7 +173,7 @@ static void sendLoadTargetMetadata(FILE *out, const cs_insn *I,
                 {0xbc, 0xb4, 0x94, 0x8c, 0x84, 0x8c};
  
             // mov rsp_offset32(%rsp),%rarg
-            fprintf(out, "%u,%u,%u,%u,{\"int32\":%d}]",
+            fprintf(out, "%u,%u,%u,%u,{\"int32\":%d},",
                 REX[argno], 0x8b, MODRM[argno], 0x24, rsp_offset32);
             return;
         }
@@ -174,7 +199,7 @@ static void sendLoadTargetMetadata(FILE *out, const cs_insn *I,
                 {0xc7, 0xc6, 0xc2, 0xc1, 0xc0, 0xc1};
            
             // mov $-1,%rarg
-            fprintf(out, "%u,%u,%u,%u,%u,%u,%u]",
+            fprintf(out, "%u,%u,%u,%u,%u,%u,%u,",
                 REX[argno], 0xc7, MODRM[argno], 0xff, 0xff, 0xff, 0xff);
             return;
         }
@@ -215,7 +240,6 @@ static void sendLoadTargetMetadata(FILE *out, const cs_insn *I,
                 if (trivial)
                 {
                     // Trivial case: value is already in correct register.
-                    fputc(']', out);
                     return;
                 }
 
@@ -271,7 +295,6 @@ static void sendLoadTargetMetadata(FILE *out, const cs_insn *I,
                 int8_t offset = (clean? 8: 0);
                 sendMovRSPR64(out, offset + 8 * regno, argno);
             }
-            fputs("null]", out);
             return;
         }
         case X86_OP_MEM:
@@ -335,7 +358,6 @@ static void sendLoadTargetMetadata(FILE *out, const cs_insn *I,
 
             sendUnloadArgReg(out, index_reg, argno);
             sendUnloadArgReg(out, base_reg, argno);
-            fputs("null]", out);
             return;
         }
         case X86_OP_IMM:
@@ -352,7 +374,7 @@ static void sendLoadTargetMetadata(FILE *out, const cs_insn *I,
             fprintf(out, "%u,%u,%u,{\"rel32\":", REX[argno], 0x8d,
                 MODRM[argno]);
             sendInteger(out, target);
-            fputs("}]", out);
+            fputs("},", out);
             return;
         }
         default:
@@ -361,25 +383,121 @@ static void sendLoadTargetMetadata(FILE *out, const cs_insn *I,
 }
 
 /*
+ * Emits instructions to load the address of the next instruction to be
+ * executed by the CPU.
+ */
+static void sendLoadNextMetadata(FILE *out, const cs_insn *I,
+    int32_t rsp_offset32, bool clean, int argno)
+{
+    const char *regname = argNoToRegName(argno);
+    uint8_t opcode = 0x06;
+    switch (I->id)
+    {
+        case X86_INS_RET:
+        case X86_INS_CALL:
+        case X86_INS_JMP:
+            sendLoadTargetMetadata(out, I, rsp_offset32, clean, argno);
+            return;
+        case X86_INS_JO:
+            opcode = 0x70;
+            break;
+        case X86_INS_JNO:
+            opcode = 0x71;
+            break;
+        case X86_INS_JB:
+            opcode = 0x72;
+            break;
+        case X86_INS_JAE:
+            opcode = 0x73;
+            break;
+        case X86_INS_JE:
+            opcode = 0x74;
+            break;
+        case X86_INS_JNE:
+            opcode = 0x75;
+            break;
+        case X86_INS_JBE:
+            opcode = 0x76;
+            break;
+        case X86_INS_JA:
+            opcode = 0x77;
+            break;
+        case X86_INS_JS:
+            opcode = 0x78;
+            break;
+        case X86_INS_JNS:
+            opcode = 0x79;
+            break;
+        case X86_INS_JP:
+            opcode = 0x7a;
+            break;
+        case X86_INS_JNP:
+            opcode = 0x7b;
+            break;
+        case X86_INS_JL:
+            opcode = 0x7c;
+            break;
+        case X86_INS_JGE:
+            opcode = 0x7d;
+            break;
+        case X86_INS_JLE:
+            opcode = 0x7e;
+            break;
+        case X86_INS_JG:
+            opcode = 0x7f;
+            break;
+        case X86_INS_JECXZ: case X86_INS_JRCXZ:
+        {
+            // Special handling for jecxz/jrcxz.  This is similar to other
+            // jcc instructions (see below), except we must restore %rcx:
+            int8_t offset = (clean? 8: 0);
+            offset = sendLoadArgReg(out, clean, offset, X86_REG_RCX, argno);
+            if (I->id == X86_INS_JECXZ)
+                fprintf(out, "%u,", 0x67);
+            fprintf(out, "%u,{\"rel8\":\".Ltaken%s\"},", 0xe3, regname);
+            sendLeaRIPR64(out, argno);
+            fputs("{\"rel32\":\".Lcontinue\"},", out);
+            fprintf(out, "%u,{\"rel8\":\".Lnext%s\"},", 0xeb, regname);
+            fprintf(out, "\".Ltaken%s\",", regname);
+            sendLoadTargetMetadata(out, I, rsp_offset32, clean, argno);
+            fprintf(out, "\".Lnext%s\",", regname);
+            sendUnloadArgReg(out, X86_REG_RCX, argno);
+            return;
+        }
+        default:
+
+            // leaq .Lcontinue(%rip),%rarg:
+            sendLeaRIPR64(out, argno);
+            fputs("{\"rel32\":\".Lcontinue\"},", out);
+            return;
+    }
+
+    // jcc .Ltaken
+    fprintf(out, "%u,{\"rel8\":\".Ltaken%s\"},", opcode, regname);
+
+    // .LnotTaken:
+    // leaq .Lcontinue(%rip),%rarg
+    // jmp .Lnext; 
+    sendLeaRIPR64(out, argno);
+    fputs("{\"rel32\":\".Lcontinue\"},", out);
+    fprintf(out, "%u,{\"rel8\":\".Lnext%s\"},", 0xeb, regname);
+
+    // .Ltaken:
+    // ... load target into %rarg
+    fprintf(out, "\".Ltaken%s\",", regname);
+    sendLoadTargetMetadata(out, I, rsp_offset32, clean, argno);
+    
+    // .Lnext:
+    fprintf(out, "\".Lnext%s\",", regname);
+}
+
+/*
  * Emits an instruction to load the given value into the corresponding
  * argno register.
  */
-static void sendLoadValueMetadata(FILE *out, intptr_t value, bool clean,
-    int argno)
+static void sendLoadValueMetadata(FILE *out, intptr_t value, int argno)
 {
-    fputc('[', out);
-    if (value == 0 && clean)
-    {
-        sendZeroR32(out, argno);
-        fputs("null]", out);
-        return;
-    }
-    else if (value >= INT32_MIN && value < 0)
-    {
-        sendMovI32R64(out, argno);
-        fprintf(out, "{\"int32\":");
-    }
-    else if (value >= 0 && value <= INT32_MAX)
+    if (value >= INT32_MIN && value <= INT32_MAX)
     {
         sendMovI32R32(out, argno);
         fprintf(out, "{\"int32\":");
@@ -390,7 +508,7 @@ static void sendLoadValueMetadata(FILE *out, intptr_t value, bool clean,
         fprintf(out, "{\"int64\":");
     }
     sendInteger(out, value);
-    fputs("}]", out);
+    fputc('}', out);
 }
 
 /*
@@ -463,9 +581,8 @@ static void sendIntegerData(FILE *out, unsigned size, intptr_t i)
  */
 static void sendBytesData(FILE *out, const uint8_t *bytes, size_t len)
 {
-    fputc('[', out);
     for (size_t i = 0; i < len; i++)
-        fprintf(out, "%u%c", bytes[i], (i+1 < len? ',': ']'));
+        fprintf(out, "%u%s", bytes[i], (i+1 < len? ",": ""));
 }
 
 /*
@@ -586,7 +703,6 @@ static Metadata *buildMetadata(const Action *action, const cs_insn *I,
             const char *md_bytes       = nullptr;
             const char *md_bytes_len   = nullptr;
             const char *md_static_addr = nullptr;
-            const char *md_static_next = nullptr;
             int i = 0, argno = 0;
             for (auto &arg: action->args)
             {
@@ -596,8 +712,7 @@ static Metadata *buildMetadata(const Action *action, const cs_insn *I,
                     {
                         intptr_t value = lookupValue(action, I, offset,
                             arg.name, arg.value);
-                        sendLoadValueMetadata(out, value, action->clean,
-                            argno);
+                        sendLoadValueMetadata(out, value, argno);
                         const char *md_load_value =
                             buildMetadataString(out, buf, &pos);
                         metadata[i].name = arg.name;
@@ -679,6 +794,22 @@ static Metadata *buildMetadata(const Action *action, const cs_insn *I,
                         break;
                     }
 
+                    case ARGUMENT_NEXT:
+                    {
+                        if (!action->before)
+                            break;
+                        int32_t rsp_offset32 = getRSPOffset(action->args,
+                            action->clean);
+                        sendLoadNextMetadata(out, I, rsp_offset32,
+                            action->clean, argno);
+                        const char *md_load_next =
+                            buildMetadataString(out, buf, &pos);
+                        metadata[i].name = getLoadNextName(argno);
+                        metadata[i].data = md_load_next;
+                        i++;
+                        break;
+                    }
+
                     case ARGUMENT_STATIC_ADDR:
                         if (md_static_addr == nullptr)
                         {
@@ -687,18 +818,6 @@ static Metadata *buildMetadata(const Action *action, const cs_insn *I,
                                 &pos);
                             metadata[i].name = "staticAddr";
                             metadata[i].data = md_static_addr;
-                            i++;
-                        }
-                        break;
-
-                    case ARGUMENT_STATIC_NEXT:
-                        if (md_static_next == nullptr)
-                        {
-                            sendIntegerData(out, 32, I->address + I->size);
-                            md_static_next = buildMetadataString(out, buf,
-                                &pos);
-                            metadata[i].name = "staticNext";
-                            metadata[i].data = md_static_next;
                             i++;
                         }
                         break;
