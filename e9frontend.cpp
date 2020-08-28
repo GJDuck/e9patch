@@ -65,6 +65,7 @@ using namespace e9frontend;
 #define R14             14
 #define R15             15
 #define RSP             16
+#define RMAX            RSP
 
 /*
  * Call state helper class.
@@ -97,13 +98,11 @@ struct CallInfo
 
     void restore(unsigned reg)
     {
-        assert(isSaved(reg));
         clobbered &= ~(0x1 << reg);
     }
 
     int32_t offset(unsigned reg) const
     {
-        assert(isSaved(reg));
         return sizeof(uint64_t) * reg;
     }
 
@@ -1030,7 +1029,7 @@ static void sendMovFromR64ToStack(FILE *out, unsigned regno, int32_t offset)
 /*
  * Send a `movzwl offset(%rsp),%r32' instruction.
  */
-static void sendMovStack16ToR64(FILE *out, int32_t offset, unsigned regno)
+static void sendMovFromStack16ToR64(FILE *out, int32_t offset, unsigned regno)
 {
     const uint8_t REX[] =
 		{0x00, 0x00, 0x00, 0x00, 0x44, 0x44, 0x00,
@@ -1372,7 +1371,7 @@ static void sendArgument(FILE *out, ArgumentKind arg, intptr_t value,
                 fprintf(out, "%u,", 0x9f);                  // lahf
                 sendMovFromR64ToStack(out, RAX, info.offset(RFLAGS));
             }
-            sendMovStack16ToR64(out, info.offset(RFLAGS), argno);
+            sendMovFromStack16ToR64(out, info.offset(RFLAGS), argno);
             break;
         default:
             break;
@@ -1475,6 +1474,13 @@ unsigned e9frontend::sendCallTrampolineMessage(FILE *out, const ELF &elf,
         info.loadArg(arg.kind, argno);
         argno++;
     }
+
+    for (unsigned regno = (clean? RBX: args.size()+1); regno <= RMAX; regno++)
+    {
+        if (info.isClobbered(regno))
+            sendMovFromStackToR64(out, info.offset(regno), regno);
+    }
+
     fprintf(out, "%u", 0xe8);                       // callq ...
     fprintf(out, ",{\"rel32\":");
     sendInteger(out, addr);
