@@ -254,6 +254,21 @@ void e9frontend::sendString(FILE *out, const char *s)
 }
 
 /*
+ * Send code/data.
+ */
+void e9frontend::sendCode(FILE *out, const char *code)
+{
+     fputc('[', out);
+     size_t len = strlen(code);
+     while (len > 0 && isspace(code[len-1]))
+         len--;
+     if (len > 0 && code[len-1] == ',')
+         len--;
+     fwrite(code, sizeof(char), len, out);
+     fputc(']', out);
+}
+
+/*
  * Send a "binary" message.
  */
 static unsigned sendBinaryMessage(FILE *out, const char *mode,
@@ -305,15 +320,7 @@ unsigned e9frontend::sendPatchMessage(FILE *out, const char *trampoline,
         for (unsigned i = 0; metadata[i].name != nullptr; i++)
         {
             sendDefinitionHeader(out, metadata[i].name);
-            fputc('[', out);
-            const char *data = metadata[i].data;
-            size_t len = strlen(data);
-            while (len > 0 && isspace(data[len-1]))
-                len--;
-            if (len > 0 && data[len-1] == ',')
-                len--;
-            fwrite(data, sizeof(char), len, out);
-            fputc(']', out);
+            sendCode(out, metadata[i].data);
             sendSeparator(out, (metadata[i+1].name == nullptr));
         }
         sendMetadataFooter(out);
@@ -1528,6 +1535,22 @@ static int32_t getRSPOffset(const std::vector<Argument> &args, bool clean)
         return 0x4000 + 80;
     else
         return 0x4000 + 8 * args.size();
+}
+
+/*
+ * Send a generic trampoline.
+ */
+unsigned e9frontend::sendTrampolineMessage(FILE *out,
+    const char *name, const char *template_)
+{
+    sendMessageHeader(out, "trampoline");
+    sendParamHeader(out, "name");
+    sendString(out, name);
+    sendSeparator(out);
+    sendParamHeader(out, "template");
+    sendCode(out, template_);
+    sendSeparator(out, /*last=*/true);
+    return sendMessageFooter(out, /*sync=*/true);
 }
 
 /*

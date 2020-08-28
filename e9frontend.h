@@ -107,6 +107,7 @@ extern void sendMetadataFooter(FILE *out);
 extern void sendDefinitionHeader(FILE *out, const char *name);
 extern void sendInteger(FILE *out, intptr_t i);
 extern void sendString(FILE *out, const char *s);
+extern void sendCode(FILE *out, const char *code);
 
 /*
  * High-level functions that send complete E9PATCH JSONRPC messages:
@@ -127,6 +128,8 @@ extern unsigned sendCallTrampolineMessage(FILE *out, const ELF &elf,
     const char *filename, const char *symbol, const char *name,
     const std::vector<Argument> &args, bool clean = true, bool before = true,
     bool replace = false);
+extern unsigned sendTrampolineMessage(FILE *out, const char *name,
+    const char *template_);
 
 /*
  * Misc. functions:

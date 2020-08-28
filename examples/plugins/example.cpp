@@ -38,6 +38,7 @@
  *          Trace/breakpoint trap
  */
 
+#include <sstream>
 #include <string>
 
 #include <sys/mman.h>
@@ -76,16 +77,6 @@ extern void *e9_plugin_init_v1(FILE *out, const e9frontend::ELF *elf)
      * E9Patch API message.
      */
 
-    /* STEP (1): Send trampoline message header: */
-    sendMessageHeader(out, "trampoline");
-    sendParamHeader(out, "name");
-    sendString(out, "cflimit");                 // Template name
-    sendSeparator(out);
-    sendParamHeader(out, "template");
-    putc('[', out);
-
-    /* STEP (2): Send trampoline template */
-
     // The trampoline template is specified using a form of annotated
     // machine code.  For more information about the trampoline template
     // language, please see e9patch-programming-guide.md
@@ -98,29 +89,29 @@ extern void *e9_plugin_init_v1(FILE *out, const e9frontend::ELF *elf)
     // lahf
     // push %rax
     //
-    fprintf(out, "%u,%u,%u,%u,%u,%u,%u,%u,",
-        0x48, 0x8d, 0xa4, 0x24, 0x00, 0xc0, 0xff, 0xff);
-    fprintf(out, "%u,", 0x50);
-    fprintf(out, "%u,%u,%u,", 0x0f, 0x90, 0xc0);
-    fprintf(out, "%u,", 0x9f);
-    fprintf(out, "%u,", 0x50);
+    std::stringstream code;
+    code << 0x48 << ',' << 0x8d << ',' << 0xa4 << ',' << 0x24 << ','
+         << 0x00 << ',' << 0xc0 << ',' << 0xff << ',' << 0xff << ',';
+    code << 0x50 << ',';
+    code << 0x0f << ',' << 0x90 << ',' << 0xc0 << ',';
+    code << 0x9f << ',';
+    code << 0x50 << ',';
 
     // Increment the counter and branch if <= 0:
     //
     // mov counter(%rip),%rax
     // sub $0x1,%rax
-    // test %rax,%rax
     // mov %rax,counter(%rip)
     // jle .Ltrap
     //
-    fprintf(out, "%u,%u,%u,\"$counter\",", 0x48, 0x8b, 0x05);
-    fprintf(out, "%u,%u,%u,%u,", 0x48, 0x83, 0xe8, 0x01);
-    fprintf(out, "%u,%u,%u,", 0x48, 0x85, 0xc0); 
-    fprintf(out, "%u,%u,%u,\"$counter\",", 0x48, 0x89, 0x05);
-    fprintf(out, "%u,{\"rel8\":\".Ltrap\"},", 0x7e); 
+    code << 0x48 << ',' << 0x8b << ',' << 0x05 << ",\"$counter\",";
+    code << 0x48 << ',' << 0x83 << ',' << 0xe8 << ',' << 0x01 << ',';
+    code << 0x48 << ',' << 0x89 << ',' << 0x05 << ",\"$counter\",";
+    code << 0x7e << ",{\"rel8\":\".Ltrap\"},";
     
     // Restore state & return from trampoline:
     //
+    // .Lcont:
     // pop %rax
     // add $0x7f,%al
     // sahf
@@ -129,25 +120,26 @@ extern void *e9_plugin_init_v1(FILE *out, const e9frontend::ELF *elf)
     // $instruction
     // $continue
     //
-    fprintf(out, "%u,", 0x58);
-    fprintf(out, "%u,%u,", 0x04, 0x7f);
-    fprintf(out, "%u,", 0x9e);
-    fprintf(out, "%u,", 0x58);
-    fprintf(out, "%u,%u,%u,%u,%u,%u,%u,%u,",
-        0x48, 0x8d, 0xa4, 0x24, 0x00, 0x40, 0x00, 0x00);
-    fprintf(out, "\"$instruction\",");
-    fprintf(out, "\"$continue\",");
+    code << "\".Lcont\",";
+    code << 0x58 << ',';
+    code << 0x04 << ',' << 0x7f << ',';
+    code << 0x9e << ',';
+    code << 0x58 << ',';
+    code << 0x48 << ',' << 0x8d << ',' << 0xa4 << ',' << 0x24 << ','
+         << 0x00 << ',' << 0x40 << ',' << 0x00 << ',' << 0x00 << ',';
+    code << "\"$instruction\",";
+    code << "\"$continue\",";
     
     // Trap:
     //
     // .Ltrap:
     // int3
-    fprintf(out, "\".Ltrap\",");
-    fprintf(out, "%u]", 0xcc);
+    // jmp .Lcont
+    code << "\".Ltrap\",";
+    code << 0xcc << ',';
+    code << 0xeb << ",{\"rel8\":\".Lcont\"}";
 
-    /* STEP (3): Send the trampoline footer: */
-    sendSeparator(out, /*last=*/true);
-    sendMessageFooter(out, /*sync=*/true);
+    sendTrampolineMessage(out, "cflimit", code.str().c_str());
 
     return nullptr;
 }
