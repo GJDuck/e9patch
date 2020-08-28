@@ -780,7 +780,10 @@ static Action *parseAction(const char *str, MatchEntries &entries)
                         break;
                     case 'n':
                         if (strcmp(s, "next") == 0)
+                        {
+                            option_detail = true;
                             arg = ARGUMENT_NEXT;
+                        }
                         break;
                     case 'o':
                         if (strcmp(s, "offset") == 0)

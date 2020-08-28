@@ -26,24 +26,54 @@
 /*
  * Convert a register to an argno.
  */
-static int regToArgNo(x86_reg reg)
+static int regToRegNo(x86_reg reg)
 {
     switch (reg)
     {
         case X86_REG_DI: case X86_REG_DIL: case X86_REG_EDI: case X86_REG_RDI:
-            return 0;
+            return RDI;
         case X86_REG_SI: case X86_REG_SIL: case X86_REG_ESI: case X86_REG_RSI:
-            return 1;
+            return RSI;
         case X86_REG_DH: case X86_REG_DL:
         case X86_REG_DX: case X86_REG_EDX: case X86_REG_RDX:
-            return 2;
+            return RDX;
         case X86_REG_CH: case X86_REG_CL:
         case X86_REG_CX: case X86_REG_ECX: case X86_REG_RCX:
-            return 3;
+            return RCX;
         case X86_REG_R8B: case X86_REG_R8W: case X86_REG_R8D: case X86_REG_R8:
-            return 4;
+            return R8;
         case X86_REG_R9B: case X86_REG_R9W: case X86_REG_R9D: case X86_REG_R9:
-            return 5;
+            return R9;
+        case X86_REG_EFLAGS:
+            return RFLAGS;
+        case X86_REG_AH: case X86_REG_AL:
+        case X86_REG_AX: case X86_REG_EAX: case X86_REG_RAX:
+            return RAX;
+        case X86_REG_R10B: case X86_REG_R10W: case X86_REG_R10D:
+        case X86_REG_R10:
+            return R10;
+        case X86_REG_R11B: case X86_REG_R11W: case X86_REG_R11D:
+        case X86_REG_R11:
+            return R11;
+        case X86_REG_BH: case X86_REG_BL:
+        case X86_REG_BX: case X86_REG_EBX: case X86_REG_RBX:
+            return RBX;
+        case X86_REG_BP: case X86_REG_BPL: case X86_REG_EBP: case X86_REG_RBP:
+            return RBP;
+        case X86_REG_R12B: case X86_REG_R12W: case X86_REG_R12D:
+        case X86_REG_R12:
+            return R12;
+        case X86_REG_R13B: case X86_REG_R13W: case X86_REG_R13D:
+        case X86_REG_R13:
+            return R13;
+        case X86_REG_R14B: case X86_REG_R14W: case X86_REG_R14D:
+        case X86_REG_R14:
+            return R14;
+        case X86_REG_R15B: case X86_REG_R15W: case X86_REG_R15D:
+        case X86_REG_R15:
+            return R15;
+        case X86_REG_SP: case X86_REG_SPL: case X86_REG_ESP: case X86_REG_RSP:
+            return RSP;
         default:
             return INT32_MAX;
     }
@@ -73,81 +103,31 @@ static const char *argNoToRegName(int argno)
     }
 }
 
-
 /*
- * Save & restore a register used as an argument.
+ * Restore a register.
  */
-static int8_t sendLoadArgReg(FILE *out, bool clean, int8_t offset,
-    x86_reg reg, int argno)
+static void sendRestoreReg(FILE *out, const CallInfo &info, x86_reg reg,
+    int argno, int slot)
 {
-    if (clean && reg == X86_REG_RAX)
-    {
-        // mov offset+48(%rsp),%rax
-        fprintf(out, "%u,%u,%u,%u,%u,",
-            0x48, 0x8b, 0x44, 0x24, 0x30 + offset);
-        return offset;
-    }
+    int regno = regToRegNo(reg);
+    if (!info.isClobbered(regno))
+        return;
 
-    int regno = regToArgNo(reg);
-    if (argno <= regno)
-        return offset;
-    
-    switch (regno)
-    {
-        case 0:
-            fprintf(out, "%u,", 0x57);                  // push   %rdi
-            break;
-        case 1:
-            fprintf(out, "%u,", 0x56);                  // push   %rsi
-            break;
-        case 2:
-            fprintf(out, "%u,", 0x52);                  // push   %rdx
-            break;
-        case 3:
-            fprintf(out, "%u,", 0x51);                  // push   %rcx
-            break;
-        case 4:
-            fprintf(out, "%u,%u,", 0x41, 0x50);         // push   %r8
-            break;
-        case 5:
-            fprintf(out, "%u,%u,", 0x41, 0x51);         // push   %r9
-            break;
-    }
-    offset += 8;
-    sendMovRSPR64(out, offset + 8 * regno, regno);
-    return offset;
+    sendMovFromR64ToStack(out, regno, -8 * slot);
+    sendMovFromStackToR64(out, info.offset(regno), regno);
 }
 
 /*
- * Undo sendLoadArgReg().
+ * Undo sendRestoreReg().
  */
-static void sendUnloadArgReg(FILE *out, x86_reg reg, int argno)
+static void sendUnrestoreReg(FILE *out, const CallInfo &info, x86_reg reg,
+    int argno, int slot)
 {
-    int regno = regToArgNo(reg);
-    if (argno <= regno)
+    int regno = regToRegNo(reg);
+    if (!info.isClobbered(regno))
         return;
 
-    switch (regno)
-    {
-        case 0:
-            fprintf(out, "%u,", 0x5f);                  // pop    %rdi
-            break;
-        case 1:
-            fprintf(out, "%u,", 0x5e);                  // pop    %rsi
-            break;
-        case 2:
-            fprintf(out, "%u,", 0x5a);                  // pop    %rdx
-            break;
-        case 3:
-            fprintf(out, "%u,", 0x59);                  // pop    %rcx
-            break;
-        case 4:
-            fprintf(out, "%u,%u,", 0x41, 0x58);         // pop    %r8
-            break;
-        case 5:
-            fprintf(out, "%u,%u,", 0x41, 0x59);         // pop    %r9
-            break;
-    }
+    sendMovFromStackToR64(out, -8 * slot, regno);
 }
 
 /*
@@ -156,7 +136,7 @@ static void sendUnloadArgReg(FILE *out, x86_reg reg, int argno)
  * instruction, load -1.
  */
 static void sendLoadTargetMetadata(FILE *out, const cs_insn *I,
-    int32_t rsp_offset32, bool clean, int argno)
+    CallInfo &info, int argno)
 {
     assert(argno < MAX_ARGNO);
     const cs_detail *detail = I->detail;
@@ -166,17 +146,8 @@ static void sendLoadTargetMetadata(FILE *out, const cs_insn *I,
     switch (I->id)
     {
         case X86_INS_RET:
-        {
-            const uint8_t REX[MAX_ARGNO] =
-                {0x48, 0x48, 0x48, 0x48, 0x4c, 0x4c};
-            const uint8_t MODRM[MAX_ARGNO] =
-                {0xbc, 0xb4, 0x94, 0x8c, 0x84, 0x8c};
- 
-            // mov rsp_offset32(%rsp),%rarg
-            fprintf(out, "%u,%u,%u,%u,{\"int32\":%d},",
-                REX[argno], 0x8b, MODRM[argno], 0x24, rsp_offset32);
+            sendMovFromStackToR64(out, info.rsp_offset, argno);
             return;
-        }
         case X86_INS_CALL:
         case X86_INS_JMP:
         case X86_INS_JO: case X86_INS_JNO: case X86_INS_JB: case X86_INS_JAE:
@@ -191,110 +162,21 @@ static void sendLoadTargetMetadata(FILE *out, const cs_insn *I,
         default:
         unknown:
         unsupported:
-        {
-            // This is NOT a jump or call, so the target is set to (-1):
-            const uint8_t REX[MAX_ARGNO] =
-                {0x48, 0x48, 0x48, 0x48, 0x49, 0x49};
-            const uint8_t MODRM[MAX_ARGNO] =
-                {0xc7, 0xc6, 0xc2, 0xc1, 0xc0, 0xc1};
-           
-            // mov $-1,%rarg
-            fprintf(out, "%u,%u,%u,%u,%u,%u,%u,",
-                REX[argno], 0xc7, MODRM[argno], 0xff, 0xff, 0xff, 0xff);
+
+            // This is NOT a jump/call/return, so the target is set to (-1):
+            sendSExtFromI32ToR64(out, -1, argno);
             return;
-        }
     }
 
     switch (op->type)
     {
         case X86_OP_REG:
         {
-            x86_reg reg = op->reg;
-            int regno = regToArgNo(reg);
-            if (argno < regno)
-            {
-                bool trivial = false;
-                switch (reg)
-                {
-                    case X86_REG_RDI:
-                        trivial = (argno == 0);
-                        break;
-                    case X86_REG_RSI:
-                        trivial = (argno == 1);
-                        break;
-                    case X86_REG_RDX:
-                        trivial = (argno == 2);
-                        break;
-                    case X86_REG_RCX:
-                        trivial = (argno == 3);
-                        break;
-                    case X86_REG_R8:
-                        trivial = (argno == 4);
-                        break;
-                    case X86_REG_R9:
-                        trivial = (argno == 5);
-                        break;
-                    default:
-                        break;
-                }
-                if (trivial)
-                {
-                    // Trivial case: value is already in correct register.
-                    return;
-                }
-
-                // Else, emit a mov %reg,%rarg
-                uint8_t rex = 0;
-                switch (reg)
-                {
-                    case X86_REG_RAX: case X86_REG_RBX: case X86_REG_RCX:
-                    case X86_REG_RDX: case X86_REG_RDI: case X86_REG_RSI:
-                    case X86_REG_RSP: case X86_REG_RBP:
-                        rex = (argno < 4? 0x48: 0x49);
-                        break;
-                    case X86_REG_R8: case X86_REG_R9: case X86_REG_R10:
-                    case X86_REG_R11: case X86_REG_R12: case X86_REG_R13:
-                    case X86_REG_R14: case X86_REG_R15:
-                        rex = (argno < 4? 0x4c: 0x4d);
-                        break;
-                    default:
-                        error("unexpected register %d", reg);
-                }
-                fprintf(out, "%u,%u,", rex, 0x89);
-                uint8_t mod = 0x3;
-                const uint8_t RM[MAX_ARGNO] = {0x7, 0x6, 0x2, 0x1, 0x0, 0x1};
-                uint8_t r = 0;
-                switch (reg)
-                {
-                    case X86_REG_RAX: case X86_REG_R8:
-                        r = 0x0; break;
-                    case X86_REG_RCX: case X86_REG_R9:
-                        r = 0x1; break;
-                    case X86_REG_RDX: case X86_REG_R10:
-                        r = 0x2; break;
-                    case X86_REG_RBX: case X86_REG_R11:
-                        r = 0x3; break;
-                    case X86_REG_RSP: case X86_REG_R12:
-                        r = 0x4; break;
-                    case X86_REG_RBP: case X86_REG_R13:
-                        r = 0x5; break;
-                    case X86_REG_RSI: case X86_REG_R14:
-                        r = 0x6; break;
-                    case X86_REG_RDI: case X86_REG_R15:
-                        r = 0x7; break;
-                    default:
-                        break;
-                }
-                uint8_t modrm = (mod << 6) | (r << 3) | RM[argno];
-                fprintf(out, "%u,", modrm);
-            }
-            else if (clean && reg == X86_REG_RAX)
-                sendMovRSPR64(out, 0, argno);
+            int regno = regToRegNo(op->reg);
+            if (info.isClobbered(regno))
+                sendMovFromStackToR64(out, info.offset(regno), argno);
             else
-            {
-                int8_t offset = (clean? 8: 0);
-                sendMovRSPR64(out, offset + 8 * regno, argno);
-            }
+                sendMovFromR64ToR64(out, regno, argno);
             return;
         }
         case X86_OP_MEM:
@@ -313,9 +195,8 @@ static void sendLoadTargetMetadata(FILE *out, const cs_insn *I,
                 goto unsupported;
             }
 
-            int8_t offset = (clean? 8: 0);
-            offset = sendLoadArgReg(out, clean, offset, base_reg, argno);
-            offset = sendLoadArgReg(out, clean, offset, index_reg, argno);
+            sendRestoreReg(out, info, base_reg, argno, 1);
+            sendRestoreReg(out, info, index_reg, argno, 2);
 
             // mov operand,%reg:
             const uint8_t REX[MAX_ARGNO] =
@@ -356,8 +237,8 @@ static void sendLoadTargetMetadata(FILE *out, const cs_insn *I,
                 fputs("},", out);
             }
 
-            sendUnloadArgReg(out, index_reg, argno);
-            sendUnloadArgReg(out, base_reg, argno);
+            sendUnrestoreReg(out, info, base_reg, argno, 1);
+            sendUnrestoreReg(out, info, index_reg, argno, 2);
             return;
         }
         case X86_OP_IMM:
@@ -367,14 +248,7 @@ static void sendLoadTargetMetadata(FILE *out, const cs_insn *I,
 
             // lea rel(%rip),%rarg
             intptr_t target = /*I->address + I->size +*/ op->imm;
-            const uint8_t REX[MAX_ARGNO] =
-                {0x48, 0x48, 0x48, 0x48, 0x4c, 0x4c};
-            const uint8_t MODRM[MAX_ARGNO] =
-                {0x3d, 0x35, 0x15, 0x0d, 0x05, 0x0d};
-            fprintf(out, "%u,%u,%u,{\"rel32\":", REX[argno], 0x8d,
-                MODRM[argno]);
-            sendInteger(out, target);
-            fputs("},", out);
+            sendLeaFromPCRelToR64(out, target, argno);
             return;
         }
         default:
@@ -386,8 +260,8 @@ static void sendLoadTargetMetadata(FILE *out, const cs_insn *I,
  * Emits instructions to load the address of the next instruction to be
  * executed by the CPU.
  */
-static void sendLoadNextMetadata(FILE *out, const cs_insn *I,
-    int32_t rsp_offset32, bool clean, int argno)
+static void sendLoadNextMetadata(FILE *out, const cs_insn *I, CallInfo &info,
+    int argno)
 {
     const char *regname = argNoToRegName(argno);
     uint8_t opcode = 0x06;
@@ -396,7 +270,7 @@ static void sendLoadNextMetadata(FILE *out, const cs_insn *I,
         case X86_INS_RET:
         case X86_INS_CALL:
         case X86_INS_JMP:
-            sendLoadTargetMetadata(out, I, rsp_offset32, clean, argno);
+            sendLoadTargetMetadata(out, I, info, argno);
             return;
         case X86_INS_JO:
             opcode = 0x70;
@@ -450,25 +324,22 @@ static void sendLoadNextMetadata(FILE *out, const cs_insn *I,
         {
             // Special handling for jecxz/jrcxz.  This is similar to other
             // jcc instructions (see below), except we must restore %rcx:
-            int8_t offset = (clean? 8: 0);
-            offset = sendLoadArgReg(out, clean, offset, X86_REG_RCX, argno);
+            sendRestoreReg(out, info, X86_REG_RCX, argno, 1);
             if (I->id == X86_INS_JECXZ)
                 fprintf(out, "%u,", 0x67);
             fprintf(out, "%u,{\"rel8\":\".Ltaken%s\"},", 0xe3, regname);
-            sendLeaRIPR64(out, argno);
-            fputs("{\"rel32\":\".Lcontinue\"},", out);
+            sendLeaFromPCRelToR64(out, "{\"rel32\":\".Lcontinue\"}", argno);
             fprintf(out, "%u,{\"rel8\":\".Lnext%s\"},", 0xeb, regname);
             fprintf(out, "\".Ltaken%s\",", regname);
-            sendLoadTargetMetadata(out, I, rsp_offset32, clean, argno);
+            sendLoadTargetMetadata(out, I, info, argno);
             fprintf(out, "\".Lnext%s\",", regname);
-            sendUnloadArgReg(out, X86_REG_RCX, argno);
+            sendUnrestoreReg(out, info, X86_REG_RCX, argno, 1);
             return;
         }
         default:
 
             // leaq .Lcontinue(%rip),%rarg:
-            sendLeaRIPR64(out, argno);
-            fputs("{\"rel32\":\".Lcontinue\"},", out);
+            sendLeaFromPCRelToR64(out, "{\"rel32\":\".Lcontinue\"}", argno);
             return;
     }
 
@@ -478,14 +349,13 @@ static void sendLoadNextMetadata(FILE *out, const cs_insn *I,
     // .LnotTaken:
     // leaq .Lcontinue(%rip),%rarg
     // jmp .Lnext; 
-    sendLeaRIPR64(out, argno);
-    fputs("{\"rel32\":\".Lcontinue\"},", out);
+    sendLeaFromPCRelToR64(out, "{\"rel32\":\".Lcontinue\"}", argno);
     fprintf(out, "%u,{\"rel8\":\".Lnext%s\"},", 0xeb, regname);
 
     // .Ltaken:
     // ... load target into %rarg
     fprintf(out, "\".Ltaken%s\",", regname);
-    sendLoadTargetMetadata(out, I, rsp_offset32, clean, argno);
+    sendLoadTargetMetadata(out, I, info, argno);
     
     // .Lnext:
     fprintf(out, "\".Lnext%s\",", regname);
@@ -498,17 +368,11 @@ static void sendLoadNextMetadata(FILE *out, const cs_insn *I,
 static void sendLoadValueMetadata(FILE *out, intptr_t value, int argno)
 {
     if (value >= INT32_MIN && value <= INT32_MAX)
-    {
-        sendMovI32R32(out, argno);
-        fprintf(out, "{\"int32\":");
-    }
+        sendSExtFromI32ToR64(out, value, argno);
+    else if (value >= 0 && value <= UINT32_MAX)
+        sendZExtFromI32ToR64(out, value, argno);
     else
-    {
-        sendMovI64R64(out, argno);
-        fprintf(out, "{\"int64\":");
-    }
-    sendInteger(out, value);
-    fputc('}', out);
+        sendMovFromI64ToR64(out, value, argno);
 }
 
 /*
@@ -703,6 +567,7 @@ static Metadata *buildMetadata(const Action *action, const cs_insn *I,
             const char *md_bytes       = nullptr;
             const char *md_bytes_len   = nullptr;
             const char *md_static_addr = nullptr;
+            CallInfo info(action->clean, action->args.size());
             int i = 0, argno = 0;
             for (auto &arg: action->args)
             {
@@ -782,10 +647,7 @@ static Metadata *buildMetadata(const Action *action, const cs_insn *I,
 
                     case ARGUMENT_TARGET:
                     {
-                        int32_t rsp_offset32 = getRSPOffset(action->args,
-                            action->clean);
-                        sendLoadTargetMetadata(out, I, rsp_offset32,
-                            action->clean, argno);
+                        sendLoadTargetMetadata(out, I, info, argno);
                         const char *md_load_target =
                             buildMetadataString(out, buf, &pos);
                         metadata[i].name = getLoadTargetName(argno);
@@ -798,10 +660,7 @@ static Metadata *buildMetadata(const Action *action, const cs_insn *I,
                     {
                         if (!action->before)
                             break;
-                        int32_t rsp_offset32 = getRSPOffset(action->args,
-                            action->clean);
-                        sendLoadNextMetadata(out, I, rsp_offset32,
-                            action->clean, argno);
+                        sendLoadNextMetadata(out, I, info, argno);
                         const char *md_load_next =
                             buildMetadataString(out, buf, &pos);
                         metadata[i].name = getLoadNextName(argno);
@@ -825,6 +684,7 @@ static Metadata *buildMetadata(const Action *action, const cs_insn *I,
                     default:
                         break;
                 }
+                info.loadArg(arg.kind, argno);
                 argno++;
             }
 

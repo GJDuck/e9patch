@@ -43,6 +43,116 @@
 
 #include "e9frontend.h"
 
+using namespace e9frontend;
+
+/*
+ * Registers.
+ */
+#define RDI             0
+#define RSI             1
+#define RDX             2
+#define RCX             3
+#define R8              4
+#define R9              5
+#define RFLAGS          6
+#define RAX             7
+#define R10             8
+#define R11             9
+#define RBX             10
+#define RBP             11
+#define R12             12
+#define R13             13
+#define R14             14
+#define R15             15
+#define RSP             16
+
+/*
+ * Call state helper class.
+ */
+struct CallInfo
+{
+    int32_t rsp_offset;     // Stack offset
+    uint32_t saved;         // Saved registers
+    uint32_t clobbered;     // Clobbered registers
+
+    void save(unsigned reg)
+    {
+        saved |= (0x1 << reg);
+    }
+
+    bool isSaved(unsigned reg) const
+    {
+        return ((saved & (0x1 << reg)) != 0);
+    }
+
+    void clobber(unsigned reg)
+    {
+        clobbered |= (0x1 << reg);
+    }
+
+    bool isClobbered(unsigned reg) const
+    {
+        return ((clobbered & (0x1 << reg)) != 0);
+    }
+
+    void restore(unsigned reg)
+    {
+        assert(isSaved(reg));
+        clobbered &= ~(0x1 << reg);
+    }
+
+    int32_t offset(unsigned reg) const
+    {
+        assert(isSaved(reg));
+        return sizeof(uint64_t) * reg;
+    }
+
+    void push(unsigned reg)
+    {
+        rsp_offset += 8;
+        save(reg);
+        if (reg == RFLAGS)
+        {
+            assert(isSaved(RAX));
+            clobber(RAX);
+        }
+    }
+
+    void loadArg(ArgumentKind arg, unsigned argno)
+    {
+        if (arg == ARGUMENT_RFLAGS && !isSaved(RFLAGS))
+        {
+            save(RAX);
+            clobber(RAX);
+            save(RFLAGS);
+        }
+        clobber(argno);
+    }
+
+    CallInfo(bool clean, size_t num_args) :
+        rsp_offset(0x4000), saved(0x0), clobbered(0x0)
+    {
+        if (clean)
+        {
+            push(R11);
+            push(R10);
+            push(RAX);
+            push(RFLAGS);
+            push(R9);
+            push(R8);
+            push(RCX);
+            push(RDX);
+            push(RSI);
+            push(RDI);
+        }
+        else
+        {
+            for (unsigned reg = 0; reg < num_args; reg++)
+                push(reg);
+        }
+    }
+};
+
 /*
  * ELF file.
  */
@@ -69,8 +179,6 @@ namespace e9frontend
         bool reloc;                     // Needs relocation?
     };
 };
-
-using namespace e9frontend;
 
 /*
  * Options.
@@ -854,288 +962,226 @@ void e9frontend::sendELFFileMessage(FILE *out, const ELF &elf, bool absolute)
 /*
  * Send a `mov %r64,%r64' instruction.
  */
-static void sendMovR64R64(FILE *out, ArgumentKind arg, unsigned argno)
+static bool sendMovFromR64ToR64(FILE *out, unsigned regno_src,
+    unsigned regno_dst)
 {
-    switch (arg)
-    {
-        case ARGUMENT_RAX:
-        case ARGUMENT_RBX:
-        case ARGUMENT_RCX:
-        case ARGUMENT_RDX:
-        case ARGUMENT_RDI:
-        case ARGUMENT_RSI:
-        case ARGUMENT_RBP:
-            fprintf(out, "%u,", (argno < 4? 0x48: 0x49));
-            break;
-        case ARGUMENT_R8:
-        case ARGUMENT_R9:
-        case ARGUMENT_R10:
-        case ARGUMENT_R11:
-        case ARGUMENT_R12:
-        case ARGUMENT_R13:
-        case ARGUMENT_R14:
-        case ARGUMENT_R15:
-            fprintf(out, "%u,", (argno < 4? 0x4c: 0x4d));
-            break;
-        default:
-            return;
-    }
-    fprintf(out, "%u,", 0x89);
-    uint8_t mod = 0x3;
-    const uint8_t rm[] = {0x7, 0x6, 0x2, 0x1, 0x0, 0x1};
-    uint8_t reg = 0;
-    switch (arg)
-    {
-        case ARGUMENT_RAX: case ARGUMENT_R8:
-            reg = 0x0; break;
-        case ARGUMENT_RCX: case ARGUMENT_R9:
-            reg = 0x1; break;
-        case ARGUMENT_RDX: case ARGUMENT_R10:
-            reg = 0x2; break;
-        case ARGUMENT_RBX: case ARGUMENT_R11:
-            reg = 0x3; break;
-        case ARGUMENT_R12:
-            reg = 0x4; break;
-        case ARGUMENT_RBP: case ARGUMENT_R13:
-            reg = 0x5; break;
-        case ARGUMENT_RSI: case ARGUMENT_R14:
-            reg = 0x6; break;
-        case ARGUMENT_RDI: case ARGUMENT_R15:
-            reg = 0x7; break;
-        default:
-            break;
-    };
-    uint8_t modRM = (mod << 6) | (reg << 3) | rm[argno];
-    fprintf(out, "%u,", modRM);
+    if (regno_src == regno_dst)
+        return false;
+    const uint8_t REX_MASK[] =
+		{0, 0, 0, 0, 1, 1, 0,
+		 0, 1, 1, 0, 0, 1, 1, 1, 1, 0};
+    const uint8_t REX[] = {0x48, 0x4c, 0x49, 0x4d};
+    const uint8_t REG[] =
+        {0x07, 0x06, 0x02, 0x01, 0x00, 0x01, 0x00,
+         0x00, 0x02, 0x03, 0x03, 0x05, 0x04, 0x05, 0x06, 0x07, 0x04};
+    
+    uint8_t rex = REX[(REX_MASK[regno_dst] << 1) | REX_MASK[regno_src]];
+    uint8_t modrm = (0x03 << 6) | (REG[regno_src] << 3) | REG[regno_dst];
+    fprintf(out, "%u,%u,%u,", rex, 0x89, modrm);
+    return true;
 }
 
 /*
- * Send a `mov off8(%rsp),%r64' instruction.
+ * Send a `mov offset(%rsp),%r64' instruction.
  */
-static void sendMovRSPR64(FILE *out, int8_t offset8, unsigned argno)
+static void sendMovFromStackToR64(FILE *out, int32_t offset, unsigned regno)
 {
-    switch (argno)
-    {
-        case 0:
-            fprintf(out, "%u,%u,%u,",
-                0x48, 0x8b, 0x7c);                  // mov off8(%rsp),%rdi
-            break;
-        case 1:
-            fprintf(out, "%u,%u,%u,",
-                0x48, 0x8b, 0x74);                  // mov off8(%rsp),%rsi
-            break;
-        case 2:
-            fprintf(out, "%u,%u,%u,",
-                0x48, 0x8b, 0x54);                  // mov off8(%rsp),%rdx
-            break;
-        case 3:
-            fprintf(out, "%u,%u,%u,",
-                0x48, 0x8b, 0x4c);                  // mov off8(%rsp),%rcx
-            break;
-        case 4:
-            fprintf(out, "%u,%u,%u,",
-                0x4c, 0x8b, 0x44);                  // mov off8(%rsp),%r8
-            break;
-        case 5:
-            fprintf(out, "%u,%u,%u,",
-                0x4c, 0x8b, 0x4c);                  // mov off8(%rsp),%r9
-            break;
-    }
-    fprintf(out, "%u,%u,", 0x24, (uint8_t)offset8);
+    const uint8_t REX[] =
+		{0x48, 0x48, 0x48, 0x48, 0x4c, 0x4c, 0x00,
+         0x48, 0x4c, 0x4c, 0x48, 0x48, 0x4c, 0x4c, 0x4c, 0x4c, 0x48};
+	const uint8_t MODRM_8[] =
+		{0x7c, 0x74, 0x54, 0x4c, 0x44, 0x4c, 0x00, 
+		 0x44, 0x54, 0x5c, 0x5c, 0x6c, 0x64, 0x6c, 0x74, 0x7c, 0x64};
+	const uint8_t MODRM_32[] =
+		{0xbc, 0xb4, 0x94, 0x8c, 0x84, 0x8c, 0x00,
+		 0x84, 0x94, 0x9c, 0x9c, 0xac, 0xa4, 0xac, 0xb4, 0xbc, 0xa4};
+
+    if (offset >= INT8_MIN && offset <= INT8_MAX)
+        fprintf(out, "%u,%u,%u,%u,{\"int8\":%d},",
+            REX[regno], 0x8b, MODRM_8[regno], 0x24, offset);
+    else
+        fprintf(out, "%u,%u,%u,%u,{\"int32\":%d},",
+            REX[regno], 0x8b, MODRM_32[regno], 0x24, offset);
 }
 
 /*
- * Send a `movzwl off8(%rsp),%r32' instruction.
+ * Send a `mov %r64,offset(%rsp)' instruction.
  */
-static void sendMovZWLRSPR32(FILE *out, int8_t offset8, unsigned argno)
+static void sendMovFromR64ToStack(FILE *out, unsigned regno, int32_t offset)
 {
-    switch (argno)
-    {
-        case 0:
-            fprintf(out, "%u,%u,%u,",
-                0x0f, 0xb7, 0x7c);                  // movzwl off8(%rsp),%edi
-            break;
-        case 1:
-            fprintf(out, "%u,%u,%u,",
-                0x0f, 0xb7, 0x74);                  // movzwl off8(%rsp),%esi
-            break;
-        case 2:
-            fprintf(out, "%u,%u,%u,",
-                0x0f, 0xb7, 0x54);                  // movzwl off8(%rsp),%edx
-            break;
-        case 3:
-            fprintf(out, "%u,%u,%u,",
-                0x0f, 0xb7, 0x4c);                  // movzwl off8(%rsp),%ecx
-            break;
-        case 4:
-            fprintf(out, "%u,%u,%u,%u,",
-                0x44, 0x0f, 0xb7, 0x44);            // movzwl off8(%rsp),%r8d
-            break;
-        case 5:
-            fprintf(out, "%u,%u,%u,%u,",
-                0x44, 0x0f, 0xb7, 0x4c);            // movzwl off8(%rsp),%r9d
-            break;
-    }
-    fprintf(out, "%u,%u,", 0x24, (uint8_t)offset8);
+    const uint8_t REX[] =
+		{0x48, 0x48, 0x48, 0x48, 0x4c, 0x4c, 0x00,
+         0x48, 0x4c, 0x4c, 0x48, 0x48, 0x4c, 0x4c, 0x4c, 0x4c, 0x48};
+	const uint8_t MODRM_8[] =
+		{0x7c, 0x74,  0x54, 0x4c, 0x44, 0x4c, 0x00, 
+		 0x44, 0x54, 0x5c, 0x5c, 0x6c, 0x64, 0x6c, 0x74, 0x7c, 0x64};
+	const uint8_t MODRM_32[] =
+		{0xbc, 0xb4,  0x94, 0x8c, 0x84, 0x8c, 0x00,
+		 0x84, 0x94, 0x9c, 0x9c, 0xac, 0xa4, 0xac, 0xb4, 0xbc, 0xa4};
+
+    if (offset >= INT8_MIN && offset <= INT8_MAX)
+        fprintf(out, "%u,%u,%u,%u,{\"int8\":%d},",
+            REX[regno], 0x89, MODRM_8[regno], 0x24, offset);
+    else
+        fprintf(out, "%u,%u,%u,%u,{\"int32\":%d},",
+            REX[regno], 0x89, MODRM_32[regno], 0x24, offset);
 }
 
 /*
- * Send a `mov $i32,%r32' instruction opcode.
+ * Send a `movzwl offset(%rsp),%r32' instruction.
  */
-static void sendMovI32R32(FILE *out, unsigned argno)
+static void sendMovStack16ToR64(FILE *out, int32_t offset, unsigned regno)
 {
-    switch (argno)
-    {
-        case 0:
-            fprintf(out, "%u,", 0xbf);              // mov ...,%edi
-            break;
-        case 1:
-            fprintf(out, "%u,", 0xbe);              // mov ...,%esi
-            break;
-        case 2:
-            fprintf(out, "%u,", 0xba);              // mov ...,%edx
-            break;
-        case 3:
-            fprintf(out, "%u,", 0xb9);              // mov ...,%ecx
-            break;
-        case 4:
-            fprintf(out, "%u,%u,", 0x41, 0xb8);     // mov ...,%r8d
-            break;
-        case 5:
-            fprintf(out, "%u,%u,", 0x41, 0xb9);     // mov ...,%r9d
-            break;
-    }
+    const uint8_t REX[] =
+		{0x00, 0x00, 0x00, 0x00, 0x44, 0x44, 0x00,
+         0x00, 0x44, 0x44, 0x00, 0x00, 0x44, 0x44, 0x44, 0x44, 0x00};
+	const uint8_t MODRM_8[] =
+		{0x7c, 0x74,  0x54, 0x4c, 0x44, 0x4c, 0x00, 
+		 0x44, 0x54, 0x5c, 0x5c, 0x6c, 0x64, 0x6c, 0x74, 0x7c, 0x64};
+	const uint8_t MODRM_32[] =
+		{0xbc, 0xb4,  0x94, 0x8c, 0x84, 0x8c, 0x00,
+		 0x84, 0x94, 0x9c, 0x9c, 0xac, 0xa4, 0xac, 0xb4, 0xbc, 0xa4};
+
+    if (REX[regno] != 0x00)
+        fprintf(out, "%u,", REX[regno]);
+    if (offset >= INT8_MIN && offset <= INT8_MAX)
+        fprintf(out, "%u,%u,%u,%u,{\"int8\":%d},",
+            0x0f, 0xb7, MODRM_8[regno], 0x24, offset);
+    else
+        fprintf(out, "%u,%u,%u,%u,{\"int32\":%d},",
+            0x0f, 0xb7, MODRM_32[regno], 0x24, offset);
 }
 
 /*
- * Send a `mov $i32,%r64' instruction opcode.
+ * Send a `mov $value,%r32' instruction.
  */
-static void sendMovI32R64(FILE *out, unsigned argno)
+static void sendSExtFromI32ToR64(FILE *out, const char *value, unsigned regno)
 {
-    switch (argno)
-    {
-        case 0:
-            fprintf(out, "%u,%u,%u,",
-                0x48, 0xc7, 0xc7);                  // mov ...,%rdi
-            break;
-        case 1:
-            fprintf(out, "%u,%u,%u,",
-                0x48, 0xc7, 0xc6);                  // mov ...,%rsi
-            break;
-        case 2:
-            fprintf(out, "%u,%u,%u,",
-                0x48, 0xc7, 0xc2);                  // mov ...,%rdx
-            break;
-        case 3:
-            fprintf(out, "%u,%u,%u,",
-                0x48, 0xc7, 0xc1);                  // mov ...,%rcx
-            break;
-        case 4:
-            fprintf(out, "%u,%u,%u,",
-                0x49, 0xc7, 0xc0);                  // mov ...,%r8
-            break;
-        case 5:
-            fprintf(out, "%u,%u,%u,",
-                0x49, 0xc7, 0xc1);                  // mov ...,%r9
-            break;
-    }
+    const uint8_t REX[] =
+		{0x48, 0x48, 0x48, 0x48, 0x49, 0x49, 0x00,
+		 0x48, 0x49, 0x49, 0x48, 0x48, 0x49, 0x49, 0x49, 0x49, 0x48};
+	const uint8_t MODRM[] =
+		{0xc7, 0xc6, 0xc2, 0xc1, 0xc0, 0xc1, 0x00,  
+		 0xc0, 0xc2, 0xc3, 0xc3, 0xc5, 0xc4, 0xc5, 0xc6, 0xc7, 0xc4};
+	fprintf(out, "%u,%u,%u,%s,",
+        REX[regno], 0xc7, MODRM[regno], value);
 }
 
 /*
- * Send a `movabs $i64,%r64' instruction opcode.
+ * Send a `mov $value,%r32' instruction.
  */
-static void sendMovI64R64(FILE *out, unsigned argno)
+static void sendSExtFromI32ToR64(FILE *out, int32_t value, unsigned regno)
 {
-    switch (argno)
-    {
-        case 0:
-            fprintf(out, "%u,%u,", 0x48, 0xbf);     // movabs ...,%rdi
-            break;
-        case 1:
-            fprintf(out, "%u,%u,", 0x48, 0xbe);     // movabs ...,%rsi
-            break;
-        case 2:
-            fprintf(out, "%u,%u,", 0x48, 0xba);     // movabs ...,%rdx
-            break;
-        case 3:
-            fprintf(out, "%u,%u,", 0x48, 0xb9);     // movabs ...,%rcx
-            break;
-        case 4:
-            fprintf(out, "%u,%u,", 0x49, 0xb8);     // movabs ...,%r8
-            break;
-        case 5:
-            fprintf(out, "%u,%u,", 0x49, 0xb9);     // movabs ...,%r9
-            break;
-    }
+    const uint8_t REX[] =
+		{0x48, 0x48, 0x48, 0x48, 0x49, 0x49, 0x00,
+		 0x48, 0x49, 0x49, 0x48, 0x48, 0x49, 0x49, 0x49, 0x49, 0x48};
+	const uint8_t MODRM[] =
+		{0xc7, 0xc6, 0xc2, 0xc1, 0xc0, 0xc1, 0x00,  
+		 0xc0, 0xc2, 0xc3, 0xc3, 0xc5, 0xc4, 0xc5, 0xc6, 0xc7, 0xc4};
+	fprintf(out, "%u,%u,%u,{\"int32\":%d},",
+        REX[regno], 0xc7, MODRM[regno], value);
 }
 
 /*
- * Send a `lea ...(%rip),%r64' instruction opcode.
+ * Send a `mov $value,%r64' instruction.
  */
-static void sendLeaRIPR64(FILE *out, unsigned argno)
+static void sendZExtFromI32ToR64(FILE *out, const char *value, unsigned regno)
 {
-    switch (argno)
-    {
-        case 0:
-            fprintf(out, "%u,%u,%u,",
-                0x48, 0x8d, 0x3d);                  // lea ...(%rip),%rdi
-            break;
-        case 1:
-            fprintf(out, "%u,%u,%u,",
-                0x48, 0x8d, 0x35);                  // lea ...(%rip),%rsi
-            break;
-        case 2:
-            fprintf(out, "%u,%u,%u,",
-                0x48, 0x8d, 0x15);                  // lea ...(%rip),%rdx
-            break;
-        case 3:
-            fprintf(out, "%u,%u,%u,",
-                0x48, 0x8d, 0x0d);                  // lea ...(%rip),%rcx
-            break;
-        case 4:
-            fprintf(out, "%u,%u,%u,",
-                0x4c, 0x8d, 0x05);                  // lea ...(%rip),%r8
-            break;
-        case 5:
-            fprintf(out, "%u,%u,%u,",
-                0x4c, 0x8d, 0x0d);                  // lea ...(%rip),%r9
-            break;
-    }
+    const uint8_t REX[] =
+		{0x00, 0x00, 0x00, 0x00, 0x41, 0x41, 0x00,
+         0x00, 0x41, 0x41, 0x00, 0x00, 0x41, 0x41, 0x41, 0x41, 0x00};
+    const uint8_t OPCODE[] =
+		{0xbf, 0xbe, 0xba, 0xb9, 0xb8, 0xb9, 0x00,
+		 0xb8, 0xba, 0xbb, 0xbb, 0xbd, 0xbc, 0xbd, 0xbe, 0xbf, 0xbc};
+    if (REX[regno] != 0x00)
+        fprintf(out, "%u,", REX[regno]);
+	fprintf(out, "%u,%s,", OPCODE[regno], value);
+}
+
+/*
+ * Send a `mov $value,%r64' instruction.
+ */
+static void sendZExtFromI32ToR64(FILE *out, int32_t value, unsigned regno)
+{
+    const uint8_t REX[] =
+		{0x00, 0x00, 0x00, 0x00, 0x41, 0x41, 0x00,
+         0x00, 0x41, 0x41, 0x00, 0x00, 0x41, 0x41, 0x41, 0x41, 0x00};
+    const uint8_t OPCODE[] =
+		{0xbf, 0xbe, 0xba, 0xb9, 0xb8, 0xb9, 0x00,
+		 0xb8, 0xba, 0xbb, 0xbb, 0xbd, 0xbc, 0xbd, 0xbe, 0xbf, 0xbc};
+    if (REX[regno] != 0x00)
+        fprintf(out, "%u,", REX[regno]);
+	fprintf(out, "%u,{\"int32\":%d},", OPCODE[regno], value);
+}
+
+/*
+ * Send a `movabs $i64,%r64' instruction.
+ */
+static void sendMovFromI64ToR64(FILE *out, intptr_t value, unsigned regno)
+{
+    const uint8_t REX[] =
+		{0x48, 0x48, 0x48, 0x48, 0x49, 0x49, 0x00,
+         0x48, 0x49, 0x49, 0x48, 0x48, 0x49, 0x49, 0x49, 0x49, 0x48};
+    const uint8_t OPCODE[] =
+		{0xbf, 0xbe, 0xba, 0xb9, 0xb8, 0xb9, 0x00,
+		 0xb8, 0xba, 0xbb, 0xbb, 0xbd, 0xbc, 0xbd, 0xbe, 0xbf, 0xbc};
+	fprintf(out, "%u,%u,{\"int64\":", REX[regno], OPCODE[regno]);
+	sendInteger(out, value);
+    fputs("},", out);
+}
+
+/*
+ * Send a `lea offset(%rip),%r64' instruction opcode.
+ */
+static void sendLeaFromPCRelToR64(FILE *out, const char *offset,
+    unsigned regno)
+{
+    const uint8_t REX[] =
+		{0x48, 0x48, 0x48, 0x48, 0x4c, 0x4c, 0x00,
+         0x48, 0x4c, 0x4c, 0x48, 0x48, 0x4c, 0x4c, 0x4c, 0x4c, 0x48};
+	const uint8_t MODRM[] =
+		{0x3d, 0x35, 0x15, 0x0d, 0x05, 0x0d, 0x00, 
+         0x05, 0x15, 0x1d, 0x1d, 0x2d, 0x25, 0x2d, 0x35, 0x3d, 0x25};
+    fprintf(out, "%u,%u,%u,%s,",
+        REX[regno], 0x8d, MODRM[regno], offset);
+}
+
+/*
+ * Send a `lea offset(%rip),%r64' instruction opcode.
+ */
+static void sendLeaFromPCRelToR64(FILE *out, int32_t offset, unsigned regno)
+{
+    const uint8_t REX[] =
+		{0x48, 0x48, 0x48, 0x48, 0x4c, 0x4c, 0x00,
+         0x48, 0x4c, 0x4c, 0x48, 0x48, 0x4c, 0x4c, 0x4c, 0x4c, 0x48};
+	const uint8_t MODRM[] =
+		{0x3d, 0x35, 0x15, 0x0d, 0x05, 0x0d, 0x00, 
+         0x05, 0x15, 0x1d, 0x1d, 0x2d, 0x25, 0x2d, 0x35, 0x3d, 0x25};
+    fprintf(out, "%u,%u,%u,{\"rel32\":%d},",
+        REX[regno], 0x8d, MODRM[regno], offset);
 }
 
 /*
  * Send a `lea ...(%rsp),%r64' instruction opcode.
  */
-static void sendLeaRSPR64(FILE *out, unsigned argno)
+static void sendLeaFromStackToR64(FILE *out, int32_t offset, unsigned regno)
 {
-    switch (argno)
-    {
-        case 0:
-            fprintf(out, "%u,%u,%u,",
-                0x48, 0x8d, 0xbc);                  // lea ...(%rsp),%rdi
-            break;
-        case 1:
-            fprintf(out, "%u,%u,%u,",
-                0x48, 0x8d, 0xb4);                  // lea ...(%rsp),%rsi
-            break;
-        case 2:
-            fprintf(out, "%u,%u,%u,",
-                0x48, 0x8d, 0x94);                  // lea ...(%rsp),%rdx
-            break;
-        case 3:
-            fprintf(out, "%u,%u,%u,",
-                0x48, 0x8d, 0x8c);                  // lea ...(%rsp),%rcx
-            break;
-        case 4:
-            fprintf(out, "%u,%u,%u,",
-                0x4c, 0x8d, 0x84);                  // lea ...(%rsp),%r8
-            break;
-        case 5:
-            fprintf(out, "%u,%u,%u,",
-                0x4c, 0x8d, 0x8c);                  // lea ...(%rsp),%r9
-            break;
-    }
-    fprintf(out, "%u,", 0x24);
+    const uint8_t REX[] =
+		{0x48, 0x48, 0x48, 0x48, 0x4c, 0x4c, 0x00,
+         0x48, 0x4c, 0x4c, 0x48, 0x48, 0x4c, 0x4c, 0x4c, 0x4c, 0x48};
+	const uint8_t MODRM_8[] =
+		{0x7c, 0x74, 0x54, 0x4c, 0x44, 0x4c, 0x00, 
+		 0x44, 0x54, 0x5c, 0x5c, 0x6c, 0x64, 0x6c, 0x74, 0x7c, 0x64};
+	const uint8_t MODRM_32[] =
+		{0xbc, 0xb4, 0x94, 0x8c, 0x84, 0x8c, 0x00,
+		 0x84, 0x94, 0x9c, 0x9c, 0xac, 0xa4, 0xac, 0xb4, 0xbc, 0xa4};
+
+    if (offset >= INT8_MIN && offset <= INT8_MAX)
+        fprintf(out, "%u,%u,%u,%u,{\"int8\":%d},",
+            REX[regno], 0x8d, MODRM_8[regno], 0x24, offset);
+    else
+        fprintf(out, "%u,%u,%u,%u,{\"int32\":%d},",
+            REX[regno], 0x8d, MODRM_32[regno], 0x24, offset);
 }
 
 /*
@@ -1187,11 +1233,56 @@ static const char *getLoadNextName(int argno)
 }
 
 /*
+ * Convert an argument into a regno.
+ */
+static unsigned getReg(ArgumentKind arg)
+{
+    switch (arg)
+    {
+        case ARGUMENT_RAX:
+            return RAX;
+        case ARGUMENT_RBX:
+            return RBX;
+        case ARGUMENT_RCX:
+            return RCX;
+        case ARGUMENT_RDX:
+            return RDX;
+        case ARGUMENT_RSP:
+            return RSP;
+        case ARGUMENT_RBP:
+            return RBP;
+        case ARGUMENT_RDI:
+            return RDI;
+        case ARGUMENT_RSI:
+            return RSI;
+        case ARGUMENT_R8:
+            return R8;
+        case ARGUMENT_R9:
+            return R9;
+        case ARGUMENT_R10:
+            return R10;
+        case ARGUMENT_R11:
+            return R11;
+        case ARGUMENT_R12:
+            return R12;
+        case ARGUMENT_R13:
+            return R13;
+        case ARGUMENT_R14:
+            return R14;
+        case ARGUMENT_R15:
+            return R15;
+        case ARGUMENT_RFLAGS:
+            return RFLAGS;
+        default:
+            return UINT32_MAX;
+    }
+}
+
+/*
  * Send an argument.
  */
 static void sendArgument(FILE *out, ArgumentKind arg, intptr_t value,
-    const char *name, unsigned argno, int8_t rdi_offset8,
-    int32_t rsp_offset32, bool before, bool flags)
+    const char *name, unsigned argno, const CallInfo &info, bool before)
 {
     if (argno > MAX_ARGNO)
         error("failed to send argument; maximum number of function call "
@@ -1204,65 +1295,48 @@ static void sendArgument(FILE *out, ArgumentKind arg, intptr_t value,
             break;
         case ARGUMENT_INTEGER:
             if (value >= INT32_MIN && value <= INT32_MAX)
-            {
-                sendMovI32R64(out, argno);
-                fprintf(out, "{\"int32\":");
-            }
+                sendSExtFromI32ToR64(out, value, argno);
+            else if (value >= 0 && value <= UINT32_MAX)
+                sendZExtFromI32ToR64(out, value, argno);
             else
-            {
-                sendMovI64R64(out, argno);
-                fprintf(out, "{\"int64\":");
-            }
-            sendInteger(out, value);
-            fprintf(out, "},");
+                sendMovFromI64ToR64(out, value, argno);
             break;
         case ARGUMENT_OFFSET:
-            sendMovI32R32(out, argno);
-            fprintf(out, "\"$offset\",");
+            sendZExtFromI32ToR64(out, "\"$offset\"", argno);
             break;
         case ARGUMENT_ADDR:
-            sendLeaRIPR64(out, argno);
-            fprintf(out, "{\"rel32\":\".Linstruction\"},");
+            sendLeaFromPCRelToR64(out, "{\"rel32\":\".Linstruction\"}", argno);
             break;
         case ARGUMENT_NEXT:
             if (before)
                 fprintf(out, "\"$%s\",", getLoadNextName(argno));
             else
-            {
-                sendLeaRIPR64(out, argno);
-                fprintf(out, "{\"rel32\":\".Lcontinue\"},");
-            }
+                sendLeaFromPCRelToR64(out, "{\"rel32\":\".Lcontinue\"}",
+                    argno);
             break;
         case ARGUMENT_BASE:
-            sendLeaRIPR64(out, argno);
-            fprintf(out, "{\"rel32\":0},");
+            sendLeaFromPCRelToR64(out, "{\"rel32\":0}", argno);
             break;
         case ARGUMENT_STATIC_ADDR:
-            sendMovI32R32(out, argno);
-            fprintf(out, "\"$staticAddr\",");
+            sendZExtFromI32ToR64(out, "\"$staticAddr\"",argno);
             break;
         case ARGUMENT_ASM_STR:
-            sendLeaRIPR64(out, argno);
-            fprintf(out, "{\"rel32\":\".LasmStr\"},");
+            sendLeaFromPCRelToR64(out, "{\"rel32\":\".LasmStr\"}", argno);
             break;
         case ARGUMENT_ASM_STR_LEN:
-            sendMovI32R32(out, argno);
-            fprintf(out, "\"$asmStrLen\",");
+            sendZExtFromI32ToR64(out, "\"$asmStrLen\"", argno);
             break;
         case ARGUMENT_BYTES:
-            sendLeaRIPR64(out, argno);
-            fprintf(out, "{\"rel32\":\".Lbytes\"},");
+            sendLeaFromPCRelToR64(out, "{\"rel32\":\".Lbytes\"}", argno);
             break;
         case ARGUMENT_BYTES_LEN:
-            sendMovI32R32(out, argno);
-            fprintf(out, "\"$bytesLen\",");
+            sendZExtFromI32ToR64(out, "\"$bytesLen\"", argno);
             break;
         case ARGUMENT_TARGET:
             fprintf(out, "\"$%s\",", getLoadTargetName(argno));
             break;
         case ARGUMENT_TRAMPOLINE:
-            sendLeaRIPR64(out, argno);
-            fprintf(out, "{\"rel32\":\".Ltrampoline\"},");
+            sendLeaFromPCRelToR64(out, "{\"rel32\":\".Ltrampoline\"}", argno);
             break;
         case ARGUMENT_RAX: case ARGUMENT_RBX: case ARGUMENT_RCX:
         case ARGUMENT_RDX: case ARGUMENT_RBP: case ARGUMENT_RDI:
@@ -1270,81 +1344,35 @@ static void sendArgument(FILE *out, ArgumentKind arg, intptr_t value,
         case ARGUMENT_R10: case ARGUMENT_R11: case ARGUMENT_R12:
         case ARGUMENT_R13: case ARGUMENT_R14: case ARGUMENT_R15:
         {
-            switch (arg)
-            {
-                case ARGUMENT_RDI:
-                    if (argno != 0)
-                        sendMovRSPR64(out, rdi_offset8, argno);
-                    return;
-                case ARGUMENT_RSI:
-                    if (argno == 1)
-                        return;
-                    if (argno > 1)
-                    {
-                        sendMovRSPR64(out, rdi_offset8 + 8, argno);
-                        return;
-                    }
-                    break;
-                case ARGUMENT_RDX:
-                    if (argno == 2)
-                        return;
-                    if (argno > 2)
-                    {
-                        sendMovRSPR64(out, rdi_offset8 + 16, argno);
-                        return;
-                    }
-                    break;
-                case ARGUMENT_RCX:
-                    if (argno == 3)
-                        return;
-                    if (argno > 3)
-                    {
-                        sendMovRSPR64(out, rdi_offset8 + 24, argno);
-                        return;
-                    }
-                    break;
-                case ARGUMENT_R8:
-                    if (argno == 4)
-                        return;
-                    if (argno > 4)
-                    {
-                        sendMovRSPR64(out, rdi_offset8 + 32, argno);
-                        return;
-                    }
-                    break;
-                case ARGUMENT_R9:
-                    if (argno == 5)
-                        return;
-                    break;
-                case ARGUMENT_RAX:
-                    if (rdi_offset8 != 0)
-                    {
-                        sendMovRSPR64(out, rdi_offset8 + 48, argno);
-                        return;
-                    }
-                    break;
-                default:
-                    break;
-            }
-            sendMovR64R64(out, arg, argno);
+            unsigned regno = getReg(arg);
+            if (info.isClobbered(regno))
+                sendMovFromStackToR64(out, info.offset(regno), argno);
+            else 
+                sendMovFromR64ToR64(out, regno, argno);
             break;
         }
         case ARGUMENT_RIP:
-            sendLeaRIPR64(out, argno);
-            fprintf(out, "{\"rel32\":\".L%s\"},",
-                (before? "instruction": "continue"));
+            if (before)
+                sendLeaFromPCRelToR64(out, "{\"rel32\":\".Linstruction\"}",
+                    argno);
+            else
+                sendLeaFromPCRelToR64(out, "{\"rel32\":\".Lcontinue\"}",
+                    argno);
             break;
         case ARGUMENT_RSP:
-            sendLeaRSPR64(out, argno);
-            fprintf(out, "{\"int32\":");
-            sendInteger(out, (intptr_t)rsp_offset32);
-            fprintf(out, "},");
+            sendLeaFromStackToR64(out, info.rsp_offset, argno);
             break;
         case ARGUMENT_RFLAGS:
-            if (rdi_offset8 == 0)
-                error("failed to emit \"rflags\" argument; the \"rflags\" "
-                    "argument is not supported for \"naked\" calls");
-            sendMovZWLRSPR32(out, rdi_offset8 - 8, argno);
+            if (!info.isSaved(RFLAGS))
+            {
+                // %rflags (& %rax) was not saved, so read directly:
+                if (!info.isSaved(RAX))
+                    sendMovFromR64ToStack(out, RAX, info.offset(RAX));
+                fprintf(out, "%u,%u,%u,", 0x0f, 0x90, 0xc0);// seto %al
+                fprintf(out, "%u,", 0x9f);                  // lahf
+                sendMovFromR64ToStack(out, RAX, info.offset(RFLAGS));
+            }
+            sendMovStack16ToR64(out, info.offset(RFLAGS), argno);
             break;
         default:
             break;
@@ -1399,18 +1427,16 @@ unsigned e9frontend::sendCallTrampolineMessage(FILE *out, const ELF &elf,
         }
     }
 
-    int32_t rsp_offset32 = 0;
     fprintf(out, "%u,%u,%u,%u,%u,%u,%u,%u,",        // lea -0x4000(%rsp),%rsp
         0x48, 0x8d, 0xa4, 0x24, 0x00, 0xc0, 0xff, 0xff);
-    rsp_offset32 += 0x4000;
-    
-    int8_t rdi_offset8;
-    bool flags = false;
     if (clean)
     {
         // Save the state:
         fprintf(out, "%u,%u,", 0x41, 0x53);         // push   %r11
         fprintf(out, "%u,%u,", 0x41, 0x52);         // push   %r10
+        fprintf(out, "%u,", 0x50);                  // push   %rax
+        fprintf(out, "%u,%u,%u,", 0x0f, 0x90, 0xc0);// seto   %al
+        fprintf(out, "%u,", 0x9f);                  // lahf
         fprintf(out, "%u,", 0x50);                  // push   %rax
         fprintf(out, "%u,%u,", 0x41, 0x51);         // push   %r9
         fprintf(out, "%u,%u,", 0x41, 0x50);         // push   %r8
@@ -1418,11 +1444,6 @@ unsigned e9frontend::sendCallTrampolineMessage(FILE *out, const ELF &elf,
         fprintf(out, "%u,", 0x52);                  // push   %rdx
         fprintf(out, "%u,", 0x56);                  // push   %rsi
         fprintf(out, "%u,", 0x57);                  // push   %rdi
-        fprintf(out, "%u,%u,%u,", 0x0f, 0x90, 0xc0);// seto   %al
-        fprintf(out, "%u,", 0x9f);                  // lahf
-        fprintf(out, "%u,", 0x50);                  // push   %rax
-        rdi_offset8 = 8;
-        rsp_offset32 += 80;
     }
     else
     {
@@ -1430,32 +1451,30 @@ unsigned e9frontend::sendCallTrampolineMessage(FILE *out, const ELF &elf,
         {
             case 6:
                 fprintf(out, "%u,%u,", 0x41, 0x51); // push   %r9
-                rsp_offset32 += 8;
             case 5:
                 fprintf(out, "%u,%u,", 0x41, 0x50); // push   %r8
-                rsp_offset32 += 8;
             case 4:
                 fprintf(out, "%u,", 0x51);          // push   %rcx
-                rsp_offset32 += 8;
             case 3:
                 fprintf(out, "%u,", 0x52);          // push   %rdx
-                rsp_offset32 += 8;
             case 2:
                 fprintf(out, "%u,", 0x56);          // push   %rsi
-                rsp_offset32 += 8;
             case 1:
                 fprintf(out, "%u,", 0x57);          // push   %rdi
-                rsp_offset32 += 8;
             default:
                 break;
         }
-        rdi_offset8 = 0;
-        flags = true;
     }
+
+    CallInfo info(clean, args.size());
     unsigned argno = 0;
-    for (auto arg: args)
-        sendArgument(out, arg.kind, arg.value, arg.name, argno++,
-            rdi_offset8, rsp_offset32, replace || before, flags);
+    for (auto &arg: args)
+    {
+        sendArgument(out, arg.kind, arg.value, arg.name, argno, info,
+            replace || before);
+        info.loadArg(arg.kind, argno);
+        argno++;
+    }
     fprintf(out, "%u", 0xe8);                       // callq ...
     fprintf(out, ",{\"rel32\":");
     sendInteger(out, addr);
@@ -1463,15 +1482,15 @@ unsigned e9frontend::sendCallTrampolineMessage(FILE *out, const ELF &elf,
     if (clean)
     {
         // Restore the state:
-        fprintf(out, ",%u", 0x58);                  // pop    %rax
-        fprintf(out, ",%u,%u", 0x04, 0x7f);         // add    $0x7f,%al
-        fprintf(out, ",%u", 0x9e);                  // sahf   
         fprintf(out, ",%u", 0x5f);                  // pop    %rdi
         fprintf(out, ",%u", 0x5e);                  // pop    %rsi
         fprintf(out, ",%u", 0x5a);                  // pop    %rdx
         fprintf(out, ",%u", 0x59);                  // pop    %rcx
         fprintf(out, ",%u,%u", 0x41, 0x58);         // pop    %r8
         fprintf(out, ",%u,%u", 0x41, 0x59);         // pop    %r9
+        fprintf(out, ",%u", 0x58);                  // pop    %rax
+        fprintf(out, ",%u,%u", 0x04, 0x7f);         // add    $0x7f,%al
+        fprintf(out, ",%u", 0x9e);                  // sahf   
         fprintf(out, ",%u", 0x58);                  // pop    %rax
         fprintf(out, ",%u,%u", 0x41, 0x5a);         // pop    %r10
         fprintf(out, ",%u,%u", 0x41, 0x5b);         // pop    %r11
@@ -1523,18 +1542,6 @@ unsigned e9frontend::sendCallTrampolineMessage(FILE *out, const ELF &elf,
     fputc(']', out);
     sendSeparator(out, /*last=*/true);
     return sendMessageFooter(out, /*sync=*/true);
-}
-
-/*
- * Calculate the %rsp offset for call instrumentation.
- * NOTE: This must sync with e9frontend::sendCallTrampolineMessage
- */
-static int32_t getRSPOffset(const std::vector<Argument> &args, bool clean)
-{
-    if (clean)
-        return 0x4000 + 80;
-    else
-        return 0x4000 + 8 * args.size();
 }
 
 /*
