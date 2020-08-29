@@ -324,6 +324,7 @@ struct Parser
             case '\0':
                 return (s[0] = '\0');
             case '[': case ']': case '@': case ',': case '(': case ')':
+            case '&':
                 s[0] = c; s[1] = '\0';
                 i++;
                 return c;
@@ -752,7 +753,13 @@ static Action *parseAction(const char *str, MatchEntries &entries)
         {
             while (true)
             {
+                bool ptr = false;
                 c = parser.getToken();
+                if (c == '&')
+                {
+                    ptr = true;
+                    c = parser.getToken();
+                }
                 const char *s = parser.s;
                 ArgumentKind arg = ARGUMENT_INVALID;
                 intptr_t value = 0x0;
@@ -791,41 +798,41 @@ static Action *parseAction(const char *str, MatchEntries &entries)
                         break;
                     case 'r':
                         if (strcmp(s, "rax") == 0)
-                            arg = ARGUMENT_RAX;
+                            arg = (ptr? ARGUMENT_RAX_PTR: ARGUMENT_RAX);
                         else if (strcmp(s, "rbx") == 0)
-                            arg = ARGUMENT_RBX;
+                            arg = (ptr? ARGUMENT_RBX_PTR: ARGUMENT_RBX);
                         else if (strcmp(s, "rcx") == 0)
-                            arg = ARGUMENT_RCX;
+                            arg = (ptr? ARGUMENT_RCX_PTR: ARGUMENT_RCX);
                         else if (strcmp(s, "rdx") == 0)
-                            arg = ARGUMENT_RDX;
+                            arg = (ptr? ARGUMENT_RDX_PTR: ARGUMENT_RDX);
                         else if (strcmp(s, "rbp") == 0)
-                            arg = ARGUMENT_RBP;
+                            arg = (ptr? ARGUMENT_RBP_PTR: ARGUMENT_RBP);
                         else if (strcmp(s, "rdi") == 0)
-                            arg = ARGUMENT_RDI;
+                            arg = (ptr? ARGUMENT_RDI_PTR: ARGUMENT_RDI);
                         else if (strcmp(s, "rsi") == 0)
-                            arg = ARGUMENT_RSI;
+                            arg = (ptr? ARGUMENT_RSI_PTR: ARGUMENT_RSI);
                         else if (strcmp(s, "r8") == 0)
-                            arg = ARGUMENT_R8;
+                            arg = (ptr? ARGUMENT_R8_PTR: ARGUMENT_R8);
                         else if (strcmp(s, "r9") == 0)
-                            arg = ARGUMENT_R9;
+                            arg = (ptr? ARGUMENT_R9_PTR: ARGUMENT_R9);
                         else if (strcmp(s, "r10") == 0)
-                            arg = ARGUMENT_R10;
+                            arg = (ptr? ARGUMENT_R10_PTR: ARGUMENT_R10);
                         else if (strcmp(s, "r11") == 0)
-                            arg = ARGUMENT_R11;
+                            arg = (ptr? ARGUMENT_R11_PTR: ARGUMENT_R11);
                         else if (strcmp(s, "r12") == 0)
-                            arg = ARGUMENT_R12;
+                            arg = (ptr? ARGUMENT_R12_PTR: ARGUMENT_R12);
                         else if (strcmp(s, "r13") == 0)
-                            arg = ARGUMENT_R13;
+                            arg = (ptr? ARGUMENT_R13_PTR: ARGUMENT_R13);
                         else if (strcmp(s, "r14") == 0)
-                            arg = ARGUMENT_R14;
+                            arg = (ptr? ARGUMENT_R14_PTR: ARGUMENT_R14);
                         else if (strcmp(s, "r15") == 0)
-                            arg = ARGUMENT_R15;
+                            arg = (ptr? ARGUMENT_R15_PTR: ARGUMENT_R15);
                         else if (strcmp(s, "rflags") == 0)
                             arg = ARGUMENT_RFLAGS;
                         else if (strcmp(s, "rip") == 0)
                             arg = ARGUMENT_RIP;
                         else if (strcmp(s, "rsp") == 0)
-                            arg = ARGUMENT_RSP;
+                            arg = (ptr? ARGUMENT_RSP_PTR: ARGUMENT_RSP);
                         break;
                     case 's':
                         if (strcmp(s, "staticAddr") == 0)
@@ -850,6 +857,23 @@ static Action *parseAction(const char *str, MatchEntries &entries)
                         arg = ARGUMENT_INTEGER;
                         break;
                     }
+                }
+                switch (arg)
+                {
+                    case ARGUMENT_RAX_PTR: case ARGUMENT_RBX_PTR:
+                    case ARGUMENT_RCX_PTR: case ARGUMENT_RDX_PTR:
+                    case ARGUMENT_RBP_PTR: case ARGUMENT_RSP_PTR:
+                    case ARGUMENT_RDI_PTR: case ARGUMENT_RSI_PTR:
+                    case ARGUMENT_R8_PTR:  case ARGUMENT_R9_PTR:
+                    case ARGUMENT_R10_PTR: case ARGUMENT_R11_PTR:
+                    case ARGUMENT_R12_PTR: case ARGUMENT_R13_PTR:
+                    case ARGUMENT_R14_PTR: case ARGUMENT_R15_PTR:
+                        break;
+                    default:
+                        if (ptr)
+                            error("failed to parse call action; cannot "
+                                "pass argument `%s' by pointer", s);
+                        break;
                 }
                 const char *basename = nullptr;
                 if (arg == ARGUMENT_INVALID && isalpha(s[0]))
@@ -882,7 +906,16 @@ static Action *parseAction(const char *str, MatchEntries &entries)
                 if (arg == ARGUMENT_INVALID)
                     error("failed to parse call action; expected call "
                         "argument, found `%s'", parser.s);
-                args.push_back({arg, value, basename});
+                bool duplicate = false;
+                for (const auto &prevArg: args)
+                {
+                    if (prevArg.kind == arg)
+                    {
+                        duplicate = true;
+                        break;
+                    }
+                }
+                args.push_back({arg, duplicate, value, basename});
                 c = parser.getToken();
                 if (c == ')')
                     break;
@@ -1389,12 +1422,12 @@ static void usage(FILE *stream, const char *progname)
     fputs("\t\t\t  * \"rax\"...\"r15\", \"rip\", \"rflags\" is the\n",
         stream);
     fputs("\t\t\t    corresponding register value.\n", stream);
+    fputs("\t\t\t  * \"&rax\"...\"&r15\" is the corresponding register\n",
+        stream);
+    fputs("\t\t\t    value (pass-by-pointer).\n", stream);
     fputs("\t\t\t  * \"staticAddr\" is the (static) address of the\n",
         stream);
     fputs("\t\t\t    instruction.\n", stream);
-    fputs("\t\t\t  * \"staticNext\" is the (static) address of the\n",
-        stream);
-    fputs("\t\t\t    next instruction.\n", stream);
     fputs("\t\t\t  * An integer constant.\n", stream);
     fputs("\t\t\t  * A file lookup of the form \"basename[index]\" where\n",
         stream);

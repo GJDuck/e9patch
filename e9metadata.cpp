@@ -26,7 +26,7 @@
 /*
  * Convert a register to an argno.
  */
-static int regToRegNo(x86_reg reg)
+static int getRegNo(x86_reg reg)
 {
     switch (reg)
     {
@@ -109,7 +109,7 @@ static const char *argNoToRegName(int argno)
 static void sendRestoreReg(FILE *out, const CallInfo &info, x86_reg reg,
     int argno, int slot)
 {
-    int regno = regToRegNo(reg);
+    int regno = getRegNo(reg);
     if (!info.isClobbered(regno))
         return;
 
@@ -123,7 +123,7 @@ static void sendRestoreReg(FILE *out, const CallInfo &info, x86_reg reg,
 static void sendUnrestoreReg(FILE *out, const CallInfo &info, x86_reg reg,
     int argno, int slot)
 {
-    int regno = regToRegNo(reg);
+    int regno = getRegNo(reg);
     if (!info.isClobbered(regno))
         return;
 
@@ -172,7 +172,7 @@ static void sendLoadTargetMetadata(FILE *out, const cs_insn *I,
     {
         case X86_OP_REG:
         {
-            int regno = regToRegNo(op->reg);
+            int regno = getRegNo(op->reg);
             if (info.isClobbered(regno))
                 sendMovFromStackToR64(out, info.offset(regno), argno);
             else

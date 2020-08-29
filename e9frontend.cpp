@@ -68,6 +68,52 @@ using namespace e9frontend;
 #define RMAX            RSP
 
 /*
+ * Convert an argument into a regno.
+ */
+static unsigned getRegNo(ArgumentKind arg)
+{
+    switch (arg)
+    {
+        case ARGUMENT_RAX: case ARGUMENT_RAX_PTR:
+            return RAX;
+        case ARGUMENT_RBX: case ARGUMENT_RBX_PTR:
+            return RBX;
+        case ARGUMENT_RCX: case ARGUMENT_RCX_PTR:
+            return RCX;
+        case ARGUMENT_RDX: case ARGUMENT_RDX_PTR:
+            return RDX;
+        case ARGUMENT_RSP: case ARGUMENT_RSP_PTR:
+            return RSP;
+        case ARGUMENT_RBP: case ARGUMENT_RBP_PTR:
+            return RBP;
+        case ARGUMENT_RDI: case ARGUMENT_RDI_PTR:
+            return RDI;
+        case ARGUMENT_RSI: case ARGUMENT_RSI_PTR:
+            return RSI;
+        case ARGUMENT_R8: case ARGUMENT_R8_PTR:
+            return R8;
+        case ARGUMENT_R9: case ARGUMENT_R9_PTR:
+            return R9;
+        case ARGUMENT_R10: case ARGUMENT_R10_PTR:
+            return R10;
+        case ARGUMENT_R11: case ARGUMENT_R11_PTR:
+            return R11;
+        case ARGUMENT_R12: case ARGUMENT_R12_PTR:
+            return R12;
+        case ARGUMENT_R13: case ARGUMENT_R13_PTR:
+            return R13;
+        case ARGUMENT_R14: case ARGUMENT_R14_PTR:
+            return R14;
+        case ARGUMENT_R15: case ARGUMENT_R15_PTR:
+            return R15;
+        case ARGUMENT_RFLAGS:
+            return RFLAGS;
+        default:
+            return UINT32_MAX;
+    }
+}
+
+/*
  * Call state helper class.
  */
 struct CallInfo
@@ -101,7 +147,7 @@ struct CallInfo
         clobbered &= ~(0x1 << reg);
     }
 
-    int32_t offset(unsigned reg) const
+    static int32_t offset(unsigned reg)
     {
         return sizeof(uint64_t) * reg;
     }
@@ -119,11 +165,27 @@ struct CallInfo
 
     void loadArg(ArgumentKind arg, unsigned argno)
     {
-        if (arg == ARGUMENT_RFLAGS && !isSaved(RFLAGS))
+        switch (arg)
         {
-            save(RAX);
-            clobber(RAX);
-            save(RFLAGS);
+            case ARGUMENT_RFLAGS:
+                if (!isSaved(RFLAGS))
+                {
+                    save(RAX);
+                    clobber(RAX);
+                    save(RFLAGS);
+                }
+            case ARGUMENT_RAX_PTR: case ARGUMENT_RBX_PTR:
+            case ARGUMENT_RCX_PTR: case ARGUMENT_RDX_PTR:
+            case ARGUMENT_RBP_PTR: case ARGUMENT_RSP_PTR:
+            case ARGUMENT_RDI_PTR: case ARGUMENT_RSI_PTR:
+            case ARGUMENT_R8_PTR:  case ARGUMENT_R9_PTR:
+            case ARGUMENT_R10_PTR: case ARGUMENT_R11_PTR:
+            case ARGUMENT_R12_PTR: case ARGUMENT_R13_PTR:
+            case ARGUMENT_R14_PTR: case ARGUMENT_R15_PTR:
+                save(getRegNo(arg));
+                break;
+            default:
+                break;
         }
         clobber(argno);
     }
@@ -1232,52 +1294,6 @@ static const char *getLoadNextName(int argno)
 }
 
 /*
- * Convert an argument into a regno.
- */
-static unsigned getReg(ArgumentKind arg)
-{
-    switch (arg)
-    {
-        case ARGUMENT_RAX:
-            return RAX;
-        case ARGUMENT_RBX:
-            return RBX;
-        case ARGUMENT_RCX:
-            return RCX;
-        case ARGUMENT_RDX:
-            return RDX;
-        case ARGUMENT_RSP:
-            return RSP;
-        case ARGUMENT_RBP:
-            return RBP;
-        case ARGUMENT_RDI:
-            return RDI;
-        case ARGUMENT_RSI:
-            return RSI;
-        case ARGUMENT_R8:
-            return R8;
-        case ARGUMENT_R9:
-            return R9;
-        case ARGUMENT_R10:
-            return R10;
-        case ARGUMENT_R11:
-            return R11;
-        case ARGUMENT_R12:
-            return R12;
-        case ARGUMENT_R13:
-            return R13;
-        case ARGUMENT_R14:
-            return R14;
-        case ARGUMENT_R15:
-            return R15;
-        case ARGUMENT_RFLAGS:
-            return RFLAGS;
-        default:
-            return UINT32_MAX;
-    }
-}
-
-/*
  * Send an argument.
  */
 static void sendArgument(FILE *out, ArgumentKind arg, intptr_t value,
@@ -1343,13 +1359,34 @@ static void sendArgument(FILE *out, ArgumentKind arg, intptr_t value,
         case ARGUMENT_R10: case ARGUMENT_R11: case ARGUMENT_R12:
         case ARGUMENT_R13: case ARGUMENT_R14: case ARGUMENT_R15:
         {
-            unsigned regno = getReg(arg);
+            unsigned regno = getRegNo(arg);
             if (info.isClobbered(regno))
                 sendMovFromStackToR64(out, info.offset(regno), argno);
             else 
                 sendMovFromR64ToR64(out, regno, argno);
             break;
         }
+        case ARGUMENT_RAX_PTR: case ARGUMENT_RBX_PTR: case ARGUMENT_RCX_PTR:
+        case ARGUMENT_RDX_PTR: case ARGUMENT_RBP_PTR: case ARGUMENT_RDI_PTR:
+        case ARGUMENT_RSI_PTR: case ARGUMENT_R8_PTR:  case ARGUMENT_R9_PTR:
+        case ARGUMENT_R10_PTR: case ARGUMENT_R11_PTR: case ARGUMENT_R12_PTR:
+        case ARGUMENT_R13_PTR: case ARGUMENT_R14_PTR: case ARGUMENT_R15_PTR:
+        {
+            unsigned regno = getRegNo(arg);
+            if (!info.isSaved(regno))
+                sendMovFromR64ToStack(out, regno, info.offset(regno));
+            sendLeaFromStackToR64(out, info.offset(regno), argno);
+            break;
+        }
+        case ARGUMENT_RSP_PTR:
+            if (!info.isSaved(RSP))
+            {
+                // Use argno as scratch...
+                sendLeaFromStackToR64(out, info.rsp_offset, argno);
+                sendMovFromR64ToStack(out, argno, info.offset(RSP));
+            }
+            sendLeaFromStackToR64(out, info.offset(RSP), argno);
+            break;
         case ARGUMENT_RIP:
             if (before)
                 sendLeaFromPCRelToR64(out, "{\"rel32\":\".Linstruction\"}",
@@ -1379,6 +1416,30 @@ static void sendArgument(FILE *out, ArgumentKind arg, intptr_t value,
 }
 
 /*
+ * Restore an argument (if necessary).
+ */
+static void sendArgumentRestore(FILE *out, ArgumentKind arg, unsigned rmin)
+{
+    switch (arg)
+    {
+        case ARGUMENT_RAX_PTR: case ARGUMENT_RBX_PTR: case ARGUMENT_RCX_PTR:
+        case ARGUMENT_RDX_PTR: case ARGUMENT_RBP_PTR: case ARGUMENT_RDI_PTR:
+        case ARGUMENT_RSI_PTR: case ARGUMENT_R8_PTR:  case ARGUMENT_R9_PTR:
+        case ARGUMENT_R10_PTR: case ARGUMENT_R11_PTR: case ARGUMENT_R12_PTR:
+        case ARGUMENT_R13_PTR: case ARGUMENT_R14_PTR: case ARGUMENT_R15_PTR:
+        {
+            unsigned regno = getRegNo(arg);
+            if (regno < rmin)
+                return;         // Will be restored by default anyway...
+            sendMovFromStackToR64(out, CallInfo::offset(regno), regno);
+            break;
+        }
+        default:
+            break;
+    }
+}
+
+/*
  * Send argument data.
  */
 static void sendArgumentData(FILE *out, ArgumentKind arg, unsigned argno)
@@ -1386,10 +1447,10 @@ static void sendArgumentData(FILE *out, ArgumentKind arg, unsigned argno)
     switch (arg)
     {
         case ARGUMENT_ASM_STR:
-            fprintf(out, ",\".LasmStr\",\"$asmStr\"");
+            fprintf(out, "\".LasmStr\",\"$asmStr\",");
             break;
         case ARGUMENT_BYTES:
-            fprintf(out, ",\".Lbytes\",\"$bytes\"");
+            fprintf(out, "\".Lbytes\",\"$bytes\",");
             break;
         default:
             break;
@@ -1467,7 +1528,7 @@ unsigned e9frontend::sendCallTrampolineMessage(FILE *out, const ELF &elf,
 
     CallInfo info(clean, args.size());
     unsigned argno = 0;
-    for (auto &arg: args)
+    for (const auto &arg: args)
     {
         sendArgument(out, arg.kind, arg.value, arg.name, argno, info,
             replace || before);
@@ -1475,31 +1536,48 @@ unsigned e9frontend::sendCallTrampolineMessage(FILE *out, const ELF &elf,
         argno++;
     }
 
-    for (unsigned regno = (clean? RBX: args.size()+1); regno <= RMAX; regno++)
+    unsigned rmin = (clean? RBX: (unsigned)args.size()+1);
+    for (unsigned regno = rmin; regno <= RMAX; regno++)
     {
         if (info.isClobbered(regno))
             sendMovFromStackToR64(out, info.offset(regno), regno);
     }
 
-    fprintf(out, "%u", 0xe8);                       // callq ...
-    fprintf(out, ",{\"rel32\":");
+    fprintf(out, "%u,", 0xe8);                      // callq ...
+    fputs("{\"rel32\":", out);
     sendInteger(out, addr);
-    fputc('}', out);
+    fputs("},", out);
+
+    bool rsp_restore = false;
+    for (const auto &arg: args)
+    {
+        if (arg.duplicate)
+            continue;
+        if (arg.kind == ARGUMENT_RSP_PTR)
+        {
+            rsp_restore = true;
+            continue;       // Handle later
+        }
+        sendArgumentRestore(out, arg.kind, rmin);
+    }
+
+    int32_t rsp_adjust = 0;
     if (clean)
     {
         // Restore the state:
-        fprintf(out, ",%u", 0x5f);                  // pop    %rdi
-        fprintf(out, ",%u", 0x5e);                  // pop    %rsi
-        fprintf(out, ",%u", 0x5a);                  // pop    %rdx
-        fprintf(out, ",%u", 0x59);                  // pop    %rcx
-        fprintf(out, ",%u,%u", 0x41, 0x58);         // pop    %r8
-        fprintf(out, ",%u,%u", 0x41, 0x59);         // pop    %r9
-        fprintf(out, ",%u", 0x58);                  // pop    %rax
-        fprintf(out, ",%u,%u", 0x04, 0x7f);         // add    $0x7f,%al
-        fprintf(out, ",%u", 0x9e);                  // sahf   
-        fprintf(out, ",%u", 0x58);                  // pop    %rax
-        fprintf(out, ",%u,%u", 0x41, 0x5a);         // pop    %r10
-        fprintf(out, ",%u,%u", 0x41, 0x5b);         // pop    %r11
+        fprintf(out, "%u,", 0x5f);                  // pop    %rdi
+        fprintf(out, "%u,", 0x5e);                  // pop    %rsi
+        fprintf(out, "%u,", 0x5a);                  // pop    %rdx
+        fprintf(out, "%u,", 0x59);                  // pop    %rcx
+        fprintf(out, "%u,%u,", 0x41, 0x58);         // pop    %r8
+        fprintf(out, "%u,%u,", 0x41, 0x59);         // pop    %r9
+        fprintf(out, "%u,", 0x58);                  // pop    %rax
+        fprintf(out, "%u,%u,", 0x04, 0x7f);         // add    $0x7f,%al
+        fprintf(out, "%u,", 0x9e);                  // sahf   
+        fprintf(out, "%u,", 0x58);                  // pop    %rax
+        fprintf(out, "%u,%u,", 0x41, 0x5a);         // pop    %r10
+        fprintf(out, "%u,%u,", 0x41, 0x5b);         // pop    %r11
+        rsp_adjust -= 80;
     }
     else
     {
@@ -1508,44 +1586,45 @@ unsigned e9frontend::sendCallTrampolineMessage(FILE *out, const ELF &elf,
             switch (i)
             {
                 case 6:
-                    fprintf(out, ",%u,%u", 0x41, 0x59); // pop    %r9
+                    fprintf(out, "%u,%u,", 0x41, 0x59); // pop    %r9
                     break;
                 case 5:
-                    fprintf(out, ",%u,%u", 0x41, 0x58); // pop    %r8
+                    fprintf(out, "%u,%u,", 0x41, 0x58); // pop    %r8
                     break;
                 case 4:
-                    fprintf(out, ",%u", 0x59);          // pop    %rcx
+                    fprintf(out, "%u,", 0x59);          // pop    %rcx
                     break;
                 case 3:
-                    fprintf(out, ",%u", 0x5a);          // pop    %rdx
+                    fprintf(out, "%u,", 0x5a);          // pop    %rdx
                     break;
                 case 2:
-                    fprintf(out, ",%u", 0x5e);          // pop    %rsi
+                    fprintf(out, "%u,", 0x5e);          // pop    %rsi
                     break;
                 case 1:
-                    fprintf(out, ",%u", 0x5f);          // pop    %rdi
+                    fprintf(out, "%u,", 0x5f);          // pop    %rdi
                     break;
-
             }
+            rsp_adjust -= 8;
         }
     }
-    fprintf(out, ",%u,%u,%u,%u,%u,%u,%u,%u",        // lea 0x4000(%rsp),%rsp
-        0x48, 0x8d, 0xa4, 0x24, 0x00, 0x40, 0x00, 0x00);
+
+    if (rsp_restore)
+        sendMovFromStackToR64(out, info.offset(RSP) + rsp_adjust, RSP);
+    else
+        fprintf(out, "%u,%u,%u,%u,%u,%u,%u,%u,",    // lea 0x4000(%rsp),%rsp
+            0x48, 0x8d, 0xa4, 0x24, 0x00, 0x40, 0x00, 0x00);
+
     if (!replace && before)
-        fprintf(out, ",\"$instruction\"");
-    fprintf(out, ",\"$continue\"");
+        fputs("\"$instruction\",", out);
+    fputs("\"$continue\",", out);
     argno = 0;
-    bool seen[ARGUMENT_MAX] = {false};
-    for (auto arg: args)
+    for (const auto &arg: args)
     {
-        if (!seen[arg.kind])
-        {
+        if (!arg.duplicate)
             sendArgumentData(out, arg.kind, argno);
-            seen[arg.kind] = true;
-        }
         argno++;
     }
-    fputc(']', out);
+    fputs("null]", out);
     sendSeparator(out, /*last=*/true);
     return sendMessageFooter(out, /*sync=*/true);
 }

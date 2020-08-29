@@ -66,6 +66,7 @@ enum ArgumentKind
     ARGUMENT_BYTES_LEN,             // Instruction bytes length
     ARGUMENT_TARGET,                // Call/jump target
     ARGUMENT_TRAMPOLINE,            // Trampoline
+
     ARGUMENT_RAX,                   // %rax register
     ARGUMENT_RBX,                   // %rbx register
     ARGUMENT_RCX,                   // %rcx register
@@ -84,6 +85,25 @@ enum ArgumentKind
     ARGUMENT_RFLAGS,                // %rflags register
     ARGUMENT_RIP,                   // %rip register
     ARGUMENT_RSP,                   // %rsp register
+    
+    ARGUMENT_RAX_PTR,               // %rax register pointer
+    ARGUMENT_RBX_PTR,               // %rbx register pointer
+    ARGUMENT_RCX_PTR,               // %rcx register pointer
+    ARGUMENT_RDX_PTR,               // %rdx register pointer
+    ARGUMENT_RBP_PTR,               // %rbp register pointer
+    ARGUMENT_RDI_PTR,               // %rdi register pointer
+    ARGUMENT_RSI_PTR,               // %rsi register pointer
+    ARGUMENT_R8_PTR,                // %r8 register pointer
+    ARGUMENT_R9_PTR,                // %r9 register pointer
+    ARGUMENT_R10_PTR,               // %r10 register pointer
+    ARGUMENT_R11_PTR,               // %r11 register pointer
+    ARGUMENT_R12_PTR,               // %r12 register pointer
+    ARGUMENT_R13_PTR,               // %r13 register pointer
+    ARGUMENT_R14_PTR,               // %r14 register pointer
+    ARGUMENT_R15_PTR,               // %r15 register pointer
+    ARGUMENT_RFLAGS_PTR,            // %rflags register pointer
+    ARGUMENT_RIP_PTR,               // %rip register pointer
+    ARGUMENT_RSP_PTR,               // %rsp register pointer
 
     ARGUMENT_MAX                    // Maximum argument value
 };
@@ -91,6 +111,7 @@ enum ArgumentKind
 struct Argument
 {
     ArgumentKind kind;              // Argument kind.
+    bool duplicate;                 // Argument is a duplicate?
     intptr_t value;                 // Argument value (ARGUMENT_INTEGER/USER).
     const char *name;               // Argument name  (ARGUMENT_USER).
 };
