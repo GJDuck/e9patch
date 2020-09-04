@@ -28,9 +28,9 @@ for ACTION in \
     'passthru' \
     'call entry@nop' \
     'call[naked,after] entry@nop' \
-    'call entry(asmStr,instr,rflags,rdi,rip,addr)@nop' \
-    'call entry(&rsp,&rax,&rsi,&rdi,&r8,&r15)@nop' \
-    'call entry(op[0],src[0],dst[0],op[1],src[1],dst[1])@nop' \
+    'call entry(asmStr,instr,rflags,rdi,rip,addr,target,next)@nop' \
+    'call entry(&rsp,&rax,&rsi,&rdi,&r8,&r15,staticAddr,0x1234)@nop' \
+    'call entry(op[0],src[0],dst[0],op[1],src[1],dst[1],dst[7],src[7])@nop' \
     'plugin[example]' \
     'print'
 do

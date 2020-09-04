@@ -246,7 +246,7 @@ Several arguments are supported:
   the matching, and `index` is a column index.
   Note that the matching must select a unique row.
 
-Note that the current E9Tool supports a maximum of 6 arguments.
+Note that the current E9Tool supports a maximum of 8 arguments.
 
 ---
 ## <a id="json-rpc-interface">2. E9Patch JSON-RPC API</a>

@@ -37,7 +37,7 @@ static char *hex_to_str(intptr_t x, char *str)
  * call entry(...)
  */
 void entry(intptr_t arg1, intptr_t arg2, intptr_t arg3, intptr_t arg4,
-    intptr_t arg5, intptr_t arg6)
+    intptr_t arg5, intptr_t arg6, intptr_t arg7, intptr_t arg8)
 {
     char buf[512];
     char *str = buf;
@@ -54,6 +54,10 @@ void entry(intptr_t arg1, intptr_t arg2, intptr_t arg3, intptr_t arg4,
     str = hex_to_str(arg5, str);
     str = str_cat(" \33[0m", str);
     str = hex_to_str(arg6, str);
+    str = str_cat(" \33[33m", str);
+    str = hex_to_str(arg7, str);
+    str = str_cat(" \33[0m", str);
+    str = hex_to_str(arg8, str);
     *str++ = '\n';
 
     register const char *str_ptr asm("rsi") = buf;

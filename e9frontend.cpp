@@ -68,6 +68,20 @@ using namespace e9frontend;
 #define RMAX_IDX        17
 
 /*
+ * Get argument register index.
+ */
+static int getArgRegIdx(int argno)
+{
+    if (argno <= R9_IDX)
+        return argno;
+    if (argno == RFLAGS_IDX)
+        return R10_IDX;
+    if (argno == RAX_IDX)
+        return R11_IDX;
+    return -1;
+}
+
+/*
  * Convert an argument into a register.
  */
 static x86_reg getReg(ArgumentKind arg)
@@ -559,6 +573,7 @@ struct CallInfo
      */
     void use(x86_reg reg)
     {
+        assert(reg != X86_REG_RAX && reg != X86_REG_EFLAGS);
         setUsed(reg, true);
     }
 

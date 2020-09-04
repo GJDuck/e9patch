@@ -1604,7 +1604,8 @@ static void usage(FILE *stream, const char *progname)
         stream);
     fputs("\t\t\t    Note that the matching must select a unique row.\n",
         stream);
-    fputs("\t\t\t  NOTE: a maximum of 6 arguments are supported.\n", stream);
+    fprintf(stream, "\t\t\t  NOTE: a maximum of %d arguments are supported.\n",
+        MAX_ARGNO);
     fputs("\t\t\t- FUNCTION is the name of the function to call from\n",
         stream);
     fputs("\t\t\t  the binary.\n", stream);

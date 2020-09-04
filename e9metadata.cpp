@@ -84,7 +84,7 @@ static int getOperandIdx(const cs_insn *I, ArgumentKind arg)
  * Temporarily restore a register.
  */
 static void sendTemporaryRestoreReg(FILE *out, CallInfo &info, x86_reg reg,
-    int argno, int slot)
+    int slot)
 {
     if (!info.isClobbered(reg))
         return;
@@ -106,7 +106,7 @@ static void sendTemporaryRestoreReg(FILE *out, CallInfo &info, x86_reg reg,
  * Undo sendTemporaryRestoreReg().
  */
 static void sendUndoTemporaryRestoreReg(FILE *out, const CallInfo &info,
-    x86_reg reg, int argno, int slot)
+    x86_reg reg, int slot)
 {
     if (!info.isClobbered(reg))
         return;
@@ -189,8 +189,8 @@ static void sendLoadFromConvertedMemToR64(FILE *out, const cs_insn *I,
     x86_reg base_reg = op->mem.base;
     x86_reg index_reg = op->mem.index;
 
-    sendTemporaryRestoreReg(out, info, base_reg, regno, 1);
-    sendTemporaryRestoreReg(out, info, index_reg, regno, 2);
+    sendTemporaryRestoreReg(out, info, base_reg, 1);
+    sendTemporaryRestoreReg(out, info, index_reg, 2);
 
     intptr_t disp0 = disp;
     if (base_reg == X86_REG_RSP || base_reg == X86_REG_ESP)
@@ -243,13 +243,13 @@ static void sendLoadFromConvertedMemToR64(FILE *out, const cs_insn *I,
     else if (mod == 0x2 || (mod == 0x0 && base == 0x5))
         fprintf(out, "{\"int32\":%d},", (int32_t)disp);
 
-    sendUndoTemporaryRestoreReg(out, info, base_reg, regno, 1);
-    sendUndoTemporaryRestoreReg(out, info, index_reg, regno, 2);
+    sendUndoTemporaryRestoreReg(out, info, base_reg, 1);
+    sendUndoTemporaryRestoreReg(out, info, index_reg, 2);
 }
 
 /*
  * Emits instructions to load an operand into the corresponding
- * argno register.  If the operand does not exist, load -1.
+ * regno register.  If the operand does not exist, load -1.
  */
 static void sendLoadOperandMetadata(FILE *out, const cs_insn *I,
     unsigned idx, CallInfo &info, int argno)
@@ -481,7 +481,7 @@ static void sendLoadNextMetadata(FILE *out, const cs_insn *I, CallInfo &info,
         {
             // Special handling for jecxz/jrcxz.  This is similar to other
             // jcc instructions (see below), except we must restore %rcx:
-            sendTemporaryRestoreReg(out, info, X86_REG_RCX, argno, 1);
+            sendTemporaryRestoreReg(out, info, X86_REG_RCX, 1);
             if (I->id == X86_INS_JECXZ)
                 fprintf(out, "%u,", 0x67);
             fprintf(out, "%u,{\"rel8\":\".Ltaken%s\"},", 0xe3, regname);
@@ -490,7 +490,7 @@ static void sendLoadNextMetadata(FILE *out, const cs_insn *I, CallInfo &info,
             fprintf(out, "\".Ltaken%s\",", regname);
             sendLoadTargetMetadata(out, I, info, argno);
             fprintf(out, "\".Lnext%s\",", regname);
-            sendUndoTemporaryRestoreReg(out, info, X86_REG_RCX, argno, 1);
+            sendUndoTemporaryRestoreReg(out, info, X86_REG_RCX, 1);
             return;
         }
         default:
@@ -679,63 +679,69 @@ static void sendLoadArgumentMetadata(FILE *out, CallInfo &info,
     const Action *action, const Argument &arg, const cs_insn *I, off_t offset,
     int argno)
 {
+    int regno = getArgRegIdx(argno);
+    if (regno < 0)
+        error("failed to load argument; call instrumentation exceeds the "
+            "maximum number of arguments (%d)", argno);
+    sendSaveRegToStack(out, info, getReg(regno));
+
     switch (arg.kind)
     {
         case ARGUMENT_USER:
         {
             intptr_t value = lookupValue(action, I, offset, arg.name,
                 arg.value);
-            sendLoadValueMetadata(out, value, argno);
+            sendLoadValueMetadata(out, value, regno);
             break;
         }
         case ARGUMENT_INTEGER:
-            sendLoadValueMetadata(out, arg.value, argno);
+            sendLoadValueMetadata(out, arg.value, regno);
             break;
         case ARGUMENT_OFFSET:
-            sendLoadValueMetadata(out, offset, argno);
+            sendLoadValueMetadata(out, offset, regno);
             break;
         case ARGUMENT_ADDR:
-            sendLeaFromPCRelToR64(out, "{\"rel32\":\".Linstruction\"}", argno);
+            sendLeaFromPCRelToR64(out, "{\"rel32\":\".Linstruction\"}", regno);
             break;
         case ARGUMENT_NEXT:
             if (action->before || action->replace)
-                sendLoadTargetMetadata(out, I, info, argno);
+                sendLoadTargetMetadata(out, I, info, regno);
             else
             {
                 // If we reach here after the instruction, it means the branch
                 // was NOT taken, so (next=.Lcontinue).
                 sendLeaFromPCRelToR64(out, "{\"rel32\":\".Lcontinue\"}",
-                    argno);
+                    regno);
             }
             break;
         case ARGUMENT_BASE:
-            sendLeaFromPCRelToR64(out, "{\"rel32\":0}", argno);
+            sendLeaFromPCRelToR64(out, "{\"rel32\":0}", regno);
             break;
         case ARGUMENT_STATIC_ADDR:
-            sendLoadValueMetadata(out, (intptr_t)I->address, argno);
+            sendLoadValueMetadata(out, (intptr_t)I->address, regno);
             break;
         case ARGUMENT_ASM_STR:
-            sendLeaFromPCRelToR64(out, "{\"rel32\":\".LasmStr\"}", argno);
+            sendLeaFromPCRelToR64(out, "{\"rel32\":\".LasmStr\"}", regno);
             break;
         case ARGUMENT_ASM_STR_LEN:
         {
             intptr_t len = strlen(I->mnemonic);
             if (I->op_str[0] != '\0')
                 len += strlen(I->op_str) + 1;
-            sendLoadValueMetadata(out, len, argno);
+            sendLoadValueMetadata(out, len, regno);
             break;
         }
         case ARGUMENT_BYTES:
-            sendLeaFromPCRelToR64(out, "{\"rel32\":\".Lbytes\"}", argno);
+            sendLeaFromPCRelToR64(out, "{\"rel32\":\".Lbytes\"}", regno);
             break;
         case ARGUMENT_BYTES_LEN:
-            sendLoadValueMetadata(out, I->size, argno);
+            sendLoadValueMetadata(out, I->size, regno);
             break;
         case ARGUMENT_TARGET:
-            sendLoadTargetMetadata(out, I, info, argno);
+            sendLoadTargetMetadata(out, I, info, regno);
             break;
         case ARGUMENT_TRAMPOLINE:
-            sendLeaFromPCRelToR64(out, "{\"rel32\":\".Ltrampoline\"}", argno);
+            sendLeaFromPCRelToR64(out, "{\"rel32\":\".Ltrampoline\"}", regno);
             break;
         case ARGUMENT_RAX: case ARGUMENT_RBX: case ARGUMENT_RCX:
         case ARGUMENT_RDX: case ARGUMENT_RBP: case ARGUMENT_RDI:
@@ -744,33 +750,34 @@ static void sendLoadArgumentMetadata(FILE *out, CallInfo &info,
         case ARGUMENT_R13: case ARGUMENT_R14: case ARGUMENT_R15:
         {
             x86_reg reg = getReg(arg.kind);
-            if (info.isClobbered(getReg(argno)))
-                sendMovFromStackToR64(out, info.getOffset(reg), argno);
+            if (info.isClobbered(reg))
+                sendMovFromStackToR64(out, info.getOffset(reg), regno);
             else
-                sendMovFromR64ToR64(out, getRegIdx(reg), argno);
+                sendMovFromR64ToR64(out, getRegIdx(reg), regno);
             break;
         }
         case ARGUMENT_RIP:
             if (action->before || action->replace)
                 sendLeaFromPCRelToR64(out, "{\"rel32\":\".Linstruction\"}",
-                    argno);
+                    regno);
             else
                 sendLeaFromPCRelToR64(out, "{\"rel32\":\".Lcontinue\"}",
-                    argno);
+                    regno);
             break;
         case ARGUMENT_RSP:
-            sendLeaFromStackToR64(out, info.rsp_offset, argno);
+            sendLeaFromStackToR64(out, info.rsp_offset, regno);
             break;
         case ARGUMENT_RFLAGS:
             if (info.isSaved(X86_REG_EFLAGS))
                 sendMovFromStack16ToR64(out, info.getOffset(X86_REG_EFLAGS),
-                    argno);
+                    regno);
             else
             {
                 sendSaveRegToStack(out, info, X86_REG_RAX);
                 fprintf(out, "%u,%u,%u,", 0x0f, 0x90, 0xc0);// seto   %al
                 fprintf(out, "%u,", 0x9f);                  // lahf
-                sendMovFromRAX16ToR64(out, argno);
+                info.clobber(X86_REG_RAX);
+                sendMovFromRAX16ToR64(out, regno);
             }
             break;
         case ARGUMENT_RAX_PTR: case ARGUMENT_RBX_PTR: case ARGUMENT_RCX_PTR:
@@ -782,7 +789,7 @@ static void sendLoadArgumentMetadata(FILE *out, CallInfo &info,
         {
             x86_reg reg = getReg(arg.kind);
             sendSaveRegToStack(out, info, reg);
-            sendLeaFromStackToR64(out, info.getOffset(reg), argno);
+            sendLeaFromStackToR64(out, info.getOffset(reg), regno);
             break;
         }
         case ARGUMENT_OPERAND_0: case ARGUMENT_OPERAND_1:
@@ -800,14 +807,14 @@ static void sendLoadArgumentMetadata(FILE *out, CallInfo &info,
         {
             int idx = getOperandIdx(I, arg.kind);
             assert(idx >= 0);
-            sendLoadOperandMetadata(out, I, idx, info, argno);
+            sendLoadOperandMetadata(out, I, idx, info, regno);
             break;
         }
         default:
             error("NYI argument (%d)", arg.kind);
     }
-    info.clobber(getReg(argno));
-    info.use(getReg(argno));
+    info.clobber(getReg(regno));
+    info.use(getReg(regno));
 }
 
 /*
@@ -847,7 +854,7 @@ static void sendArgumentDataMetadata(FILE *out, const Argument &arg,
         {
             int idx = getOperandIdx(I, arg.kind);
             assert(idx >= 0);
-            sendOperandDataMetadata(out, I, idx, argno);
+            sendOperandDataMetadata(out, I, idx, getArgRegIdx(argno));
             break;
         }
         default:
@@ -915,13 +922,26 @@ static Metadata *buildMetadata(const Action *action, const cs_insn *I,
                     argno);
                 argno++;
             }
+            argno = 0;
+            int32_t rsp_args_offset = 0;
+            for (int argno = 0; argno < (int)action->args.size(); argno++)
+            {
+                // Send stack arguments:
+                int regno = getArgRegIdx(argno);
+                if (regno != argno)
+                {
+                    sendPush(out, info.rsp_offset, getReg(regno));
+                    rsp_args_offset += sizeof(int64_t);
+                }
+            }
             for (int regno = info.rmin; regno < RMAX_IDX; regno++)
             {
                 if (info.isClobbered(getReg(regno)))
                 {
                     // Restore clobbered caller-save register:
-                    sendMovFromStackToR64(out, info.getOffset(getReg(regno)),
-                        regno);
+                    int32_t reg_offset = rsp_args_offset;
+                    reg_offset += info.getOffset(getReg(regno));
+                    sendMovFromStackToR64(out, reg_offset, regno);
                 }
             }
             int i = 0;
@@ -931,6 +951,12 @@ static Metadata *buildMetadata(const Action *action, const cs_insn *I,
             i++;
 
             // STEP (2): Restore state.
+            if (rsp_args_offset != 0)
+            {
+                // lea rsp_args_offset(%rsp),%rsp
+                fprintf(out, "%u,%u,%u,%u,{\"int32\":%d},",
+                    0x48, 0x8d, 0xa4, 0x24, rsp_args_offset);
+            }
             bool pop_rsp = false;
             for (int i = (int)info.pushed.size()-1; i >= info.rmin; i--)
             {

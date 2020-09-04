@@ -28,7 +28,7 @@
 
 #define NO_RETURN       __attribute__((__noreturn__))
 
-#define MAX_ARGNO       6
+#define MAX_ARGNO       8
 
 namespace e9frontend
 {
