@@ -110,6 +110,20 @@ enum MatchKind
     MATCH_RANDOM,
     MATCH_RETURN,
     MATCH_SIZE,
+
+    MATCH_OP,
+    MATCH_SRC,
+    MATCH_DST,
+};
+
+/*
+ * Match fields.
+ */
+enum MatchField
+{
+    MATCH_FIELD_NONE,
+    MATCH_FIELD_LENGTH,
+    MATCH_FIELD_SIZE
 };
 
 /*
@@ -147,9 +161,11 @@ enum ActionKind
 struct MatchEntry
 {
     const std::string string;
-    const MatchKind match;
-    const MatchCmp  cmp;
-    const char *basename;
+    const MatchKind   match;
+    const int         idx;
+    const MatchField  field;
+    const MatchCmp    cmp;
+    const char *      basename;
     Plugin * const plugin;
     union
     {
@@ -159,15 +175,17 @@ struct MatchEntry
     };
 
     MatchEntry(MatchEntry &&entry) :
-        string(std::move(entry.string)), match(entry.match), cmp(entry.cmp),
+        string(std::move(entry.string)), match(entry.match),
+        field(entry.field), idx(entry.idx), cmp(entry.cmp),
         basename(entry.basename), plugin(entry.plugin)
     {
         data = entry.data;
     }
 
-    MatchEntry(MatchKind match, MatchCmp cmp, const char *s,
-            Plugin *plugin, const char *basename) :
-        string(s), match(match), cmp(cmp), basename(basename), plugin(plugin)
+    MatchEntry(MatchKind match, int idx, MatchField field, MatchCmp cmp,
+            const char *s, Plugin *plugin, const char *basename) :
+        string(s), match(match), field(field), idx(idx), cmp(cmp),
+        basename(basename), plugin(plugin)
     {
         data = nullptr;
     }
@@ -307,6 +325,7 @@ struct Parser
 {
     const char * const buf;
     size_t i = 0;
+    char peek = EOF;
     char s[BUFSIZ+1];
 
     Parser(const char *buf) : buf(buf)
@@ -316,15 +335,22 @@ struct Parser
 
     char getToken()
     {
+        if (peek != EOF)
+        {
+            char c = peek;
+            peek = EOF;
+            return c;
+        }
         char c = buf[i];
         while (isspace(c))
             c = buf[++i];
         switch (c)
         {
             case '\0':
-                return (s[0] = '\0');
+                strcpy(s, "<end-of-input>");
+                return '\0';
             case '[': case ']': case '@': case ',': case '(': case ')':
-            case '&':
+            case '&': case '.':
                 s[0] = c; s[1] = '\0';
                 i++;
                 return c;
@@ -352,6 +378,14 @@ struct Parser
         }
         s[0] = c; s[1] = '\0';
         return EOF;
+    }
+
+    char peekToken()
+    {
+        if (peek != EOF)
+            return peek;
+        peek = getToken();
+        return peek;
     }
 };
 
@@ -414,6 +448,28 @@ static void parseValues(const char *s, Index<intptr_t> &values)
 }
 
 /*
+ * Parse and index.
+ */
+static intptr_t parseIndex(Parser &parser, const char *kind, intptr_t lb,
+    intptr_t ub)
+{
+    if (parser.getToken() != '[')
+        error("failed to parse %s; expected `[', found `%s'", kind, parser.s);
+    intptr_t idx;
+    parser.getToken();
+    const char *end = parseInt(parser.s, idx);
+    if (end == nullptr || *end != '\0')
+        error("failed to parse %s; expected index, found `%s'", kind,
+            parser.s);
+    if (parser.getToken() != ']')
+        error("failed to parse %s; expected `]', found `%s'", kind, parser.s);
+    if (idx < lb || idx > ub)
+        error("failed to parse %s; expected index within the range "
+            "%ld..%ld, found %ld", kind, lb, ub, idx);
+    return idx;
+}
+
+/*
  * Parse a match.
  */
 static void parseMatch(const char *str, MatchEntries &entries)
@@ -441,6 +497,10 @@ static void parseMatch(const char *str, MatchEntries &entries)
             if (strcmp(parser.s, "call") == 0)
                 match = MATCH_CALL;
             break;
+        case 'd':
+            if (strcmp(parser.s, "dst") == 0)
+                match = MATCH_DST;
+            break;
         case 'f':
             if (strcmp(parser.s, "false") == 0)
                 match = MATCH_FALSE;
@@ -456,6 +516,8 @@ static void parseMatch(const char *str, MatchEntries &entries)
         case 'o':
             if (strcmp(parser.s, "offset") == 0)
                 match = MATCH_OFFSET;
+            else if (strcmp(parser.s, "op") == 0)
+                match = MATCH_OP;
             break;
         case 'p':
             if (strcmp(parser.s, "plugin") == 0)
@@ -470,6 +532,8 @@ static void parseMatch(const char *str, MatchEntries &entries)
         case 's':
             if (strcmp(parser.s, "size") == 0)
                 match = MATCH_SIZE;
+            else if (strcmp(parser.s, "src") == 0)
+                match = MATCH_SRC;
             break;
         case 't':
             if (strcmp(parser.s, "true") == 0)
@@ -478,6 +542,8 @@ static void parseMatch(const char *str, MatchEntries &entries)
     }
     std::string attrib(parser.s);
     Plugin *plugin = nullptr;
+    int idx = -1;
+    MatchField field = MATCH_FIELD_NONE;
     switch (match)
     {
         case MATCH_INVALID:
@@ -501,6 +567,36 @@ static void parseMatch(const char *str, MatchEntries &entries)
                     plugin->filename);
             break;
         }
+        case MATCH_OP: case MATCH_SRC: case MATCH_DST:
+            switch (parser.peekToken())
+            {
+                case '.':
+                    break;
+                case '[':
+                    idx = (unsigned)parseIndex(parser, "matching", 0, 7);
+                    break;
+                default:
+                    error("failed to parse matching; expected `.' or `[', "
+                        "found `%s'", parser.s);
+            }
+            if (parser.getToken() != '.')
+                error("failed to parse matching; expected `.', found `%s'",
+                    parser.s);
+            switch (parser.getToken())
+            {
+                case 'l':
+                    if (strcmp(parser.s, "length") == 0)
+                        field = MATCH_FIELD_LENGTH;
+                    break;
+                case 's':
+                    if (strcmp(parser.s, "size") == 0)
+                        field = MATCH_FIELD_SIZE;
+                    break;
+            }
+            if (field == MATCH_FIELD_NONE)
+                error("failed to parse matching; expected field, found `%s'",
+                    parser.s);
+            break;
         default:
             break;
     }
@@ -569,10 +665,8 @@ static void parseMatch(const char *str, MatchEntries &entries)
                     "comparison operator `%s' for attribute `%s'",
                     parser.s, attrib.c_str());
             break;
-        case MATCH_CALL:
-        case MATCH_JUMP:
-        case MATCH_RETURN:
-        case MATCH_PLUGIN:
+        case MATCH_CALL: case MATCH_JUMP: case MATCH_RETURN: case MATCH_PLUGIN:
+        case MATCH_OP: case MATCH_SRC: case MATCH_DST:
             option_detail = true;
             break;
         default:
@@ -583,7 +677,7 @@ static void parseMatch(const char *str, MatchEntries &entries)
     for (; isspace(*rhs); rhs++)
         ;
  
-    MatchEntry entry(match, cmp, str, plugin, nullptr);
+    MatchEntry entry(match, idx, field, cmp, str, plugin, nullptr);
     switch (match)
     {
         case MATCH_ASSEMBLY:
@@ -591,15 +685,10 @@ static void parseMatch(const char *str, MatchEntries &entries)
             entry.regex = new std::regex(rhs);
             entries.push_back(std::move(entry));
             return;
-        case MATCH_TRUE:
-        case MATCH_FALSE:
-        case MATCH_ADDRESS:
-        case MATCH_CALL:
-        case MATCH_JUMP:
-        case MATCH_OFFSET:
-        case MATCH_PLUGIN:
-        case MATCH_RANDOM:
-        case MATCH_RETURN:
+        case MATCH_TRUE: case MATCH_FALSE: case MATCH_ADDRESS:
+        case MATCH_CALL: case MATCH_JUMP: case MATCH_OFFSET:
+        case MATCH_OP: case MATCH_SRC: case MATCH_DST:
+        case MATCH_PLUGIN: case MATCH_RANDOM: case MATCH_RETURN:
         case MATCH_SIZE:
             if (cmp == MATCH_CMP_EQ_ZERO || cmp == MATCH_CMP_NEQ_ZERO)
             {
@@ -618,18 +707,7 @@ static void parseMatch(const char *str, MatchEntries &entries)
         entry.basename = strDup(parser.s);
         std::string filename(parser.s);
         filename += ".csv";
-        if (parser.getToken() != '[')
-            error("failed to parse matching; expected `[', found `%s'",
-                parser.s);
-        intptr_t idx;
-        parser.getToken();
-        const char *end = parseInt(parser.s, idx);
-        if (end == nullptr || *end != '\0')
-            error("failed to parse matching; expected CSV index, found `%s'",
-                parser.s);
-        if (parser.getToken() != ']')
-            error("failed to parse matching; expected `]', found `%s'",
-                parser.s);
+        intptr_t idx = parseIndex(parser, "matching", INTPTR_MIN, INTPTR_MAX);
         if (parser.getToken() != '\0')
             error("failed to parse matching; expected end-of-input, found "
                 "`%s'", parser.s);
@@ -779,6 +857,15 @@ static Action *parseAction(const char *str, MatchEntries &entries)
                         if (strcmp(s, "base") == 0)
                             arg = ARGUMENT_BASE;
                         break;
+                    case 'd':
+                        if (strcmp(s, "dst") == 0)
+                        {
+                            option_detail = true;
+                            intptr_t idx = parseIndex(parser, "action", 0, 7);
+                            arg = (ArgumentKind)
+                                ((intptr_t)ARGUMENT_DST_0 + idx);
+                        }
+                        break;
                     case 'i':
                         if (strcmp(s, "instr") == 0)
                             arg = ARGUMENT_BYTES;
@@ -795,6 +882,13 @@ static Action *parseAction(const char *str, MatchEntries &entries)
                     case 'o':
                         if (strcmp(s, "offset") == 0)
                             arg = ARGUMENT_OFFSET;
+                        else if (strcmp(s, "op") == 0)
+                        {
+                            option_detail = true;
+                            intptr_t idx = parseIndex(parser, "action", 0, 7);
+                            arg = (ArgumentKind)
+                                ((intptr_t)ARGUMENT_OPERAND_0 + idx);
+                        }
                         break;
                     case 'r':
                         if (strcmp(s, "rax") == 0)
@@ -828,7 +922,7 @@ static Action *parseAction(const char *str, MatchEntries &entries)
                         else if (strcmp(s, "r15") == 0)
                             arg = (ptr? ARGUMENT_R15_PTR: ARGUMENT_R15);
                         else if (strcmp(s, "rflags") == 0)
-                            arg = ARGUMENT_RFLAGS;
+                            arg = (ptr? ARGUMENT_RFLAGS_PTR: ARGUMENT_RFLAGS);
                         else if (strcmp(s, "rip") == 0)
                             arg = ARGUMENT_RIP;
                         else if (strcmp(s, "rsp") == 0)
@@ -837,6 +931,13 @@ static Action *parseAction(const char *str, MatchEntries &entries)
                     case 's':
                         if (strcmp(s, "staticAddr") == 0)
                             arg = ARGUMENT_STATIC_ADDR;
+                        else if (strcmp(s, "src") == 0)
+                        {
+                            option_detail = true;
+                            intptr_t idx = parseIndex(parser, "action", 0, 7);
+                            arg = (ArgumentKind)
+                                ((intptr_t)ARGUMENT_SRC_0 + idx);
+                        }
                         break;
                     case 't':
                         if (strcmp(s, "target") == 0)
@@ -868,6 +969,7 @@ static Action *parseAction(const char *str, MatchEntries &entries)
                     case ARGUMENT_R10_PTR: case ARGUMENT_R11_PTR:
                     case ARGUMENT_R12_PTR: case ARGUMENT_R13_PTR:
                     case ARGUMENT_R14_PTR: case ARGUMENT_R15_PTR:
+                    case ARGUMENT_RFLAGS_PTR:
                         break;
                     default:
                         if (ptr)
@@ -889,19 +991,8 @@ static Action *parseAction(const char *str, MatchEntries &entries)
                         }
                     }
                     if (arg == ARGUMENT_USER)
-                    {
-                        if (parser.getToken() != '[')
-                            error("failed to parse call action; expected "
-                                "`[', found `%s'", parser.s);
-                        parser.getToken();
-                        const char *end = parseInt(parser.s, value);
-                        if (end == nullptr || *end != '\0')
-                            error("failed to parse call action; expected "
-                                "integer, found `%s'", parser.s);
-                        if (parser.getToken() != ']')
-                            error("failed to parse call action; expected "
-                                "`]', found `%s'", parser.s);
-                    }
+                        value = parseIndex(parser, "action", INTPTR_MIN,
+                            INTPTR_MAX);
                 }
                 if (arg == ARGUMENT_INVALID)
                     error("failed to parse call action; expected call "
@@ -1016,12 +1107,55 @@ static const char *makeMatchString(MatchKind match, const cs_insn *I,
 }
 
 /*
+ * Get an operand.
+ */
+static const cs_x86_op *getOperand(const cs_insn *I, int idx, uint8_t access)
+{
+    const cs_x86 *x86 = &I->detail->x86;
+    for (uint8_t i = 0; i < x86->op_count; i++)
+    {
+        const cs_x86_op *op = x86->operands + i;
+        if ((op->access & access) != 0 ||
+            (op->type == X86_OP_IMM && (access & CS_AC_READ) != 0))
+        {
+            if (idx == 0)
+                return op;
+            idx--;
+        }
+    }
+    return nullptr;
+}
+
+/*
+ * Get number of operands.
+ */
+static intptr_t getNumOperands(const cs_insn *I, uint8_t access)
+{
+    const cs_x86 *x86 = &I->detail->x86;
+    if (access == (CS_AC_READ | CS_AC_WRITE))
+        return (intptr_t)x86->op_count;
+    intptr_t n = 0;
+    for (uint8_t i = 0; i < x86->op_count; i++)
+    {
+        const cs_x86_op *op = x86->operands + i;
+        if ((op->access & access) != 0 ||
+            (op->type == X86_OP_IMM && (access & CS_AC_READ) != 0))
+        {
+            n++;
+        }
+    }
+    return n;
+}
+
+/*
  * Create match value.
  */
-static intptr_t makeMatchValue(MatchKind match, const cs_insn *I,
-    intptr_t offset, intptr_t result)
+static intptr_t makeMatchValue(MatchKind match, int idx, MatchField field,
+    const cs_insn *I, intptr_t offset, intptr_t result)
 {
     const cs_detail *detail = I->detail;
+    const cs_x86_op *op     = nullptr;
+    uint8_t access = 0;
     switch (match)
     {
         case MATCH_TRUE:
@@ -1040,6 +1174,35 @@ static intptr_t makeMatchValue(MatchKind match, const cs_insn *I,
                 if (detail->groups[i] == CS_GRP_JUMP)
                     return 1;
             return 0;
+        case MATCH_OP: case MATCH_SRC: case MATCH_DST:
+            access = (match != MATCH_DST? CS_AC_READ: 0) |
+                     (match != MATCH_SRC? CS_AC_WRITE: 0);
+            if (idx < 0)
+            {
+                switch (field)
+                {
+                    case MATCH_FIELD_LENGTH:
+                        return getNumOperands(I, access);
+                    case MATCH_FIELD_SIZE:
+                    case MATCH_FIELD_NONE:
+                        return -1;
+                }
+            }
+            else
+            {
+                op = getOperand(I, idx, access);
+                if (op == nullptr)
+                    return -1;
+                switch (field)
+                {
+                    case MATCH_FIELD_SIZE:
+                        return (intptr_t)op->size;
+                    case MATCH_FIELD_LENGTH:
+                    case MATCH_FIELD_NONE:
+                        return -1;
+                }
+            }
+            return -1;
         case MATCH_OFFSET:
             return offset;
         case MATCH_PLUGIN:
@@ -1064,9 +1227,19 @@ static intptr_t makeMatchValue(MatchKind match, const cs_insn *I,
 static bool matchAction(csh handle, const Action *action, const cs_insn *I,
     intptr_t offset)
 {
+    if (option_debug)
+    {
+        fprintf(stderr, "%s0x%lx%s [%s%s%s]:",
+            (option_is_tty? "\33[36m": ""),
+            I->address,
+            (option_is_tty? "\33[0m": ""),
+            I->mnemonic,
+            (I->op_str[0] == '\0'? "": " "),
+            I->op_str);
+    }
+    bool pass = false;
     for (auto &entry: action->entries)
     {
-        bool pass = false;
         switch (entry.match)
         {
             case MATCH_ASSEMBLY:
@@ -1080,22 +1253,18 @@ static bool matchAction(csh handle, const Action *action, const cs_insn *I,
                 pass = (entry.cmp == MATCH_CMP_NEQ? !pass: pass);
                 break;
             }
-            case MATCH_TRUE:
-            case MATCH_FALSE:
-            case MATCH_ADDRESS:
-            case MATCH_CALL:
-            case MATCH_JUMP:
-            case MATCH_OFFSET:
-            case MATCH_PLUGIN:
-            case MATCH_RANDOM:
-            case MATCH_RETURN:
+            case MATCH_TRUE: case MATCH_FALSE: case MATCH_ADDRESS:
+            case MATCH_CALL: case MATCH_JUMP: case MATCH_OFFSET:
+            case MATCH_OP: case MATCH_SRC: case MATCH_DST:
+            case MATCH_PLUGIN: case MATCH_RANDOM: case MATCH_RETURN:
             case MATCH_SIZE:
             {
                 if (entry.cmp != MATCH_CMP_EQ_ZERO &&
                     entry.cmp != MATCH_CMP_NEQ_ZERO &&
                         entry.values->size() == 0)
                     break;
-                intptr_t x = makeMatchValue(entry.match, I, offset,
+                intptr_t x = makeMatchValue(entry.match, entry.idx,
+                    entry.field, I, offset,
                     (entry.match == MATCH_PLUGIN? entry.plugin->result: 0));
                 switch (entry.cmp)
                 {
@@ -1130,34 +1299,32 @@ static bool matchAction(csh handle, const Action *action, const cs_insn *I,
                 }
                 break;
             }
-            default:
+            case MATCH_INVALID:
                 return false;
         }
+        if (option_debug)
+        {
+            fprintf(stderr, " [%s%s%s]",
+                (option_is_tty? (pass? "\33[32m": "\33[31m"): ""),
+                entry.string.c_str(),
+                (option_is_tty? "\33[0m": ""));
+        }
         if (!pass)
-            return false;
+            break;
     }
     if (option_debug)
     {
-        fprintf(stderr, "%s0x%lx%s: match ",
-            (option_is_tty? "\33[32m": ""),
-            I->address,
-            (option_is_tty? "\33[0m": ""));
-        bool prev = false;
-        for (auto &entry: action->entries)
+        if (!pass)
         {
-            fprintf(stderr, "%s%s%s%s ",
-                (prev? "and ": ""),
-                (option_is_tty? "\33[33m": ""),
-                entry.string.c_str(),
-                (option_is_tty? "\33[0m": ""));
-            prev = true;
+            fputc('\n', stderr);
+            return false;
         }
-        fprintf(stderr, "action %s%s%s\n",
+        fprintf(stderr, " action %s%s%s\n",
             (option_is_tty? "\33[33m": ""),
             action->string.c_str(),
             (option_is_tty? "\33[0m": ""));
     }
-    return true;
+    return pass;
 }
 
 /*

@@ -622,7 +622,7 @@ type_error:
         {
             expectToken(parser, TOKEN_STRING);
             uint8_t *bs = (uint8_t *)dupString(parser.s, /*cache=*/false);
-            entry.length = strlen(parser.s);
+            entry.length = strlen(parser.s)+1;
             entry.bytes  = bs;
             break;
         }

@@ -29,6 +29,8 @@ for ACTION in \
     'call entry@nop' \
     'call[naked,after] entry@nop' \
     'call entry(asmStr,instr,rflags,rdi,rip,addr)@nop' \
+    'call entry(&rsp,&rax,&rsi,&rdi,&r8,&r15)@nop' \
+    'call entry(op[0],src[0],dst[0],op[1],src[1],dst[1])@nop' \
     'plugin[example]' \
     'print'
 do
