@@ -323,12 +323,13 @@ static void finiPlugins(FILE *out, const ELF *elf)
  */
 struct Parser
 {
+    const char * const mode;
     const char * const buf;
     size_t i = 0;
     char peek = EOF;
     char s[BUFSIZ+1];
 
-    Parser(const char *buf) : buf(buf)
+    Parser(const char *buf, const char *mode) : buf(buf), mode(mode)
     {
         ;
     }
@@ -386,6 +387,13 @@ struct Parser
             return peek;
         peek = getToken();
         return peek;
+    }
+
+    void expectToken(char c)
+    {
+        if (getToken() != c)
+            error("failed to parse %s; expected token `%c', found `%s'",
+                mode, c, s);
     }
 };
 
@@ -450,22 +458,19 @@ static void parseValues(const char *s, Index<intptr_t> &values)
 /*
  * Parse and index.
  */
-static intptr_t parseIndex(Parser &parser, const char *kind, intptr_t lb,
-    intptr_t ub)
+static intptr_t parseIndex(Parser &parser, intptr_t lb, intptr_t ub)
 {
-    if (parser.getToken() != '[')
-        error("failed to parse %s; expected `[', found `%s'", kind, parser.s);
+    parser.expectToken('[');
     intptr_t idx;
     parser.getToken();
     const char *end = parseInt(parser.s, idx);
     if (end == nullptr || *end != '\0')
-        error("failed to parse %s; expected index, found `%s'", kind,
+        error("failed to parse %s; expected index, found `%s'", parser.mode,
             parser.s);
-    if (parser.getToken() != ']')
-        error("failed to parse %s; expected `]', found `%s'", kind, parser.s);
+    parser.expectToken(']');
     if (idx < lb || idx > ub)
         error("failed to parse %s; expected index within the range "
-            "%ld..%ld, found %ld", kind, lb, ub, idx);
+            "%ld..%ld, found %ld", parser.mode, lb, ub, idx);
     return idx;
 }
 
@@ -474,7 +479,7 @@ static intptr_t parseIndex(Parser &parser, const char *kind, intptr_t lb,
  */
 static void parseMatch(const char *str, MatchEntries &entries)
 {
-    Parser parser(str);
+    Parser parser(str, "matching");
     MatchKind match = MATCH_INVALID;
     bool neg = false;
     char c = parser.getToken();
@@ -551,16 +556,12 @@ static void parseMatch(const char *str, MatchEntries &entries)
                 parser.s);
         case MATCH_PLUGIN:
         {
-            if (parser.getToken() != '[')
-                error("failed to parse matching; expected `[', found `%s'",
-                    parser.s);
+            parser.expectToken('[');
             if (!isalpha(parser.getToken()))
                 error("failed to parse matching; expected plugin name, found "
                     "`%s'", parser.s);
             plugin = openPlugin(parser.s);
-            if (parser.getToken() != ']')
-                error("failed to parse matching; expected `]', found `%s'",
-                    parser.s);
+            parser.expectToken(']');
             if (plugin->instrFunc == nullptr)
                 error("failed to parse matching; plugin \"%s\" does not "
                     "export the \"e9_plugin_instr_v1\" function",
@@ -573,15 +574,13 @@ static void parseMatch(const char *str, MatchEntries &entries)
                 case '.':
                     break;
                 case '[':
-                    idx = (unsigned)parseIndex(parser, "matching", 0, 7);
+                    idx = (unsigned)parseIndex(parser, 0, 7);
                     break;
                 default:
                     error("failed to parse matching; expected `.' or `[', "
                         "found `%s'", parser.s);
             }
-            if (parser.getToken() != '.')
-                error("failed to parse matching; expected `.', found `%s'",
-                    parser.s);
+            parser.expectToken('.');
             switch (parser.getToken())
             {
                 case 'l':
@@ -707,7 +706,7 @@ static void parseMatch(const char *str, MatchEntries &entries)
         entry.basename = strDup(parser.s);
         std::string filename(parser.s);
         filename += ".csv";
-        intptr_t idx = parseIndex(parser, "matching", INTPTR_MIN, INTPTR_MAX);
+        intptr_t idx = parseIndex(parser, INTPTR_MIN, INTPTR_MAX);
         if (parser.getToken() != '\0')
             error("failed to parse matching; expected end-of-input, found "
                 "`%s'", parser.s);
@@ -732,7 +731,7 @@ static Action *parseAction(const char *str, MatchEntries &entries)
             "preceded by one or more `--match' or `-M' options");
 
     ActionKind kind = ACTION_INVALID;
-    Parser parser(str);
+    Parser parser(str, "action");
     switch (parser.getToken())
     {
         case 'c':
@@ -765,17 +764,13 @@ static Action *parseAction(const char *str, MatchEntries &entries)
     std::vector<Argument> args;
     if (kind == ACTION_PLUGIN)
     {
-        if (parser.getToken() != '[')
-            error("failed to parse plugin action; expected `[', found `%s'",
-                parser.s);
+        parser.expectToken('[');
         if (!isalpha(parser.getToken()))
             error("failed to parse plugin action; expected plugin "
                 "name, found `%s'", parser.s);
         filename = strDup(parser.s);
         plugin = openPlugin(parser.s);
-        if (parser.getToken() != ']')
-            error("failed to parse plugin action; expected `]', found `%s'",
-                parser.s);
+        parser.expectToken(']');
         option_detail = true;
     }
     else if (kind == ACTION_CALL)
@@ -861,9 +856,8 @@ static Action *parseAction(const char *str, MatchEntries &entries)
                         if (strcmp(s, "dst") == 0)
                         {
                             option_detail = true;
-                            intptr_t idx = parseIndex(parser, "action", 0, 7);
-                            arg = (ArgumentKind)
-                                ((intptr_t)ARGUMENT_DST_0 + idx);
+                            value = parseIndex(parser, 0, 7);
+                            arg = ARGUMENT_DST;
                         }
                         break;
                     case 'i':
@@ -885,9 +879,8 @@ static Action *parseAction(const char *str, MatchEntries &entries)
                         else if (strcmp(s, "op") == 0)
                         {
                             option_detail = true;
-                            intptr_t idx = parseIndex(parser, "action", 0, 7);
-                            arg = (ArgumentKind)
-                                ((intptr_t)ARGUMENT_OPERAND_0 + idx);
+                            value = parseIndex(parser, 0, 7);
+                            arg = ARGUMENT_OP;
                         }
                         break;
                     case 'r':
@@ -934,9 +927,8 @@ static Action *parseAction(const char *str, MatchEntries &entries)
                         else if (strcmp(s, "src") == 0)
                         {
                             option_detail = true;
-                            intptr_t idx = parseIndex(parser, "action", 0, 7);
-                            arg = (ArgumentKind)
-                                ((intptr_t)ARGUMENT_SRC_0 + idx);
+                            value = parseIndex(parser, 0, 7);
+                            arg = ARGUMENT_SRC;
                         }
                         break;
                     case 't':
@@ -991,8 +983,7 @@ static Action *parseAction(const char *str, MatchEntries &entries)
                         }
                     }
                     if (arg == ARGUMENT_USER)
-                        value = parseIndex(parser, "action", INTPTR_MIN,
-                            INTPTR_MAX);
+                        value = parseIndex(parser, INTPTR_MIN, INTPTR_MAX);
                 }
                 if (arg == ARGUMENT_INVALID)
                     error("failed to parse call action; expected call "
@@ -1416,18 +1407,6 @@ static void usage(FILE *stream, const char *progname)
         "form:\n", stream);
     fputc('\n', stream);
     fputs("\t\t\tMATCH     ::= [ '!' ] ATTRIBUTE [ CMP VALUES ]\n", stream);
-    fputs("\t\t\tATTRIBUTE ::=   'true'\n", stream);
-    fputs("\t\t\t              | 'false'\n", stream);
-    fputs("\t\t\t              | 'asm'\n", stream);
-    fputs("\t\t\t              | 'addr'\n", stream);
-    fputs("\t\t\t              | 'call'\n", stream);
-    fputs("\t\t\t              | 'jump'\n", stream);
-    fputs("\t\t\t              | 'mnemonic'\n", stream);
-    fputs("\t\t\t              | 'offset'\n", stream);
-    fputs("\t\t\t              | 'random'\n", stream);
-    fputs("\t\t\t              | 'return'\n", stream);
-    fputs("\t\t\t              | 'size'\n", stream);
-    fputs("\t\t\t              | 'plugin' '[' NAME ']'\n", stream);
     fputs("\t\t\tCMP       ::=   '='\n", stream);
     fputs("\t\t\t              | '=='\n", stream);
     fputs("\t\t\t              | '!='\n", stream);

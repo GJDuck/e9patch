@@ -105,32 +105,9 @@ enum ArgumentKind
     ARGUMENT_RIP_PTR,               // %rip register pointer
     ARGUMENT_RSP_PTR,               // %rsp register pointer
 
-    ARGUMENT_OPERAND_0,             // Operand[0]
-    ARGUMENT_OPERAND_1,             // Operand[1]
-    ARGUMENT_OPERAND_2,             // Operand[2]
-    ARGUMENT_OPERAND_3,             // Operand[3]
-    ARGUMENT_OPERAND_4,             // Operand[4]
-    ARGUMENT_OPERAND_5,             // Operand[5]
-    ARGUMENT_OPERAND_6,             // Operand[6]
-    ARGUMENT_OPERAND_7,             // Operand[7]
-
-    ARGUMENT_SRC_0,                 // Source operand[0]
-    ARGUMENT_SRC_1,                 // Source operand[1]
-    ARGUMENT_SRC_2,                 // Source operand[2]
-    ARGUMENT_SRC_3,                 // Source operand[3]
-    ARGUMENT_SRC_4,                 // Source operand[4]
-    ARGUMENT_SRC_5,                 // Source operand[5]
-    ARGUMENT_SRC_6,                 // Source operand[6]
-    ARGUMENT_SRC_7,                 // Source operand[7]
-
-    ARGUMENT_DST_0,                 // Dest operand[0]
-    ARGUMENT_DST_1,                 // Dest operand[1]
-    ARGUMENT_DST_2,                 // Dest operand[2]
-    ARGUMENT_DST_3,                 // Dest operand[3]
-    ARGUMENT_DST_4,                 // Dest operand[4]
-    ARGUMENT_DST_5,                 // Dest operand[5]
-    ARGUMENT_DST_6,                 // Dest operand[6]
-    ARGUMENT_DST_7,                 // Dest operand[7]
+    ARGUMENT_OP,                    // Operand[i]
+    ARGUMENT_SRC,                   // Source operand[i]
+    ARGUMENT_DST,                   // Dest operand[i]
 
     ARGUMENT_MAX                    // Maximum argument value
 };

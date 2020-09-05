@@ -24,61 +24,11 @@
 #include <cassert>
 
 /*
- * Lookup an operand index.  Here, -1 means not an operand argument, and
- * (>=x86->op_count) means operand argument overflow, and anything else is
- * a valid operand index.
+ * Prototypes.
  */
-static int getOperandIdx(const cs_insn *I, ArgumentKind arg)
-{
-    const cs_detail *detail = I->detail;
-    const cs_x86 *x86       = &detail->x86;
-    const cs_x86_op *op     = x86->operands;
-    
-    int idx = 0;
-    switch (arg)
-    {
-        case ARGUMENT_OPERAND_0: case ARGUMENT_OPERAND_1:
-        case ARGUMENT_OPERAND_2: case ARGUMENT_OPERAND_3:
-        case ARGUMENT_OPERAND_4: case ARGUMENT_OPERAND_5:
-        case ARGUMENT_OPERAND_6: case ARGUMENT_OPERAND_7:
-            idx = (int)arg - (int)ARGUMENT_OPERAND_0;
-            return idx;
-        case ARGUMENT_SRC_0: case ARGUMENT_SRC_1:
-        case ARGUMENT_SRC_2: case ARGUMENT_SRC_3:
-        case ARGUMENT_SRC_4: case ARGUMENT_SRC_5:
-        case ARGUMENT_SRC_6: case ARGUMENT_SRC_7:
-            idx = (int)arg - (int)ARGUMENT_SRC_0;
-            for (int i = 0, j = 0; i < (int)x86->op_count; i++)
-            {
-                if (op[i].type == X86_OP_IMM ||
-                    (op[i].access & CS_AC_READ) != 0)
-                {
-                    if (j >= idx)
-                        return i;
-                    j++;
-                }
-            }
-            return (int)x86->op_count+1;
-        case ARGUMENT_DST_0: case ARGUMENT_DST_1:
-        case ARGUMENT_DST_2: case ARGUMENT_DST_3:
-        case ARGUMENT_DST_4: case ARGUMENT_DST_5:
-        case ARGUMENT_DST_6: case ARGUMENT_DST_7:
-            idx = (int)arg - (int)ARGUMENT_DST_0;
-            for (int i = 0, j = 0; i < (int)x86->op_count; i++)
-            {
-                if (op[i].type != X86_OP_IMM &&
-                    (op[i].access & CS_AC_WRITE) != 0)
-                {
-                    if (j >= idx)
-                        return i;
-                    j++;
-                }
-            }
-            return (int)x86->op_count+1;
-        default:
-            return -1;
-    }
-}
+static const cs_x86_op *getOperand(const cs_insn *I, int idx, uint8_t access);
+static intptr_t makeMatchValue(MatchKind match, int idx, MatchField field,
+    const cs_insn *I, intptr_t offset, intptr_t result);
 
 /*
  * Temporarily restore a register.
@@ -137,13 +87,11 @@ static bool sendSaveRegToStack(FILE *out, CallInfo &info, x86_reg reg)
  * Send a load (mov/lea) from a converted memory operand to a register.
  */
 static void sendLoadFromConvertedMemToR64(FILE *out, const cs_insn *I,
-    unsigned idx, CallInfo &info, uint8_t opcode, int regno)
+    const cs_x86_op *op, CallInfo &info, uint8_t opcode, int regno)
 {
     const cs_detail *detail = I->detail;
     const cs_x86 *x86       = &detail->x86;
-    const cs_x86_op *op     = x86->operands;
-    op += idx;
-    assert(idx < 8 && op->type == X86_OP_MEM);
+    assert(op->type == X86_OP_MEM);
 
     bool have_prefix = (x86->prefix[1] != 0);
     uint8_t prefix   = 0;
@@ -252,23 +200,19 @@ static void sendLoadFromConvertedMemToR64(FILE *out, const cs_insn *I,
  * regno register.  If the operand does not exist, load -1.
  */
 static void sendLoadOperandMetadata(FILE *out, const cs_insn *I,
-    unsigned idx, CallInfo &info, int argno)
+    const cs_x86_op *op, CallInfo &info, int argno)
 {
-    const cs_detail *detail = I->detail;
-    const cs_x86 *x86       = &detail->x86;
-    const cs_x86_op *op     = x86->operands;
-
-    if (idx >= x86->op_count)
+    if (op == nullptr)
     {
         sendSExtFromI32ToR64(out, -1, argno);
         return;
     }
 
-    switch (op[idx].type)
+    switch (op->type)
     {
         case X86_OP_REG:
         {
-            x86_reg reg = op[idx].reg;
+            x86_reg reg = op->reg;
             if (!sendSaveRegToStack(out, info, reg))
             {
                 warning("failed to generate code for operand argument "
@@ -282,7 +226,7 @@ static void sendLoadOperandMetadata(FILE *out, const cs_insn *I,
         }
 
         case X86_OP_MEM:
-            sendLoadFromConvertedMemToR64(out, I, idx, info, /*lea=*/0x8d,
+            sendLoadFromConvertedMemToR64(out, I, op, info, /*lea=*/0x8d,
                 argno);
             return;
 
@@ -305,17 +249,13 @@ static void sendLoadOperandMetadata(FILE *out, const cs_insn *I,
 /*
  * Emits operand data.
  */
-static void sendOperandDataMetadata(FILE *out, const cs_insn *I, unsigned idx,
-    int argno)
+static void sendOperandDataMetadata(FILE *out, const cs_insn *I,
+    const cs_x86_op *op, int argno)
 {
-    const cs_detail *detail = I->detail;
-    const cs_x86 *x86       = &detail->x86;
-    const cs_x86_op *op     = x86->operands;
-
-    if (idx >= x86->op_count)
+    if (op == nullptr)
         return;
 
-    switch (op[idx].type)
+    switch (op->type)
     {
         case X86_OP_IMM:
             fprintf(out, "\".Limmediate_%s\",", getRegName(argno));
@@ -394,7 +334,7 @@ static void sendLoadTargetMetadata(FILE *out, const cs_insn *I, CallInfo &info,
         case X86_OP_MEM:
             // This is an indirect jump/call.  Convert the instruction into a
             // mov instruction that loads the target in the correct register
-            sendLoadFromConvertedMemToR64(out, I, 0, info, /*mov=*/0x8b,
+            sendLoadFromConvertedMemToR64(out, I, op, info, /*mov=*/0x8b,
                 argno);
             return;
         
@@ -624,8 +564,6 @@ static const char *buildMetadataString(FILE *out, char *buf, long *pos)
 /*
  * Lookup a value from a CSV file based on the matching.
  */
-static intptr_t makeMatchValue(MatchKind match, int idx, MatchField field,
-    const cs_insn *I, intptr_t offset, intptr_t result);
 static intptr_t lookupValue(const Action *action, const cs_insn *I,
     intptr_t offset, const char *basename, intptr_t idx)
 {
@@ -792,22 +730,12 @@ static void sendLoadArgumentMetadata(FILE *out, CallInfo &info,
             sendLeaFromStackToR64(out, info.getOffset(reg), regno);
             break;
         }
-        case ARGUMENT_OPERAND_0: case ARGUMENT_OPERAND_1:
-        case ARGUMENT_OPERAND_2: case ARGUMENT_OPERAND_3:
-        case ARGUMENT_OPERAND_4: case ARGUMENT_OPERAND_5:
-        case ARGUMENT_OPERAND_6: case ARGUMENT_OPERAND_7:
-        case ARGUMENT_SRC_0: case ARGUMENT_SRC_1:
-        case ARGUMENT_SRC_2: case ARGUMENT_SRC_3:
-        case ARGUMENT_SRC_4: case ARGUMENT_SRC_5:
-        case ARGUMENT_SRC_6: case ARGUMENT_SRC_7:
-        case ARGUMENT_DST_0: case ARGUMENT_DST_1:
-        case ARGUMENT_DST_2: case ARGUMENT_DST_3:
-        case ARGUMENT_DST_4: case ARGUMENT_DST_5:
-        case ARGUMENT_DST_6: case ARGUMENT_DST_7:
+        case ARGUMENT_OP: case ARGUMENT_SRC: case ARGUMENT_DST:
         {
-            int idx = getOperandIdx(I, arg.kind);
-            assert(idx >= 0);
-            sendLoadOperandMetadata(out, I, idx, info, regno);
+            uint8_t access = (arg.kind != ARGUMENT_DST? CS_AC_READ: 0) |
+                             (arg.kind != ARGUMENT_SRC? CS_AC_WRITE: 0);
+            const cs_x86_op *op = getOperand(I, (int)arg.value, access);
+            sendLoadOperandMetadata(out, I, op, info, regno);
             break;
         }
         default:
@@ -839,22 +767,12 @@ static void sendArgumentDataMetadata(FILE *out, const Argument &arg,
             sendBytesData(out, I->bytes, I->size);
             fputc(',', out);
             break;
-        case ARGUMENT_OPERAND_0: case ARGUMENT_OPERAND_1:
-        case ARGUMENT_OPERAND_2: case ARGUMENT_OPERAND_3:
-        case ARGUMENT_OPERAND_4: case ARGUMENT_OPERAND_5:
-        case ARGUMENT_OPERAND_6: case ARGUMENT_OPERAND_7:
-        case ARGUMENT_SRC_0: case ARGUMENT_SRC_1:
-        case ARGUMENT_SRC_2: case ARGUMENT_SRC_3:
-        case ARGUMENT_SRC_4: case ARGUMENT_SRC_5:
-        case ARGUMENT_SRC_6: case ARGUMENT_SRC_7:
-        case ARGUMENT_DST_0: case ARGUMENT_DST_1:
-        case ARGUMENT_DST_2: case ARGUMENT_DST_3:
-        case ARGUMENT_DST_4: case ARGUMENT_DST_5:
-        case ARGUMENT_DST_6: case ARGUMENT_DST_7:
+        case ARGUMENT_OP: case ARGUMENT_SRC: case ARGUMENT_DST:
         {
-            int idx = getOperandIdx(I, arg.kind);
-            assert(idx >= 0);
-            sendOperandDataMetadata(out, I, idx, getArgRegIdx(argno));
+            uint8_t access = (arg.kind != ARGUMENT_DST? CS_AC_READ: 0) |
+                             (arg.kind != ARGUMENT_SRC? CS_AC_WRITE: 0);
+            const cs_x86_op *op = getOperand(I, (int)arg.value, access);
+            sendOperandDataMetadata(out, I, op, getArgRegIdx(argno));
             break;
         }
         default:
