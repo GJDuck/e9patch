@@ -518,18 +518,29 @@ static void parseMatch(const char *str, MatchEntries &entries)
     {
         case MATCH_ASSEMBLY: case MATCH_MNEMONIC:
         {
-            std::string str("(");
-            parser.expectToken(TOKEN_STRING);
-            str += parser.s;
-            while (parser.peekToken() == ',')
+            t = parser.getRegex();
+            std::string str;
+            switch (t)
             {
-                parser.getToken();
-                str += ")|(";
-                parser.expectToken(TOKEN_STRING);
-                str += parser.s;
+                case TOKEN_REGEX:
+                    str = parser.s;
+                    break;
+                case TOKEN_STRING:
+                    str += '(';
+                    str += parser.s;
+                    while (parser.peekToken() == ',')
+                    {
+                        parser.getToken();
+                        str += ")|(";
+                        parser.expectToken(TOKEN_STRING);
+                        str += parser.s;
+                    }
+                    str += ')';
+                    break;
+                default:
+                    parser.unexpectedToken();
             }
             parser.expectToken(TOKEN_END);
-            str += ')';
             entry.regex = new std::regex(str);
             entries.push_back(std::move(entry));
             return;

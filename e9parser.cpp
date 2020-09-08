@@ -39,6 +39,7 @@ enum Token
     TOKEN_END = '\0',
     TOKEN_INTEGER = 3000,
     TOKEN_STRING,
+    TOKEN_REGEX,
 
     TOKEN_NEQ,
     TOKEN_LEQ,
@@ -276,6 +277,8 @@ static const char *getNameFromToken(Token token)
             return "<integer>";
         case TOKEN_STRING:
             return "<string>";
+        case TOKEN_REGEX:
+            return "<regex>";
         default:
             break;
     }
@@ -483,6 +486,21 @@ struct Parser
     const char *getName(int token)
     {
         return getNameFromToken((Token)token);
+    }
+
+    int getRegex()
+    {
+        if (peek != TOKEN_ERROR)
+            unexpectedToken();
+        while (isspace(buf[pos]))
+            pos++;
+        if (buf[pos] == '\"')
+            return getToken();
+        for (unsigned j = 0; j < TOKEN_MAXLEN && buf[pos] != '\0'; j++)
+            s[j] = buf[pos++];
+        if (buf[pos] != '\0')
+            unexpectedToken();
+        return TOKEN_REGEX;
     }
 };
 
