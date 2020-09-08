@@ -60,10 +60,11 @@ enum ArgumentKind
     ARGUMENT_NEXT,                  // Next instruction address
     ARGUMENT_BASE,                  // Base address of ELF binary in memory
     ARGUMENT_STATIC_ADDR,           // (Static) instruction address
-    ARGUMENT_ASM_STR,               // Assembly string
-    ARGUMENT_ASM_STR_LEN,           // Assembly string length
+    ARGUMENT_ASM,                   // Assembly string
+    ARGUMENT_ASM_COUNT,             // Assembly string count
+    ARGUMENT_ASM_LEN,               // Assembly string length
     ARGUMENT_BYTES,                 // Instruction bytes
-    ARGUMENT_BYTES_LEN,             // Instruction bytes length
+    ARGUMENT_BYTES_COUNT,           // Instruction bytes count
     ARGUMENT_TARGET,                // Call/jump target
     ARGUMENT_TRAMPOLINE,            // Trampoline
 
@@ -108,6 +109,9 @@ enum ArgumentKind
     ARGUMENT_OP,                    // Operand[i]
     ARGUMENT_SRC,                   // Source operand[i]
     ARGUMENT_DST,                   // Dest operand[i]
+    ARGUMENT_IMM,                   // Immediate operand[i]
+    ARGUMENT_REG,                   // Register operand[i]
+    ARGUMENT_MEM,                   // Memory operand[i]
 
     ARGUMENT_MAX                    // Maximum argument value
 };

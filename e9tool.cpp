@@ -114,16 +114,22 @@ enum MatchKind
     MATCH_OP,
     MATCH_SRC,
     MATCH_DST,
+    MATCH_IMM,
+    MATCH_REG,
+    MATCH_MEM,
 };
 
 /*
- * Match fields.
+ * Fields fields.
  */
-enum MatchField
+enum Field
 {
-    MATCH_FIELD_NONE,
-    MATCH_FIELD_LENGTH,
-    MATCH_FIELD_SIZE
+    FIELD_NONE,
+    FIELD_COUNT,
+    FIELD_SIZE,
+    FIELD_TYPE,
+    FIELD_READ,
+    FIELD_WRITE
 };
 
 /*
@@ -156,6 +162,13 @@ enum ActionKind
 };
 
 /*
+ * Operand types.
+ */
+#define OP_TYPE_IMM     1
+#define OP_TYPE_REG     2
+#define OP_TYPE_MEM     3
+
+/*
  * A match entry.
  */
 struct MatchEntry
@@ -163,7 +176,7 @@ struct MatchEntry
     const std::string string;
     const MatchKind   match;
     const int         idx;
-    const MatchField  field;
+    const Field       field;
     const MatchCmp    cmp;
     const char *      basename;
     Plugin * const plugin;
@@ -182,7 +195,7 @@ struct MatchEntry
         data = entry.data;
     }
 
-    MatchEntry(MatchKind match, int idx, MatchField field, MatchCmp cmp,
+    MatchEntry(MatchKind match, int idx, Field field, MatchCmp cmp,
             const char *s, Plugin *plugin, const char *basename) :
         string(s), match(match), field(field), idx(idx), cmp(cmp),
         basename(basename), plugin(plugin)
@@ -225,9 +238,10 @@ struct Action
 typedef std::map<size_t, Action *> Actions;
 
 /*
- * Implementation.
+ * Implementations.
  */
 #include "e9metadata.cpp"
+#include "e9parser.cpp"
 
 /*
  * Open a new plugin object.
@@ -319,154 +333,13 @@ static void finiPlugins(FILE *out, const ELF *elf)
 }
 
 /*
- * Action string parser.
- */
-struct Parser
-{
-    const char * const mode;
-    const char * const buf;
-    size_t i = 0;
-    char peek = EOF;
-    char s[BUFSIZ+1];
-
-    Parser(const char *buf, const char *mode) : buf(buf), mode(mode)
-    {
-        ;
-    }
-
-    char getToken()
-    {
-        if (peek != EOF)
-        {
-            char c = peek;
-            peek = EOF;
-            return c;
-        }
-        char c = buf[i];
-        while (isspace(c))
-            c = buf[++i];
-        switch (c)
-        {
-            case '\0':
-                strcpy(s, "<end-of-input>");
-                return '\0';
-            case '[': case ']': case '@': case ',': case '(': case ')':
-            case '&': case '.':
-                s[0] = c; s[1] = '\0';
-                i++;
-                return c;
-            case '!': case '<': case '>': case '=':
-                s[0] = c; s[1] = '\0';
-                i++;
-                if (buf[i] == '=')
-                {
-                    s[1] = '='; s[2] = '\0';
-                    i++;
-                }
-                return c;
-            default:
-                break;
-        }
-        if (isalnum(c) || buf[i] == '_' || buf[i] == '-')
-        {
-            unsigned j = 0;
-            s[j++] = c;
-            i++;
-            while (isalnum(buf[i]) || buf[i] == '_')
-                s[j++] = buf[i++];
-            s[j++] = '\0';
-            return c;
-        }
-        s[0] = c; s[1] = '\0';
-        return EOF;
-    }
-
-    char peekToken()
-    {
-        if (peek != EOF)
-            return peek;
-        peek = getToken();
-        return peek;
-    }
-
-    void expectToken(char c)
-    {
-        if (getToken() != c)
-            error("failed to parse %s; expected token `%c', found `%s'",
-                mode, c, s);
-    }
-};
-
-/*
- * Parse an integer.
- */
-static const char *parseInt(const char *s, intptr_t &x)
-{
-    while (isspace(*s))
-        s++;
-    bool neg = false;
-    if (s[0] == '+')
-        s++;
-    else if (s[0] == '-')
-    {
-        neg = true;
-        s++;
-    }
-    int base = (s[0] == '0' && s[1] == 'x'? 16: 10);
-    char *end = nullptr;
-    x = (intptr_t)strtoull(s, &end, base);
-    if (end == nullptr || end == s)
-        return nullptr;
-    x = (neg? -x: x);
-    while (isspace(*end))
-        end++;
-    return end;
-}
-
-/*
- * Parse a list of values.
- */
-static void parseValues(const char *s, Index<intptr_t> &values)
-{
-    if (*s == '\0')
-        return;
-    while (true)
-    {
-        intptr_t x = 0;
-        const char *end = parseInt(s, x);
-        if (end == nullptr)
-            error("failed to parse integer from string \"%.30s%s\"", s,
-                (strlen(s) > 30? "...": ""));
-        values.insert({x, nullptr});
-        while (isspace(*end))
-            end++;
-        switch (*end)
-        {
-            case ',':
-                s = end+1;
-                break;
-            case '\0':
-                return;
-            default:
-                error("failed to parse integer list; unexpected character "
-                    "`%c' in string \"%.30s%s\"", *end, s,
-                    (strlen(s) > 30? "...": ""));
-        }
-    }
-}
-
-/*
  * Parse and index.
  */
 static intptr_t parseIndex(Parser &parser, intptr_t lb, intptr_t ub)
 {
     parser.expectToken('[');
-    intptr_t idx;
-    parser.getToken();
-    const char *end = parseInt(parser.s, idx);
-    if (end == nullptr || *end != '\0')
-        error("failed to parse %s; expected index, found `%s'", parser.mode,
-            parser.s);
+    parser.expectToken(TOKEN_INTEGER);
+    intptr_t idx = parser.i;
     parser.expectToken(']');
     if (idx < lb || idx > ub)
         error("failed to parse %s; expected index within the range "
@@ -480,86 +353,65 @@ static intptr_t parseIndex(Parser &parser, intptr_t lb, intptr_t ub)
 static void parseMatch(const char *str, MatchEntries &entries)
 {
     Parser parser(str, "matching");
-    MatchKind match = MATCH_INVALID;
     bool neg = false;
-    char c = parser.getToken();
-    if (strcmp(parser.s, "!") == 0)
+    int t = parser.getToken();
+    if (t == '!')
     {
         neg = true;
-        c = parser.getToken();
+        t = parser.getToken();
     }
-    switch (c)
+    MatchKind match = MATCH_INVALID;
+    switch (t)
     {
-        case 'a':
-            if (strcmp(parser.s, "asm") == 0)
-                match = MATCH_ASSEMBLY;
-            else if (strcmp(parser.s, "addr") == 0)
-                match = MATCH_ADDRESS;
-            else if (strcmp(parser.s, "address") == 0)
-                match = MATCH_ADDRESS;
-            break;
-        case 'c':
-            if (strcmp(parser.s, "call") == 0)
-                match = MATCH_CALL;
-            break;
-        case 'd':
-            if (strcmp(parser.s, "dst") == 0)
-                match = MATCH_DST;
-            break;
-        case 'f':
-            if (strcmp(parser.s, "false") == 0)
-                match = MATCH_FALSE;
-            break;
-        case 'j':
-            if (strcmp(parser.s, "jump") == 0)
-                match = MATCH_JUMP;
-            break;
-        case 'm':
-            if (strcmp(parser.s, "mnemonic") == 0)
-                match = MATCH_MNEMONIC;
-            break;
-        case 'o':
-            if (strcmp(parser.s, "offset") == 0)
-                match = MATCH_OFFSET;
-            else if (strcmp(parser.s, "op") == 0)
-                match = MATCH_OP;
-            break;
-        case 'p':
-            if (strcmp(parser.s, "plugin") == 0)
-                match = MATCH_PLUGIN;
-            break;
-        case 'r':
-            if (strcmp(parser.s, "random") == 0)
-                match = MATCH_RANDOM;
-            else if (strcmp(parser.s, "return") == 0)
-                match = MATCH_RETURN;
-            break;
-        case 's':
-            if (strcmp(parser.s, "size") == 0)
-                match = MATCH_SIZE;
-            else if (strcmp(parser.s, "src") == 0)
-                match = MATCH_SRC;
-            break;
-        case 't':
-            if (strcmp(parser.s, "true") == 0)
-                match = MATCH_TRUE;
-            break;
+        case TOKEN_ASM:
+            match = MATCH_ASSEMBLY; break;
+        case TOKEN_ADDR:
+            match = MATCH_ADDRESS; break;
+        case TOKEN_CALL:
+            match = MATCH_CALL; break;
+        case TOKEN_DST:
+            match = MATCH_DST; break;
+        case TOKEN_FALSE:
+            match = MATCH_FALSE; break;
+        case TOKEN_IMM:
+            match = MATCH_IMM; break;
+        case TOKEN_JUMP:
+            match = MATCH_JUMP; break;
+        case TOKEN_MEM:
+            match = MATCH_MEM; break;
+        case TOKEN_MNEMONIC:
+            match = MATCH_MNEMONIC; break;
+        case TOKEN_OFFSET:
+            match = MATCH_OFFSET; break;
+        case TOKEN_OP:
+             match = MATCH_OP; break;
+        case TOKEN_PLUGIN:
+             match = MATCH_PLUGIN; break;
+        case TOKEN_RANDOM:
+             match = MATCH_RANDOM; break;
+        case TOKEN_REG:
+             match = MATCH_REG; break;
+        case TOKEN_RETURN:
+             match = MATCH_RETURN; break;
+        case TOKEN_SIZE:
+             match = MATCH_SIZE; break;
+        case TOKEN_SRC:
+             match = MATCH_SRC; break;
+        case TOKEN_TRUE:
+             match = MATCH_TRUE; break;
+        default:
+            parser.unexpectedToken();
     }
-    std::string attrib(parser.s);
+    int attr = t;
     Plugin *plugin = nullptr;
     int idx = -1;
-    MatchField field = MATCH_FIELD_NONE;
+    Field field = FIELD_NONE;
     switch (match)
     {
-        case MATCH_INVALID:
-            error("failed to parse matching; expected attribute, found `%s'",
-                parser.s);
         case MATCH_PLUGIN:
         {
             parser.expectToken('[');
-            if (!isalpha(parser.getToken()))
-                error("failed to parse matching; expected plugin name, found "
-                    "`%s'", parser.s);
+            parser.expectToken(TOKEN_STRING);
             plugin = openPlugin(parser.s);
             parser.expectToken(']');
             if (plugin->instrFunc == nullptr)
@@ -569,6 +421,7 @@ static void parseMatch(const char *str, MatchEntries &entries)
             break;
         }
         case MATCH_OP: case MATCH_SRC: case MATCH_DST:
+        case MATCH_IMM: case MATCH_REG: case MATCH_MEM:
             switch (parser.peekToken())
             {
                 case '.':
@@ -577,24 +430,24 @@ static void parseMatch(const char *str, MatchEntries &entries)
                     idx = (unsigned)parseIndex(parser, 0, 7);
                     break;
                 default:
-                    error("failed to parse matching; expected `.' or `[', "
-                        "found `%s'", parser.s);
+                    parser.unexpectedToken();
             }
             parser.expectToken('.');
             switch (parser.getToken())
             {
-                case 'l':
-                    if (strcmp(parser.s, "length") == 0)
-                        field = MATCH_FIELD_LENGTH;
-                    break;
-                case 's':
-                    if (strcmp(parser.s, "size") == 0)
-                        field = MATCH_FIELD_SIZE;
-                    break;
+                case TOKEN_COUNT:
+                    field = FIELD_COUNT; break;
+                case TOKEN_READ:
+                    field = FIELD_READ; break;
+                case TOKEN_SIZE:
+                    field = FIELD_SIZE; break;
+                case TOKEN_WRITE:
+                    field = FIELD_WRITE; break;
+                case TOKEN_TYPE:
+                    field = FIELD_TYPE; break;
+                default:
+                    parser.unexpectedToken();
             }
-            if (field == MATCH_FIELD_NONE)
-                error("failed to parse matching; expected field, found `%s'",
-                    parser.s);
             break;
         default:
             break;
@@ -602,35 +455,23 @@ static void parseMatch(const char *str, MatchEntries &entries)
     MatchCmp cmp = MATCH_CMP_INVALID;
     switch (parser.getToken())
     {
-        case '!':
-            if (strcmp(parser.s, "!=") == 0)
-                cmp = MATCH_CMP_NEQ;
-            break;
-        case '<':
-            if (strcmp(parser.s, "<") == 0)
-                cmp = MATCH_CMP_LT;
-            else if (strcmp(parser.s, "<=") == 0)
-                cmp = MATCH_CMP_LEQ;
-            break;
-        case '>':
-            if (strcmp(parser.s, ">") == 0)
-                cmp = MATCH_CMP_GT;
-            else if (strcmp(parser.s, ">=") == 0)
-                cmp = MATCH_CMP_GEQ;
-            break;
         case '=':
-            if (strcmp(parser.s, "=") == 0)
-                cmp = MATCH_CMP_EQ;
-            else if (strcmp(parser.s, "==") == 0)
-                cmp = MATCH_CMP_EQ;
-            break;
-        case '\0':
-            cmp = MATCH_CMP_NEQ_ZERO;
-            break;
+            cmp = MATCH_CMP_EQ; break;
+        case TOKEN_NEQ:
+            cmp = MATCH_CMP_NEQ; break;
+        case '<':
+            cmp = MATCH_CMP_LT; break;
+        case TOKEN_LEQ:
+            cmp = MATCH_CMP_LEQ; break;
+        case '>':
+            cmp = MATCH_CMP_GT; break;
+        case TOKEN_GEQ:
+            cmp = MATCH_CMP_GEQ; break;
+        case TOKEN_END:
+            cmp = MATCH_CMP_NEQ_ZERO; break;
+        default:
+            parser.unexpectedToken();
     }
-    if (cmp == MATCH_CMP_INVALID)
-        error("failed to parse matching; expected comparison operator, "
-            "found `%s'", parser.s);
     if (neg)
     {
         switch (cmp)
@@ -657,36 +498,46 @@ static void parseMatch(const char *str, MatchEntries &entries)
     }
     switch (match)
     {
-        case MATCH_ASSEMBLY:
-        case MATCH_MNEMONIC:
+        case MATCH_ASSEMBLY: case MATCH_MNEMONIC:
             if (cmp != MATCH_CMP_EQ && cmp != MATCH_CMP_NEQ)
                 error("failed to parse matching; invalid match "
-                    "comparison operator `%s' for attribute `%s'",
-                    parser.s, attrib.c_str());
+                    "comparison operator \"%s\" for attribute \"%s\"",
+                    parser.s, parser.getName(attr));
             break;
         case MATCH_CALL: case MATCH_JUMP: case MATCH_RETURN: case MATCH_PLUGIN:
         case MATCH_OP: case MATCH_SRC: case MATCH_DST:
+        case MATCH_IMM: case MATCH_REG: case MATCH_MEM:
             option_detail = true;
             break;
         default:
             break;
     }
 
-    const char *rhs = parser.buf + parser.i;
-    for (; isspace(*rhs); rhs++)
-        ;
- 
     MatchEntry entry(match, idx, field, cmp, str, plugin, nullptr);
     switch (match)
     {
-        case MATCH_ASSEMBLY:
-        case MATCH_MNEMONIC:
-            entry.regex = new std::regex(rhs);
+        case MATCH_ASSEMBLY: case MATCH_MNEMONIC:
+        {
+            std::string str("(");
+            parser.expectToken(TOKEN_STRING);
+            str += parser.s;
+            while (parser.peekToken() == ',')
+            {
+                parser.getToken();
+                str += ")|(";
+                parser.expectToken(TOKEN_STRING);
+                str += parser.s;
+            }
+            parser.expectToken(TOKEN_END);
+            str += ')';
+            entry.regex = new std::regex(str);
             entries.push_back(std::move(entry));
             return;
+        }
         case MATCH_TRUE: case MATCH_FALSE: case MATCH_ADDRESS:
         case MATCH_CALL: case MATCH_JUMP: case MATCH_OFFSET:
         case MATCH_OP: case MATCH_SRC: case MATCH_DST:
+        case MATCH_IMM: case MATCH_REG: case MATCH_MEM:
         case MATCH_PLUGIN: case MATCH_RANDOM: case MATCH_RETURN:
         case MATCH_SIZE:
             if (cmp == MATCH_CMP_EQ_ZERO || cmp == MATCH_CMP_NEQ_ZERO)
@@ -694,31 +545,37 @@ static void parseMatch(const char *str, MatchEntries &entries)
                 entries.push_back(std::move(entry));
                 return;
             }
-            break;
+            entry.values = new Index<intptr_t>;
+            switch (parser.getToken())
+            {
+                case TOKEN_INTEGER:
+                    entry.values->insert({parser.i, nullptr});
+                    while (parser.peekToken() == ',')
+                    {
+                        parser.getToken();
+                        parser.expectToken(TOKEN_INTEGER);
+                        entry.values->insert({parser.i, nullptr});
+                    }
+                    break;
+                case TOKEN_STRING:
+                {
+                    entry.basename = strDup(parser.s);
+                    std::string filename(parser.s);
+                    filename += ".csv";
+                    intptr_t idx = parseIndex(parser, INTPTR_MIN, INTPTR_MAX);
+                    Data *data = parseCSV(filename.c_str());
+                    buildIntIndex(entry.basename, *data, idx, *entry.values);
+                    break;
+                }
+                default:
+                    parser.unexpectedToken();
+            }
+            parser.expectToken(TOKEN_END);
+            entries.push_back(std::move(entry));
+            return;
         default:
             return;
     }
-
-    entry.values = new Index<intptr_t>;
-    if (isalpha(parser.getToken()))
-    {
-        // isalpha = CSV file
-        entry.basename = strDup(parser.s);
-        std::string filename(parser.s);
-        filename += ".csv";
-        intptr_t idx = parseIndex(parser, INTPTR_MIN, INTPTR_MAX);
-        if (parser.getToken() != '\0')
-            error("failed to parse matching; expected end-of-input, found "
-                "`%s'", parser.s);
-        Data *data = parseCSV(filename.c_str());
-        buildIntIndex(filename.c_str(), *data, idx, *entry.values);
-    }
-    else
-    {
-        // else parse values directly from the string:
-        parseValues(rhs, *entry.values);
-    }
-    entries.push_back(std::move(entry));
 }
 
 /*
@@ -734,28 +591,21 @@ static Action *parseAction(const char *str, MatchEntries &entries)
     Parser parser(str, "action");
     switch (parser.getToken())
     {
-        case 'c':
-            if (strcmp(parser.s, "call") == 0)
-                kind = ACTION_CALL;
-            break;
-        case 'p':
-            if (strcmp(parser.s, "passthru") == 0)
-                kind = ACTION_PASSTHRU;
-            else if (strcmp(parser.s, "print") == 0)
-                kind = ACTION_PRINT;
-            else if (strcmp(parser.s, "plugin") == 0)
-                kind = ACTION_PLUGIN;
-            break;
-        case 't':
-            if (strcmp(parser.s, "trap") == 0)
-                kind = ACTION_TRAP;
-            break;
+        case TOKEN_CALL:
+            kind = ACTION_CALL; break;
+        case TOKEN_PASSTHRU:
+            kind = ACTION_PASSTHRU; break;
+        case TOKEN_PRINT:
+            kind = ACTION_PRINT; break;
+        case TOKEN_PLUGIN:
+            kind = ACTION_PLUGIN; break;
+        case TOKEN_TRAP:
+            kind = ACTION_TRAP; break;
+        default:
+            parser.unexpectedToken();
     }
-    if (kind == ACTION_INVALID)
-        error("failed to parse action string \"%s\"; invalid instrumentation-"
-            "kind \"%s\"", str, parser.s);
 
-    // Step (5): parse call (if necessary):
+    // Parse call or plugin (if necessary):
     bool option_clean = false, option_naked = false, option_before = false,
          option_after = false, option_replace = false;
     const char *symbol   = nullptr;
@@ -765,9 +615,7 @@ static Action *parseAction(const char *str, MatchEntries &entries)
     if (kind == ACTION_PLUGIN)
     {
         parser.expectToken('[');
-        if (!isalpha(parser.getToken()))
-            error("failed to parse plugin action; expected plugin "
-                "name, found `%s'", parser.s);
+        parser.expectToken(TOKEN_STRING);
         filename = strDup(parser.s);
         plugin = openPlugin(parser.s);
         parser.expectToken(']');
@@ -775,219 +623,225 @@ static Action *parseAction(const char *str, MatchEntries &entries)
     }
     else if (kind == ACTION_CALL)
     {
-        char c = parser.getToken();
-        if (c == '[')
+        int t = parser.peekToken();
+        if (t == '[')
         {
+            parser.getToken();
             while (true)
             {
-                c = parser.getToken();
-                bool ok = false;
-                switch (c)
+                t = parser.getToken();
+                switch (t)
                 {
-                    case 'a':
-                        if (strcmp(parser.s, "after") == 0)
-                            ok = option_after = true;
-                        break;
-                    case 'b':
-                        if (strcmp(parser.s, "before") == 0)
-                            ok = option_before = true;
-                        break;
-                    case 'c':
-                        if (strcmp(parser.s, "clean") == 0)
-                            ok = option_clean = true;
-                        break;
-                    case 'n':
-                        if (strcmp(parser.s, "naked") == 0)
-                            ok = option_naked = true;
-                        break;
-                    case 'r':
-                        if (strcmp(parser.s, "replace") == 0)
-                            ok = option_replace = true;
-                        break;
+                    case TOKEN_AFTER:
+                        option_after = true; break;
+                    case TOKEN_BEFORE:
+                        option_before = true; break;
+                    case TOKEN_CLEAN:
+                        option_clean = true; break;
+                    case TOKEN_NAKED:
+                        option_naked = true; break;
+                    case TOKEN_REPLACE:
+                        option_replace = true; break;
+                    default:
+                        parser.unexpectedToken();
                 }
-                if (!ok)
-                    error("failed to parse call action; expected call "
-                        "attribute, found `%s'", parser.s);
-                c = parser.getToken();
-                if (c == ']')
+                t = parser.getToken();
+                if (t == ']')
                     break;
-                if (c != ',')
-                    error("failed to parse call action; expected `]' or `,', "
-                        "found `%s'", parser.s);
+                if (t != ',')
+                    parser.unexpectedToken();
             }
-            c = parser.getToken();
         }
-        if (!isalpha(c) && c != '_')
-            error("failed to parse call action; expected symbol name, found "
-                "`%s'", parser.s);
+        parser.expectToken(TOKEN_STRING);
         symbol = strDup(parser.s);
-        c = parser.getToken();
-        if (c == '(')
+        t = parser.peekToken();
+        if (t == '(')
         {
+            parser.getToken();
             while (true)
             {
+                t = parser.getToken();
                 bool ptr = false;
-                c = parser.getToken();
-                if (c == '&')
+                if (t == '&')
                 {
                     ptr = true;
-                    c = parser.getToken();
+                    t = parser.getToken();
                 }
-                const char *s = parser.s;
                 ArgumentKind arg = ARGUMENT_INVALID;
                 intptr_t value = 0x0;
-                switch (c)
+                std::string name(parser.s);
+                const char *basename = nullptr;
+                switch (t)
                 {
-                    case 'a':
-                        if (strcmp(s, "asmStr") == 0)
-                            arg = ARGUMENT_ASM_STR;
-                        else if (strcmp(s, "asmStrLen") == 0)
-                            arg = ARGUMENT_ASM_STR_LEN;
-                        else if (strcmp(s, "addr") == 0)
-                            arg = ARGUMENT_ADDR;
-                        else if (strcmp(parser.s, "address") == 0)
-                            arg = ARGUMENT_ADDR;
-                        break;
-                    case 'b':
-                        if (strcmp(s, "base") == 0)
-                            arg = ARGUMENT_BASE;
-                        break;
-                    case 'd':
-                        if (strcmp(s, "dst") == 0)
-                        {
-                            option_detail = true;
-                            value = parseIndex(parser, 0, 7);
-                            arg = ARGUMENT_DST;
-                        }
-                        break;
-                    case 'i':
-                        if (strcmp(s, "instr") == 0)
-                            arg = ARGUMENT_BYTES;
-                        else if (strcmp(s, "instrLen") == 0)
-                            arg = ARGUMENT_BYTES_LEN;
-                        break;
-                    case 'n':
-                        if (strcmp(s, "next") == 0)
-                        {
-                            option_detail = true;
-                            arg = ARGUMENT_NEXT;
-                        }
-                        break;
-                    case 'o':
-                        if (strcmp(s, "offset") == 0)
-                            arg = ARGUMENT_OFFSET;
-                        else if (strcmp(s, "op") == 0)
-                        {
-                            option_detail = true;
-                            value = parseIndex(parser, 0, 7);
-                            arg = ARGUMENT_OP;
-                        }
-                        break;
-                    case 'r':
-                        if (strcmp(s, "rax") == 0)
-                            arg = (ptr? ARGUMENT_RAX_PTR: ARGUMENT_RAX);
-                        else if (strcmp(s, "rbx") == 0)
-                            arg = (ptr? ARGUMENT_RBX_PTR: ARGUMENT_RBX);
-                        else if (strcmp(s, "rcx") == 0)
-                            arg = (ptr? ARGUMENT_RCX_PTR: ARGUMENT_RCX);
-                        else if (strcmp(s, "rdx") == 0)
-                            arg = (ptr? ARGUMENT_RDX_PTR: ARGUMENT_RDX);
-                        else if (strcmp(s, "rbp") == 0)
-                            arg = (ptr? ARGUMENT_RBP_PTR: ARGUMENT_RBP);
-                        else if (strcmp(s, "rdi") == 0)
-                            arg = (ptr? ARGUMENT_RDI_PTR: ARGUMENT_RDI);
-                        else if (strcmp(s, "rsi") == 0)
-                            arg = (ptr? ARGUMENT_RSI_PTR: ARGUMENT_RSI);
-                        else if (strcmp(s, "r8") == 0)
-                            arg = (ptr? ARGUMENT_R8_PTR: ARGUMENT_R8);
-                        else if (strcmp(s, "r9") == 0)
-                            arg = (ptr? ARGUMENT_R9_PTR: ARGUMENT_R9);
-                        else if (strcmp(s, "r10") == 0)
-                            arg = (ptr? ARGUMENT_R10_PTR: ARGUMENT_R10);
-                        else if (strcmp(s, "r11") == 0)
-                            arg = (ptr? ARGUMENT_R11_PTR: ARGUMENT_R11);
-                        else if (strcmp(s, "r12") == 0)
-                            arg = (ptr? ARGUMENT_R12_PTR: ARGUMENT_R12);
-                        else if (strcmp(s, "r13") == 0)
-                            arg = (ptr? ARGUMENT_R13_PTR: ARGUMENT_R13);
-                        else if (strcmp(s, "r14") == 0)
-                            arg = (ptr? ARGUMENT_R14_PTR: ARGUMENT_R14);
-                        else if (strcmp(s, "r15") == 0)
-                            arg = (ptr? ARGUMENT_R15_PTR: ARGUMENT_R15);
-                        else if (strcmp(s, "rflags") == 0)
-                            arg = (ptr? ARGUMENT_RFLAGS_PTR: ARGUMENT_RFLAGS);
-                        else if (strcmp(s, "rip") == 0)
-                            arg = ARGUMENT_RIP;
-                        else if (strcmp(s, "rsp") == 0)
-                            arg = (ptr? ARGUMENT_RSP_PTR: ARGUMENT_RSP);
-                        break;
-                    case 's':
-                        if (strcmp(s, "staticAddr") == 0)
-                            arg = ARGUMENT_STATIC_ADDR;
-                        else if (strcmp(s, "src") == 0)
-                        {
-                            option_detail = true;
-                            value = parseIndex(parser, 0, 7);
-                            arg = ARGUMENT_SRC;
-                        }
-                        break;
-                    case 't':
-                        if (strcmp(s, "target") == 0)
-                        {
-                            option_detail = true;
-                            arg = ARGUMENT_TARGET;
-                        }
-                        else if (strcmp(s, "trampoline") == 0)
-                            arg = ARGUMENT_TRAMPOLINE;
-                        break;
-                    case '0': case '1': case '2': case '3': case '4':
-                    case '5': case '6': case '7': case '8': case '9':
-                    case '-':
-                    {
-                        const char *end = parseInt(s, value);
-                        if (end == nullptr || *end != '\0')
+                    case TOKEN_ASM:
+                        arg = ARGUMENT_ASM;
+                        if (parser.peekToken() != '.')
                             break;
+                        parser.getToken();
+                        switch (parser.getToken())
+                        {
+                            case TOKEN_LENGTH:
+                                arg = ARGUMENT_ASM_LEN; break;
+                            case TOKEN_COUNT:
+                                arg = ARGUMENT_ASM_COUNT; break;
+                            default:
+                                parser.unexpectedToken();
+                        }
+                        break;
+                    case TOKEN_ADDR:
+                        arg = ARGUMENT_ADDR; break;
+                    case TOKEN_BASE:
+                        arg = ARGUMENT_BASE; break;
+                    case TOKEN_DST:
+                        option_detail = true;
+                        value = parseIndex(parser, 0, 7);
+                        arg = ARGUMENT_DST;
+                        break;
+                    case TOKEN_IMM:
+                        option_detail = true;
+                        value = parseIndex(parser, 0, 7);
+                        arg = ARGUMENT_IMM;
+                        break;
+                    case TOKEN_INSTR:
+                        arg = ARGUMENT_BYTES;
+                        if (parser.peekToken() != '.')
+                            break;
+                        parser.getToken();
+                        parser.expectToken(TOKEN_COUNT);
+                        arg = ARGUMENT_BYTES_COUNT;
+                        break;
+                    case TOKEN_MEM:
+                        option_detail = true;
+                        value = parseIndex(parser, 0, 7);
+                        arg = ARGUMENT_MEM;
+                        break;
+                    case TOKEN_NEXT:
+                        option_detail = true;
+                        arg = ARGUMENT_NEXT;
+                        break;
+                    case TOKEN_OFFSET:
+                        arg = ARGUMENT_OFFSET; break;
+                    case TOKEN_OP:
+                        option_detail = true;
+                        value = parseIndex(parser, 0, 7);
+                        arg = ARGUMENT_OP;
+                        break;
+                    case TOKEN_RAX:
+                        arg = ARGUMENT_RAX; break;
+                    case TOKEN_RBX:
+                        arg = ARGUMENT_RBX; break;
+                    case TOKEN_RCX:
+                        arg = ARGUMENT_RCX; break;
+                    case TOKEN_RDX:
+                        arg = ARGUMENT_RDX; break;
+                    case TOKEN_RBP:
+                        arg = ARGUMENT_RBP; break;
+                    case TOKEN_RSP:
+                        arg = ARGUMENT_RSP; break;
+                    case TOKEN_RSI:
+                        arg = ARGUMENT_RSI; break;
+                    case TOKEN_RDI:
+                        arg = ARGUMENT_RDI; break;
+                    case TOKEN_R8:
+                        arg = ARGUMENT_R8; break;
+                    case TOKEN_R9:
+                        arg = ARGUMENT_R9; break;
+                    case TOKEN_R10:
+                        arg = ARGUMENT_R10; break;
+                    case TOKEN_R11:
+                        arg = ARGUMENT_R11; break;
+                    case TOKEN_R12:
+                        arg = ARGUMENT_R12; break;
+                    case TOKEN_R13:
+                        arg = ARGUMENT_R13; break;
+                    case TOKEN_R14:
+                        arg = ARGUMENT_R14; break;
+                    case TOKEN_R15:
+                        arg = ARGUMENT_R15; break;
+                    case TOKEN_RFLAGS:
+                        arg = ARGUMENT_RFLAGS; break;
+                    case TOKEN_RIP:
+                        arg = ARGUMENT_RIP; break;
+                    case TOKEN_REG:
+                        option_detail = true;
+                        value = parseIndex(parser, 0, 7);
+                        arg = ARGUMENT_REG;
+                        break;
+                    case TOKEN_STATIC_ADDR:
+                        arg = ARGUMENT_STATIC_ADDR; break;
+                    case TOKEN_SRC:
+                        option_detail = true;
+                        value = parseIndex(parser, 0, 7);
+                        arg = ARGUMENT_SRC;
+                        break;
+                    case TOKEN_TARGET:
+                        option_detail = true;
+                        arg = ARGUMENT_TARGET;
+                        break;
+                    case TOKEN_TRAMPOLINE:
+                        arg = ARGUMENT_TRAMPOLINE; break;
+                    case TOKEN_INTEGER:
+                        value = parser.i;
                         arg = ARGUMENT_INTEGER;
                         break;
-                    }
-                }
-                switch (arg)
-                {
-                    case ARGUMENT_RAX_PTR: case ARGUMENT_RBX_PTR:
-                    case ARGUMENT_RCX_PTR: case ARGUMENT_RDX_PTR:
-                    case ARGUMENT_RBP_PTR: case ARGUMENT_RSP_PTR:
-                    case ARGUMENT_RDI_PTR: case ARGUMENT_RSI_PTR:
-                    case ARGUMENT_R8_PTR:  case ARGUMENT_R9_PTR:
-                    case ARGUMENT_R10_PTR: case ARGUMENT_R11_PTR:
-                    case ARGUMENT_R12_PTR: case ARGUMENT_R13_PTR:
-                    case ARGUMENT_R14_PTR: case ARGUMENT_R15_PTR:
-                    case ARGUMENT_RFLAGS_PTR:
-                        break;
-                    default:
-                        if (ptr)
-                            error("failed to parse call action; cannot "
-                                "pass argument `%s' by pointer", s);
-                        break;
-                }
-                const char *basename = nullptr;
-                if (arg == ARGUMENT_INVALID && isalpha(s[0]))
-                {
-                    for (const auto &entry: entries)
-                    {
-                        if (entry.basename != nullptr &&
-                                strcmp(entry.basename, s) == 0)
+                    case TOKEN_STRING:
+                        for (const auto &entry: entries)
                         {
-                            basename = entry.basename;
-                            arg = ARGUMENT_USER;
-                            break;
+                            if (entry.basename != nullptr &&
+                                    strcmp(entry.basename, parser.s) == 0)
+                            {
+                                basename = entry.basename;
+                                arg = ARGUMENT_USER;
+                                break;
+                            }
                         }
-                    }
-                    if (arg == ARGUMENT_USER)
-                        value = parseIndex(parser, INTPTR_MIN, INTPTR_MAX);
+                        // Fallthrough:
+                    default:
+                        parser.unexpectedToken();
                 }
-                if (arg == ARGUMENT_INVALID)
-                    error("failed to parse call action; expected call "
-                        "argument, found `%s'", parser.s);
+                if (ptr)
+                {
+                    switch (arg)
+                    {
+                        case ARGUMENT_RAX:
+                            arg = ARGUMENT_RAX_PTR; break;
+                        case ARGUMENT_RBX:
+                            arg = ARGUMENT_RBX_PTR; break;
+                        case ARGUMENT_RCX:
+                            arg = ARGUMENT_RCX_PTR; break;
+                        case ARGUMENT_RDX:
+                            arg = ARGUMENT_RDX_PTR; break;
+                        case ARGUMENT_RBP:
+                            arg = ARGUMENT_RBP_PTR; break;
+                        case ARGUMENT_RSP:
+                            arg = ARGUMENT_RSP_PTR; break;
+                        case ARGUMENT_RSI:
+                            arg = ARGUMENT_RSI_PTR; break;
+                        case ARGUMENT_RDI:
+                            arg = ARGUMENT_RDI_PTR; break;
+                        case ARGUMENT_R8:
+                            arg = ARGUMENT_R8_PTR; break;
+                        case ARGUMENT_R9:
+                            arg = ARGUMENT_R9_PTR; break;
+                        case ARGUMENT_R10:
+                            arg = ARGUMENT_R10_PTR; break;
+                        case ARGUMENT_R11:
+                            arg = ARGUMENT_R11_PTR; break;
+                        case ARGUMENT_R12:
+                            arg = ARGUMENT_R12_PTR; break;
+                        case ARGUMENT_R13:
+                            arg = ARGUMENT_R13_PTR; break;
+                        case ARGUMENT_R14:
+                            arg = ARGUMENT_R14_PTR; break;
+                        case ARGUMENT_R15:
+                            arg = ARGUMENT_R15_PTR; break;
+                        case ARGUMENT_RFLAGS:
+                            arg = ARGUMENT_RFLAGS_PTR; break;
+                        default:
+                            error("failed to parse call action; cannot "
+                                "pass argument `%s' by pointer", name.c_str());
+                    }
+                }
                 bool duplicate = false;
                 for (const auto &prevArg: args)
                 {
@@ -998,21 +852,15 @@ static Action *parseAction(const char *str, MatchEntries &entries)
                     }
                 }
                 args.push_back({arg, duplicate, value, basename});
-                c = parser.getToken();
-                if (c == ')')
+                t = parser.getToken();
+                if (t == ')')
                     break;
-                if (c != ',')
-                    error("failed to parse call action; expected `)' or `,', "
-                        "found `%s'", parser.s);
+                if (t != ',')
+                    parser.unexpectedToken();
             }
-            c = parser.getToken();
         }
-        if (c != '@')
-            error("failed to parse call action; expected `@', found `%s'",
-                parser.s);
-        if (!isalpha(parser.getToken()))
-            error("failed to parse call action; expected filename, "
-                "found `%s'", parser.s);
+        parser.expectToken('@');
+        parser.getToken();          // Accept any token as filename.
         filename = strDup(parser.s);
         if (option_clean && option_naked)
             error("failed to parse call action; `clean' and `naked' "
@@ -1023,12 +871,9 @@ static Action *parseAction(const char *str, MatchEntries &entries)
                 "`after' and `replace' attributes can be used together");
         option_before = (option_before? true: !option_after);
     }
+    parser.expectToken(TOKEN_END);
 
-    if (parser.getToken() != '\0')
-        error("failed to parse action; expected end-of-input, found `%s'",
-            parser.s);
-
-    // Step(5): Build the action:
+    // Build the action:
     const char *name = nullptr;
     switch (kind)
     {
@@ -1100,14 +945,16 @@ static const char *makeMatchString(MatchKind match, const cs_insn *I,
 /*
  * Get an operand.
  */
-static const cs_x86_op *getOperand(const cs_insn *I, int idx, uint8_t access)
+static const cs_x86_op *getOperand(const cs_insn *I, int idx, x86_op_type type,
+    uint8_t access)
 {
     const cs_x86 *x86 = &I->detail->x86;
     for (uint8_t i = 0; i < x86->op_count; i++)
     {
         const cs_x86_op *op = x86->operands + i;
-        if ((op->access & access) != 0 ||
-            (op->type == X86_OP_IMM && (access & CS_AC_READ) != 0))
+        if ((type == X86_OP_INVALID? true: op->type == type) &&
+            ((op->access & access) != 0 ||
+             (op->type == X86_OP_IMM && (access & CS_AC_READ) != 0)))
         {
             if (idx == 0)
                 return op;
@@ -1120,17 +967,17 @@ static const cs_x86_op *getOperand(const cs_insn *I, int idx, uint8_t access)
 /*
  * Get number of operands.
  */
-static intptr_t getNumOperands(const cs_insn *I, uint8_t access)
+static intptr_t getNumOperands(const cs_insn *I, x86_op_type type,
+    uint8_t access)
 {
     const cs_x86 *x86 = &I->detail->x86;
-    if (access == (CS_AC_READ | CS_AC_WRITE))
-        return (intptr_t)x86->op_count;
     intptr_t n = 0;
     for (uint8_t i = 0; i < x86->op_count; i++)
     {
         const cs_x86_op *op = x86->operands + i;
-        if ((op->access & access) != 0 ||
-            (op->type == X86_OP_IMM && (access & CS_AC_READ) != 0))
+        if ((type == X86_OP_INVALID? true: op->type == type) &&
+            ((op->access & access) != 0 ||
+             (op->type == X86_OP_IMM && (access & CS_AC_READ) != 0)))
         {
             n++;
         }
@@ -1141,12 +988,28 @@ static intptr_t getNumOperands(const cs_insn *I, uint8_t access)
 /*
  * Create match value.
  */
-static intptr_t makeMatchValue(MatchKind match, int idx, MatchField field,
-    const cs_insn *I, intptr_t offset, intptr_t result)
+static intptr_t makeMatchValue(MatchKind match, int idx, Field field,
+    const cs_insn *I, intptr_t offset, intptr_t result, bool *defined)
 {
     const cs_detail *detail = I->detail;
-    const cs_x86_op *op     = nullptr;
-    uint8_t access = 0;
+    const cs_x86_op *op = nullptr;
+    x86_op_type type = X86_OP_INVALID;
+    uint8_t access = CS_AC_READ | CS_AC_WRITE;
+    switch (match)
+    {
+        case MATCH_SRC:
+            access = CS_AC_READ; break;
+        case MATCH_DST:
+            access = CS_AC_WRITE; break;
+        case MATCH_IMM:
+            type = X86_OP_IMM; break;
+        case MATCH_REG:
+            type = X86_OP_REG; break;
+        case MATCH_MEM:
+            type = X86_OP_MEM; break;
+        default:
+            break;
+    }
     switch (match)
     {
         case MATCH_TRUE:
@@ -1166,34 +1029,48 @@ static intptr_t makeMatchValue(MatchKind match, int idx, MatchField field,
                     return 1;
             return 0;
         case MATCH_OP: case MATCH_SRC: case MATCH_DST:
-            access = (match != MATCH_DST? CS_AC_READ: 0) |
-                     (match != MATCH_SRC? CS_AC_WRITE: 0);
+        case MATCH_IMM: case MATCH_REG: case MATCH_MEM:
             if (idx < 0)
             {
                 switch (field)
                 {
-                    case MATCH_FIELD_LENGTH:
-                        return getNumOperands(I, access);
-                    case MATCH_FIELD_SIZE:
-                    case MATCH_FIELD_NONE:
-                        return -1;
+                    case FIELD_COUNT:
+                        return getNumOperands(I, type, access);
+                    default:
+                        return (*defined = false);
                 }
             }
             else
             {
-                op = getOperand(I, idx, access);
+                op = getOperand(I, idx, type, access);
                 if (op == nullptr)
-                    return -1;
+                    return (*defined = false);
                 switch (field)
                 {
-                    case MATCH_FIELD_SIZE:
+                    case FIELD_SIZE:
                         return (intptr_t)op->size;
-                    case MATCH_FIELD_LENGTH:
-                    case MATCH_FIELD_NONE:
-                        return -1;
+                    case FIELD_TYPE:
+                        switch (op->type)
+                        {
+                            case X86_OP_IMM:
+                                return OP_TYPE_IMM;
+                            case X86_OP_REG:
+                                return OP_TYPE_REG;
+                            case X86_OP_MEM:
+                                return OP_TYPE_MEM;
+                            default:
+                                return (*defined = false);
+                        }
+                    case FIELD_READ:
+                        return (op->type == X86_OP_IMM ||
+                               (op->access & CS_AC_READ) != 0);
+                    case FIELD_WRITE:
+                        return ((op->access & CS_AC_WRITE) != 0);
+                    default:
+                        return (*defined = false);
                 }
             }
-            return -1;
+            return (*defined = false);
         case MATCH_OFFSET:
             return offset;
         case MATCH_PLUGIN:
@@ -1208,7 +1085,7 @@ static intptr_t makeMatchValue(MatchKind match, int idx, MatchField field,
         case MATCH_SIZE:
             return I->size;
         default:
-            return 0;
+            return (*defined = false);
     }
 }
 
@@ -1247,16 +1124,19 @@ static bool matchAction(csh handle, const Action *action, const cs_insn *I,
             case MATCH_TRUE: case MATCH_FALSE: case MATCH_ADDRESS:
             case MATCH_CALL: case MATCH_JUMP: case MATCH_OFFSET:
             case MATCH_OP: case MATCH_SRC: case MATCH_DST:
+            case MATCH_IMM: case MATCH_REG: case MATCH_MEM:
             case MATCH_PLUGIN: case MATCH_RANDOM: case MATCH_RETURN:
             case MATCH_SIZE:
             {
+                bool defined = true;
                 if (entry.cmp != MATCH_CMP_EQ_ZERO &&
                     entry.cmp != MATCH_CMP_NEQ_ZERO &&
                         entry.values->size() == 0)
                     break;
                 intptr_t x = makeMatchValue(entry.match, entry.idx,
                     entry.field, I, offset,
-                    (entry.match == MATCH_PLUGIN? entry.plugin->result: 0));
+                    (entry.match == MATCH_PLUGIN? entry.plugin->result: 0),
+                    &defined);
                 switch (entry.cmp)
                 {
                     case MATCH_CMP_EQ_ZERO:
@@ -1288,6 +1168,7 @@ static bool matchAction(csh handle, const Action *action, const cs_insn *I,
                     default:
                         return false;
                 }
+                pass = pass && defined;
                 break;
             }
             case MATCH_INVALID:
@@ -1547,9 +1428,11 @@ static void usage(FILE *stream, const char *progname)
         stream);
     fputs("\t\t\t    the instruction by the call.\n", stream);
     fputs("\t\t\t- ARG is one of:\n", stream);
-    fputs("\t\t\t  * \"asmStr\" is a pointer to the string\n", stream);
+    fputs("\t\t\t  * \"asm\" is a pointer to a string\n", stream);
     fputs("\t\t\t    representation of the instruction.\n", stream);
-    fputs("\t\t\t  * \"asmStrLen\" is the length of \"asmStr\".\n",
+    fputs("\t\t\t  * \"asm.count\" is the number of bytes in \"asm\".\n",
+        stream);
+    fputs("\t\t\t  * \"asm.len\" is the string length of \"asm\".\n",
         stream);
     fputs("\t\t\t  * \"offset\" is the file offset of the instruction.\n",
         stream);
@@ -1557,7 +1440,7 @@ static void usage(FILE *stream, const char *progname)
         stream);
     fputs("\t\t\t  * \"instr\" is the bytes of the instruction.\n",
         stream);
-    fputs("\t\t\t  * \"instrLen\" is the length of \"instr\".\n",
+    fputs("\t\t\t  * \"instr.count\" is the number of bytes in \"instr\".\n",
         stream);
     fputs("\t\t\t  * \"next\" is the address of the next instruction.\n",
         stream);
@@ -1568,9 +1451,9 @@ static void usage(FILE *stream, const char *progname)
     fputs("\t\t\t  * \"rax\"...\"r15\", \"rip\", \"rflags\" is the\n",
         stream);
     fputs("\t\t\t    corresponding register value.\n", stream);
-    fputs("\t\t\t  * \"&rax\"...\"&r15\" is the corresponding register\n",
+    fputs("\t\t\t  * \"&rax\"...\"&r15\", \"&rflags\" is the corresponding\n",
         stream);
-    fputs("\t\t\t    value (pass-by-pointer).\n", stream);
+    fputs("\t\t\t    register value (pass-by-pointer).\n", stream);
     fputs("\t\t\t  * \"staticAddr\" is the (static) address of the\n",
         stream);
     fputs("\t\t\t    instruction.\n", stream);

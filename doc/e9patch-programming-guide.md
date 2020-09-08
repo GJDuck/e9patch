@@ -229,16 +229,18 @@ that is less than the address `0x10000000` (e.g., to enforce PIC code).
 
 Several arguments are supported:
 
-* `asmStr` is a pointer to the string representation of the instruction.
-* `asmStrLen` is the length of `instrAsmStr`.
+* `asm` is a pointer to a string representation of the instruction.
+* `asm.count` is the number of bytes in `asm`.
+* `asm.len` is the length of `asm`.
 * `addr` is the address of the instruction.
 * `instr` is the bytes of the instruction.
-* `instrLen` is the length of `instrBytes`.
+* `instr.count` is the number of bytes in `instr`.
 * `next` is the address of the next instruction.
 * `target` is the jump/call/return target address, else -1.
 * `trampoline` is the address of the trampoline.
 * `rax`...`r15`, `rip`, `rflags` is the corresponding register value.
-* `&rax`...`&r15` is the corresponding register value (pass-by-pointer).
+* `&rax`...`&r15`, `&rflags` is the corresponding register value
+   (pass-by-pointer).
 * `staticAddr` is the (static) address of the instruction.
 * An integer constant.
 * A file lookup of the form `basename[index]` where

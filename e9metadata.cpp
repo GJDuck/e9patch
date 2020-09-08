@@ -26,9 +26,10 @@
 /*
  * Prototypes.
  */
-static const cs_x86_op *getOperand(const cs_insn *I, int idx, uint8_t access);
-static intptr_t makeMatchValue(MatchKind match, int idx, MatchField field,
-    const cs_insn *I, intptr_t offset, intptr_t result);
+static const cs_x86_op *getOperand(const cs_insn *I, int idx, x86_op_type type,
+    uint8_t access);
+static intptr_t makeMatchValue(MatchKind match, int idx, Field field,
+    const cs_insn *I, intptr_t offset, intptr_t result, bool *defined);
 
 /*
  * Temporarily restore a register.
@@ -578,16 +579,21 @@ static intptr_t lookupValue(const Action *action, const cs_insn *I,
             case MATCH_TRUE: case MATCH_FALSE: case MATCH_ADDRESS:
             case MATCH_CALL: case MATCH_JUMP: case MATCH_OFFSET:
             case MATCH_OP: case MATCH_SRC: case MATCH_DST:
+            case MATCH_IMM: case MATCH_REG: case MATCH_MEM:
             case MATCH_PLUGIN: case MATCH_RANDOM: case MATCH_RETURN:
             case MATCH_SIZE:
             {
+                bool defined = true;
                 intptr_t x = makeMatchValue(entry.match, entry.idx,
                     entry.field, I, offset,
-                    (entry.match == MATCH_PLUGIN? entry.plugin->result: 0));
+                    (entry.match == MATCH_PLUGIN? entry.plugin->result: 0),
+                    &defined);
                 auto i = entry.values->find(x);
+                if (!defined || i == entry.values->end())
+                    continue;
                 if (record != nullptr && i->second != record)
                     error("failed to lookup value from file \"%s.csv\"; "
-                        "matching is ambigious", basename);
+                        "matching is ambiguous", basename);
                 record = i->second;
                 break;
             }
@@ -597,16 +603,12 @@ static intptr_t lookupValue(const Action *action, const cs_insn *I,
     }
     if (record == nullptr)
         error("failed to lookup value from file \"%s.csv\"; matching is "
-            "ambigious", basename);
+            "ambiguous", basename);
     if (idx >= (intptr_t)record->size())
         error("failed to lookup value from file \"%s.csv\"; index %zd is "
             "out-of-range 0..%zu", basename, idx, record->size()-1);
     const char *str = record->at(idx);
-    intptr_t x;
-    const char *end = parseInt(str, x);
-    if (end == nullptr || *end != '\0')
-        error("failed to lookup value from file \"%s.csv\"; value \"%s\" is "
-            "not a valid integer", basename, str);
+    intptr_t x = nameToInt(basename, str);
     return x;
 }
 
@@ -643,7 +645,7 @@ static void sendLoadArgumentMetadata(FILE *out, CallInfo &info,
             break;
         case ARGUMENT_NEXT:
             if (action->before || action->replace)
-                sendLoadTargetMetadata(out, I, info, regno);
+                sendLoadNextMetadata(out, I, info, regno);
             else
             {
                 // If we reach here after the instruction, it means the branch
@@ -658,21 +660,22 @@ static void sendLoadArgumentMetadata(FILE *out, CallInfo &info,
         case ARGUMENT_STATIC_ADDR:
             sendLoadValueMetadata(out, (intptr_t)I->address, regno);
             break;
-        case ARGUMENT_ASM_STR:
+        case ARGUMENT_ASM:
             sendLeaFromPCRelToR64(out, "{\"rel32\":\".LasmStr\"}", regno);
             break;
-        case ARGUMENT_ASM_STR_LEN:
+        case ARGUMENT_ASM_COUNT: case ARGUMENT_ASM_LEN:
         {
             intptr_t len = strlen(I->mnemonic);
             if (I->op_str[0] != '\0')
                 len += strlen(I->op_str) + 1;
-            sendLoadValueMetadata(out, len, regno);
+            sendLoadValueMetadata(out,
+                (arg.kind == ARGUMENT_ASM_COUNT? len+1: len), regno);
             break;
         }
         case ARGUMENT_BYTES:
             sendLeaFromPCRelToR64(out, "{\"rel32\":\".Lbytes\"}", regno);
             break;
-        case ARGUMENT_BYTES_LEN:
+        case ARGUMENT_BYTES_COUNT:
             sendLoadValueMetadata(out, I->size, regno);
             break;
         case ARGUMENT_TARGET:
@@ -731,10 +734,16 @@ static void sendLoadArgumentMetadata(FILE *out, CallInfo &info,
             break;
         }
         case ARGUMENT_OP: case ARGUMENT_SRC: case ARGUMENT_DST:
+        case ARGUMENT_IMM: case ARGUMENT_REG: case ARGUMENT_MEM:
         {
-            uint8_t access = (arg.kind != ARGUMENT_DST? CS_AC_READ: 0) |
-                             (arg.kind != ARGUMENT_SRC? CS_AC_WRITE: 0);
-            const cs_x86_op *op = getOperand(I, (int)arg.value, access);
+            uint8_t access = (arg.kind == ARGUMENT_SRC? CS_AC_READ:
+                             (arg.kind == ARGUMENT_DST? CS_AC_WRITE:
+                              CS_AC_READ | CS_AC_WRITE));
+            x86_op_type type = (arg.kind == ARGUMENT_IMM? X86_OP_IMM:
+                               (arg.kind == ARGUMENT_REG? X86_OP_REG:
+                               (arg.kind == ARGUMENT_MEM? X86_OP_MEM:
+                                X86_OP_INVALID)));
+            const cs_x86_op *op = getOperand(I, (int)arg.value, type, access);
             sendLoadOperandMetadata(out, I, op, info, regno);
             break;
         }
@@ -753,7 +762,7 @@ static void sendArgumentDataMetadata(FILE *out, const Argument &arg,
 {
     switch (arg.kind)
     {
-        case ARGUMENT_ASM_STR:
+        case ARGUMENT_ASM:
             if (arg.duplicate)
                 return;
             fputs("\".LasmStr\",{\"string\":", out);
@@ -768,10 +777,16 @@ static void sendArgumentDataMetadata(FILE *out, const Argument &arg,
             fputc(',', out);
             break;
         case ARGUMENT_OP: case ARGUMENT_SRC: case ARGUMENT_DST:
+        case ARGUMENT_IMM: case ARGUMENT_REG: case ARGUMENT_MEM:
         {
-            uint8_t access = (arg.kind != ARGUMENT_DST? CS_AC_READ: 0) |
-                             (arg.kind != ARGUMENT_SRC? CS_AC_WRITE: 0);
-            const cs_x86_op *op = getOperand(I, (int)arg.value, access);
+            uint8_t access = (arg.kind == ARGUMENT_SRC? CS_AC_READ:
+                             (arg.kind == ARGUMENT_DST? CS_AC_WRITE:
+                              CS_AC_READ | CS_AC_WRITE));
+            x86_op_type type = (arg.kind == ARGUMENT_IMM? X86_OP_IMM:
+                               (arg.kind == ARGUMENT_REG? X86_OP_REG:
+                               (arg.kind == ARGUMENT_MEM? X86_OP_MEM:
+                                X86_OP_INVALID)));
+            const cs_x86_op *op = getOperand(I, (int)arg.value, type, access);
             sendOperandDataMetadata(out, I, op, getArgRegIdx(argno));
             break;
         }
