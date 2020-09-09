@@ -385,7 +385,7 @@ struct Parser
             if (j >= TOKEN_MAXLEN)
                 return TOKEN_ERROR;
             char *end = nullptr;
-            i = (intptr_t)strtoull(s, &end, base);
+            i = (intptr_t)strtoull((neg? s+1: s), &end, base);
             if (end == nullptr || *end != '\0')
                 return TOKEN_ERROR;
             i = (neg? -i: i);
@@ -496,10 +496,12 @@ struct Parser
             pos++;
         if (buf[pos] == '\"')
             return getToken();
-        for (unsigned j = 0; j < TOKEN_MAXLEN && buf[pos] != '\0'; j++)
+        unsigned j;
+        for (j = 0; j < TOKEN_MAXLEN && buf[pos] != '\0'; j++)
             s[j] = buf[pos++];
         if (buf[pos] != '\0')
             unexpectedToken();
+        s[j] = '\0';
         return TOKEN_REGEX;
     }
 };
