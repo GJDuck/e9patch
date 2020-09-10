@@ -23,6 +23,12 @@
 
 #include <cassert>
 
+#define CONTEXT_FORMAT      "%lx: %s%s%s: "
+#define CONTEXT(I)          (I)->address,                           \
+                            (I)->mnemonic,                          \
+                            ((I)->op_str[0] == '\0'? "": " "),      \
+                            (I)->op_str
+
 /*
  * Prototypes.
  */
@@ -30,6 +36,20 @@ static const cs_x86_op *getOperand(const cs_insn *I, int idx, x86_op_type type,
     uint8_t access);
 static intptr_t makeMatchValue(MatchKind match, int idx, Field field,
     const cs_insn *I, intptr_t offset, intptr_t result, bool *defined);
+
+/*
+ * Emits an instruction to load the given value into the corresponding
+ * argno register.
+ */
+static void sendLoadValueMetadata(FILE *out, intptr_t value, int argno)
+{
+    if (value >= INT32_MIN && value <= INT32_MAX)
+        sendSExtFromI32ToR64(out, value, argno);
+    else if (value >= 0 && value <= UINT32_MAX)
+        sendZExtFromI32ToR64(out, value, argno);
+    else
+        sendMovFromI64ToR64(out, value, argno);
+}
 
 /*
  * Temporarily restore a register.
@@ -76,10 +96,10 @@ static bool sendSaveRegToStack(FILE *out, CallInfo &info, x86_reg reg)
         return true;
     if (info.pushClobbersRAX(reg) && !info.isSaved(X86_REG_RAX))
     {
-        sendPush(out, info.rsp_offset, X86_REG_RAX);
+        sendPush(out, info.rsp_offset, info.before, X86_REG_RAX);
         info.push(X86_REG_RAX);
     }
-    bool result = sendPush(out, info.rsp_offset, reg);
+    bool result = sendPush(out, info.rsp_offset, info.before, reg);
     info.push(reg);
     return result;
 }
@@ -88,7 +108,8 @@ static bool sendSaveRegToStack(FILE *out, CallInfo &info, x86_reg reg)
  * Send a load (mov/lea) from a converted memory operand to a register.
  */
 static void sendLoadFromConvertedMemToR64(FILE *out, const cs_insn *I,
-    const cs_x86_op *op, CallInfo &info, uint8_t opcode, int regno)
+    const cs_x86_op *op, CallInfo &info, uint8_t opcode0, uint8_t opcode,
+    int regno)
 {
     const cs_detail *detail = I->detail;
     const cs_x86 *x86       = &detail->x86;
@@ -149,11 +170,10 @@ static void sendLoadFromConvertedMemToR64(FILE *out, const cs_insn *I,
     if (disp < INT32_MIN || disp > INT32_MAX)
     {
         // This is a corner case for nonsensical operands using %rsp
-        warning("failed to load converted memory operand for instruction "
-            "(%s%s%s) at address 0x%lx; the adjusted displacement is "
-            "out-of-bounds", I->mnemonic, (I->op_str[0] == '\0'? "": " "),
-            I->op_str, I->address);
-        sendSExtFromI32ToR64(out, -1, regno);
+        warning(CONTEXT_FORMAT "failed to load converted memory operand "
+            "into register %s; the adjusted displacement is out-of-bounds",
+            CONTEXT(I), getRegName(getReg(regno)));
+        sendSExtFromI32ToR64(out, 0, regno);
         return;
     }
     if (disp != disp0)
@@ -180,7 +200,10 @@ static void sendLoadFromConvertedMemToR64(FILE *out, const cs_insn *I,
     mod = (modrm >> 6) & 0x3;
     if (have_prefix)
         fprintf(out, "%u,", prefix);
-    fprintf(out, "%u,%u,%u,", rex, opcode, modrm);
+    if (opcode0 != 0)
+        fprintf(out, "%u,%u,%u,%u,", rex, opcode0, opcode, modrm);
+    else
+        fprintf(out, "%u,%u,%u,", rex, opcode, modrm);
     if (have_sib)
         fprintf(out, "%u,", sib);
     if (have_pc_rel)
@@ -197,53 +220,108 @@ static void sendLoadFromConvertedMemToR64(FILE *out, const cs_insn *I,
 }
 
 /*
+ * Emits instructions to load a register by value or reference.
+ */
+static void sendLoadRegToArg(FILE *out, const cs_insn *I, x86_reg reg,
+    bool ptr, CallInfo &info, int argno)
+{
+    if (ptr)
+    {
+        // Pass register by pointer.
+        if (!sendSaveRegToStack(out, info, reg))
+        {
+            warning(CONTEXT_FORMAT "failed to save register %s to stack; "
+                "not yet implemented", CONTEXT(I), getRegName(reg));
+            sendSExtFromI32ToR64(out, 0, argno);
+            return;
+        }
+
+        sendLeaFromStackToR64(out, info.getOffset(reg), argno);
+    }
+    else
+    {
+        // Pass register by value:
+        int regno = getRegIdx(reg);
+        if (regno < 0)
+        {
+            warning(CONTEXT_FORMAT "failed to move register %s into "
+                "register %s; not possible or not yet implemented",
+                CONTEXT(I), getRegName(reg), getRegName(getReg(argno)));
+            sendSExtFromI32ToR64(out, 0, argno);
+            return;
+        }
+        if (info.isClobbered(reg))
+            sendMovFromStackToR64(out, info.getOffset(reg), argno);
+        else
+            sendMovFromR64ToR64(out, regno, argno);
+    }
+}
+
+/*
  * Emits instructions to load an operand into the corresponding
- * regno register.  If the operand does not exist, load -1.
+ * regno register.  If the operand does not exist, load 0.
  */
 static void sendLoadOperandMetadata(FILE *out, const cs_insn *I,
-    const cs_x86_op *op, CallInfo &info, int argno)
+    const cs_x86_op *op, bool ptr, CallInfo &info, int argno)
 {
-    if (op == nullptr)
-    {
-        sendSExtFromI32ToR64(out, -1, argno);
-        return;
-    }
-
     switch (op->type)
     {
         case X86_OP_REG:
-        {
-            x86_reg reg = op->reg;
-            if (!sendSaveRegToStack(out, info, reg))
-            {
-                warning("failed to generate code for operand argument "
-                    "for instruction (%s%s%s) at address 0x%lx; operand uses "
-                    "a register that is not yet supported", I->mnemonic,
-                    (I->op_str[0] == '\0'? "": " "), I->op_str, I->address);
-                goto unsupported;
-            }
-            sendLeaFromStackToR64(out, info.getOffset(reg), argno);
+            sendLoadRegToArg(out, I, op->reg, ptr, info, argno);
             return;
-        }
 
         case X86_OP_MEM:
-            sendLoadFromConvertedMemToR64(out, I, op, info, /*lea=*/0x8d,
-                argno);
+            if (!ptr)
+            {
+                switch (op->size)
+                {
+                    case sizeof(int64_t):
+                        sendLoadFromConvertedMemToR64(out, I, op, info,
+                            0x00, /*mov=*/0x8b, argno);
+                        break;
+                    case sizeof(int32_t):
+                        sendLoadFromConvertedMemToR64(out, I, op, info,
+                            0x00, /*movslq=*/0x63, argno);
+                        break;
+                    case sizeof(int16_t):
+                        sendLoadFromConvertedMemToR64(out, I, op, info,
+                            0x0f, /*movswq=*/0xbf, argno);
+                        break;
+                    case sizeof(int8_t):
+                        sendLoadFromConvertedMemToR64(out, I, op, info,
+                            0x0f, /*movsbq=*/0xbe, argno);
+                        break;
+                    case 0:
+                        sendSExtFromI32ToR64(out, 0, argno);
+                        break;
+                    default:
+                        warning(CONTEXT_FORMAT "failed to load memory "
+                            "operand contents into register %s; operand "
+                            "size (%zu) is too big", CONTEXT(I),
+                            getRegName(getReg(argno)), op->size);
+                        sendSExtFromI32ToR64(out, 0, argno);
+                        return;
+                }
+            }
+            else
+                sendLoadFromConvertedMemToR64(out, I, op, info,
+                    0x00, /*lea=*/0x8d, argno);
             return;
 
         case X86_OP_IMM:
-        {
-            std::string offset("{\"rel32\":\".Limmediate_");
-            offset += getRegName(argno);
-            offset += "\"}";
-            sendLeaFromPCRelToR64(out, offset.c_str(), argno);
+            if (!ptr)
+                sendLoadValueMetadata(out, op->imm, argno);
+            else
+            {
+                std::string offset("{\"rel32\":\".Limmediate_");
+                offset += std::to_string(argno);
+                offset += "\"}";
+                sendLeaFromPCRelToR64(out, offset.c_str(), argno);
+            }
             return;
-        }
 
         default:
-        unsupported:
-            sendSExtFromI32ToR64(out, -1, argno);
-            return;
+            error("unknown operand type (%d)", op->type);
     }
 }
 
@@ -259,7 +337,7 @@ static void sendOperandDataMetadata(FILE *out, const cs_insn *I,
     switch (op->type)
     {
         case X86_OP_IMM:
-            fprintf(out, "\".Limmediate_%s\",", getRegName(argno));
+            fprintf(out, "\".Limmediate_%d\",", argno);
             switch (op->size)
             {
                 case 1:
@@ -287,7 +365,7 @@ static void sendOperandDataMetadata(FILE *out, const cs_insn *I,
 /*
  * Emits instructions to load the jump/call/return target into the
  * corresponding argno register.  Else, if I is not a jump/call/return
- * instruction, load -1.
+ * instruction, load 0.
  */
 static void sendLoadTargetMetadata(FILE *out, const cs_insn *I, CallInfo &info,
     int argno)
@@ -316,7 +394,7 @@ static void sendLoadTargetMetadata(FILE *out, const cs_insn *I, CallInfo &info,
         unknown:
 
             // This is NOT a jump/call/return, so the target is set to (-1):
-            sendSExtFromI32ToR64(out, -1, argno);
+            sendSExtFromI32ToR64(out, 0, argno);
             return;
     }
 
@@ -335,7 +413,7 @@ static void sendLoadTargetMetadata(FILE *out, const cs_insn *I, CallInfo &info,
         case X86_OP_MEM:
             // This is an indirect jump/call.  Convert the instruction into a
             // mov instruction that loads the target in the correct register
-            sendLoadFromConvertedMemToR64(out, I, op, info, /*mov=*/0x8b,
+            sendLoadFromConvertedMemToR64(out, I, op, info, 0x00, /*mov=*/0x8b,
                 argno);
             return;
         
@@ -361,7 +439,7 @@ static void sendLoadTargetMetadata(FILE *out, const cs_insn *I, CallInfo &info,
 static void sendLoadNextMetadata(FILE *out, const cs_insn *I, CallInfo &info,
     int argno)
 {
-    const char *regname = getRegName(argno);
+    const char *regname = getRegName(getReg(argno))+1;
     uint8_t opcode = 0x06;
     switch (I->id)
     {
@@ -457,20 +535,6 @@ static void sendLoadNextMetadata(FILE *out, const cs_insn *I, CallInfo &info,
     
     // .Lnext:
     fprintf(out, "\".Lnext%s\",", regname);
-}
-
-/*
- * Emits an instruction to load the given value into the corresponding
- * argno register.
- */
-static void sendLoadValueMetadata(FILE *out, intptr_t value, int argno)
-{
-    if (value >= INT32_MIN && value <= INT32_MAX)
-        sendSExtFromI32ToR64(out, value, argno);
-    else if (value >= 0 && value <= UINT32_MAX)
-        sendZExtFromI32ToR64(out, value, argno);
-    else
-        sendMovFromI64ToR64(out, value, argno);
 }
 
 /*
@@ -690,6 +754,8 @@ static void sendLoadArgumentMetadata(FILE *out, CallInfo &info,
         case ARGUMENT_R10: case ARGUMENT_R11: case ARGUMENT_R12:
         case ARGUMENT_R13: case ARGUMENT_R14: case ARGUMENT_R15:
         {
+            if (arg.ptr)
+                goto ARGUMENT_REG_PTR;
             x86_reg reg = getReg(arg.kind);
             if (info.isClobbered(reg))
                 sendMovFromStackToR64(out, info.getOffset(reg), regno);
@@ -706,10 +772,14 @@ static void sendLoadArgumentMetadata(FILE *out, CallInfo &info,
                     regno);
             break;
         case ARGUMENT_RSP:
+            if (arg.ptr)
+                goto ARGUMENT_REG_PTR;
             sendLeaFromStackToR64(out, info.rsp_offset, regno);
             break;
         case ARGUMENT_RFLAGS:
-            if (info.isSaved(X86_REG_EFLAGS))
+            if (arg.ptr)
+                goto ARGUMENT_REG_PTR;
+            else if (info.isSaved(X86_REG_EFLAGS))
                 sendMovFromStack16ToR64(out, info.getOffset(X86_REG_EFLAGS),
                     regno);
             else
@@ -721,12 +791,7 @@ static void sendLoadArgumentMetadata(FILE *out, CallInfo &info,
                 sendMovFromRAX16ToR64(out, regno);
             }
             break;
-        case ARGUMENT_RAX_PTR: case ARGUMENT_RBX_PTR: case ARGUMENT_RCX_PTR:
-        case ARGUMENT_RDX_PTR: case ARGUMENT_RBP_PTR: case ARGUMENT_RDI_PTR:
-        case ARGUMENT_RSI_PTR: case ARGUMENT_R8_PTR:  case ARGUMENT_R9_PTR:
-        case ARGUMENT_R10_PTR: case ARGUMENT_R11_PTR: case ARGUMENT_R12_PTR:
-        case ARGUMENT_R13_PTR: case ARGUMENT_R14_PTR: case ARGUMENT_R15_PTR:
-        case ARGUMENT_RSP_PTR: case ARGUMENT_RFLAGS_PTR:
+        ARGUMENT_REG_PTR:
         {
             x86_reg reg = getReg(arg.kind);
             sendSaveRegToStack(out, info, reg);
@@ -744,7 +809,24 @@ static void sendLoadArgumentMetadata(FILE *out, CallInfo &info,
                                (arg.kind == ARGUMENT_MEM? X86_OP_MEM:
                                 X86_OP_INVALID)));
             const cs_x86_op *op = getOperand(I, (int)arg.value, type, access);
-            sendLoadOperandMetadata(out, I, op, info, regno);
+            if (op == nullptr)
+            {
+                const char *kind = "";
+                switch (arg.kind)
+                {
+                    case ARGUMENT_SRC: kind = "src "; break;
+                    case ARGUMENT_DST: kind = "dst "; break;
+                    case ARGUMENT_IMM: kind = "imm "; break;
+                    case ARGUMENT_REG: kind = "reg "; break;
+                    case ARGUMENT_MEM: kind = "mem "; break;
+                    default: break;
+                }
+                warning(CONTEXT_FORMAT "failed to load %soperand; index %d is "
+                    "out-of-range", CONTEXT(I), kind, (int)arg.value);
+                sendSExtFromI32ToR64(out, 0, regno);
+                break;
+            }
+            sendLoadOperandMetadata(out, I, op, arg.ptr, info, regno);
             break;
         }
         default:
@@ -779,6 +861,8 @@ static void sendArgumentDataMetadata(FILE *out, const Argument &arg,
         case ARGUMENT_OP: case ARGUMENT_SRC: case ARGUMENT_DST:
         case ARGUMENT_IMM: case ARGUMENT_REG: case ARGUMENT_MEM:
         {
+            if (!arg.ptr)
+                return;
             uint8_t access = (arg.kind == ARGUMENT_SRC? CS_AC_READ:
                              (arg.kind == ARGUMENT_DST? CS_AC_WRITE:
                               CS_AC_READ | CS_AC_WRITE));
@@ -848,7 +932,8 @@ static Metadata *buildMetadata(const Action *action, const cs_insn *I,
             
             // STEP (1): Load arguments.
             int argno = 0;
-            CallInfo info(rmin);
+            bool before = action->before || action->replace;
+            CallInfo info(rmin, before);
             for (const auto &arg: action->args)
             {
                 sendLoadArgumentMetadata(out, info, action, arg, I, offset,
@@ -863,7 +948,7 @@ static Metadata *buildMetadata(const Action *action, const cs_insn *I,
                 int regno = getArgRegIdx(argno);
                 if (regno != argno)
                 {
-                    sendPush(out, info.rsp_offset, getReg(regno));
+                    sendPush(out, info.rsp_offset, before, getReg(regno));
                     rsp_args_offset += sizeof(int64_t);
                 }
             }

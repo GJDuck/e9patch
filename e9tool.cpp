@@ -120,7 +120,7 @@ enum MatchKind
 };
 
 /*
- * Fields fields.
+ * Fields.
  */
 enum Field
 {
@@ -680,7 +680,7 @@ static Action *parseAction(const char *str, MatchEntries &entries)
                 }
                 ArgumentKind arg = ARGUMENT_INVALID;
                 intptr_t value = 0x0;
-                std::string name(parser.s);
+                int arg_token = t;
                 const char *basename = nullptr;
                 switch (t)
                 {
@@ -704,15 +704,9 @@ static Action *parseAction(const char *str, MatchEntries &entries)
                     case TOKEN_BASE:
                         arg = ARGUMENT_BASE; break;
                     case TOKEN_DST:
-                        option_detail = true;
-                        value = parseIndex(parser, 0, 7);
-                        arg = ARGUMENT_DST;
-                        break;
+                        arg = ARGUMENT_DST; break;
                     case TOKEN_IMM:
-                        option_detail = true;
-                        value = parseIndex(parser, 0, 7);
-                        arg = ARGUMENT_IMM;
-                        break;
+                        arg = ARGUMENT_IMM; break;
                     case TOKEN_INSTR:
                         arg = ARGUMENT_BYTES;
                         if (parser.peekToken() != '.')
@@ -722,10 +716,7 @@ static Action *parseAction(const char *str, MatchEntries &entries)
                         arg = ARGUMENT_BYTES_COUNT;
                         break;
                     case TOKEN_MEM:
-                        option_detail = true;
-                        value = parseIndex(parser, 0, 7);
-                        arg = ARGUMENT_MEM;
-                        break;
+                        arg = ARGUMENT_MEM; break;
                     case TOKEN_NEXT:
                         option_detail = true;
                         arg = ARGUMENT_NEXT;
@@ -733,10 +724,7 @@ static Action *parseAction(const char *str, MatchEntries &entries)
                     case TOKEN_OFFSET:
                         arg = ARGUMENT_OFFSET; break;
                     case TOKEN_OP:
-                        option_detail = true;
-                        value = parseIndex(parser, 0, 7);
-                        arg = ARGUMENT_OP;
-                        break;
+                        arg = ARGUMENT_OP; break;
                     case TOKEN_RAX:
                         arg = ARGUMENT_RAX; break;
                     case TOKEN_RBX:
@@ -774,17 +762,11 @@ static Action *parseAction(const char *str, MatchEntries &entries)
                     case TOKEN_RIP:
                         arg = ARGUMENT_RIP; break;
                     case TOKEN_REG:
-                        option_detail = true;
-                        value = parseIndex(parser, 0, 7);
-                        arg = ARGUMENT_REG;
-                        break;
+                        arg = ARGUMENT_REG; break;
                     case TOKEN_STATIC_ADDR:
                         arg = ARGUMENT_STATIC_ADDR; break;
                     case TOKEN_SRC:
-                        option_detail = true;
-                        value = parseIndex(parser, 0, 7);
-                        arg = ARGUMENT_SRC;
-                        break;
+                        arg = ARGUMENT_SRC; break;
                     case TOKEN_TARGET:
                         option_detail = true;
                         arg = ARGUMENT_TARGET;
@@ -810,48 +792,25 @@ static Action *parseAction(const char *str, MatchEntries &entries)
                     default:
                         parser.unexpectedToken();
                 }
-                if (ptr)
+                switch (arg)
                 {
-                    switch (arg)
-                    {
-                        case ARGUMENT_RAX:
-                            arg = ARGUMENT_RAX_PTR; break;
-                        case ARGUMENT_RBX:
-                            arg = ARGUMENT_RBX_PTR; break;
-                        case ARGUMENT_RCX:
-                            arg = ARGUMENT_RCX_PTR; break;
-                        case ARGUMENT_RDX:
-                            arg = ARGUMENT_RDX_PTR; break;
-                        case ARGUMENT_RBP:
-                            arg = ARGUMENT_RBP_PTR; break;
-                        case ARGUMENT_RSP:
-                            arg = ARGUMENT_RSP_PTR; break;
-                        case ARGUMENT_RSI:
-                            arg = ARGUMENT_RSI_PTR; break;
-                        case ARGUMENT_RDI:
-                            arg = ARGUMENT_RDI_PTR; break;
-                        case ARGUMENT_R8:
-                            arg = ARGUMENT_R8_PTR; break;
-                        case ARGUMENT_R9:
-                            arg = ARGUMENT_R9_PTR; break;
-                        case ARGUMENT_R10:
-                            arg = ARGUMENT_R10_PTR; break;
-                        case ARGUMENT_R11:
-                            arg = ARGUMENT_R11_PTR; break;
-                        case ARGUMENT_R12:
-                            arg = ARGUMENT_R12_PTR; break;
-                        case ARGUMENT_R13:
-                            arg = ARGUMENT_R13_PTR; break;
-                        case ARGUMENT_R14:
-                            arg = ARGUMENT_R14_PTR; break;
-                        case ARGUMENT_R15:
-                            arg = ARGUMENT_R15_PTR; break;
-                        case ARGUMENT_RFLAGS:
-                            arg = ARGUMENT_RFLAGS_PTR; break;
-                        default:
+                    case ARGUMENT_OP: case ARGUMENT_SRC: case ARGUMENT_DST:
+                    case ARGUMENT_IMM: case ARGUMENT_REG: case ARGUMENT_MEM:
+                        option_detail = true;
+                        value = parseIndex(parser, 0, 7);
+                        break;
+                    case ARGUMENT_RAX: case ARGUMENT_RBX: case ARGUMENT_RCX:
+                    case ARGUMENT_RDX: case ARGUMENT_RBP: case ARGUMENT_RSP:
+                    case ARGUMENT_RSI: case ARGUMENT_RDI: case ARGUMENT_R8:
+                    case ARGUMENT_R9: case ARGUMENT_R10: case ARGUMENT_R11:
+                    case ARGUMENT_R12: case ARGUMENT_R13: case ARGUMENT_R14:
+                    case ARGUMENT_R15: case ARGUMENT_RFLAGS:
+                        break;
+                    default:
+                        if (ptr)
                             error("failed to parse call action; cannot "
-                                "pass argument `%s' by pointer", name.c_str());
-                    }
+                                "pass argument `%s' by pointer",
+                                parser.getName(arg_token));
                 }
                 bool duplicate = false;
                 for (const auto &prevArg: args)
@@ -862,7 +821,7 @@ static Action *parseAction(const char *str, MatchEntries &entries)
                         break;
                     }
                 }
-                args.push_back({arg, duplicate, value, basename});
+                args.push_back({arg, ptr, duplicate, value, basename});
                 t = parser.getToken();
                 if (t == ')')
                     break;
