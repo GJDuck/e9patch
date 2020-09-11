@@ -220,17 +220,15 @@ struct Action
     void *context;
     std::vector<Argument> args;
     bool clean;
-    bool before;
-    bool replace;
+    CallKind call;
 
     Action(const char *string, MatchEntries &&entries, ActionKind kind,
             const char *name, const char *filename, const char *symbol,
             Plugin *plugin, const std::vector<Argument> &&args, bool clean,
-            bool before, bool replace) :
+            CallKind call) :
             string(string), entries(std::move(entries)), kind(kind),
             name(name), filename(filename), symbol(symbol), plugin(plugin),
-            context(nullptr), args(args), clean(clean), before(before),
-            replace(replace)
+            context(nullptr), args(args), clean(clean), call(call)
     {
         ;
     }
@@ -617,8 +615,9 @@ static Action *parseAction(const char *str, MatchEntries &entries)
     }
 
     // Parse call or plugin (if necessary):
-    bool option_clean = false, option_naked = false, option_before = false,
-         option_after = false, option_replace = false;
+    CallKind call = CALL_BEFORE;
+    bool clean = false, naked = false, before = false, after = false,
+         replace = false, conditional = false;
     const char *symbol   = nullptr;
     const char *filename = nullptr;
     Plugin *plugin = nullptr;
@@ -644,15 +643,17 @@ static Action *parseAction(const char *str, MatchEntries &entries)
                 switch (t)
                 {
                     case TOKEN_AFTER:
-                        option_after = true; break;
+                        after = true; break;
                     case TOKEN_BEFORE:
-                        option_before = true; break;
+                        before = true; break;
                     case TOKEN_CLEAN:
-                        option_clean = true; break;
+                        clean = true; break;
+                    case TOKEN_CONDITIONAL:
+                        conditional = true; break;
                     case TOKEN_NAKED:
-                        option_naked = true; break;
+                        naked = true; break;
                     case TOKEN_REPLACE:
-                        option_replace = true; break;
+                        replace = true; break;
                     default:
                         parser.unexpectedToken();
                 }
@@ -832,14 +833,17 @@ static Action *parseAction(const char *str, MatchEntries &entries)
         parser.expectToken('@');
         parser.getToken();          // Accept any token as filename.
         filename = strDup(parser.s);
-        if (option_clean && option_naked)
+        if (clean && naked)
             error("failed to parse call action; `clean' and `naked' "
                 "attributes cannot be used together");
-        option_clean = (option_clean? true: !option_naked);
-        if ((int)option_before + (int)option_after + (int)option_replace > 1)
+        if ((int)before + (int)after + (int)replace + (int)conditional> 1)
             error("failed to parse call action; only one of the `before', "
-                "`after' and `replace' attributes can be used together");
-        option_before = (option_before? true: !option_after);
+                "`after', `replace' and `conditional' attributes can be used "
+                "together");
+        clean = (clean? true: !naked);
+        call = (after? CALL_AFTER:
+               (replace? CALL_REPLACE:
+               (conditional? CALL_CONDITIONAL: CALL_BEFORE)));
     }
     parser.expectToken(TOKEN_END);
 
@@ -859,9 +863,18 @@ static Action *parseAction(const char *str, MatchEntries &entries)
         case ACTION_CALL:
         {
             std::string call_name("call_");
-            call_name += (option_clean? 'C': 'N');
-            call_name += (option_replace? 'R': (option_before? 'B': 'A'));
-            call_name += '_';
+            call_name += (clean? "clean_": "naked_");
+            switch (call)
+            {
+                case CALL_BEFORE:
+                    call_name += "before_"; break;
+                case CALL_AFTER:
+                    call_name += "after_"; break;
+                case CALL_REPLACE:
+                    call_name += "replace_"; break;
+                case CALL_CONDITIONAL:
+                    call_name += "conditional_"; break;
+            }
             call_name += symbol;
             call_name += '_';
             call_name += filename;
@@ -880,8 +893,7 @@ static Action *parseAction(const char *str, MatchEntries &entries)
     }
 
     Action *action = new Action(str, std::move(entries), kind, name, filename,
-        symbol, plugin, std::move(args), option_clean, option_before,
-        option_replace);
+        symbol, plugin, std::move(args), clean, call);
     return action;
 }
 
@@ -1841,8 +1853,7 @@ int main(int argc, char **argv)
                 {
                     sendCallTrampolineMessage(backend.out, *target_elf,
                         action->filename, action->symbol, action->name,
-                        action->args, action->clean, action->before,
-                        action->replace);
+                        action->args, action->clean, action->call);
                     have_call.insert(action->name);
                 }
                 break;

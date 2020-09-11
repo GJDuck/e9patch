@@ -71,7 +71,7 @@ using namespace e9frontend;
  * Prototypes.
  */
 static bool sendPush(FILE *out, int32_t offset, bool before, x86_reg reg);
-static void sendPop(FILE *out, x86_reg reg);
+static void sendPop(FILE *out, bool preserve_rax, x86_reg reg);
 static bool sendMovFromR64ToR64(FILE *out, int srcno, int dstno);
 static void sendMovFromStackToR64(FILE *out, int32_t offset, int regno);
 static void sendMovFromR64ToStack(FILE *out, int regno, int32_t offset);
@@ -676,6 +676,42 @@ static const char *getRegName(x86_reg reg)
 #define RIP_SLOT    (0x4000 - sizeof(int64_t))
 
 /*
+ * Get all callee-save registers.
+ */
+static const int *getCallerSaveRegs(bool clean, bool conditional,
+    size_t num_args)
+{
+    static const int clean_save[] =
+    {
+        RAX_IDX, RFLAGS_IDX, R11_IDX, R10_IDX, R9_IDX, R8_IDX, RCX_IDX,
+        RDX_IDX, RSI_IDX, RDI_IDX, -1
+    };
+    if (clean)
+        return clean_save;
+    else if (!conditional)
+        return clean_save + 2 + (8 - num_args);
+    else
+    {
+        // If conditional, %rax must be the first register:
+        static const int conditional_save[][10] =
+        {
+            {RAX_IDX, -1},
+            {RAX_IDX, RDI_IDX, -1},
+            {RAX_IDX, RSI_IDX, RDI_IDX, -1},
+            {RAX_IDX, RDX_IDX, RSI_IDX, RDI_IDX, -1},
+            {RAX_IDX, RCX_IDX, RDX_IDX, RSI_IDX, RDI_IDX, -1},
+            {RAX_IDX, R8_IDX, RCX_IDX, RDX_IDX, RSI_IDX, RDI_IDX, -1},
+            {RAX_IDX, R9_IDX, R8_IDX, RCX_IDX, RDX_IDX, RSI_IDX, RDI_IDX, -1},
+            {RAX_IDX, R10_IDX, R9_IDX, R8_IDX, RCX_IDX, RDX_IDX, RSI_IDX,
+                RDI_IDX, -1},
+            {RAX_IDX, R11_IDX, R10_IDX, R9_IDX, R8_IDX, RCX_IDX, RDX_IDX,
+                RSI_IDX, RDI_IDX, -1},
+        };
+        return conditional_save[num_args];
+    }
+}
+
+/*
  * Call state helper class.
  */
 struct CallInfo
@@ -691,18 +727,19 @@ struct CallInfo
         uint32_t saved:1;                       // Register saved?
         uint32_t clobbered:1;                   // Register clobbered?
         uint32_t used:1;                        // Register in use?
+        uint32_t caller_save:1;                 // Register caller save?
 
         RegInfo(int32_t offset, int32_t size, int push) :
             offset(offset), size(size), push(push), saved(0), clobbered(0),
-                used(0)
+                used(0), caller_save(0)
         {
             ;
         }
     };
 
+    const int * const rsave;                    // Caller save regsters.
     const bool before;                          // Before or after inst.
     int32_t rsp_offset = 0x4000;                // Stack offset
-    const int rmin;                             // Callee-save index
     std::map<x86_reg, RegInfo> info;            // Register info
     std::vector<x86_reg> pushed;                // Pushed registers
 
@@ -869,7 +906,7 @@ struct CallInfo
     /*
      * Push a register onto the stack.
      */
-    void push(x86_reg reg)
+    void push(x86_reg reg, bool caller_save = false)
     {
         reg = getCanonicalReg(reg);
 
@@ -895,6 +932,7 @@ struct CallInfo
         }
         RegInfo rinfo(reg_offset, getRegSize(reg), (int)pushed.size());
         rinfo.saved = true;
+        rinfo.caller_save = caller_save;
         info.insert({reg, rinfo});
         pushed.push_back(reg);
 
@@ -903,12 +941,22 @@ struct CallInfo
     }
 
     /*
+     * Check if regsiter is caller-saved.
+     */
+    bool isCallerSave(x86_reg reg)
+    {
+        const RegInfo *rinfo = getInfo(reg);
+        return (rinfo == nullptr? false: rinfo->caller_save != 0);
+    }
+
+    /*
      * Constructor.
      */
-    CallInfo(int rmin, bool before) : rmin(rmin), before(before)
+    CallInfo(bool clean, bool conditional, size_t num_args, bool before) :
+        rsave(getCallerSaveRegs(clean, conditional, num_args)), before(before)
     {
-        for (int regno = rmin-1; regno >= 0; regno--)
-            push(getReg(regno));
+        for (unsigned i = 0; rsave[i] >= 0; i++)
+            push(getReg(rsave[i]), /*caller_save=*/true);
     }
 
     CallInfo() = delete;
@@ -1867,22 +1915,37 @@ static bool sendPush(FILE *out, int32_t offset, bool before, x86_reg reg)
 /*
  * Send (or emulate) a pop instruction.
  */
-static void sendPop(FILE *out, x86_reg reg)
+static void sendPop(FILE *out, bool preserve_rax, x86_reg reg)
 {
     // Special cases:
     switch (reg)
     {
+        case X86_REG_RAX:
+            if (preserve_rax)
+            {
+                sendLeaFromStackToR64(out, (int32_t)sizeof(uint64_t),
+                    RSP_IDX);
+                return;
+            }
+            break;
+
         case X86_REG_EFLAGS:
-            sendPop(out, X86_REG_RAX);
+            if (preserve_rax)
+                sendMovFromR64ToStack(out, RAX_IDX,
+                    -(int32_t)sizeof(uint64_t));
+            sendPop(out, false, X86_REG_RAX);
             // add $0x7f,%al
             // sahf
             fprintf(out, "%u,%u,", 0x04, 0x7f);
             fprintf(out, "%u,", 0x9e);
+            if (preserve_rax)
+                sendMovFromStackToR64(out, 2 * -(int32_t)sizeof(uint64_t),
+                    RAX_IDX);
             return;
 
         case X86_REG_RIP:
             // %rip is treated as read-only, so ignore pop'ed value
-            sendLeaFromStackToR64(out, -(int32_t)sizeof(uint64_t), RSP_IDX);
+            sendLeaFromStackToR64(out, (int32_t)sizeof(uint64_t), RSP_IDX);
             return;
 
         default:
@@ -2181,7 +2244,7 @@ static void sendLeaFromStackToR64(FILE *out, int32_t offset, int regno)
  */
 unsigned e9frontend::sendCallTrampolineMessage(FILE *out, const ELF &elf,
     const char *filename, const char *symbol, const char *name,
-    const std::vector<Argument> &args, bool clean, bool before, bool replace)
+    const std::vector<Argument> &args, bool clean, CallKind call)
 {
     intptr_t addr = lookupSymbol(elf, symbol);
     if (addr < 0)
@@ -2195,60 +2258,78 @@ unsigned e9frontend::sendCallTrampolineMessage(FILE *out, const ELF &elf,
     sendParamHeader(out, "template");
     putc('[', out);
     
-    // Put a label at the start of the trampoline (if necessary).
-    for (const auto &arg: args)
-    {
-        if (arg.kind == ARGUMENT_TRAMPOLINE)
-        {
-            fputs("\".Ltrampoline\",", out);
-            break;
-        }
-    }
+    // Put a label at the start of the trampoline:
+    fputs("\".Ltrampoline\",", out);
 
     // Put instruction here for "after" instrumentation.
-    if (!replace && !before)
+    if (call == CALL_AFTER)
         fprintf(out, "\"$instruction\",");
 
     // Adjust the stack:
     fprintf(out, "%u,%u,%u,%u,{\"int32\":%d},",     // lea -0x4000(%rsp),%rsp
         0x48, 0x8d, 0xa4, 0x24, -0x4000);
 
-    // `rmin' is the first callee-save register according to the calling
-    // converntion (clean or naked):
-    int rmin = (clean? RBX_IDX: (int)args.size());
-
-    // Push all callee-save registers:
-    for (int regno = rmin-1; regno >= 0; regno--)
-        sendPush(out, 0, before || replace, getReg(regno));
+    // Push all caller-save registers:
+    bool conditional = (call == CALL_CONDITIONAL);
+    const int *rsave = getCallerSaveRegs(clean, conditional, args.size());
+    int num_rsave = 0;
+    for (int i = 0; rsave[i] >= 0; i++, num_rsave++)
+        sendPush(out, 0, (call != CALL_AFTER), getReg(rsave[i]));
 
     // Load the arguments (if necessary):
-    if (args.size() > 0)
-        fputs("\"$loadArgs\",", out);
+    fputs("\"$loadArgs\",", out);
 
     // Call the function:
     fprintf(out, "%u,{\"rel32\":%d},", 0xe8, (int32_t)addr);    // callq addr
 
     // Restore the state:
-    if (args.size() > 0)
-        fputs("\"$restoreState\",", out);
+    fputs("\"$restoreState\",", out);
 
     // Pop all callee-save registers:
-    for (int regno = 0; regno < rmin; regno++)
-        sendPop(out, getReg(regno));
+    for (int i = num_rsave-1; i >= (conditional? 1: 0); i--)
+    {
+        bool preserve_rax = (conditional || !clean);
+        sendPop(out, preserve_rax, getReg(rsave[i]));
+    }
+
+    // If conditional, jump away from $instruction if %rax is zero:
+    if (conditional)
+    {
+        // xchg %rax,%rcx
+        // jrcxz .Lskip
+        // xchg %rax,%rcx
+        // pop %rax
+        //
+        fprintf(out, "%u,%u,", 0x48, 0x91);
+        fprintf(out, "%u,{\"rel8\":\".Lskip\"},", 0xe3);
+        fprintf(out, "%u,%u,", 0x48, 0x91);
+        fprintf(out, "%u,", 0x58);
+    }
 
     // Restore the stack pointer.
-    if (args.size() > 0)
-        fputs("\"$restoreRSP\",",out);
-    else
-        fprintf(out, "%u,%u,%u,%u,{\"int32\":%d},", // lea 0x4000(%rsp),%rsp
-            0x48, 0x8d, 0xa4, 0x24, 0x4000);
-
+    fputs("\"$restoreRSP\",",out);
+    
     // Put instruction here for "before" instrumentation:
-    if (!replace && before)
+    if (call == CALL_BEFORE || call == CALL_CONDITIONAL)
         fputs("\"$instruction\",", out);
 
     // Return from trampoline:
     fputs("\"$continue\"", out);
+
+    // If conditional, but the .Lskip block here:
+    if (conditional)
+    {
+        // .Lskip:
+        // xchg %rax,%rcx
+        // pop %rax
+        //
+        fputs(",\".Lskip\",", out);
+        fprintf(out, "%u,%u,", 0x48, 0x91);
+        fprintf(out, "%u,", 0x58);
+
+        fputs("\"$restoreRSP\",",out);
+        fputs("\"$continue\"", out);
+    }
     
     // Any additional data:
     if (args.size() > 0)

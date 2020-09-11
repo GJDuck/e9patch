@@ -708,14 +708,17 @@ static void sendLoadArgumentMetadata(FILE *out, CallInfo &info,
             sendLeaFromPCRelToR64(out, "{\"rel32\":\".Linstruction\"}", regno);
             break;
         case ARGUMENT_NEXT:
-            if (action->before || action->replace)
-                sendLoadNextMetadata(out, I, info, regno);
-            else
+            switch (action->call)
             {
-                // If we reach here after the instruction, it means the branch
-                // was NOT taken, so (next=.Lcontinue).
-                sendLeaFromPCRelToR64(out, "{\"rel32\":\".Lcontinue\"}",
-                    regno);
+                case CALL_BEFORE: case CALL_REPLACE: case CALL_CONDITIONAL:
+                    sendLoadNextMetadata(out, I, info, regno);
+                    break;
+                case CALL_AFTER:
+                    // If we reach here after the instruction, it means the
+                    // branch was NOT taken, so (next=.Lcontinue).
+                    sendLeaFromPCRelToR64(out, "{\"rel32\":\".Lcontinue\"}",
+                        regno);
+                    break;
             }
             break;
         case ARGUMENT_BASE:
@@ -764,12 +767,17 @@ static void sendLoadArgumentMetadata(FILE *out, CallInfo &info,
             break;
         }
         case ARGUMENT_RIP:
-            if (action->before || action->replace)
-                sendLeaFromPCRelToR64(out, "{\"rel32\":\".Linstruction\"}",
-                    regno);
-            else
-                sendLeaFromPCRelToR64(out, "{\"rel32\":\".Lcontinue\"}",
-                    regno);
+            switch (action->call)
+            {
+                case CALL_BEFORE: case CALL_REPLACE: case CALL_CONDITIONAL:
+                    sendLeaFromPCRelToR64(out, "{\"rel32\":\".Linstruction\"}",
+                        regno);
+                    break;
+                case CALL_AFTER:
+                    sendLeaFromPCRelToR64(out, "{\"rel32\":\".Lcontinue\"}",
+                        regno);
+                    break;
+            }
             break;
         case ARGUMENT_RSP:
             if (arg.ptr)
@@ -886,8 +894,7 @@ static Metadata *buildMetadata(const Action *action, const cs_insn *I,
     off_t offset, Metadata *metadata, char *buf, size_t size)
 {
     if (action == nullptr || action->kind == ACTION_PASSTHRU ||
-            action->kind == ACTION_TRAP || action->kind == ACTION_PLUGIN ||
-            (action->kind == ACTION_CALL && action->args.size() == 0))
+            action->kind == ACTION_TRAP || action->kind == ACTION_PLUGIN)
     {
         return nullptr;
     }
@@ -921,19 +928,12 @@ static Metadata *buildMetadata(const Action *action, const cs_insn *I,
         }
         case ACTION_CALL:
         {
-            if (action->args.size() == 0)
-            {
-                metadata[0].name = nullptr;
-                metadata[0].data = nullptr;
-                break;
-            }
-
-            int rmin = (action->clean? RBX_IDX: (int)action->args.size());
-            
-            // STEP (1): Load arguments.
+            // Load arguments.
             int argno = 0;
-            bool before = action->before || action->replace;
-            CallInfo info(rmin, before);
+            bool before = (action->call != CALL_AFTER);
+            bool conditional = (action->call == CALL_CONDITIONAL);
+            CallInfo info(action->clean, conditional, action->args.size(),
+                before);
             for (const auto &arg: action->args)
             {
                 sendLoadArgumentMetadata(out, info, action, arg, I, offset,
@@ -952,13 +952,14 @@ static Metadata *buildMetadata(const Action *action, const cs_insn *I,
                     rsp_args_offset += sizeof(int64_t);
                 }
             }
-            for (int regno = info.rmin; regno < RMAX_IDX; regno++)
+            for (int regno = 0; regno < RMAX_IDX; regno++)
             {
-                if (info.isClobbered(getReg(regno)))
+                x86_reg reg = getReg(regno);
+                if (!info.isCallerSave(reg) && info.isClobbered(reg))
                 {
-                    // Restore clobbered caller-save register:
+                    // Restore clobbered callee-save register:
                     int32_t reg_offset = rsp_args_offset;
-                    reg_offset += info.getOffset(getReg(regno));
+                    reg_offset += info.getOffset(reg);
                     sendMovFromStackToR64(out, reg_offset, regno);
                 }
             }
@@ -968,7 +969,7 @@ static Metadata *buildMetadata(const Action *action, const cs_insn *I,
             metadata[i].data = md_load_args;
             i++;
 
-            // STEP (2): Restore state.
+            // Restore state.
             if (rsp_args_offset != 0)
             {
                 // lea rsp_args_offset(%rsp),%rsp
@@ -976,24 +977,33 @@ static Metadata *buildMetadata(const Action *action, const cs_insn *I,
                     0x48, 0x8d, 0xa4, 0x24, rsp_args_offset);
             }
             bool pop_rsp = false;
-            for (int i = (int)info.pushed.size()-1; i >= info.rmin; i--)
+            for (int i = (int)info.pushed.size()-1; i >= 0; i--)
             {
                 x86_reg reg = info.pushed.at(i);
-                if (reg == X86_REG_RSP)
+                if (info.isCallerSave(reg))
                 {
-                    pop_rsp = true;
-                    continue;               // Handled in the next step.
+                    // The remaining registers are caller-save, so break:
+                    break;
                 }
-                sendPop(out, reg);
+                switch (reg)
+                {
+                    case X86_REG_RSP:
+                        pop_rsp = true;
+                        continue;           // %rsp is always popped last.
+                    default:
+                        break;
+                }
+                bool preserve_rax = (conditional || !action->clean);
+                sendPop(out, preserve_rax, reg);
             }
             const char *md_restore_state = buildMetadataString(out, buf, &pos);
             metadata[i].name = "restoreState";
             metadata[i].data = md_restore_state;
             i++;
 
-            // STEP (3): Restore stack pointer.
+            // Restore %rsp.
             if (pop_rsp)
-                sendPop(out, X86_REG_RSP);
+                sendPop(out, false, X86_REG_RSP);
             else
             {
                 // lea 0x4000(%rsp),%rsp
@@ -1005,7 +1015,7 @@ static Metadata *buildMetadata(const Action *action, const cs_insn *I,
             metadata[i].data = md_restore_rsp;
             i++;
 
-            // STEP (4): Place data (if necessary).
+            // Place data (if necessary).
             argno = 0;
             for (const auto &arg: action->args)
             {
