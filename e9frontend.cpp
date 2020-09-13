@@ -1462,7 +1462,7 @@ static bool isLibraryFilename(const char *filename)
 /*
  * Parse an ELF file.
  */
-void e9frontend::parseELF(const char *filename, intptr_t base, ELF &elf)
+ELF *e9frontend::parseELF(const char *filename, intptr_t base)
 {
     int fd = open(filename, O_RDONLY, 0);
     if (fd < 0)
@@ -1648,30 +1648,42 @@ void e9frontend::parseELF(const char *filename, intptr_t base, ELF &elf)
         dynamic_symsz  = shdr_dynsym->sh_size;
     }
 
-    elf.filename       = strDup(filename);
-    elf.data           = data;
-    elf.size           = size;
-    elf.base           = base;
-    elf.phdrs          = phdrs;
-    elf.phnum          = phnum;
-    elf.text_offset    = text_offset;
-    elf.text_addr      = text_addr;
-    elf.text_size      = text_size;
-    elf.dynamic_strtab = dynamic_strtab;
-    elf.dynamic_strsz  = dynamic_strsz;
-    elf.dynamic_symtab = dynamic_symtab;
-    elf.dynamic_symsz  = dynamic_symsz;
-    elf.free_addr      = free_addr;
-    elf.pie            = (pic && exe);
-    elf.dso            = (pic && !exe);
-    elf.reloc          = reloc;
+    ELF *elf = new ELF;
+    elf->filename       = strDup(filename);
+    elf->data           = data;
+    elf->size           = size;
+    elf->base           = base;
+    elf->phdrs          = phdrs;
+    elf->phnum          = phnum;
+    elf->text_offset    = text_offset;
+    elf->text_addr      = text_addr;
+    elf->text_size      = text_size;
+    elf->dynamic_strtab = dynamic_strtab;
+    elf->dynamic_strsz  = dynamic_strsz;
+    elf->dynamic_symtab = dynamic_symtab;
+    elf->dynamic_symsz  = dynamic_symsz;
+    elf->free_addr      = free_addr;
+    elf->pie            = (pic && exe);
+    elf->dso            = (pic && !exe);
+    elf->reloc          = reloc;
+    return elf;
+}
+
+/*
+ * Free an ELF file object.
+ */
+void freeELF(ELF *elf)
+{
+    munmap((void *)elf->data, elf->size);
+    delete elf;
 }
 
 /*
  * Lookup the address of a symbol, or INTPTR_MIN if not found.
  */
-intptr_t e9frontend::lookupSymbol(const ELF &elf, const char *symbol)
+intptr_t e9frontend::lookupSymbol(const ELF *ptr, const char *symbol)
 {
+    const ELF &elf = *ptr;
     if (elf.dynamic_symtab == nullptr || elf.dynamic_symsz == 0 ||
             elf.dynamic_strtab == nullptr || elf.dynamic_strsz == 0)
         return INTPTR_MIN;
@@ -1694,8 +1706,10 @@ intptr_t e9frontend::lookupSymbol(const ELF &elf, const char *symbol)
 /*
  * Embed an ELF file.
  */
-void e9frontend::sendELFFileMessage(FILE *out, const ELF &elf, bool absolute)
+void e9frontend::sendELFFileMessage(FILE *out, const ELF *ptr, bool absolute)
 {
+    const ELF &elf = *ptr;
+
     /*
      * Sanity checks.
      */
@@ -1709,8 +1723,8 @@ void e9frontend::sendELFFileMessage(FILE *out, const ELF &elf, bool absolute)
     /*
      * Check for special routines.
      */
-    intptr_t init = lookupSymbol(elf, "init");
-    intptr_t mmap = lookupSymbol(elf, "mmap");
+    intptr_t init = lookupSymbol(&elf, "init");
+    intptr_t mmap = lookupSymbol(&elf, "mmap");
 
     /*
      * Send segments.
@@ -2242,11 +2256,13 @@ static void sendLeaFromStackToR64(FILE *out, int32_t offset, int regno)
 /*
  * Send a call ELF trampoline.
  */
-unsigned e9frontend::sendCallTrampolineMessage(FILE *out, const ELF &elf,
+unsigned e9frontend::sendCallTrampolineMessage(FILE *out, const ELF *ptr,
     const char *filename, const char *symbol, const char *name,
     const std::vector<Argument> &args, bool clean, CallKind call)
 {
-    intptr_t addr = lookupSymbol(elf, symbol);
+    const ELF &elf = *ptr;
+
+    intptr_t addr = lookupSymbol(&elf, symbol);
     if (addr < 0)
         error("failed to find dynamic symbol \"%s\" in ELF file \"%s\"",
             symbol, filename);

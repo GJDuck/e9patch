@@ -670,9 +670,11 @@ The E9Tool plugin API is very simple and consists of just four functions:
     Called once before the binary is disassembled.
 2. `e9_plugin_instr_v1(FILE *out, const ELF *in, ...)`:
     Called once for each disassembled instruction.
-3. `e9_plugin_patch_v1(FILE *out, const ELF *in, ...)`:
+3. `e9_plugin_match_v1(FILE *out, const ELF *in, ...)`:
+    Called once for each matching.
+4. `e9_plugin_patch_v1(FILE *out, const ELF *in, ...)`:
     Called for each patch location.
-4. `e9_plugin_fini_v1(FILE *out, const ELF *in, ...)`:
+5. `e9_plugin_fini_v1(FILE *out, const ELF *in, ...)`:
     Called once after all instructions have been patched.
 
 Note that each function is optional, and the plugin can choose not to
@@ -722,7 +724,10 @@ The `e9_plugin_instr_v1()` function will do the following:
 
 1. Analyze or remember the instruction (if necessary)
 2. Setup additional trampolines (if necessary)
-3. Veto the patching decision (optional)
+
+The `e9_plugin_match_v1()` function will do the following:
+
+1. Return a value to be used in a matching.
 
 The `e9_plugin_patch_v1()` function will do the following:
 

@@ -55,6 +55,7 @@
 static bool option_trap_all = false;
 static bool option_detail   = false;
 static bool option_debug    = false;
+static bool option_notify   = false;
 static std::string option_format("binary");
 static std::string option_output("a.out");
 static std::string option_syntax("ATT");
@@ -64,11 +65,11 @@ static std::string option_syntax("ATT");
  */
 struct Location
 {
-    const uint64_t offset:48;
-    const uint64_t size:4;
-    uint64_t       emitted:1;
-    const uint64_t patch:1;
-    const uint64_t action:10;
+    uint64_t offset:48;
+    uint64_t size:4;
+    uint64_t emitted:1;
+    uint64_t patch:1;
+    uint64_t action:10;
 
     Location(off_t offset, size_t size, bool patch, unsigned action) :
         offset(offset), size(size), emitted(0), patch(patch), action(action)
@@ -88,6 +89,7 @@ struct Plugin
     intptr_t result;
     PluginInit initFunc;
     PluginInstr instrFunc;
+    PluginMatch matchFunc;
     PluginPatch patchFunc;
     PluginFini finiFunc;
 };
@@ -272,6 +274,7 @@ static Plugin *openPlugin(const char *basename)
     plugin->result    = 0;
     plugin->initFunc  = (PluginInit)dlsym(handle, "e9_plugin_init_v1");
     plugin->instrFunc = (PluginInstr)dlsym(handle, "e9_plugin_instr_v1");
+    plugin->matchFunc = (PluginMatch)dlsym(handle, "e9_plugin_match_v1");
     plugin->patchFunc = (PluginPatch)dlsym(handle, "e9_plugin_patch_v1");
     plugin->finiFunc  = (PluginFini)dlsym(handle, "e9_plugin_fini_v1");
     if (plugin->initFunc == nullptr &&
@@ -283,6 +286,7 @@ static Plugin *openPlugin(const char *basename)
             plugin->filename);
 
     plugins.insert({plugin->filename, plugin});
+    option_notify = option_notify || (plugin->instrFunc != nullptr);
     return plugin;
 }
 
@@ -297,7 +301,22 @@ static void notifyPlugins(FILE *out, const ELF *elf, csh handle, off_t offset,
         Plugin *plugin = i.second;
         if (plugin->instrFunc == nullptr)
             continue;
-        plugin->result = plugin->instrFunc(out, elf, handle, offset, I,
+        plugin->instrFunc(out, elf, handle, offset, I, plugin->context);
+    }
+}
+
+/*
+ * Get the match value for all plugins.
+ */
+static void matchPlugins(FILE *out, const ELF *elf, csh handle, off_t offset,
+    const cs_insn *I)
+{
+    for (auto i: plugins)
+    {
+        Plugin *plugin = i.second;
+        if (plugin->matchFunc == nullptr)
+            continue;
+        plugin->result = plugin->matchFunc(out, elf, handle, offset, I,
             plugin->context);
     }
 }
@@ -412,9 +431,9 @@ static void parseMatch(const char *str, MatchEntries &entries)
             parser.expectToken(TOKEN_STRING);
             plugin = openPlugin(parser.s);
             parser.expectToken(']');
-            if (plugin->instrFunc == nullptr)
+            if (plugin->matchFunc == nullptr)
                 error("failed to parse matching; plugin \"%s\" does not "
-                    "export the \"e9_plugin_instr_v1\" function",
+                    "export the \"e9_plugin_match_v1\" function",
                     plugin->filename);
             break;
         }
@@ -1072,7 +1091,7 @@ static intptr_t makeMatchValue(MatchKind match, int idx, Field field,
 }
 
 /*
- * Match an action.
+ * Matching.
  */
 static bool matchAction(csh handle, const Action *action, const cs_insn *I,
     intptr_t offset)
@@ -1117,7 +1136,7 @@ static bool matchAction(csh handle, const Action *action, const cs_insn *I,
                     break;
                 intptr_t x = makeMatchValue(entry.match, entry.idx,
                     entry.field, I, offset,
-                    (entry.match == MATCH_PLUGIN? entry.plugin->result: 0),
+                    (entry.match == MATCH_PLUGIN?  entry.plugin->result: 0),
                     &defined);
                 switch (entry.cmp)
                 {
@@ -1132,8 +1151,8 @@ static bool matchAction(csh handle, const Action *action, const cs_insn *I,
                         break;
                     case MATCH_CMP_NEQ:
                         pass = (entry.values->size() == 1?
-                            entry.values->find(x) == entry.values->end():
-                            true);
+                                entry.values->find(x) == entry.values->end():
+                                true);
                         break;
                     case MATCH_CMP_LT:
                         pass = (x < entry.values->rbegin()->first);
@@ -1179,6 +1198,22 @@ static bool matchAction(csh handle, const Action *action, const cs_insn *I,
             (option_is_tty? "\33[0m": ""));
     }
     return pass;
+}
+
+/*
+ * Matching.
+ */
+static int match(csh handle, const std::vector<Action *> &actions,
+    const cs_insn *I, off_t offset)
+{
+    int idx = 0;
+    for (const auto action: actions)
+    {
+        if (matchAction(handle, action, I, offset))
+            return idx;
+        idx++;
+    }
+    return -1;
 }
 
 /*
@@ -1338,7 +1373,7 @@ static void usage(FILE *stream, const char *progname)
     fputs("\t\t\t                TYPE: integer\n", stream);
     fputs("\t\t\t- \"plugin[NAME]\"\n", stream);
     fputs("\t\t\t              : the value returned by NAME.so's\n", stream);
-    fputs("\t\t\t                e9_plugin_instr_v1 function.\n", stream);
+    fputs("\t\t\t                e9_plugin_match_v1() function.\n", stream);
     fputs("\t\t\t                TYPE: integer\n", stream);
     fputc('\n', stream);
     fputs("\t\tMultiple `--match'/`-M' options can be combined, which will\n",
@@ -1763,8 +1798,7 @@ int main(int argc, char **argv)
      * Parse the ELF file.
      */
     const char *filename = argv[optind];
-    ELF elf;
-    parseELF(filename, 0x0, elf);
+    ELF &elf = *parseELF(filename, 0x0);
 
     /*
      * The ELF file seems OK, spawn and initialize the e9patch backend.
@@ -1827,7 +1861,7 @@ int main(int argc, char **argv)
             case ACTION_CALL:
             {
                 // Step (1): Ensure the ELF file is loaded:
-                ELF *target_elf = nullptr;
+                ELF *target = nullptr;
                 auto i = files.find(action->filename);
                 if (i == files.end())
                 {
@@ -1835,23 +1869,21 @@ int main(int argc, char **argv)
                     intptr_t free_addr = file_addr + 8 * PAGE_SIZE;
                     free_addr = (free_addr % PAGE_SIZE == 0? free_addr:
                         (free_addr + PAGE_SIZE) - (free_addr % PAGE_SIZE));
-                    target_elf = new ELF;
-    
-                    parseELF(action->filename, free_addr, *target_elf);
-                    sendELFFileMessage(backend.out, *target_elf);
-                    files.insert({action->filename, target_elf});
-                    size_t size = (size_t)target_elf->free_addr;
+                    target = parseELF(action->filename, free_addr);
+                    sendELFFileMessage(backend.out, target);
+                    files.insert({action->filename, target});
+                    size_t size = (size_t)target->free_addr;
                     free_addr += size;
                     file_addr = free_addr;
                 }
                 else
-                    target_elf = i->second;
+                    target = i->second;
 
                 // Step (2): Create the trampoline:
                 auto j = have_call.find(action->name);
                 if (j == have_call.end())
                 {
-                    sendCallTrampolineMessage(backend.out, *target_elf,
+                    sendCallTrampolineMessage(backend.out, target,
                         action->filename, action->symbol, action->name,
                         action->args, action->clean, action->call);
                     have_call.insert(action->name);
@@ -1918,28 +1950,26 @@ int main(int argc, char **argv)
         }
         if (I->mnemonic[0] == '.')
         {
-            warning("failed to disassemble (%s %s) at address 0x%lx",
-                I->mnemonic, I->op_str, I->address);
+            warning("failed to disassemble (%s%s%s) at address 0x%lx",
+                I->mnemonic, (I->op_str[0] == '\0'? "": " "), I->op_str,
+                I->address);
             failed = true;
             sync = option_sync;
             continue;
         }
 
-        bool patch = false;
-        unsigned index = 0;
+        int idx = -1;
         off_t offset = ((intptr_t)I->address - elf.text_addr);
-        notifyPlugins(backend.out, &elf, handle, offset, I);
-        for (const auto action: option_actions)
+
+        if (option_notify)
+            notifyPlugins(backend.out, &elf, handle, offset, I);
+        else
         {
-            if (matchAction(handle, action, I, offset))
-            {
-                patch = true;
-                break;
-            }
-            index++;
+            matchPlugins(backend.out, &elf, handle, offset, I);
+            idx = match(handle, option_actions, I, offset);
         }
 
-        Location loc(offset, I->size, patch, index);
+        Location loc(offset, I->size, (idx >= 0), idx);
         locs.push_back(loc);
     }
     if (code != end)
@@ -1956,6 +1986,34 @@ int main(int argc, char **argv)
         else
             warning("failed to disassemble the .text section of \"%s\"; "
                 "the rewritten binary may be corrupt", filename);
+    }
+    locs.shrink_to_fit();
+    if (option_notify)
+    {
+        // The first disassembly pass was used for notifications.
+        // We employ a second disassembly pass for matching.
+ 
+        size_t count = locs.size();
+        for (size_t i = 0; i < count; i++)
+        {
+            Location &loc = locs[i];
+            off_t text_offset = (off_t)loc.offset;
+            uint64_t address = (uint64_t)elf.text_addr + text_offset;
+            off_t offset = elf.text_offset + text_offset;
+            const uint8_t *code = elf.data + offset;
+            size_t size = loc.size;
+            bool ok = cs_disasm_iter(handle, &code, &size, &address, I);
+            if (!ok)
+                error("failed to disassemble instruction at address 0x%lx",
+                    address);
+            matchPlugins(backend.out, &elf, handle, offset, I);
+            int idx = match(handle, option_actions, I, offset);
+            if (idx >= 0)
+            {
+                Location new_loc(text_offset, I->size, true, idx);
+                locs[i] = new_loc;
+            }
+        }
     }
 
     /*

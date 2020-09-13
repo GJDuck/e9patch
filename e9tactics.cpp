@@ -505,7 +505,7 @@ static Patch *tactic_T3b(Binary &B, Instr *I, const Trampoline *T)
         for (J = I->prev; J != nullptr && J->addr > target; J = J->prev)
             ;
     }
-    if (J == nullptr || target == J->addr ||
+    if (J == nullptr || target <= J->addr ||
             (J->addr < I->addr && J->addr + J->size > I->addr))
         return nullptr;
     unsigned i = target - J->addr;

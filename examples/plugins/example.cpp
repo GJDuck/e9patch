@@ -145,9 +145,9 @@ extern void *e9_plugin_init_v1(FILE *out, const e9frontend::ELF *elf)
 }
 
 /*
- * We select all control-flow transfer instructions.
+ * We match all control-flow transfer instructions.
  */
-extern intptr_t e9_plugin_instr_v1(FILE *out, const e9frontend::ELF *elf,
+extern intptr_t e9_plugin_match_v1(FILE *out, const e9frontend::ELF *elf,
     csh handle, off_t offset, const cs_insn *I, void *context)
 {
     const cs_detail *detail = I->detail;

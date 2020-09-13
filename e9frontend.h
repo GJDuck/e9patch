@@ -141,12 +141,12 @@ extern unsigned sendReserveMessage(FILE *out, intptr_t addr, size_t len,
 extern unsigned sendReserveMessage(FILE *out, intptr_t addr,
     const uint8_t *data, size_t len, int prot, intptr_t init = 0x0,
     intptr_t mmap = 0x0, bool absolute = false);
-extern void sendELFFileMessage(FILE *out, const ELF &elf,
+extern void sendELFFileMessage(FILE *out, const ELF *elf,
     bool absolute = false);
 extern unsigned sendPassthruTrampolineMessage(FILE *out);
 extern unsigned sendPrintTrampolineMessage(FILE *out);
 extern unsigned sendTrapTrampolineMessage(FILE *out);
-extern unsigned sendCallTrampolineMessage(FILE *out, const ELF &elf,
+extern unsigned sendCallTrampolineMessage(FILE *out, const ELF *elf,
     const char *filename, const char *symbol, const char *name,
     const std::vector<Argument> &args, bool clean = true,
     CallKind call = CALL_BEFORE);
@@ -156,8 +156,9 @@ extern unsigned sendTrampolineMessage(FILE *out, const char *name,
 /*
  * Misc. functions:
  */
-extern void parseELF(const char *filename, intptr_t base, ELF &elf);
-extern intptr_t lookupSymbol(const ELF &elf, const char *symbol);
+extern ELF *parseELF(const char *filename, intptr_t base);
+extern void freeELF(ELF *elf);
+extern intptr_t lookupSymbol(const ELF *elf, const char *symbol);
 extern void NO_RETURN error(const char *msg, ...);
 extern void warning(const char *msg, ...);
 
