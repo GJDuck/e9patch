@@ -377,11 +377,12 @@ struct Parser
                 pos += 2;
                 c = buf[pos];
             }
-            if (!isdigit(c))
+            if (!(base == 10? isdigit(c): isxdigit(c)))
                 return TOKEN_ERROR;
             s[j++] = c;
             pos++;
-            while (isdigit(buf[pos]) && j < TOKEN_MAXLEN)
+            while ((base == 10? isdigit(buf[pos]): isxdigit(buf[pos])) &&
+                    j < TOKEN_MAXLEN)
                 s[j++] = buf[pos++];
             s[j] = '\0';
             if (j >= TOKEN_MAXLEN)
