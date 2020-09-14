@@ -78,6 +78,7 @@ enum ArgumentKind
     ARGUMENT_BYTES_COUNT,           // Instruction bytes count
     ARGUMENT_TARGET,                // Call/jump target
     ARGUMENT_TRAMPOLINE,            // Trampoline
+    ARGUMENT_RANDOM,                // Random number
 
     ARGUMENT_RAX,                   // %rax register
     ARGUMENT_RBX,                   // %rbx register

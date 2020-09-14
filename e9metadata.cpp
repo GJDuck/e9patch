@@ -751,6 +751,9 @@ static void sendLoadArgumentMetadata(FILE *out, CallInfo &info,
         case ARGUMENT_TRAMPOLINE:
             sendLeaFromPCRelToR64(out, "{\"rel32\":\".Ltrampoline\"}", regno);
             break;
+        case ARGUMENT_RANDOM:
+            sendLoadValueMetadata(out, rand(), regno);
+            break;
         case ARGUMENT_RAX: case ARGUMENT_RBX: case ARGUMENT_RCX:
         case ARGUMENT_RDX: case ARGUMENT_RBP: case ARGUMENT_RDI:
         case ARGUMENT_RSI: case ARGUMENT_R8: case ARGUMENT_R9:

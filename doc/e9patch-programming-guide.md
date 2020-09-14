@@ -233,15 +233,23 @@ Several arguments are supported:
 * `asm.count` is the number of bytes in `asm`.
 * `asm.len` is the length of `asm`.
 * `addr` is the address of the instruction.
+* `base` is the PIC base address.
 * `instr` is the bytes of the instruction.
 * `instr.count` is the number of bytes in `instr`.
 * `next` is the address of the next instruction.
+* `offset` is the file offset of the instruction.
 * `target` is the jump/call/return target address, else -1.
 * `trampoline` is the address of the trampoline.
-* `rax`...`r15`, `rip`, `rflags` is the corresponding register value.
-* `&rax`...`&r15`, `&rflags` is the corresponding register value
-   (pass-by-pointer).
+* `random` is a random value [0..2147483647].
 * `staticAddr` is the (static) address of the instruction.
+* `rax`...`r15`, `rip`, `rflags` is the corresponding register value.
+* `&rax`...`&r15`, `&rflags` is the corresponding register value but
+   passed-by-pointer.
+* `op[i]`, `src[i]`, `dst[i]`, `imm[i]`, `reg[i]`, `mem[i]` is the ith
+  operand, source operand, destination operand, immediate operand, register
+  operand, memory operand respectively.
+* `&op[i]`, `&src[i]`, `&dst[i]`, `&imm[i]`, `&reg[i]`, `&mem[i]` is the
+   same as above but passed-by-pointer.
 * An integer constant.
 * A file lookup of the form `basename[index]` where
   `basename` is the basename of a CSV file used in

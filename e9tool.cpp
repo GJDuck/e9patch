@@ -745,6 +745,8 @@ static Action *parseAction(const char *str, MatchEntries &entries)
                         arg = ARGUMENT_OFFSET; break;
                     case TOKEN_OP:
                         arg = ARGUMENT_OP; break;
+                    case TOKEN_RANDOM:
+                        arg = ARGUMENT_RANDOM; break;
                     case TOKEN_RAX:
                         arg = ARGUMENT_RAX; break;
                     case TOKEN_RBX:
@@ -1439,20 +1441,20 @@ static void usage(FILE *stream, const char *progname)
     fputc('\n', stream);
     fputs("\t\t\t- OPTION is one of:\n", stream);
     fputs("\t\t\t  * \"clean\"/\"naked\" for clean/naked calls.\n", stream);
-    fputs("\t\t\t  * \"before\"/\"after\"/\"replace\" for inserting the\n",
+    fputs("\t\t\t  * \"before\"/\"after\"/\"replace\"/\"conditional\" for "
+        "inserting\n", stream);
+    fputs("\t\t\t    the call before/after the instruction, or\n", stream);
+    fputs("\t\t\t    (conditionally) replacing the instruction by the call.\n",
         stream);
-    fputs("\t\t\t    call before/after the instruction, or replacing\n",
-        stream);
-    fputs("\t\t\t    the instruction by the call.\n", stream);
     fputs("\t\t\t- ARG is one of:\n", stream);
-    fputs("\t\t\t  * \"asm\" is a pointer to a string\n", stream);
-    fputs("\t\t\t    representation of the instruction.\n", stream);
+    fputs("\t\t\t  * \"asm\" is a pointer to a string representation\n",
+        stream);
+    fputs("\t\t\t    of the instruction.\n", stream);
     fputs("\t\t\t  * \"asm.count\" is the number of bytes in \"asm\".\n",
         stream);
     fputs("\t\t\t  * \"asm.len\" is the string length of \"asm\".\n",
         stream);
-    fputs("\t\t\t  * \"offset\" is the file offset of the instruction.\n",
-        stream);
+    fputs("\t\t\t  * \"base\" is the PIC base address.\n", stream);
     fputs("\t\t\t  * \"addr\" is the address of the instruction.\n",
         stream);
     fputs("\t\t\t  * \"instr\" is the bytes of the instruction.\n",
@@ -1461,19 +1463,35 @@ static void usage(FILE *stream, const char *progname)
         stream);
     fputs("\t\t\t  * \"next\" is the address of the next instruction.\n",
         stream);
+    fputs("\t\t\t  * \"offset\" is the file offset of the instruction.\n",
+        stream);
     fputs("\t\t\t  * \"target\" is the jump/call/return target, else -1.\n",
         stream);
     fputs("\t\t\t  * \"trampoline\" is the address of the trampoline.\n",
         stream);
+    fprintf(stream, "\t\t\t  * \"random\" is a random value [0..%lu].\n",
+        (uintptr_t)RAND_MAX);
+    fputs("\t\t\t  * \"staticAddr\" is the (static) address of the\n",
+        stream);
+    fputs("\t\t\t    instruction.\n", stream);
     fputs("\t\t\t  * \"rax\"...\"r15\", \"rip\", \"rflags\" is the\n",
         stream);
     fputs("\t\t\t    corresponding register value.\n", stream);
     fputs("\t\t\t  * \"&rax\"...\"&r15\", \"&rflags\" is the corresponding\n",
         stream);
-    fputs("\t\t\t    register value (pass-by-pointer).\n", stream);
-    fputs("\t\t\t  * \"staticAddr\" is the (static) address of the\n",
+    fputs("\t\t\t    register value but passed-by-pointer.\n", stream);
+    fputs("\t\t\t  * \"op[i]\", \"src[i]\", \"dst[i]\", \"imm[i]\", "
+        "\"reg[i]\",\n", stream);
+    fputs("\t\t\t    \"mem[i]\" is the ith operand, source operand,\n",
         stream);
-    fputs("\t\t\t    instruction.\n", stream);
+    fputs("\t\t\t    destination operand, immediate operand, register\n",
+        stream);
+    fputs("\t\t\t    operand, memory operand respectively.\n", stream);
+    fputs("\t\t\t  * \"&op[i]\", \"&src[i]\", \"&dst[i]\", \"&imm[i]\",\n",
+        stream);
+    fputs("\t\t\t    \"&reg[i]\", \"&mem[i]\" is the same as above\n",
+        stream);
+    fputs("\t\t\t    but passed-by-pointer.\n", stream);
     fputs("\t\t\t  * An integer constant.\n", stream);
     fputs("\t\t\t  * A file lookup of the form \"basename[index]\" where\n",
         stream);
