@@ -1441,11 +1441,13 @@ static void usage(FILE *stream, const char *progname)
     fputc('\n', stream);
     fputs("\t\t\t- OPTION is one of:\n", stream);
     fputs("\t\t\t  * \"clean\"/\"naked\" for clean/naked calls.\n", stream);
-    fputs("\t\t\t  * \"before\"/\"after\"/\"replace\"/\"conditional\" for "
-        "inserting\n", stream);
-    fputs("\t\t\t    the call before/after the instruction, or\n", stream);
-    fputs("\t\t\t    (conditionally) replacing the instruction by the call.\n",
+    fputs("\t\t\t  * \"before\"/\"after\"/\"replace\"/\"conditional\" for\n",
         stream);
+    fputs("\t\t\t    inserting the call before/after the instruction, or\n",
+        stream);
+    fputs("\t\t\t    (conditionally) replacing the instruction by the\n",
+        stream);
+    fputs("\t\t\t    call.\n", stream);
     fputs("\t\t\t- ARG is one of:\n", stream);
     fputs("\t\t\t  * \"asm\" is a pointer to a string representation\n",
         stream);
@@ -1816,6 +1818,7 @@ int main(int argc, char **argv)
      * Parse the ELF file.
      */
     const char *filename = argv[optind];
+    filename = lookupExe(filename);
     ELF &elf = *parseELF(filename, 0x0);
 
     /*
@@ -1826,6 +1829,7 @@ int main(int argc, char **argv)
         option_options.push_back(strDup("--static-loader"));
     if (option_trap_all)
         option_options.push_back(strDup("--trap-all"));
+    option_options.push_back(strDup("--experimental"));
     if (option_format == "json")
     {
         // Pseudo-backend:

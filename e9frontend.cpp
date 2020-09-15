@@ -2383,6 +2383,40 @@ static bool hasSuffix(const std::string &str, const char *suffix)
 }
 
 /*
+ * Find an exe file in PATH.
+ */
+static const char *lookupExe(const char *filename, bool curr_dir = false)
+{
+    char *path = getenv("PATH");
+    if (path == nullptr)
+        return nullptr;
+    if (curr_dir)
+    {
+        std::string fullpath(path);
+        fullpath += ":.";
+        path = strDup(fullpath.c_str());
+    }
+    else
+        path = strDup(path);
+    char *save, *subpath;
+    strtok_r(path, ":", &save);
+    while ((subpath = strtok_r(nullptr, ":", &save)) != nullptr)
+    {
+        std::string pathname(subpath);
+        pathname += '/';
+        pathname += filename;
+        struct stat buf;
+        if (stat(pathname.c_str(), &buf) == 0 && (buf.st_mode & S_IXOTH) != 0)
+        {
+            free(path);
+            return strDup(pathname.c_str());
+        }
+    }
+    free(path);
+    return nullptr;
+}
+
+/*
  * Spawn e9patch backend instance.
  */
 static void spawnBackend(const char *prog, const std::vector<char *> &options,
@@ -2401,6 +2435,7 @@ static void spawnBackend(const char *prog, const std::vector<char *> &options,
                 "(%d): %s", fds[0], strerror(errno));
         close(fds[0]);
         char *argv[options.size() + 2];
+        prog = lookupExe(prog, true);
         argv[0] = strDup("e9patch");
         unsigned i = 1;
         for (auto option: options)
