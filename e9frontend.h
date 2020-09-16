@@ -72,10 +72,10 @@ enum ArgumentKind
     ARGUMENT_BASE,                  // Base address of ELF binary in memory
     ARGUMENT_STATIC_ADDR,           // (Static) instruction address
     ARGUMENT_ASM,                   // Assembly string
-    ARGUMENT_ASM_COUNT,             // Assembly string count
+    ARGUMENT_ASM_SIZE,              // Assembly string size
     ARGUMENT_ASM_LEN,               // Assembly string length
     ARGUMENT_BYTES,                 // Instruction bytes
-    ARGUMENT_BYTES_COUNT,           // Instruction bytes count
+    ARGUMENT_BYTES_SIZE,            // Instruction bytes size
     ARGUMENT_TARGET,                // Call/jump target
     ARGUMENT_TRAMPOLINE,            // Trampoline
     ARGUMENT_RANDOM,                // Random number

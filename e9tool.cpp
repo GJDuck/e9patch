@@ -127,7 +127,6 @@ enum MatchKind
 enum Field
 {
     FIELD_NONE,
-    FIELD_COUNT,
     FIELD_SIZE,
     FIELD_TYPE,
     FIELD_READ,
@@ -452,8 +451,6 @@ static void parseMatch(const char *str, MatchEntries &entries)
             parser.expectToken('.');
             switch (parser.getToken())
             {
-                case TOKEN_COUNT:
-                    field = FIELD_COUNT; break;
                 case TOKEN_READ:
                     field = FIELD_READ; break;
                 case TOKEN_SIZE:
@@ -713,8 +710,8 @@ static Action *parseAction(const char *str, MatchEntries &entries)
                         {
                             case TOKEN_LENGTH:
                                 arg = ARGUMENT_ASM_LEN; break;
-                            case TOKEN_COUNT:
-                                arg = ARGUMENT_ASM_COUNT; break;
+                            case TOKEN_SIZE:
+                                arg = ARGUMENT_ASM_SIZE; break;
                             default:
                                 parser.unexpectedToken();
                         }
@@ -732,8 +729,8 @@ static Action *parseAction(const char *str, MatchEntries &entries)
                         if (parser.peekToken() != '.')
                             break;
                         parser.getToken();
-                        parser.expectToken(TOKEN_COUNT);
-                        arg = ARGUMENT_BYTES_COUNT;
+                        parser.expectToken(TOKEN_SIZE);
+                        arg = ARGUMENT_BYTES_SIZE;
                         break;
                     case TOKEN_MEM:
                         arg = ARGUMENT_MEM; break;
@@ -1037,7 +1034,7 @@ static intptr_t makeMatchValue(MatchKind match, int idx, Field field,
             {
                 switch (field)
                 {
-                    case FIELD_COUNT:
+                    case FIELD_SIZE:
                         return getNumOperands(I, type, access);
                     default:
                         return (*defined = false);
@@ -1452,7 +1449,7 @@ static void usage(FILE *stream, const char *progname)
     fputs("\t\t\t  * \"asm\" is a pointer to a string representation\n",
         stream);
     fputs("\t\t\t    of the instruction.\n", stream);
-    fputs("\t\t\t  * \"asm.count\" is the number of bytes in \"asm\".\n",
+    fputs("\t\t\t  * \"asm.size\" is the number of bytes in \"asm\".\n",
         stream);
     fputs("\t\t\t  * \"asm.len\" is the string length of \"asm\".\n",
         stream);
@@ -1461,7 +1458,7 @@ static void usage(FILE *stream, const char *progname)
         stream);
     fputs("\t\t\t  * \"instr\" is the bytes of the instruction.\n",
         stream);
-    fputs("\t\t\t  * \"instr.count\" is the number of bytes in \"instr\".\n",
+    fputs("\t\t\t  * \"instr.size\" is the number of bytes in \"instr\".\n",
         stream);
     fputs("\t\t\t  * \"next\" is the address of the next instruction.\n",
         stream);

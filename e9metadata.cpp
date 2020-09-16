@@ -730,19 +730,19 @@ static void sendLoadArgumentMetadata(FILE *out, CallInfo &info,
         case ARGUMENT_ASM:
             sendLeaFromPCRelToR64(out, "{\"rel32\":\".LasmStr\"}", regno);
             break;
-        case ARGUMENT_ASM_COUNT: case ARGUMENT_ASM_LEN:
+        case ARGUMENT_ASM_SIZE: case ARGUMENT_ASM_LEN:
         {
             intptr_t len = strlen(I->mnemonic);
             if (I->op_str[0] != '\0')
                 len += strlen(I->op_str) + 1;
             sendLoadValueMetadata(out,
-                (arg.kind == ARGUMENT_ASM_COUNT? len+1: len), regno);
+                (arg.kind == ARGUMENT_ASM_SIZE? len+1: len), regno);
             break;
         }
         case ARGUMENT_BYTES:
             sendLeaFromPCRelToR64(out, "{\"rel32\":\".Lbytes\"}", regno);
             break;
-        case ARGUMENT_BYTES_COUNT:
+        case ARGUMENT_BYTES_SIZE:
             sendLoadValueMetadata(out, I->size, regno);
             break;
         case ARGUMENT_TARGET:

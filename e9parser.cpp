@@ -232,6 +232,12 @@ static Token getTokenFromName(const char *name)
         compareName);
     if (entry == nullptr)
         return TOKEN_ERROR;
+    if (entry->token == TOKEN_COUNT)        // XXX
+    {
+        warning("the \"count\" token has been deprecated; use \"size\" "
+            "instead");
+        return TOKEN_ERROR;
+    }
     return entry->token;
 }
 
@@ -459,8 +465,6 @@ struct Parser
 
     void getPositionStr(std::string &str)
     {
-        if (prev >= 4)
-            str += "...";
         for (size_t i = 0; i < prev; i++)
             str += buf[i];
         str += " <--- here";
