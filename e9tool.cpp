@@ -1818,7 +1818,9 @@ int main(int argc, char **argv)
      * Parse the ELF file.
      */
     const char *filename = argv[optind];
-    filename = lookupExe(filename);
+    bool exe = (option_executable? true:
+               (option_shared? false: !isLibraryFilename(filename)));
+    filename = findBinary(filename, exe);
     ELF &elf = *parseELF(filename, 0x0);
 
     /*

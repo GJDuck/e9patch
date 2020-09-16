@@ -1460,6 +1460,50 @@ static bool isLibraryFilename(const char *filename)
 }
 
 /*
+ * Get path information.
+ */
+static void getPath(bool exe, std::vector<std::string> &paths)
+{
+    if (exe)
+    {
+        char *path = getenv("PATH"), *save, *dir;
+        if (path == nullptr)
+            return;
+        path = strDup(path);
+        strtok_r(path, ":", &save);
+        while ((dir = strtok_r(nullptr, ":", &save)) != nullptr)
+            paths.push_back(dir);
+        free(path);
+    }
+    else
+    {
+        void *handle = dlopen(nullptr, RTLD_LAZY);
+        if (handle == nullptr)
+            return;
+        Dl_serinfo serinfo_0, *serinfo = nullptr;
+        if (dlinfo(handle, RTLD_DI_SERINFOSIZE, &serinfo_0) != 0)
+        {
+            dlinfo_error:
+            free(serinfo);
+            dlclose(handle);
+            return;
+        }
+        serinfo = (Dl_serinfo *)malloc(serinfo_0.dls_size);
+        if (serinfo == nullptr)
+            goto dlinfo_error;
+        if (dlinfo(handle, RTLD_DI_SERINFOSIZE, serinfo) != 0)
+            goto dlinfo_error;
+        if (dlinfo(handle, RTLD_DI_SERINFO, serinfo) != 0)
+            goto dlinfo_error;
+        for (unsigned i = 0; i < serinfo->dls_cnt; i++)
+            paths.push_back(serinfo->dls_serpath[i].dls_name);
+        free(serinfo);
+        dlclose(handle);
+        return;
+    }
+}
+
+/*
  * Parse an ELF file.
  */
 ELF *e9frontend::parseELF(const char *filename, intptr_t base)
@@ -2385,35 +2429,32 @@ static bool hasSuffix(const std::string &str, const char *suffix)
 /*
  * Find an exe file in PATH.
  */
-static const char *lookupExe(const char *filename, bool curr_dir = false)
+static const char *findBinary(const char *filename, bool exe = true,
+    bool dot = false)
 {
-    char *path = getenv("PATH");
-    if (path == nullptr)
-        return nullptr;
-    if (curr_dir)
+    if (filename[0] == '/')
+        return filename;
+    std::vector<std::string> path;
+    getPath(exe, path);
+    if (dot)
+        path.push_back(".");
+    for (const auto &dirname: path)
     {
-        std::string fullpath(path);
-        fullpath += ":.";
-        path = strDup(fullpath.c_str());
-    }
-    else
-        path = strDup(path);
-    char *save, *subpath;
-    strtok_r(path, ":", &save);
-    while ((subpath = strtok_r(nullptr, ":", &save)) != nullptr)
-    {
-        std::string pathname(subpath);
-        pathname += '/';
-        pathname += filename;
+        std::string pathname_0(dirname);
+        pathname_0 += '/';
+        pathname_0 += filename;
+
+        char *pathname = realpath(pathname_0.c_str(), nullptr);
+        if (pathname == nullptr)
+            continue;
         struct stat buf;
-        if (stat(pathname.c_str(), &buf) == 0 && (buf.st_mode & S_IXOTH) != 0)
-        {
-            free(path);
-            return strDup(pathname.c_str());
-        }
+        if (stat(pathname, &buf) == 0 && (buf.st_mode & S_IXOTH) != 0)
+            return pathname;
+        free(pathname);
     }
-    free(path);
-    return nullptr;
+
+    error("failed to find %s file \"%s\" in %s",
+        (exe? "executable": "library"), filename, (exe? "PATH": "RPATH"));
 }
 
 /*
@@ -2435,7 +2476,7 @@ static void spawnBackend(const char *prog, const std::vector<char *> &options,
                 "(%d): %s", fds[0], strerror(errno));
         close(fds[0]);
         char *argv[options.size() + 2];
-        prog = lookupExe(prog, true);
+        prog = findBinary(prog, /*exe=*/true, /*dot=*/true);
         argv[0] = strDup("e9patch");
         unsigned i = 1;
         for (auto option: options)
