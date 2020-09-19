@@ -70,6 +70,7 @@ using namespace e9frontend;
 /*
  * Prototypes.
  */
+static char *strDup(const char *old_str, size_t n = SIZE_MAX);
 static bool sendPush(FILE *out, int32_t offset, bool before, x86_reg reg);
 static void sendPop(FILE *out, bool preserve_rax, x86_reg reg);
 static bool sendMovFromR64ToR64(FILE *out, int srcno, int dstno);
@@ -85,6 +86,60 @@ static void sendMovFromI64ToR64(FILE *out, intptr_t value, int regno);
 static void sendLeaFromPCRelToR64(FILE *out, const char *offset, int regno);
 static void sendLeaFromPCRelToR64(FILE *out, int32_t offset, int regno);
 static void sendLeaFromStackToR64(FILE *out, int32_t offset, int regno);
+
+/*
+ * Symbols.
+ */
+typedef uint8_t Type;
+
+#define TYPE_NONE                   0x00
+#define TYPE_CHAR                   0x01
+#define TYPE_INT8                   0x02
+#define TYPE_INT16                  0x03
+#define TYPE_INT32                  0x04
+#define TYPE_INT64                  0x05
+#define TYPE_VOID                   0x06
+#define TYPE_NULL_PTR               0x07
+#define TYPE_PTR                    0x10
+#define TYPE_PTR_PTR                0x20
+#define TYPE_CONST                  0x40
+
+#define TYPE_VOID_PTR               (TYPE_VOID | TYPE_PTR)
+#define TYPE_CONST_VOID_PTR         (TYPE_CONST | TYPE_VOID | TYPE_PTR)
+#define TYPE_CONST_CHAR_PTR         (TYPE_CONST | TYPE_CHAR | TYPE_PTR)
+#define TYPE_CONST_INT8_PTR         (TYPE_CONST | TYPE_INT8 | TYPE_PTR)
+
+typedef uint64_t TypeSig;
+
+#define TYPESIG_MIN     0
+#define TYPESIG_MAX     UINT64_MAX
+
+#define TYPESIG_EMPTY   0
+#define TYPESIG_UNTYPED (UINT64_MAX-1)
+
+struct Symbol
+{
+    const char * const name;            // Symbol name
+    const TypeSig      sig;             // Symbol typesig.
+
+    bool operator<(const Symbol &sym) const
+    {
+        int cmp = strcmp(name, sym.name);
+        if (cmp != 0)
+            return (cmp < 0);
+        return (sig < sym.sig);
+    }
+
+    Symbol(const char *name, TypeSig sig) : name(name), sig(sig)
+    {
+        ;
+    }
+};
+
+/*
+ * Symbol cache.  INTPTR_MIN=missing, (>0)=original, (<0)=derived.
+ */
+typedef std::map<Symbol, intptr_t> Symbols;
 
 /*
  * Get argument register index.
@@ -412,6 +467,117 @@ static int32_t getRegSize(x86_reg reg)
         case X86_REG_INVALID: case X86_REG_ENDING:
         default:
             return 0;
+    }
+}
+
+/*
+ * Get the type of a register.
+ */
+static Type getRegType(x86_reg reg)
+{
+    switch (reg)
+    {
+        case X86_REG_AH: case X86_REG_AL: case X86_REG_BH:
+        case X86_REG_BL: case X86_REG_CH: case X86_REG_CL:
+        case X86_REG_BPL: case X86_REG_DIL: case X86_REG_DL:
+        case X86_REG_DH: case X86_REG_SIL: case X86_REG_SPL:
+        case X86_REG_R8B: case X86_REG_R9B: case X86_REG_R10B:
+        case X86_REG_R11B: case X86_REG_R12B: case X86_REG_R13B:
+        case X86_REG_R14B: case X86_REG_R15B:
+            return TYPE_INT8;
+ 
+        case X86_REG_EFLAGS: case X86_REG_AX: case X86_REG_BP:
+        case X86_REG_BX: case X86_REG_CX: case X86_REG_DX:
+        case X86_REG_DI: case X86_REG_IP: case X86_REG_SI:
+        case X86_REG_SP: case X86_REG_R8W: case X86_REG_R9W:
+        case X86_REG_R10W: case X86_REG_R11W: case X86_REG_R12W:
+        case X86_REG_R13W: case X86_REG_R14W: case X86_REG_R15W:
+            return TYPE_INT16;
+ 
+        case X86_REG_EAX: case X86_REG_EBP: case X86_REG_EBX:
+        case X86_REG_ECX: case X86_REG_EDI: case X86_REG_EDX:
+        case X86_REG_EIP: case X86_REG_EIZ: case X86_REG_ESI:
+        case X86_REG_ESP: case X86_REG_R8D: case X86_REG_R9D:
+        case X86_REG_R10D: case X86_REG_R11D: case X86_REG_R12D:
+        case X86_REG_R13D: case X86_REG_R14D: case X86_REG_R15D:
+            return TYPE_INT32;
+ 
+        case X86_REG_RAX: case X86_REG_RBP: case X86_REG_RBX:
+        case X86_REG_RCX: case X86_REG_RDI: case X86_REG_RDX:
+        case X86_REG_RIP: case X86_REG_RIZ: case X86_REG_RSI:
+        case X86_REG_RSP: case X86_REG_R8: case X86_REG_R9:
+        case X86_REG_R10: case X86_REG_R11: case X86_REG_R12:
+        case X86_REG_R13: case X86_REG_R14: case X86_REG_R15:
+            return TYPE_INT64;
+ 
+        case X86_REG_XMM0: case X86_REG_XMM1: case X86_REG_XMM2:
+        case X86_REG_XMM3: case X86_REG_XMM4: case X86_REG_XMM5:
+        case X86_REG_XMM6: case X86_REG_XMM7: case X86_REG_XMM8:
+        case X86_REG_XMM9: case X86_REG_XMM10: case X86_REG_XMM11:
+        case X86_REG_XMM12: case X86_REG_XMM13: case X86_REG_XMM14:
+        case X86_REG_XMM15: case X86_REG_XMM16: case X86_REG_XMM17:
+        case X86_REG_XMM18: case X86_REG_XMM19: case X86_REG_XMM20:
+        case X86_REG_XMM21: case X86_REG_XMM22: case X86_REG_XMM23:
+        case X86_REG_XMM24: case X86_REG_XMM25: case X86_REG_XMM26:
+        case X86_REG_XMM27: case X86_REG_XMM28: case X86_REG_XMM29:
+        case X86_REG_XMM30: case X86_REG_XMM31:
+            return TYPE_NULL_PTR;
+ 
+        case X86_REG_YMM0: case X86_REG_YMM1: case X86_REG_YMM2:
+        case X86_REG_YMM3: case X86_REG_YMM4: case X86_REG_YMM5:
+        case X86_REG_YMM6: case X86_REG_YMM7: case X86_REG_YMM8:
+        case X86_REG_YMM9: case X86_REG_YMM10: case X86_REG_YMM11:
+        case X86_REG_YMM12: case X86_REG_YMM13: case X86_REG_YMM14:
+        case X86_REG_YMM15: case X86_REG_YMM16: case X86_REG_YMM17:
+        case X86_REG_YMM18: case X86_REG_YMM19: case X86_REG_YMM20:
+        case X86_REG_YMM21: case X86_REG_YMM22: case X86_REG_YMM23:
+        case X86_REG_YMM24: case X86_REG_YMM25: case X86_REG_YMM26:
+        case X86_REG_YMM27: case X86_REG_YMM28: case X86_REG_YMM29:
+        case X86_REG_YMM30: case X86_REG_YMM31:
+            return TYPE_NULL_PTR;
+ 
+        case X86_REG_ZMM0: case X86_REG_ZMM1: case X86_REG_ZMM2:
+        case X86_REG_ZMM3: case X86_REG_ZMM4: case X86_REG_ZMM5:
+        case X86_REG_ZMM6: case X86_REG_ZMM7: case X86_REG_ZMM8:
+        case X86_REG_ZMM9: case X86_REG_ZMM10: case X86_REG_ZMM11:
+        case X86_REG_ZMM12: case X86_REG_ZMM13: case X86_REG_ZMM14:
+        case X86_REG_ZMM15: case X86_REG_ZMM16: case X86_REG_ZMM17:
+        case X86_REG_ZMM18: case X86_REG_ZMM19: case X86_REG_ZMM20:
+        case X86_REG_ZMM21: case X86_REG_ZMM22: case X86_REG_ZMM23:
+        case X86_REG_ZMM24: case X86_REG_ZMM25: case X86_REG_ZMM26:
+        case X86_REG_ZMM27: case X86_REG_ZMM28: case X86_REG_ZMM29:
+        case X86_REG_ZMM30: case X86_REG_ZMM31:
+            return TYPE_NULL_PTR;
+ 
+        case X86_REG_ES: case X86_REG_CS: case X86_REG_DS:
+        case X86_REG_FPSW: case X86_REG_FS: case X86_REG_GS:
+        case X86_REG_SS: case X86_REG_CR0: case X86_REG_CR1:
+        case X86_REG_CR2: case X86_REG_CR3: case X86_REG_CR4:
+        case X86_REG_CR5: case X86_REG_CR6: case X86_REG_CR7:
+        case X86_REG_CR8: case X86_REG_CR9: case X86_REG_CR10:
+        case X86_REG_CR11: case X86_REG_CR12: case X86_REG_CR13:
+        case X86_REG_CR14: case X86_REG_CR15: case X86_REG_DR0:
+        case X86_REG_DR1: case X86_REG_DR2: case X86_REG_DR3:
+        case X86_REG_DR4: case X86_REG_DR5: case X86_REG_DR6:
+        case X86_REG_DR7: case X86_REG_DR8: case X86_REG_DR9:
+        case X86_REG_DR10: case X86_REG_DR11: case X86_REG_DR12:
+        case X86_REG_DR13: case X86_REG_DR14: case X86_REG_DR15:
+        case X86_REG_FP0: case X86_REG_FP1: case X86_REG_FP2:
+        case X86_REG_FP3: case X86_REG_FP4: case X86_REG_FP5:
+        case X86_REG_FP6: case X86_REG_FP7: case X86_REG_K0:
+        case X86_REG_K1: case X86_REG_K2: case X86_REG_K3:
+        case X86_REG_K4: case X86_REG_K5: case X86_REG_K6:
+        case X86_REG_K7: case X86_REG_MM0: case X86_REG_MM1:
+        case X86_REG_MM2: case X86_REG_MM3: case X86_REG_MM4:
+        case X86_REG_MM5: case X86_REG_MM6: case X86_REG_MM7:
+        case X86_REG_ST0: case X86_REG_ST1: case X86_REG_ST2:
+        case X86_REG_ST3: case X86_REG_ST4: case X86_REG_ST5:
+        case X86_REG_ST6: case X86_REG_ST7:
+            return TYPE_NULL_PTR;
+
+        case X86_REG_INVALID: case X86_REG_ENDING:
+        default:
+            return TYPE_NULL_PTR;
     }
 }
 
@@ -987,6 +1153,8 @@ namespace e9frontend
         bool pie;                       // PIE?
         bool dso;                       // Shared object?
         bool reloc;                     // Needs relocation?
+        mutable bool symbols_inited;    // Symbol cached inited?
+        mutable Symbols symbols;        // Symbol cache.
     };
 };
 
@@ -1004,12 +1172,20 @@ struct Backend
     pid_t pid;                      // Backend process ID.
 };
 
+#define CONTEXT_FORMAT      "%lx: %s%s%s%s%s: "
+#define CONTEXT(I)          (I)->address,                           \
+                            (option_is_tty? "\33[32m": ""),         \
+                            (I)->mnemonic,                          \
+                            ((I)->op_str[0] == '\0'? "": " "),      \
+                            (I)->op_str,                            \
+                            (option_is_tty? "\33[0m": "")
+
 /*
  * Report an error and exit.
  */
 void NO_RETURN e9frontend::error(const char *msg, ...)
 {
-    fprintf(stderr, "%serror%s: ",
+    fprintf(stderr, "%serror%s  : ",
         (option_is_tty? "\33[31m": ""),
         (option_is_tty? "\33[0m" : ""));
 
@@ -1017,7 +1193,6 @@ void NO_RETURN e9frontend::error(const char *msg, ...)
     va_start(ap, msg);
     vfprintf(stderr, msg, ap);
     va_end(ap);
-
     putc('\n', stderr);
 
     _Exit(EXIT_FAILURE);
@@ -1043,7 +1218,7 @@ void e9frontend::warning(const char *msg, ...)
 /*
  * Duplicate a string.
  */
-static char *strDup(const char *old_str, size_t n = SIZE_MAX)
+static char *strDup(const char *old_str, size_t n)
 {
     char *new_str = strndup(old_str, n);
     if (new_str == nullptr)
@@ -1710,6 +1885,7 @@ ELF *e9frontend::parseELF(const char *filename, intptr_t base)
     elf->pie            = (pic && exe);
     elf->dso            = (pic && !exe);
     elf->reloc          = reloc;
+    elf->symbols_inited = false;
     return elf;
 }
 
@@ -1723,28 +1899,16 @@ void freeELF(ELF *elf)
 }
 
 /*
+ * Symbol handling implementations.
+ */
+#include "e9types.cpp"
+
+/*
  * Lookup the address of a symbol, or INTPTR_MIN if not found.
  */
-intptr_t e9frontend::lookupSymbol(const ELF *ptr, const char *symbol)
+intptr_t e9frontend::lookupSymbol(const ELF *elf, const char *symbol)
 {
-    const ELF &elf = *ptr;
-    if (elf.dynamic_symtab == nullptr || elf.dynamic_symsz == 0 ||
-            elf.dynamic_strtab == nullptr || elf.dynamic_strsz == 0)
-        return INTPTR_MIN;
-
-    size_t num_dyms = elf.dynamic_symsz / sizeof(Elf64_Sym);
-    for (size_t i = 0; i < num_dyms; i++)
-    {
-        const Elf64_Sym *sym = elf.dynamic_symtab + i;
-        if (sym->st_name >= elf.dynamic_strsz)
-            continue;
-        if (strcmp(elf.dynamic_strtab + sym->st_name, symbol) == 0)
-        {
-            intptr_t addr = elf.base + (intptr_t)sym->st_value;
-            return addr;
-        }
-    }
-    return INTPTR_MIN;
+    return ::lookupSymbol(elf, symbol, TYPESIG_UNTYPED);
 }
 
 /*
@@ -1767,8 +1931,15 @@ void e9frontend::sendELFFileMessage(FILE *out, const ELF *ptr, bool absolute)
     /*
      * Check for special routines.
      */
-    intptr_t init = lookupSymbol(&elf, "init");
-    intptr_t mmap = lookupSymbol(&elf, "mmap");
+    TypeSig sig = getInitSig(/*envp=*/true);
+    intptr_t init = ::lookupSymbol(&elf, "init", sig);
+    if (init == INTPTR_MIN)
+    {
+        sig = getInitSig(/*envp=*/false);
+        init = ::lookupSymbol(&elf, "init", sig);
+    }
+    sig = getMMapSig();
+    intptr_t mmap = ::lookupSymbol(&elf, "mmap", sig);
 
     /*
      * Send segments.
@@ -2300,17 +2471,9 @@ static void sendLeaFromStackToR64(FILE *out, int32_t offset, int regno)
 /*
  * Send a call ELF trampoline.
  */
-unsigned e9frontend::sendCallTrampolineMessage(FILE *out, const ELF *ptr,
-    const char *filename, const char *symbol, const char *name,
+unsigned e9frontend::sendCallTrampolineMessage(FILE *out, const char *name,
     const std::vector<Argument> &args, bool clean, CallKind call)
 {
-    const ELF &elf = *ptr;
-
-    intptr_t addr = lookupSymbol(&elf, symbol);
-    if (addr < 0)
-        error("failed to find dynamic symbol \"%s\" in ELF file \"%s\"",
-            symbol, filename);
-
     sendMessageHeader(out, "trampoline");
     sendParamHeader(out, "name");
     sendString(out, name);
@@ -2340,7 +2503,7 @@ unsigned e9frontend::sendCallTrampolineMessage(FILE *out, const ELF *ptr,
     fputs("\"$loadArgs\",", out);
 
     // Call the function:
-    fprintf(out, "%u,{\"rel32\":%d},", 0xe8, (int32_t)addr);    // callq addr
+    fprintf(out, "%u,\"$function\",", 0xe8);        // callq function
 
     // Restore the state:
     fputs("\"$restoreState\",", out);

@@ -235,13 +235,13 @@ Several arguments are supported:
 * `addr` is the address of the instruction.
 * `base` is the PIC base address.
 * `instr` is the bytes of the instruction.
-* `instr.size` is the number of bytes in `instr`.
 * `next` is the address of the next instruction.
 * `offset` is the file offset of the instruction.
 * `target` is the jump/call/return target address, else -1.
 * `trampoline` is the address of the trampoline.
 * `random` is a random value [0..2147483647].
 * `staticAddr` is the (static) address of the instruction.
+* `size` is the number of bytes in `instr`.
 * `rax`...`r15`, `rip`, `rflags` is the corresponding register value.
 * `&rax`...`&r15`, `&rflags` is the corresponding register value but
    passed-by-pointer.

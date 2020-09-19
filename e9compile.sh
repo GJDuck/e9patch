@@ -21,14 +21,29 @@ then
     exit 1
 fi
 
-CC=gcc
+case "$1" in
+    *.c)
+        CC=gcc
+        EXTENSION=c
+        ;;
+    *.cpp)
+        CC=g++
+        EXTENSION=cpp
+        ;;
+    *)
+        echo >&2
+        echo "${RED}error${OFF}: file $1 must have a .c or .cpp extension" >&2
+        echo >&2
+        exit 1
+        ;;
+esac
+BASENAME=`basename $1 .$EXTENSION`
 DIRNAME=`dirname $1`
-BASENAME=`basename $1 .c`
 
 shift
 
-echo "$CC -fno-stack-protector -fpie -O2 -c -Wall $@ \"$DIRNAME/$BASENAME.c\""
-if ! $CC -fno-stack-protector -fpie -O2 -c -Wall $@ "$DIRNAME/$BASENAME.c"
+echo "$CC -fno-stack-protector -fpie -O2 -c -Wall $@ \"$DIRNAME/$BASENAME.$EXTENSION\""
+if ! $CC -fno-stack-protector -fpie -O2 -c -Wall $@ "$DIRNAME/$BASENAME.$EXTENSION"
 then
     echo >&2
     echo "${RED}error${OFF}: compilation of (${YELLOW}$BASENAME${OFF}) failed" >&2

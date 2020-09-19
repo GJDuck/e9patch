@@ -217,6 +217,7 @@ struct Action
     const char * const name;
     const char * const filename;
     const char * const symbol;
+    const ELF * elf;
     Plugin *plugin;
     void *context;
     std::vector<Argument> args;
@@ -228,8 +229,9 @@ struct Action
             Plugin *plugin, const std::vector<Argument> &&args, bool clean,
             CallKind call) :
             string(string), entries(std::move(entries)), kind(kind),
-            name(name), filename(filename), symbol(symbol), plugin(plugin),
-            context(nullptr), args(args), clean(clean), call(call)
+            name(name), filename(filename), symbol(symbol), elf(nullptr),
+            plugin(plugin), context(nullptr), args(args), clean(clean),
+            call(call)
     {
         ;
     }
@@ -725,13 +727,7 @@ static Action *parseAction(const char *str, MatchEntries &entries)
                     case TOKEN_IMM:
                         arg = ARGUMENT_IMM; break;
                     case TOKEN_INSTR:
-                        arg = ARGUMENT_BYTES;
-                        if (parser.peekToken() != '.')
-                            break;
-                        parser.getToken();
-                        parser.expectToken(TOKEN_SIZE);
-                        arg = ARGUMENT_BYTES_SIZE;
-                        break;
+                        arg = ARGUMENT_BYTES; break;
                     case TOKEN_MEM:
                         arg = ARGUMENT_MEM; break;
                     case TOKEN_NEXT:
@@ -782,6 +778,8 @@ static Action *parseAction(const char *str, MatchEntries &entries)
                         arg = ARGUMENT_RIP; break;
                     case TOKEN_REG:
                         arg = ARGUMENT_REG; break;
+                    case TOKEN_SIZE:
+                        arg = ARGUMENT_BYTES_SIZE; break;
                     case TOKEN_STATIC_ADDR:
                         arg = ARGUMENT_STATIC_ADDR; break;
                     case TOKEN_SRC:
@@ -1458,8 +1456,6 @@ static void usage(FILE *stream, const char *progname)
         stream);
     fputs("\t\t\t  * \"instr\" is the bytes of the instruction.\n",
         stream);
-    fputs("\t\t\t  * \"instr.size\" is the number of bytes in \"instr\".\n",
-        stream);
     fputs("\t\t\t  * \"next\" is the address of the next instruction.\n",
         stream);
     fputs("\t\t\t  * \"offset\" is the file offset of the instruction.\n",
@@ -1470,6 +1466,8 @@ static void usage(FILE *stream, const char *progname)
         stream);
     fprintf(stream, "\t\t\t  * \"random\" is a random value [0..%lu].\n",
         (uintptr_t)RAND_MAX);
+    fputs("\t\t\t  * \"size\" is the number of bytes in \"instr\".\n",
+        stream);
     fputs("\t\t\t  * \"staticAddr\" is the (static) address of the\n",
         stream);
     fputs("\t\t\t    instruction.\n", stream);
@@ -1817,7 +1815,7 @@ int main(int argc, char **argv)
     const char *filename = argv[optind];
     bool exe = (option_executable? true:
                (option_shared? false: !isLibraryFilename(filename)));
-    filename = findBinary(filename, exe);
+    filename = findBinary(filename, exe, /*dot=*/true);
     ELF &elf = *parseELF(filename, 0x0);
 
     /*
@@ -1899,13 +1897,13 @@ int main(int argc, char **argv)
                 }
                 else
                     target = i->second;
+                action->elf = target;
 
                 // Step (2): Create the trampoline:
                 auto j = have_call.find(action->name);
                 if (j == have_call.end())
                 {
-                    sendCallTrampolineMessage(backend.out, target,
-                        action->filename, action->symbol, action->name,
+                    sendCallTrampolineMessage(backend.out, action->name,
                         action->args, action->clean, action->call);
                     have_call.insert(action->name);
                 }
@@ -2083,8 +2081,8 @@ int main(int argc, char **argv)
             // Builtin actions:
             char buf[4096];
             Metadata metadata_buf[MAX_ARGNO+1];
-            Metadata *metadata = buildMetadata(action, I, offset,
-                metadata_buf, buf, sizeof(buf)-1);
+            Metadata *metadata = buildMetadata(action, I, offset, metadata_buf,
+                buf, sizeof(buf)-1);
             sendPatchMessage(backend.out, action->name, offset, metadata);
         }
     }

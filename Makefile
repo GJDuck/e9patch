@@ -24,14 +24,17 @@ debug: CXXFLAGS += -O0 -g
 debug: $(OBJS)
 	$(CXX) $(CXXFLAGS) $(OBJS) -o e9patch
 
+e9tool.o: e9frontend.cpp e9csv.cpp e9metadata.cpp e9parser.cpp e9tool.cpp \
+    e9types.cpp
+
 tool: CXXFLAGS += -O2 -I capstone/include/ -Wno-unused-function
-tool: e9tool.o e9frontend.cpp
+tool: e9tool.o
 	$(CXX) $(CXXFLAGS) e9tool.o -o e9tool capstone/libcapstone.a \
         -Wl,--export-dynamic -ldl
 	strip e9tool
 
 tool.debug: CXXFLAGS += -O0 -g -I capstone/include/ -Wno-unused-function
-tool.debug: e9tool.o e9frontend.cpp
+tool.debug: e9tool.o
 	$(CXX) $(CXXFLAGS) e9tool.o -o e9tool capstone/libcapstone.a \
         -Wl,--export-dynamic -ldl
 

@@ -147,8 +147,7 @@ extern void sendELFFileMessage(FILE *out, const ELF *elf,
 extern unsigned sendPassthruTrampolineMessage(FILE *out);
 extern unsigned sendPrintTrampolineMessage(FILE *out);
 extern unsigned sendTrapTrampolineMessage(FILE *out);
-extern unsigned sendCallTrampolineMessage(FILE *out, const ELF *elf,
-    const char *filename, const char *symbol, const char *name,
+extern unsigned sendCallTrampolineMessage(FILE *out, const char *name,
     const std::vector<Argument> &args, bool clean = true,
     CallKind call = CALL_BEFORE);
 extern unsigned sendTrampolineMessage(FILE *out, const char *name,

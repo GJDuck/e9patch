@@ -27,6 +27,9 @@
 #include <vector>
 
 #include <sys/mman.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <unistd.h>
 
 #include "e9json.h"
 #include "e9patch.h"
@@ -61,12 +64,15 @@ struct Parser
     size_t lineno;                      // Line number
     char peek = '\0';                   // Peek'ed token
     bool b;                             // Boolean value
+    bool pipe = false;                  // Input is a pipe?
     int32_t i;                          // Integer value
     char s[STRING_MAX];                 // String value
 
     Parser(FILE *stream, size_t lineno) : stream(stream), lineno(lineno)
     {
-        ;
+        struct stat buf;
+        if (fstat(fileno(stream), &buf) == 0 && S_ISFIFO(buf.st_mode))
+            pipe = true;
     }
 
     char getc()
@@ -213,6 +219,8 @@ static char peekToken(Parser &parser)
                 {
                     case EOF:
 bad_string_eof:
+                        if (parser.pipe)
+                            exit(EXIT_FAILURE);
                         parse_error(parser, "failed to read JSON string, "
                             "reached end-of-file before string terminator "
                             "(`\"')");
@@ -283,6 +291,18 @@ static char getToken(Parser &parser)
 }
 
 /*
+ * Unexpected token error.
+ */
+static NO_RETURN void unexpectedToken(Parser &parser, const char *object,
+    char token)
+{
+    if (parser.pipe && token == EOF)
+        exit(EXIT_FAILURE);
+    parse_error(parser, "failed to parse %s; unexpcted token `%s'",
+        object, getTokenName(token));
+}
+
+/*
  * Expect `token'.
  */
 static void expectToken(Parser &parser, char token)
@@ -290,6 +310,8 @@ static void expectToken(Parser &parser, char token)
     char got = getToken(parser);
     if (got == token)
         return;
+    if (parser.pipe && token == EOF)
+        exit(EXIT_FAILURE);
     parse_error(parser, "failed to parse JSON message; expected token `%s', "
         "got token `%s'", getTokenName(token), getTokenName(got));
 }
@@ -300,12 +322,13 @@ static void expectToken(Parser &parser, char token)
 static char expectToken2(Parser &parser, char token1, char token2)
 {
     char got = getToken(parser);
-    if (got != token1 && got != token2)
-        parse_error(parser, "failed to parse JSON message; expected token "
-            "`%s' or `%s', got token `%s'", getTokenName(token1),
-            getTokenName(token2),
-            getTokenName(got));
-    return got;
+    if (got == token1 || got == token2)
+        return got;
+    if (parser.pipe && got == EOF)
+        exit(EXIT_FAILURE);
+    parse_error(parser, "failed to parse JSON message; expected token "
+        "`%s' or `%s', got token `%s'", getTokenName(token1),
+        getTokenName(token2), getTokenName(got));
 }
 
 /*
@@ -384,8 +407,7 @@ static void parseAndDiscardObject(Parser &parser)
         case TOKEN_STRING:
             break;
         default:
-            parse_error(parser, "failed to parse JSON object; unexpcted "
-                "token `%s'", getTokenName(token));
+            unexpectedToken(parser, "JSON object", token);
     }
 }
 
@@ -757,8 +779,7 @@ static Trampoline *parseTrampoline(Parser &parser, bool int3 = false)
                     break;
 
                 default:
-                    parse_error(parser, "failed to parse template entry; "
-                        "unexpected token `%s'", getTokenName(token));
+                    unexpectedToken(parser, "template entry", token);
             }
         }
         if (once)
@@ -794,8 +815,7 @@ static Trampoline *parseBytes(Parser &parser)
     while (token != ']')
     {
         if (token != TOKEN_NUMBER)
-            parse_error(parser, "failed to parse bytes entry; unexpected "
-                "token `%s'", getTokenName(token));
+            unexpectedToken(parser, "bytes entry", token);
         if (parser.i < 0 || parser.i > UINT8_MAX)
             parse_error(parser, "failed to parse byte; value (%zd) is "
                 "outside of the byte range (%d..%d)", parser.i, 0, UINT8_MAX);

@@ -23,12 +23,6 @@
 
 #include <cassert>
 
-#define CONTEXT_FORMAT      "%lx: %s%s%s: "
-#define CONTEXT(I)          (I)->address,                           \
-                            (I)->mnemonic,                          \
-                            ((I)->op_str[0] == '\0'? "": " "),      \
-                            (I)->op_str
-
 /*
  * Prototypes.
  */
@@ -36,6 +30,62 @@ static const cs_x86_op *getOperand(const cs_insn *I, int idx, x86_op_type type,
     uint8_t access);
 static intptr_t makeMatchValue(MatchKind match, int idx, Field field,
     const cs_insn *I, intptr_t offset, intptr_t result, bool *defined);
+
+/*
+ * Get the type of an operand.
+ */
+static Type getOperandType(const cs_insn *I, const cs_x86_op *op, bool ptr)
+{
+    const cs_detail *detail = I->detail;
+    const cs_x86 *x86       = &detail->x86;
+
+    Type t = TYPE_NULL_PTR;
+    if (op == nullptr)
+        return t;
+    switch (op->type)
+    {
+        case X86_OP_REG:
+            t = getRegType(op->reg);
+            break;
+        case X86_OP_MEM:
+            switch (op->size)
+            {
+                case sizeof(int8_t):
+                    t = TYPE_INT8; break;
+                case sizeof(int16_t):
+                    t = TYPE_INT16; break;
+                case sizeof(int32_t):
+                    t = TYPE_INT32; break;
+                case sizeof(int64_t):
+                    t = TYPE_INT64; break;
+                default:
+                    t = (ptr? TYPE_INT8: t); break;
+            }
+            break;
+        case X86_OP_IMM:
+            switch (x86->encoding.imm_size)
+            {
+                case sizeof(int8_t):
+                    t = TYPE_INT8; break;
+                case sizeof(int16_t):
+                    t = TYPE_INT16; break;
+                case sizeof(int32_t):
+                    t = TYPE_INT32; break;
+                case sizeof(int64_t):
+                    t = TYPE_INT64; break;
+                default:
+                    t = (ptr? TYPE_INT8: t); break;
+            }
+            if (ptr)
+                t |= TYPE_CONST;
+            break;
+        default:
+            return t;
+    }
+    if (ptr && t != TYPE_NULL_PTR)
+        t |= TYPE_PTR;
+    return t;
+}
 
 /*
  * Emits an instruction to load the given value into the corresponding
@@ -107,7 +157,7 @@ static bool sendSaveRegToStack(FILE *out, CallInfo &info, x86_reg reg)
 /*
  * Send a load (mov/lea) from a converted memory operand to a register.
  */
-static void sendLoadFromConvertedMemToR64(FILE *out, const cs_insn *I,
+static bool sendLoadFromConvertedMemToR64(FILE *out, const cs_insn *I,
     const cs_x86_op *op, CallInfo &info, uint8_t opcode0, uint8_t opcode,
     int regno)
 {
@@ -174,7 +224,7 @@ static void sendLoadFromConvertedMemToR64(FILE *out, const cs_insn *I,
             "into register %s; the adjusted displacement is out-of-bounds",
             CONTEXT(I), getRegName(getReg(regno)));
         sendSExtFromI32ToR64(out, 0, regno);
-        return;
+        return false;
     }
     if (disp != disp0)
     {
@@ -217,12 +267,14 @@ static void sendLoadFromConvertedMemToR64(FILE *out, const cs_insn *I,
 
     sendUndoTemporaryRestoreReg(out, info, base_reg, 1);
     sendUndoTemporaryRestoreReg(out, info, index_reg, 2);
+
+    return true;
 }
 
 /*
  * Emits instructions to load a register by value or reference.
  */
-static void sendLoadRegToArg(FILE *out, const cs_insn *I, x86_reg reg,
+static bool sendLoadRegToArg(FILE *out, const cs_insn *I, x86_reg reg,
     bool ptr, CallInfo &info, int argno)
 {
     if (ptr)
@@ -233,7 +285,7 @@ static void sendLoadRegToArg(FILE *out, const cs_insn *I, x86_reg reg,
             warning(CONTEXT_FORMAT "failed to save register %s to stack; "
                 "not yet implemented", CONTEXT(I), getRegName(reg));
             sendSExtFromI32ToR64(out, 0, argno);
-            return;
+            return false;
         }
 
         sendLeaFromStackToR64(out, info.getOffset(reg), argno);
@@ -248,27 +300,27 @@ static void sendLoadRegToArg(FILE *out, const cs_insn *I, x86_reg reg,
                 "register %s; not possible or not yet implemented",
                 CONTEXT(I), getRegName(reg), getRegName(getReg(argno)));
             sendSExtFromI32ToR64(out, 0, argno);
-            return;
+            return false;
         }
         if (info.isClobbered(reg))
             sendMovFromStackToR64(out, info.getOffset(reg), argno);
         else
             sendMovFromR64ToR64(out, regno, argno);
     }
+    return true;
 }
 
 /*
  * Emits instructions to load an operand into the corresponding
  * regno register.  If the operand does not exist, load 0.
  */
-static void sendLoadOperandMetadata(FILE *out, const cs_insn *I,
+static bool sendLoadOperandMetadata(FILE *out, const cs_insn *I,
     const cs_x86_op *op, bool ptr, CallInfo &info, int argno)
 {
     switch (op->type)
     {
         case X86_OP_REG:
-            sendLoadRegToArg(out, I, op->reg, ptr, info, argno);
-            return;
+            return sendLoadRegToArg(out, I, op->reg, ptr, info, argno);
 
         case X86_OP_MEM:
             if (!ptr)
@@ -276,37 +328,32 @@ static void sendLoadOperandMetadata(FILE *out, const cs_insn *I,
                 switch (op->size)
                 {
                     case sizeof(int64_t):
-                        sendLoadFromConvertedMemToR64(out, I, op, info,
+                        return sendLoadFromConvertedMemToR64(out, I, op, info,
                             0x00, /*mov=*/0x8b, argno);
-                        break;
                     case sizeof(int32_t):
-                        sendLoadFromConvertedMemToR64(out, I, op, info,
+                        return sendLoadFromConvertedMemToR64(out, I, op, info,
                             0x00, /*movslq=*/0x63, argno);
-                        break;
                     case sizeof(int16_t):
-                        sendLoadFromConvertedMemToR64(out, I, op, info,
+                        return sendLoadFromConvertedMemToR64(out, I, op, info,
                             0x0f, /*movswq=*/0xbf, argno);
-                        break;
                     case sizeof(int8_t):
-                        sendLoadFromConvertedMemToR64(out, I, op, info,
+                        return sendLoadFromConvertedMemToR64(out, I, op, info,
                             0x0f, /*movsbq=*/0xbe, argno);
-                        break;
                     case 0:
                         sendSExtFromI32ToR64(out, 0, argno);
-                        break;
+                        return true;
                     default:
                         warning(CONTEXT_FORMAT "failed to load memory "
                             "operand contents into register %s; operand "
                             "size (%zu) is too big", CONTEXT(I),
                             getRegName(getReg(argno)), op->size);
                         sendSExtFromI32ToR64(out, 0, argno);
-                        return;
+                        return false;
                 }
             }
             else
-                sendLoadFromConvertedMemToR64(out, I, op, info,
+                return sendLoadFromConvertedMemToR64(out, I, op, info,
                     0x00, /*lea=*/0x8d, argno);
-            return;
 
         case X86_OP_IMM:
             if (!ptr)
@@ -318,7 +365,7 @@ static void sendLoadOperandMetadata(FILE *out, const cs_insn *I,
                 offset += "\"}";
                 sendLeaFromPCRelToR64(out, offset.c_str(), argno);
             }
-            return;
+            return true;
 
         default:
             error("unknown operand type (%d)", op->type);
@@ -679,7 +726,7 @@ static intptr_t lookupValue(const Action *action, const cs_insn *I,
 /*
  * Send instructions to load an argument into a register.
  */
-static void sendLoadArgumentMetadata(FILE *out, CallInfo &info,
+static Type sendLoadArgumentMetadata(FILE *out, CallInfo &info,
     const Action *action, const Argument &arg, const cs_insn *I, off_t offset,
     int argno)
 {
@@ -689,6 +736,7 @@ static void sendLoadArgumentMetadata(FILE *out, CallInfo &info,
             "maximum number of arguments (%d)", argno);
     sendSaveRegToStack(out, info, getReg(regno));
 
+    Type t = TYPE_INT64;
     switch (arg.kind)
     {
         case ARGUMENT_USER:
@@ -706,6 +754,7 @@ static void sendLoadArgumentMetadata(FILE *out, CallInfo &info,
             break;
         case ARGUMENT_ADDR:
             sendLeaFromPCRelToR64(out, "{\"rel32\":\".Linstruction\"}", regno);
+            t = TYPE_CONST_VOID_PTR;
             break;
         case ARGUMENT_NEXT:
             switch (action->call)
@@ -720,15 +769,19 @@ static void sendLoadArgumentMetadata(FILE *out, CallInfo &info,
                         regno);
                     break;
             }
+            t = TYPE_CONST_VOID_PTR;
             break;
         case ARGUMENT_BASE:
             sendLeaFromPCRelToR64(out, "{\"rel32\":0}", regno);
+            t = TYPE_CONST_VOID_PTR;
             break;
         case ARGUMENT_STATIC_ADDR:
             sendLoadValueMetadata(out, (intptr_t)I->address, regno);
+            t = TYPE_CONST_VOID_PTR;
             break;
         case ARGUMENT_ASM:
             sendLeaFromPCRelToR64(out, "{\"rel32\":\".LasmStr\"}", regno);
+            t = TYPE_CONST_CHAR_PTR;
             break;
         case ARGUMENT_ASM_SIZE: case ARGUMENT_ASM_LEN:
         {
@@ -741,15 +794,18 @@ static void sendLoadArgumentMetadata(FILE *out, CallInfo &info,
         }
         case ARGUMENT_BYTES:
             sendLeaFromPCRelToR64(out, "{\"rel32\":\".Lbytes\"}", regno);
+            t = TYPE_CONST_INT8_PTR;
             break;
         case ARGUMENT_BYTES_SIZE:
             sendLoadValueMetadata(out, I->size, regno);
             break;
         case ARGUMENT_TARGET:
             sendLoadTargetMetadata(out, I, info, regno);
+            t = TYPE_CONST_VOID_PTR;
             break;
         case ARGUMENT_TRAMPOLINE:
             sendLeaFromPCRelToR64(out, "{\"rel32\":\".Ltrampoline\"}", regno);
+            t = TYPE_CONST_VOID_PTR;
             break;
         case ARGUMENT_RANDOM:
             sendLoadValueMetadata(out, rand(), regno);
@@ -801,12 +857,15 @@ static void sendLoadArgumentMetadata(FILE *out, CallInfo &info,
                 info.clobber(X86_REG_RAX);
                 sendMovFromRAX16ToR64(out, regno);
             }
+            t = TYPE_INT16;
             break;
         ARGUMENT_REG_PTR:
         {
             x86_reg reg = getReg(arg.kind);
             sendSaveRegToStack(out, info, reg);
             sendLeaFromStackToR64(out, info.getOffset(reg), regno);
+            t = (arg.kind == ARGUMENT_RFLAGS? TYPE_INT16: TYPE_INT64) |
+                TYPE_PTR;
             break;
         }
         case ARGUMENT_OP: case ARGUMENT_SRC: case ARGUMENT_DST:
@@ -820,24 +879,27 @@ static void sendLoadArgumentMetadata(FILE *out, CallInfo &info,
                                (arg.kind == ARGUMENT_MEM? X86_OP_MEM:
                                 X86_OP_INVALID)));
             const cs_x86_op *op = getOperand(I, (int)arg.value, type, access);
+            t = getOperandType(I, op, arg.ptr);
             if (op == nullptr)
             {
-                const char *kind = "";
+                const char *kind = "???";
                 switch (arg.kind)
                 {
-                    case ARGUMENT_SRC: kind = "src "; break;
-                    case ARGUMENT_DST: kind = "dst "; break;
-                    case ARGUMENT_IMM: kind = "imm "; break;
-                    case ARGUMENT_REG: kind = "reg "; break;
-                    case ARGUMENT_MEM: kind = "mem "; break;
+                    case ARGUMENT_OP:  kind = "op";  break;
+                    case ARGUMENT_SRC: kind = "src"; break;
+                    case ARGUMENT_DST: kind = "dst"; break;
+                    case ARGUMENT_IMM: kind = "imm"; break;
+                    case ARGUMENT_REG: kind = "reg"; break;
+                    case ARGUMENT_MEM: kind = "mem"; break;
                     default: break;
                 }
-                warning(CONTEXT_FORMAT "failed to load %soperand; index %d is "
+                warning(CONTEXT_FORMAT "failed to load %s[%d]; index is "
                     "out-of-range", CONTEXT(I), kind, (int)arg.value);
                 sendSExtFromI32ToR64(out, 0, regno);
                 break;
             }
-            sendLoadOperandMetadata(out, I, op, arg.ptr, info, regno);
+            if (!sendLoadOperandMetadata(out, I, op, arg.ptr, info, regno))
+                t = TYPE_NULL_PTR;
             break;
         }
         default:
@@ -845,6 +907,8 @@ static void sendLoadArgumentMetadata(FILE *out, CallInfo &info,
     }
     info.clobber(getReg(regno));
     info.use(getReg(regno));
+
+    return t;
 }
 
 /*
@@ -937,10 +1001,12 @@ static Metadata *buildMetadata(const Action *action, const cs_insn *I,
             bool conditional = (action->call == CALL_CONDITIONAL);
             CallInfo info(action->clean, conditional, action->args.size(),
                 before);
+            TypeSig sig = TYPESIG_EMPTY;
             for (const auto &arg: action->args)
             {
-                sendLoadArgumentMetadata(out, info, action, arg, I, offset,
-                    argno);
+                Type t = sendLoadArgumentMetadata(out, info, action, arg, I,
+                    offset, argno);
+                sig = setType(sig, t, argno);
                 argno++;
             }
             argno = 0;
@@ -970,6 +1036,23 @@ static Metadata *buildMetadata(const Action *action, const cs_insn *I,
             const char *md_load_args = buildMetadataString(out, buf, &pos);
             metadata[i].name = "loadArgs";
             metadata[i].data = md_load_args;
+            i++;
+
+            // Find & call the function.
+            intptr_t addr = lookupSymbol(action->elf, action->symbol, sig);
+            if (addr < 0 || addr > INT32_MAX)
+            {
+                lookupSymbolWarnings(action->elf, I, action->symbol, sig);
+                std::string str;
+                getSymbolString(action->symbol, sig, str);
+                error(CONTEXT_FORMAT "failed to find a symbol matching \"%s\" "
+                    "in binary \"%s\"", CONTEXT(I), str.c_str(),
+                    action->elf->filename);
+            }
+            fprintf(out, "{\"rel32\":%d}", (int32_t)addr);
+            const char *md_function = buildMetadataString(out, buf, &pos);
+            metadata[i].name = "function";
+            metadata[i].data = md_function;
             i++;
 
             // Restore state.
