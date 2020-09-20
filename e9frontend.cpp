@@ -2472,7 +2472,8 @@ static void sendLeaFromStackToR64(FILE *out, int32_t offset, int regno)
  * Send a call ELF trampoline.
  */
 unsigned e9frontend::sendCallTrampolineMessage(FILE *out, const char *name,
-    const std::vector<Argument> &args, bool clean, CallKind call)
+    const std::vector<Argument> &args, bool clean, bool noalign,
+    CallKind call)
 {
     sendMessageHeader(out, "trampoline");
     sendParamHeader(out, "name");
@@ -2499,11 +2500,36 @@ unsigned e9frontend::sendCallTrampolineMessage(FILE *out, const char *name,
     for (int i = 0; rsave[i] >= 0; i++, num_rsave++)
         sendPush(out, 0, (call != CALL_AFTER), getReg(rsave[i]));
 
-    // Load the arguments (if necessary):
+    // Load the arguments:
     fputs("\"$loadArgs\",", out);
+
+    // Align the stack (if necessary):
+    if (!noalign)
+    {
+        assert(clean);
+        // Ensure %rsp is 16-byte aligned as per the ABI:
+        // Both %rax and %rflags are saved and can be clobbered.
+        //
+        // mov %rsp,%rax
+        // and $-16,%rsp
+        // push %rax
+        // push %rax
+        //
+        fprintf(out, "%u,%u,%u,", 0x48, 0x89, 0xe0);
+        fprintf(out, "%u,%u,%u,%u,", 0x48, 0x83, 0xe4, 0xf0);
+        fprintf(out, "%u,", 0x50);
+        fprintf(out, "%u,", 0x50);
+    }
 
     // Call the function:
     fprintf(out, "%u,\"$function\",", 0xe8);        // callq function
+
+    // Un-align the stack (if necessary):
+    if (!noalign)
+    {
+        // pop %rsp
+        fprintf(out, "%u,", 0x5c);
+    }
 
     // Restore the state:
     fputs("\"$restoreState\",", out);

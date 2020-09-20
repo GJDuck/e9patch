@@ -42,9 +42,9 @@ static char *byte_to_str(unsigned char x, char *str)
 /*
  * Entry point.
  *
- * call entry(addr,instr,instr.count,asm)@print
+ * call entry(addr,instr,size,asm)@print
  */
-void entry(void *addr, const unsigned char *instr, unsigned instr_count,
+void entry(const void *addr, const unsigned char *instr, unsigned long size,
     const char *_asm)
 {
     char buf[512];
@@ -56,11 +56,11 @@ void entry(void *addr, const unsigned char *instr, unsigned instr_count,
     for (i = (unsigned)(str - buf); i < 16; i++)
         *str++ = ' ';
     str = str_cat("\33[0m: \33[33m", str);
-    for (i = 0; i < instr_count; i++)
+    for (i = 0; i < size; i++)
     {
         str = byte_to_str(instr[i], str);
         *str++ = ' ';
-        if (i == 7 && instr_count > 8)
+        if (i == 7 && size > 8)
         {
             str = str_cat("\33[32m", str);
             str = str_cat(_asm, str);

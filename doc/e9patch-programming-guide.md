@@ -185,6 +185,7 @@ function should be called after the patched instruction
 The options are:
 
 * `clean`/`naked` for clean/naked calls.
+* `noalign` disables stack alignment for clean calls.
 * `before`/`after`/`replace` for inserting the
   call before/after the instruction, or replacing
   the instruction by the call.
@@ -194,7 +195,11 @@ responsible for preserving the CPU state, and not E9Tool.
 This usually means the function must be implemented in assembly.
 For some applications, this can enable more optimized code.
 The default is `clean`, which means E9Tool will automatically
-generate code for saving/restoring the CPU state.
+generate code for saving/restoring the CPU state and aligning
+the stack pointer to a 16-byte boundary.
+Stack alignment is required by the System V ABI, but can be
+disabled using `noalign` option.
+The `naked` option automatically implies `noalign`.
 
 The `before`/`after`/`replace` option specifies where the
 instrumented call should be placed.
