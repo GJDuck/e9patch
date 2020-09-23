@@ -184,6 +184,7 @@ static const TokenInfo tokens[] =
     {"r9",          TOKEN_R9},
     {"random",      TOKEN_RANDOM},
     {"rax",         TOKEN_RAX},
+    {"rbp",         TOKEN_RBP},
     {"rbx",         TOKEN_RBX},
     {"rcx",         TOKEN_RCX},
     {"rdi",         TOKEN_RDI},
@@ -382,11 +383,13 @@ struct Parser
             {
                 base = 16;
                 s[j++] = buf[pos++]; s[j++] = buf[pos++];
-                pos += 2;
                 c = buf[pos];
             }
             if (!(base == 10? isdigit(c): isxdigit(c)))
+            {
+                s[j++] = '\0';
                 return TOKEN_ERROR;
+            }
             s[j++] = c;
             pos++;
             while ((base == 10? isdigit(buf[pos]): isxdigit(buf[pos])) &&
