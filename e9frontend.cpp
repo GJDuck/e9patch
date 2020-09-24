@@ -71,8 +71,10 @@ using namespace e9frontend;
  * Prototypes.
  */
 static char *strDup(const char *old_str, size_t n = SIZE_MAX);
-static bool sendPush(FILE *out, int32_t offset, bool before, x86_reg reg);
-static void sendPop(FILE *out, bool preserve_rax, x86_reg reg);
+static std::pair<bool, bool> sendPush(FILE *out, int32_t offset, bool before,
+    x86_reg reg, x86_reg rscratch = X86_REG_INVALID);
+static bool sendPop(FILE *out, bool conditional, x86_reg reg,
+    x86_reg rscratch = X86_REG_INVALID);
 static bool sendMovFromR64ToR64(FILE *out, int srcno, int dstno);
 static void sendMovFromStackToR64(FILE *out, int32_t offset, int regno);
 static void sendMovFromR64ToStack(FILE *out, int regno, int32_t offset);
@@ -849,7 +851,7 @@ static const int *getCallerSaveRegs(bool clean, bool conditional,
 {
     static const int clean_save[] =
     {
-        RAX_IDX, RFLAGS_IDX, R11_IDX, R10_IDX, R9_IDX, R8_IDX, RCX_IDX,
+        RCX_IDX, RAX_IDX, RFLAGS_IDX, R11_IDX, R10_IDX, R9_IDX, R8_IDX,
         RDX_IDX, RSI_IDX, RDI_IDX, -1
     };
     if (clean)
@@ -965,7 +967,7 @@ struct CallInfo
     bool getUsed(x86_reg reg) const
     {
         const RegInfo *rinfo = getInfo(reg);
-        return (rinfo == nullptr? false: rinfo->used != 0);
+        return (rinfo == nullptr? true: rinfo->used != 0);
     }
 
     /*
@@ -1056,28 +1058,40 @@ struct CallInfo
     }
 
     /*
-     * Check if a push will clobber %rax.
+     * Get a suitable scratch register.
      */
-    static bool pushClobbersRAX(x86_reg reg)
+    x86_reg getScratch(const x86_reg *exclude = nullptr)
     {
-        switch (reg)
+        x86_reg reg = X86_REG_INVALID;
+        for (const auto &entry: info)
         {
-            case X86_REG_RSP: case X86_REG_EFLAGS: case X86_REG_RIP:
-                return true;
-            default:
-                return false;
+            int regno = getRegIdx(entry.first);
+            if (regno < 0 || regno == RFLAGS_IDX || regno == RSP_IDX)
+                continue;
+            bool found = false;
+            for (unsigned i = 0; !found && exclude != nullptr &&
+                    exclude[i] != X86_REG_INVALID; i++)
+                found = (entry.first == exclude[i]);
+            if (found)
+                continue;
+            const RegInfo &rinfo = entry.second;
+            if (rinfo.used)
+                continue;
+            if (rinfo.clobbered)
+                return entry.first;
+            if (rinfo.saved)
+                reg = entry.first;
         }
+        return reg;
     }
 
     /*
-     * Push a register onto the stack.
+     * Emulate a register push.
      */
     void push(x86_reg reg, bool caller_save = false)
     {
         reg = getCanonicalReg(reg);
-
         assert(getInfo(reg) == nullptr);
-        assert(!pushClobbersRAX(reg) || isSaved(X86_REG_RAX));
 
         intptr_t reg_offset = 0;
         switch (reg)
@@ -1101,9 +1115,57 @@ struct CallInfo
         rinfo.caller_save = caller_save;
         info.insert({reg, rinfo});
         pushed.push_back(reg);
+    }
 
-        if (pushClobbersRAX(reg))
-            clobber(X86_REG_RAX);
+    /*
+     * Emulate the call.
+     */
+    void call(bool conditional)
+    {
+        for (auto &entry: info)
+        {
+            RegInfo &rinfo = entry.second;
+            if (conditional && entry.first == X86_REG_RAX)
+            {
+                // %rax holds the return value:
+                assert(rinfo.saved);
+                rinfo.clobbered = true;
+                rinfo.used      = true;
+                continue;
+            }
+            if (rinfo.caller_save)
+            {
+                // Caller saved registers are clobbered and unused.
+                rinfo.clobbered = true;
+                rinfo.used      = false;
+            }
+            else if (!rinfo.clobbered)
+                rinfo.used = !rinfo.clobbered;
+        }
+    }
+
+    /*
+     * Emulate a register pop.
+     */
+    x86_reg pop()
+    {
+        if (pushed.size() == 0)
+            return X86_REG_INVALID;
+        x86_reg reg = pushed.back();
+        auto i = info.find(reg);
+        assert(i != info.end());
+        RegInfo &rinfo = i->second;
+        if (rinfo.caller_save)
+        {
+            // Stop at first caller-save.  These are handled by the
+            // trampoline template rather than the metadata.
+            return X86_REG_INVALID;
+        }
+        rinfo.used      = true;
+        rinfo.saved     = false;
+        rinfo.clobbered = false;
+        pushed.pop_back();
+        return reg;
     }
 
     /*
@@ -1123,6 +1185,11 @@ struct CallInfo
     {
         for (unsigned i = 0; rsave[i] >= 0; i++)
             push(getReg(rsave[i]), /*caller_save=*/true);
+        if (clean)
+        {
+            // For clean calls, %rax will be clobbered when %rflags in pushed.
+            clobber(X86_REG_RAX);
+        }
     }
 
     CallInfo() = delete;
@@ -2076,9 +2143,38 @@ static bool sendMovBetweenRegAndStack(FILE *out, x86_reg reg, bool to_stack)
 /*
  * Send (or emulate) a push instruction.
  */
-static bool sendPush(FILE *out, int32_t offset, bool before, x86_reg reg)
+static std::pair<bool, bool> sendPush(FILE *out, int32_t offset, bool before,
+    x86_reg reg, x86_reg rscratch)
 {
     // Special cases:
+    int scratch = -1, old_scratch = -1;
+    bool rax_stack = false;
+    switch (reg)
+    {
+        case X86_REG_RIP:
+        case X86_REG_RSP:
+        case X86_REG_EFLAGS:
+            scratch = getRegIdx(rscratch);
+            assert(scratch != RSP_IDX && scratch != RFLAGS_IDX);
+            if (scratch < 0)
+            {
+                // No available scratch register.  Evict %rax to into stack
+                // redzone at offset -16:
+                sendMovFromR64ToStack(out, RAX_IDX, -16);
+                scratch = RAX_IDX;
+                rax_stack = true;
+            }
+            if (reg == X86_REG_EFLAGS && scratch != RAX_IDX)
+            {
+                // %rflags requires %rax as the scratch register:
+                sendMovFromR64ToR64(out, RAX_IDX, scratch);
+                old_scratch = scratch;
+                scratch = RAX_IDX;
+            }
+            break;
+        default:
+            break;
+    }
     switch (reg)
     {
         case X86_REG_RIP:
@@ -2088,29 +2184,43 @@ static bool sendPush(FILE *out, int32_t offset, bool before, x86_reg reg)
             else
                 sendLeaFromPCRelToR64(out, "{\"rel32\":\".Lcontinue\"}",
                     RAX_IDX);
-            sendMovFromR64ToStack(out, RAX_IDX, offset - RIP_SLOT);
-            return true;
+            sendMovFromR64ToStack(out, scratch, offset - RIP_SLOT);
+            break;
 
         case X86_REG_RSP:
             // lea offset(%rsp),%rax
             // mov %rax,0x4000-8(%rax)
-             fprintf(out, "%u,%u,%u,%u,{\"int32\":%d},",
-                0x48, 0x8d, 0x84, 0x24, offset);
-            sendMovFromR64ToStack(out, RAX_IDX, offset - RSP_SLOT);
-            return true;
+            sendLeaFromStackToR64(out, offset, scratch);
+            sendMovFromR64ToStack(out, scratch, offset - RSP_SLOT);
+            break;
 
        case X86_REG_EFLAGS:
             // seto %al
             // lahf
+            assert(scratch == RAX_IDX);
             fprintf(out, "%u,%u,%u,", 0x0f, 0x90, 0xc0);
             fprintf(out, "%u,", 0x9f);
             sendPush(out, offset + sizeof(int64_t), before, X86_REG_RAX);
-            return true;
+            break;
 
         default:
             break;
     }
+    switch (reg)
+    {
+        case X86_REG_RIP:
+        case X86_REG_RSP:
+        case X86_REG_EFLAGS:
+            if (old_scratch >= 0)
+                sendMovFromR64ToR64(out, old_scratch, scratch);
+            else if (rax_stack)
+                sendMovFromStackToR64(out, -16+8, RAX_IDX);
+            return {true, !rax_stack};
+        default:
+            break;
+    }
 
+    // Normal cases:
     int regno = getRegIdx(reg);
     int32_t size = getRegSize(reg);
     if (regno >= 0)
@@ -2126,7 +2236,7 @@ static bool sendPush(FILE *out, int32_t offset, bool before, x86_reg reg)
         if (REX[regno] != 0x00)
             fprintf(out, "%u,", REX[regno]);
         fprintf(out, "%u,", OPCODE[regno]);
-        return true;
+        return {true, false};
     }
     else if (size > 0)
     {
@@ -2135,47 +2245,58 @@ static bool sendPush(FILE *out, int32_t offset, bool before, x86_reg reg)
         fprintf(out, "%u,%u,%u,%u,{\"int8\":%d},",
             0x48, 0x8d, 0x64, 0x24, -size);
         sendMovBetweenRegAndStack(out, reg, /*to_stack=*/true);
-        return true;
+        return {true, false};
     }
     else
-        return false;
+        return {false, false};
 }
 
 /*
  * Send (or emulate) a pop instruction.
  */
-static void sendPop(FILE *out, bool preserve_rax, x86_reg reg)
+static bool sendPop(FILE *out, bool preserve_rax, x86_reg reg,
+    x86_reg rscratch)
 {
     // Special cases:
     switch (reg)
     {
-        case X86_REG_RAX:
+        case X86_REG_EFLAGS:
+        {
+            int scratch = -1;
             if (preserve_rax)
             {
-                sendLeaFromStackToR64(out, (int32_t)sizeof(uint64_t),
-                    RSP_IDX);
-                return;
+                scratch = getRegIdx(rscratch);
+                if (scratch < 0)
+                    sendMovFromR64ToStack(out, RAX_IDX,
+                        -(int32_t)sizeof(uint64_t));
+                else
+                    sendMovFromR64ToR64(out, RAX_IDX, scratch);
             }
-            break;
 
-        case X86_REG_EFLAGS:
-            if (preserve_rax)
-                sendMovFromR64ToStack(out, RAX_IDX,
-                    -(int32_t)sizeof(uint64_t));
             sendPop(out, false, X86_REG_RAX);
             // add $0x7f,%al
             // sahf
             fprintf(out, "%u,%u,", 0x04, 0x7f);
             fprintf(out, "%u,", 0x9e);
+
             if (preserve_rax)
-                sendMovFromStackToR64(out, 2 * -(int32_t)sizeof(uint64_t),
-                    RAX_IDX);
-            return;
+            {
+                if (scratch < 0)
+                    sendMovFromStackToR64(out, -2*(int32_t)sizeof(uint64_t),
+                        RAX_IDX);
+                else
+                {
+                    sendMovFromR64ToR64(out, scratch, RAX_IDX);
+                    return true;
+                }
+            }
+            return false;
+        }
 
         case X86_REG_RIP:
             // %rip is treated as read-only, so ignore pop'ed value
             sendLeaFromStackToR64(out, (int32_t)sizeof(uint64_t), RSP_IDX);
-            return;
+            return false;
 
         default:
             break;
@@ -2207,6 +2328,8 @@ static void sendPop(FILE *out, bool preserve_rax, x86_reg reg)
     }
     else
         ;   // NOP
+
+    return false;
 }
 
 /*
@@ -2497,13 +2620,15 @@ unsigned e9frontend::sendCallTrampolineMessage(FILE *out, const char *name,
     bool conditional = (call == CALL_CONDITIONAL);
     const int *rsave = getCallerSaveRegs(clean, conditional, args.size());
     int num_rsave = 0;
+    x86_reg rscratch = (clean? X86_REG_RAX: X86_REG_INVALID);
     for (int i = 0; rsave[i] >= 0; i++, num_rsave++)
-        sendPush(out, 0, (call != CALL_AFTER), getReg(rsave[i]));
+        sendPush(out, 0, (call != CALL_AFTER), getReg(rsave[i]), rscratch);
 
     // Load the arguments:
     fputs("\"$loadArgs\",", out);
 
     // Align the stack (if necessary):
+    noalign = true;         // XXX
     if (!noalign)
     {
         assert(clean);
@@ -2533,13 +2658,22 @@ unsigned e9frontend::sendCallTrampolineMessage(FILE *out, const char *name,
 
     // Restore the state:
     fputs("\"$restoreState\",", out);
+    
+    // If clean & conditional, store result in %rcx, else it stays in %rax
+    bool preserve_rax = (conditional || !clean);
+    bool result_rax   = true;
+    if (conditional && clean)
+    {
+        // mov %rax,%rcx
+        fprintf(out, "%u,%u,%u,", 0x48, 0x89, 0xc1);
+        preserve_rax = false;
+        result_rax   = false;
+    }
 
     // Pop all callee-save registers:
-    for (int i = num_rsave-1; i >= (conditional? 1: 0); i--)
-    {
-        bool preserve_rax = (conditional || !clean);
+    int rmin = (conditional? 1: 0);
+    for (int i = num_rsave-1; i >= rmin; i--)
         sendPop(out, preserve_rax, getReg(rsave[i]));
-    }
 
     // If conditional, jump away from $instruction if %rax is zero:
     if (conditional)
@@ -2549,10 +2683,16 @@ unsigned e9frontend::sendCallTrampolineMessage(FILE *out, const char *name,
         // xchg %rax,%rcx
         // pop %rax
         //
-        fprintf(out, "%u,%u,", 0x48, 0x91);
+        if (result_rax)
+            fprintf(out, "%u,%u,", 0x48, 0x91);
         fprintf(out, "%u,{\"rel8\":\".Lskip\"},", 0xe3);
-        fprintf(out, "%u,%u,", 0x48, 0x91);
-        fprintf(out, "%u,", 0x58);
+        if (result_rax)
+        {
+            fprintf(out, "%u,%u,", 0x48, 0x91);
+            fprintf(out, "%u,", 0x58);
+        }
+        else
+            fprintf(out, "%u,", 0x59);
     }
 
     // Restore the stack pointer.
@@ -2573,8 +2713,13 @@ unsigned e9frontend::sendCallTrampolineMessage(FILE *out, const char *name,
         // pop %rax
         //
         fputs(",\".Lskip\",", out);
-        fprintf(out, "%u,%u,", 0x48, 0x91);
-        fprintf(out, "%u,", 0x58);
+        if (result_rax)
+        {
+            fprintf(out, "%u,%u,", 0x48, 0x91);
+            fprintf(out, "%u,", 0x58);
+        }
+        else
+            fprintf(out, "%u,", 0x59);
 
         fputs("\"$restoreRSP\",",out);
         fputs("\"$continue\"", out);

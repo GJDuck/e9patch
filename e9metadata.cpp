@@ -102,39 +102,86 @@ static void sendLoadValueMetadata(FILE *out, intptr_t value, int argno)
 }
 
 /*
- * Temporarily restore a register.
+ * Temporarily move a register.
+ * Returns scratch storage indicating where the current value is moved to:
+ * (<0)=stack, (<RMAX)=register, else no need to save register.
  */
-static void sendTemporaryRestoreReg(FILE *out, CallInfo &info, x86_reg reg,
-    int slot)
+static int sendTemporaryMovReg(FILE *out, CallInfo &info, x86_reg reg,
+    const x86_reg *exclude, int *slot)
+{
+    int regno = getRegIdx(reg);
+    assert(regno >= 0);
+    x86_reg rscratch = info.getScratch(exclude);
+    int scratch;
+    if (rscratch != X86_REG_INVALID)
+    {
+        // Save old value into a scratch register:
+        scratch = getRegIdx(rscratch);
+        sendMovFromR64ToR64(out, regno, scratch);
+        info.clobber(rscratch);
+    }
+    else
+    {
+        // Save old value into the stack redzone:
+        *slot = *slot - 1;
+        scratch = *slot;
+        sendMovFromR64ToStack(out, regno, (int32_t)sizeof(int64_t) * scratch);
+    }
+    return scratch;
+}
+
+/*
+ * Temporarily save a register, allowing it to be used for another purpose.
+ */
+static int sendTemporarySaveReg(FILE *out, CallInfo &info, x86_reg reg,
+    const x86_reg *exclude, int *slot)
+{
+    if (info.isClobbered(reg))
+        return INT32_MAX;
+
+    return sendTemporaryMovReg(out, info, reg, exclude, slot);
+}
+
+/*
+ * Temporarily restore a register to its original value.
+ */
+static int sendTemporaryRestoreReg(FILE *out, CallInfo &info, x86_reg reg,
+    const x86_reg *exclude, int *slot)
 {
     if (!info.isClobbered(reg))
-        return;
+        return INT32_MAX;
     if (!info.isUsed(reg))
     {
         // If reg is clobbered but not used, then we simply restore it.
         sendMovFromStackToR64(out, info.getOffset(reg), getRegIdx(reg));
         info.restore(reg);
-        return;
+        return INT32_MAX;
     }
 
-    int regno = getRegIdx(reg);
-    assert(regno >= 0);
-    sendMovFromR64ToStack(out, regno, -(int32_t)sizeof(int64_t) * slot);
-    sendMovFromStackToR64(out, info.getOffset(reg), regno);
+    int scratch = sendTemporaryMovReg(out, info, reg, exclude, slot);
+    sendMovFromStackToR64(out, info.getOffset(reg), getRegIdx(reg));
+    return scratch;
 }
 
 /*
- * Undo sendTemporaryRestoreReg().
+ * Undo sendTemporaryMovReg().
  */
-static void sendUndoTemporaryRestoreReg(FILE *out, const CallInfo &info,
-    x86_reg reg, int slot)
+static void sendUndoTemporaryMovReg(FILE *out, x86_reg reg, int scratch)
 {
-    if (!info.isClobbered(reg))
-        return;
-
+    if (scratch > RMAX_IDX)
+        return;     // Was not saved.
     int regno = getRegIdx(reg);
     assert(regno >= 0);
-    sendMovFromStackToR64(out, -(int32_t)sizeof(int64_t) * slot, regno);
+    if (scratch >= 0)
+    {
+        // Value saved in register:
+        sendMovFromR64ToR64(out, scratch, regno);
+    }
+    else
+    {
+        // Value saved on stack:
+        sendMovFromStackToR64(out, (int32_t)sizeof(int64_t) * scratch, regno);
+    }
 }
 
 /*
@@ -144,14 +191,17 @@ static bool sendSaveRegToStack(FILE *out, CallInfo &info, x86_reg reg)
 {
     if (info.isSaved(reg))
         return true;
-    if (info.pushClobbersRAX(reg) && !info.isSaved(X86_REG_RAX))
+    x86_reg rscratch = (info.isClobbered(X86_REG_RAX)? X86_REG_RAX:
+        info.getScratch());
+    auto result = sendPush(out, info.rsp_offset, info.before, reg, rscratch);
+    if (result.first)
     {
-        sendPush(out, info.rsp_offset, info.before, X86_REG_RAX);
-        info.push(X86_REG_RAX);
+        // Push was successful:
+        info.push(reg);
+        if (result.second)
+            info.clobber(rscratch);
     }
-    bool result = sendPush(out, info.rsp_offset, info.before, reg);
-    info.push(reg);
-    return result;
+    return result.first;
 }
 
 /*
@@ -165,15 +215,34 @@ static bool sendLoadFromConvertedMemToR64(FILE *out, const cs_insn *I,
     const cs_x86 *x86       = &detail->x86;
     assert(op->type == X86_OP_MEM);
 
-    bool have_prefix = (x86->prefix[1] != 0);
-    uint8_t prefix   = 0;
-    if (have_prefix)
-        prefix = x86->prefix[1];
-
     const uint8_t REX[] =
         {0x48, 0x48, 0x48, 0x48, 0x4c, 0x4c, 0x00,
          0x48, 0x4c, 0x4c, 0x48, 0x48, 0x4c, 0x4c, 0x4c, 0x4c, 0x48};
     uint8_t rex = REX[regno] | (x86->rex & 0x03);
+
+    if (x86->encoding.modrm_offset == 0)
+    {
+        // This is an implicit memory operand without a ModR/M byte.  Such
+        // cases cannot be handled yet.
+        warning(CONTEXT_FORMAT "failed to load converted memory operand "
+            "into register %s; implicit memory operands are not yet "
+            "implemented", CONTEXT(I), getRegName(getReg(regno)));
+        sendSExtFromI32ToR64(out, 0, regno);
+        return false;
+    }
+
+    if ((op->mem.segment == X86_REG_FS || op->mem.segment == X86_REG_GS) &&
+            opcode0 == 0x00 && opcode == /*LEA=*/0x8d)
+    {
+        // LEA assumes all segment registers are zero.  Since %fs/%gs may
+        // be non-zero, these segment registers cannot be handled.
+        warning(CONTEXT_FORMAT "failed to load converted memory operand "
+            "into register %s; cannot load the effective address of a memory "
+            "operand using segment register %s", CONTEXT(I),
+            getRegName(getReg(regno)), getRegName(op->mem.segment));
+        sendSExtFromI32ToR64(out, 0, regno);
+        return false;
+    }
 
     uint8_t modrm = x86->modrm;
     const uint8_t REG[] =
@@ -209,8 +278,17 @@ static bool sendLoadFromConvertedMemToR64(FILE *out, const cs_insn *I,
     x86_reg base_reg = op->mem.base;
     x86_reg index_reg = op->mem.index;
 
-    sendTemporaryRestoreReg(out, info, base_reg, 1);
-    sendTemporaryRestoreReg(out, info, index_reg, 2);
+    x86_reg exclude[4] = {getReg(regno)};
+    int j = 1;
+    if (base_reg != X86_REG_INVALID)
+        exclude[j++] = getCanonicalReg(base_reg);
+    exclude[j++] = getCanonicalReg(index_reg);
+    exclude[j++] = X86_REG_INVALID;
+    int slot = 0;
+    int scratch_1 = sendTemporaryRestoreReg(out, info, base_reg, exclude,
+        &slot);
+    int scratch_2 = sendTemporaryRestoreReg(out, info, index_reg, exclude,
+        &slot);
 
     intptr_t disp0 = disp;
     if (base_reg == X86_REG_RSP || base_reg == X86_REG_ESP)
@@ -247,9 +325,14 @@ static bool sendLoadFromConvertedMemToR64(FILE *out, const cs_insn *I,
         }
     }
 
+    bool have_prefix = (x86->prefix[1] != 0);
     mod = (modrm >> 6) & 0x3;
-    if (have_prefix)
-        fprintf(out, "%u,", prefix);
+    for (unsigned i = 1; i < 4; i++)
+    {
+        if (x86->prefix[i] == 0x0)
+            continue;
+        fprintf(out, "%u,", x86->prefix[i]);
+    }
     if (opcode0 != 0)
         fprintf(out, "%u,%u,%u,%u,", rex, opcode0, opcode, modrm);
     else
@@ -265,8 +348,8 @@ static bool sendLoadFromConvertedMemToR64(FILE *out, const cs_insn *I,
     else if (mod == 0x2 || (mod == 0x0 && base == 0x5))
         fprintf(out, "{\"int32\":%d},", (int32_t)disp);
 
-    sendUndoTemporaryRestoreReg(out, info, base_reg, 1);
-    sendUndoTemporaryRestoreReg(out, info, index_reg, 2);
+    sendUndoTemporaryMovReg(out, base_reg, scratch_1);
+    sendUndoTemporaryMovReg(out, index_reg, scratch_2);
 
     return true;
 }
@@ -547,7 +630,10 @@ static void sendLoadNextMetadata(FILE *out, const cs_insn *I, CallInfo &info,
         {
             // Special handling for jecxz/jrcxz.  This is similar to other
             // jcc instructions (see below), except we must restore %rcx:
-            sendTemporaryRestoreReg(out, info, X86_REG_RCX, 1);
+            x86_reg exclude[] = {getReg(argno), X86_REG_INVALID};
+            int slot = 0;
+            int scratch = sendTemporaryRestoreReg(out, info, X86_REG_RCX,
+                exclude, &slot);
             if (I->id == X86_INS_JECXZ)
                 fprintf(out, "%u,", 0x67);
             fprintf(out, "%u,{\"rel8\":\".Ltaken%s\"},", 0xe3, regname);
@@ -556,7 +642,7 @@ static void sendLoadNextMetadata(FILE *out, const cs_insn *I, CallInfo &info,
             fprintf(out, "\".Ltaken%s\",", regname);
             sendLoadTargetMetadata(out, I, info, argno);
             fprintf(out, "\".Lnext%s\",", regname);
-            sendUndoTemporaryRestoreReg(out, info, X86_REG_RCX, 1);
+            sendUndoTemporaryMovReg(out, X86_REG_RCX, scratch);
             return;
         }
         default:
@@ -851,11 +937,15 @@ static Type sendLoadArgumentMetadata(FILE *out, CallInfo &info,
                     regno);
             else
             {
-                sendSaveRegToStack(out, info, X86_REG_RAX);
+                x86_reg exclude[] = {X86_REG_RAX, getReg(regno),
+                    X86_REG_INVALID};
+                int slot = 0;
+                int scratch = sendTemporarySaveReg(out, info, X86_REG_RAX,
+                    exclude, &slot);
                 fprintf(out, "%u,%u,%u,", 0x0f, 0x90, 0xc0);// seto   %al
                 fprintf(out, "%u,", 0x9f);                  // lahf
-                info.clobber(X86_REG_RAX);
                 sendMovFromRAX16ToR64(out, regno);
+                sendUndoTemporaryMovReg(out, X86_REG_RAX, scratch);
             }
             t = TYPE_INT16;
             break;
@@ -1021,7 +1111,7 @@ static Metadata *buildMetadata(const Action *action, const cs_insn *I,
                     rsp_args_offset += sizeof(int64_t);
                 }
             }
-            for (int regno = 0; regno < RMAX_IDX; regno++)
+            for (int regno = 0; !action->clean && regno < RMAX_IDX; regno++)
             {
                 x86_reg reg = getReg(regno);
                 if (!info.isCallerSave(reg) && info.isClobbered(reg))
@@ -1030,6 +1120,7 @@ static Metadata *buildMetadata(const Action *action, const cs_insn *I,
                     int32_t reg_offset = rsp_args_offset;
                     reg_offset += info.getOffset(reg);
                     sendMovFromStackToR64(out, reg_offset, regno);
+                    info.restore(reg);
                 }
             }
             int i = 0;
@@ -1054,6 +1145,7 @@ static Metadata *buildMetadata(const Action *action, const cs_insn *I,
             metadata[i].name = "function";
             metadata[i].data = md_function;
             i++;
+            info.call(conditional);
 
             // Restore state.
             if (rsp_args_offset != 0)
@@ -1063,24 +1155,22 @@ static Metadata *buildMetadata(const Action *action, const cs_insn *I,
                     0x48, 0x8d, 0xa4, 0x24, rsp_args_offset);
             }
             bool pop_rsp = false;
-            for (int i = (int)info.pushed.size()-1; i >= 0; i--)
+            x86_reg reg;
+            while ((reg = info.pop()) != X86_REG_INVALID)
             {
-                x86_reg reg = info.pushed.at(i);
-                if (info.isCallerSave(reg))
-                {
-                    // The remaining registers are caller-save, so break:
-                    break;
-                }
                 switch (reg)
                 {
                     case X86_REG_RSP:
                         pop_rsp = true;
-                        continue;           // %rsp is always popped last.
+                        continue;           // %rsp is popped last.
                     default:
                         break;
                 }
-                bool preserve_rax = (conditional || !action->clean);
-                sendPop(out, preserve_rax, reg);
+                bool preserve_rax = info.isUsed(X86_REG_RAX);
+                x86_reg rscratch = (preserve_rax? info.getScratch():
+                    X86_REG_INVALID);
+                if (sendPop(out, preserve_rax, reg, rscratch))
+                    info.clobber(rscratch);
             }
             const char *md_restore_state = buildMetadataString(out, buf, &pos);
             metadata[i].name = "restoreState";
