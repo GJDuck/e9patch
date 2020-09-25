@@ -148,7 +148,7 @@ extern unsigned sendPassthruTrampolineMessage(FILE *out);
 extern unsigned sendPrintTrampolineMessage(FILE *out);
 extern unsigned sendTrapTrampolineMessage(FILE *out);
 extern unsigned sendCallTrampolineMessage(FILE *out, const char *name,
-    const std::vector<Argument> &args, bool clean = true, bool noalign = true,
+    const std::vector<Argument> &args, bool clean = true, 
     CallKind call = CALL_BEFORE);
 extern unsigned sendTrampolineMessage(FILE *out, const char *name,
     const char *template_);

@@ -222,17 +222,16 @@ struct Action
     void *context;
     const std::vector<Argument> args;
     const bool clean;
-    const bool noalign;
     const CallKind call;
 
     Action(const char *string, MatchEntries &&entries, ActionKind kind,
             const char *name, const char *filename, const char *symbol,
             Plugin *plugin, const std::vector<Argument> &&args, bool clean,
-            bool noalign, CallKind call) :
+            CallKind call) :
             string(string), entries(std::move(entries)), kind(kind),
             name(name), filename(filename), symbol(symbol), elf(nullptr),
             plugin(plugin), context(nullptr), args(args), clean(clean),
-            noalign(noalign), call(call)
+            call(call)
     {
         ;
     }
@@ -636,7 +635,7 @@ static Action *parseAction(const char *str, MatchEntries &entries)
     // Parse call or plugin (if necessary):
     CallKind call = CALL_BEFORE;
     bool clean = false, naked = false, before = false, after = false,
-         replace = false, conditional = false, noalign = false;
+         replace = false, conditional = false;
     const char *symbol   = nullptr;
     const char *filename = nullptr;
     Plugin *plugin = nullptr;
@@ -671,8 +670,6 @@ static Action *parseAction(const char *str, MatchEntries &entries)
                         conditional = true; break;
                     case TOKEN_NAKED:
                         naked = true; break;
-                    case TOKEN_NOALIGN:
-                        noalign = true; break;
                     case TOKEN_REPLACE:
                         replace = true; break;
                     default:
@@ -859,7 +856,6 @@ static Action *parseAction(const char *str, MatchEntries &entries)
             error("failed to parse call action; only one of the `before', "
                 "`after', `replace' and `conditional' attributes can be used "
                 "together");
-        noalign = (naked? true: noalign);
         clean = (clean? true: !naked);
         call = (after? CALL_AFTER:
                (replace? CALL_REPLACE:
@@ -913,7 +909,7 @@ static Action *parseAction(const char *str, MatchEntries &entries)
     }
 
     Action *action = new Action(str, std::move(entries), kind, name, filename,
-        symbol, plugin, std::move(args), clean, noalign, call);
+        symbol, plugin, std::move(args), clean, call);
     return action;
 }
 
@@ -1440,8 +1436,6 @@ static void usage(FILE *stream, const char *progname)
     fputc('\n', stream);
     fputs("\t\t\t- OPTION is one of:\n", stream);
     fputs("\t\t\t  * \"clean\"/\"naked\" for clean/naked calls.\n", stream);
-    fputs("\t\t\t  * \"noalign\" disables stack alignment for clean calls.\n",
-        stream);
     fputs("\t\t\t  * \"before\"/\"after\"/\"replace\"/\"conditional\" for\n",
         stream);
     fputs("\t\t\t    inserting the call before/after the instruction, or\n",
@@ -1910,8 +1904,7 @@ int main(int argc, char **argv)
                 if (j == have_call.end())
                 {
                     sendCallTrampolineMessage(backend.out, action->name,
-                        action->args, action->clean, action->noalign,
-                        action->call);
+                        action->args, action->clean, action->call);
                     have_call.insert(action->name);
                 }
                 break;

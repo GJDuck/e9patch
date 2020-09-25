@@ -42,8 +42,14 @@ DIRNAME=`dirname $1`
 
 shift
 
-echo "$CC -fno-stack-protector -fpie -O2 -c -Wall $@ \"$DIRNAME/$BASENAME.$EXTENSION\""
-if ! $CC -fno-stack-protector -fpie -O2 -c -Wall $@ "$DIRNAME/$BASENAME.$EXTENSION"
+CFLAGS="-fno-stack-protector \
+    -fpie -O2 \
+    -mno-mmx -mno-sse -mno-avx -mno-avx2 -mno-avx512f -msoft-float \
+    -fno-tree-vectorize"
+COMPILE="$CC $CFLAGS -c -Wall $@ \"$DIRNAME/$BASENAME.$EXTENSION\""
+
+echo "$COMPILE" | xargs
+if ! eval "$COMPILE"
 then
     echo >&2
     echo "${RED}error${OFF}: compilation of (${YELLOW}$BASENAME${OFF}) failed" >&2
@@ -51,8 +57,15 @@ then
     exit 1
 fi
 
-echo "$CC \"$BASENAME.o\" -o \"$BASENAME\" -pie -nostdlib -Wl,-z -Wl,max-page-size=4096 -Wl,--export-dynamic -Wl,--entry=0x0 -Wl,--strip-all"
-if !  $CC "$BASENAME.o" -o "$BASENAME" -pie -nostdlib -Wl,-z -Wl,max-page-size=4096 -Wl,--export-dynamic -Wl,--entry=0x0 -Wl,--strip-all
+CFLAGS="-pie -nostdlib \
+    -Wl,-z -Wl,max-page-size=4096 \
+    -Wl,--export-dynamic \
+    -Wl,--entry=0x0 \
+    -Wl,--strip-all"
+COMPILE="$CC \"$BASENAME.o\" -o \"$BASENAME\" $CFLAGS"
+
+echo "$COMPILE" | xargs
+if ! eval "$COMPILE"
 then
     echo >&2
     echo "${RED}error${OFF}: linking (${YELLOW}$BASENAME${OFF}) failed" >&2

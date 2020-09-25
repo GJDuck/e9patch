@@ -185,9 +185,8 @@ function should be called after the patched instruction
 The options are:
 
 * `clean`/`naked` for clean/naked calls.
-* `noalign` disables stack alignment for clean calls.
-* `before`/`after`/`replace` for inserting the
-  call before/after the instruction, or replacing
+* `before`/`after`/`replace`/`conditional` for inserting the
+  call before/after the instruction, or (conditionally) replacing
   the instruction by the call.
 
 Here the `naked` option indicates that the called function will be
@@ -195,17 +194,31 @@ responsible for preserving the CPU state, and not E9Tool.
 This usually means the function must be implemented in assembly.
 For some applications, this can enable more optimized code.
 The default is `clean`, which means E9Tool will automatically
-generate code for saving/restoring the CPU state and aligning
-the stack pointer to a 16-byte boundary.
-Stack alignment is required by the System V ABI, but can be
-disabled using `noalign` option.
-The `naked` option automatically implies `noalign`.
+generate code for saving/restoring the CPU state.
+Note that, for efficiency reasons, the `clean` call ABI differs from
+the standard System V ABI in the following way:
+
+* The x87/MMX/SSE/AVX/AVX2/AVX512 registers are *not* saved.
+* The stack pointer `%rsp` is *not* guaranteed to be aligned to a 16-byte
+  boundary.
+
+These differences are generally safe provided the instrumentation code
+exclusively uses general-purpose registers
+(as is enforced by `e9compile.sh`).
+Otherwise, it will be necessary to save the registers and align the
+stack manually inside the instrumentation code.
 
 The `before`/`after`/`replace` option specifies where the
 instrumented call should be placed.
 For `replace`, the original instruction is essentially deleted
 from the patched binary, and it is up to the called function to
 execute/emulate a replacement.
+For `conditional`, the return value of the called function will
+be examined.
+If zero is returned, the behavior will be same as `replace` and the original
+instruction will not be executed.
+Otherwise if non-zero, the behavior will be same as `before` and the
+original instruction will be executed in its original context.
 
 ---
 ### 1.4 Arguments
