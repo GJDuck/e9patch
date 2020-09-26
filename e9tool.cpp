@@ -740,6 +740,128 @@ static Action *parseAction(const char *str, MatchEntries &entries)
                         arg = ARGUMENT_OP; break;
                     case TOKEN_RANDOM:
                         arg = ARGUMENT_RANDOM; break;
+                    case TOKEN_REG:
+                        arg = ARGUMENT_REG; break;
+                    case TOKEN_SIZE:
+                        arg = ARGUMENT_BYTES_SIZE; break;
+                    case TOKEN_STATIC_ADDR:
+                        arg = ARGUMENT_STATIC_ADDR; break;
+                    case TOKEN_SRC:
+                        arg = ARGUMENT_SRC; break;
+                    case TOKEN_TARGET:
+                        option_detail = true;
+                        arg = ARGUMENT_TARGET;
+                        break;
+                    case TOKEN_TRAMPOLINE:
+                        arg = ARGUMENT_TRAMPOLINE; break;
+                    
+                    case TOKEN_AL:
+                        arg = ARGUMENT_AL; break;
+                    case TOKEN_AH:
+                        arg = ARGUMENT_AH; break;
+                    case TOKEN_BL:
+                        arg = ARGUMENT_BL; break;
+                    case TOKEN_BH:
+                        arg = ARGUMENT_BH; break;
+                    case TOKEN_CL:
+                        arg = ARGUMENT_CL; break;
+                    case TOKEN_CH:
+                        arg = ARGUMENT_CH; break;
+                    case TOKEN_DL:
+                        arg = ARGUMENT_DL; break;
+                    case TOKEN_DH:
+                        arg = ARGUMENT_DH; break;
+                    case TOKEN_BPL:
+                        arg = ARGUMENT_BPL; break;
+                    case TOKEN_SPL:
+                        arg = ARGUMENT_SPL; break; 
+                    case TOKEN_DIL:
+                        arg = ARGUMENT_DIL; break;
+                    case TOKEN_SIL: 
+                        arg = ARGUMENT_SIL; break; 
+                    case TOKEN_R8B:
+                        arg = ARGUMENT_R8B; break;
+                    case TOKEN_R9B:
+                        arg = ARGUMENT_R9B; break;
+                    case TOKEN_R10B:
+                        arg = ARGUMENT_R10B; break;
+                    case TOKEN_R11B:
+                        arg = ARGUMENT_R11B; break;
+                    case TOKEN_R12B:
+                        arg = ARGUMENT_R12B; break;
+                    case TOKEN_R13B:
+                        arg = ARGUMENT_R13B; break;
+                    case TOKEN_R14B:
+                        arg = ARGUMENT_R14B; break;
+                    case TOKEN_R15B:
+                        arg = ARGUMENT_R15B; break;
+                    
+                    case TOKEN_AX:
+                        arg = ARGUMENT_AX; break;
+                    case TOKEN_BX:
+                        arg = ARGUMENT_BX; break;
+                    case TOKEN_CX:
+                        arg = ARGUMENT_CX; break;
+                    case TOKEN_DX:
+                        arg = ARGUMENT_DX; break;
+                    case TOKEN_BP:
+                        arg = ARGUMENT_BP; break;
+                    case TOKEN_SP:
+                        arg = ARGUMENT_SP; break; 
+                    case TOKEN_DI:
+                        arg = ARGUMENT_DI; break;
+                    case TOKEN_SI: 
+                        arg = ARGUMENT_SI; break; 
+                    case TOKEN_R8W:
+                        arg = ARGUMENT_R8W; break;
+                    case TOKEN_R9W:
+                        arg = ARGUMENT_R9W; break;
+                    case TOKEN_R10W:
+                        arg = ARGUMENT_R10W; break;
+                    case TOKEN_R11W:
+                        arg = ARGUMENT_R11W; break;
+                    case TOKEN_R12W:
+                        arg = ARGUMENT_R12W; break;
+                    case TOKEN_R13W:
+                        arg = ARGUMENT_R13W; break;
+                    case TOKEN_R14W:
+                        arg = ARGUMENT_R14W; break;
+                    case TOKEN_R15W:
+                        arg = ARGUMENT_R15W; break;
+                    
+                    case TOKEN_EAX:
+                        arg = ARGUMENT_EAX; break;
+                    case TOKEN_EBX:
+                        arg = ARGUMENT_EBX; break;
+                    case TOKEN_ECX:
+                        arg = ARGUMENT_ECX; break;
+                    case TOKEN_EDX:
+                        arg = ARGUMENT_EDX; break;
+                    case TOKEN_EBP:
+                        arg = ARGUMENT_EBP; break;
+                    case TOKEN_ESP:
+                        arg = ARGUMENT_ESP; break; 
+                    case TOKEN_EDI:
+                        arg = ARGUMENT_EDI; break;
+                    case TOKEN_ESI: 
+                        arg = ARGUMENT_ESI; break; 
+                    case TOKEN_R8D:
+                        arg = ARGUMENT_R8D; break;
+                    case TOKEN_R9D:
+                        arg = ARGUMENT_R9D; break;
+                    case TOKEN_R10D:
+                        arg = ARGUMENT_R10D; break;
+                    case TOKEN_R11D:
+                        arg = ARGUMENT_R11D; break;
+                    case TOKEN_R12D:
+                        arg = ARGUMENT_R12D; break;
+                    case TOKEN_R13D:
+                        arg = ARGUMENT_R13D; break;
+                    case TOKEN_R14D:
+                        arg = ARGUMENT_R14D; break;
+                    case TOKEN_R15D:
+                        arg = ARGUMENT_R15D; break;
+                    
                     case TOKEN_RAX:
                         arg = ARGUMENT_RAX; break;
                     case TOKEN_RBX:
@@ -772,24 +894,12 @@ static Action *parseAction(const char *str, MatchEntries &entries)
                         arg = ARGUMENT_R14; break;
                     case TOKEN_R15:
                         arg = ARGUMENT_R15; break;
+
                     case TOKEN_RFLAGS:
                         arg = ARGUMENT_RFLAGS; break;
                     case TOKEN_RIP:
                         arg = ARGUMENT_RIP; break;
-                    case TOKEN_REG:
-                        arg = ARGUMENT_REG; break;
-                    case TOKEN_SIZE:
-                        arg = ARGUMENT_BYTES_SIZE; break;
-                    case TOKEN_STATIC_ADDR:
-                        arg = ARGUMENT_STATIC_ADDR; break;
-                    case TOKEN_SRC:
-                        arg = ARGUMENT_SRC; break;
-                    case TOKEN_TARGET:
-                        option_detail = true;
-                        arg = ARGUMENT_TARGET;
-                        break;
-                    case TOKEN_TRAMPOLINE:
-                        arg = ARGUMENT_TRAMPOLINE; break;
+                    
                     case TOKEN_INTEGER:
                         value = parser.i;
                         arg = ARGUMENT_INTEGER;
@@ -816,6 +926,27 @@ static Action *parseAction(const char *str, MatchEntries &entries)
                         option_detail = true;
                         value = parseIndex(parser, 0, 7);
                         break;
+
+                    case ARGUMENT_AL: case ARGUMENT_AH: case ARGUMENT_BL:
+                    case ARGUMENT_BH: case ARGUMENT_CL: case ARGUMENT_CH:
+                    case ARGUMENT_DL: case ARGUMENT_DH: case ARGUMENT_BPL:
+                    case ARGUMENT_DIL: case ARGUMENT_SIL: case ARGUMENT_R8B:
+                    case ARGUMENT_R9B: case ARGUMENT_R10B: case ARGUMENT_R11B:
+                    case ARGUMENT_R12B: case ARGUMENT_R13B: case ARGUMENT_R14B:
+                    case ARGUMENT_R15B:
+
+                    case ARGUMENT_AX: case ARGUMENT_BX: case ARGUMENT_CX:
+                    case ARGUMENT_DX: case ARGUMENT_BP: case ARGUMENT_DI:
+                    case ARGUMENT_SI: case ARGUMENT_R8W: case ARGUMENT_R9W:
+                    case ARGUMENT_R10W: case ARGUMENT_R11W: case ARGUMENT_R12W:
+                    case ARGUMENT_R13W: case ARGUMENT_R14W: case ARGUMENT_R15W:
+
+                    case ARGUMENT_EAX: case ARGUMENT_EBX: case ARGUMENT_ECX:
+                    case ARGUMENT_EDX: case ARGUMENT_EBP: case ARGUMENT_EDI:
+                    case ARGUMENT_ESI: case ARGUMENT_R8D: case ARGUMENT_R9D:
+                    case ARGUMENT_R10D: case ARGUMENT_R11D: case ARGUMENT_R12D:
+                    case ARGUMENT_R13D: case ARGUMENT_R14D: case ARGUMENT_R15D:
+
                     case ARGUMENT_RAX: case ARGUMENT_RBX: case ARGUMENT_RCX:
                     case ARGUMENT_RDX: case ARGUMENT_RBP: case ARGUMENT_RSP:
                     case ARGUMENT_RSI: case ARGUMENT_RDI: case ARGUMENT_R8:
@@ -823,6 +954,7 @@ static Action *parseAction(const char *str, MatchEntries &entries)
                     case ARGUMENT_R12: case ARGUMENT_R13: case ARGUMENT_R14:
                     case ARGUMENT_R15: case ARGUMENT_RFLAGS:
                         break;
+
                     default:
                         if (ptr)
                             error("failed to parse call action; cannot "
@@ -1471,10 +1603,14 @@ static void usage(FILE *stream, const char *progname)
     fputs("\t\t\t  * \"staticAddr\" is the (static) address of the\n",
         stream);
     fputs("\t\t\t    instruction.\n", stream);
-    fputs("\t\t\t  * \"rax\"...\"r15\", \"rip\", \"rflags\" is the\n",
+    fputs("\t\t\t  * \"ah\"...\"dh\", \"al\"...\"r15b\",\n", stream);
+    fputs("\t\t\t    \"ax\"...\"r15w\", \"eax\"...\"r15d\",\n", stream);
+    fputs("\t\t\t    \"rax\"...\"r15\", \"rip\", \"rflags\" is the\n",
         stream);
     fputs("\t\t\t    corresponding register value.\n", stream);
-    fputs("\t\t\t  * \"&rax\"...\"&r15\", \"&rflags\" is the corresponding\n",
+    fputs("\t\t\t  * \"&ah\"...\"&dh\", \"&al\"...\"&r15b\",\n", stream);
+    fputs("\t\t\t    \"&ax\"...\"&r15w\", \"&eax\"...\"&r15d\",\n", stream);
+    fputs("\t\t\t    \"&rax\"...\"&r15\", \"&rflags\" is the corresponding\n",
         stream);
     fputs("\t\t\t    register value but passed-by-pointer.\n", stream);
     fputs("\t\t\t  * \"op[i]\", \"src[i]\", \"dst[i]\", \"imm[i]\", "
@@ -1571,6 +1707,9 @@ static void usage(FILE *stream, const char *progname)
     fputs("\t--help, -h\n", stream);
     fputs("\t\tPrint this message and exit.\n", stream);
     fputc('\n', stream);
+    fputs("\t--no-warnings\n", stream);
+    fputs("\t\tDo not print warning messages.\n", stream);
+    fputc('\n', stream);
     fputs("\t--option OPTION\n", stream);
     fputs("\t\tPass OPTION to the e9patch backend.\n", stream);
     fputc('\n', stream);
@@ -1643,6 +1782,7 @@ enum Option
     OPTION_FORMAT,
     OPTION_HELP,
     OPTION_MATCH,
+    OPTION_NO_WARNINGS,
     OPTION_OPTION,
     OPTION_OUTPUT,
     OPTION_SHARED,
@@ -1672,6 +1812,7 @@ int main(int argc, char **argv)
         {"format",         true,  nullptr, OPTION_FORMAT},
         {"help",           false, nullptr, OPTION_HELP},
         {"match",          true,  nullptr, OPTION_MATCH},
+        {"no-warnings",    false, nullptr, OPTION_NO_WARNINGS},
         {"option",         true,  nullptr, OPTION_OPTION},
         {"output",         true,  nullptr, OPTION_OUTPUT},
         {"shared",         false, nullptr, OPTION_SHARED},
@@ -1753,6 +1894,9 @@ int main(int argc, char **argv)
             case OPTION_OUTPUT:
             case 'o':
                 option_output = optarg;
+                break;
+            case OPTION_NO_WARNINGS:
+                option_no_warnings = true;
                 break;
             case OPTION_SHARED:
                 option_shared = true;

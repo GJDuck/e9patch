@@ -76,9 +76,14 @@ static std::pair<bool, bool> sendPush(FILE *out, int32_t offset, bool before,
 static bool sendPop(FILE *out, bool conditional, x86_reg reg,
     x86_reg rscratch = X86_REG_INVALID);
 static bool sendMovFromR64ToR64(FILE *out, int srcno, int dstno);
+static void sendMovFromR32ToR64(FILE *out, int srcno, int dstno);
+static void sendMovFromR16ToR64(FILE *out, int srcno, int dstno);
+static void sendMovFromR8ToR64(FILE *out, int srcno, bool srchi, int dstno);
 static void sendMovFromStackToR64(FILE *out, int32_t offset, int regno);
-static void sendMovFromR64ToStack(FILE *out, int regno, int32_t offset);
+static void sendMovFromStack32ToR64(FILE *out, int32_t offset, int regno);
 static void sendMovFromStack16ToR64(FILE *out, int32_t offset, int regno);
+static void sendMovFromStack8ToR64(FILE *out, int32_t offset, int regno);
+static void sendMovFromR64ToStack(FILE *out, int regno, int32_t offset);
 static void sendMovFromRAX16ToR64(FILE *out, int regno);
 static void sendSExtFromI32ToR64(FILE *out, const char *value, int regno);
 static void sendSExtFromI32ToR64(FILE *out, int32_t value, int regno);
@@ -196,6 +201,114 @@ static x86_reg getReg(ArgumentKind arg)
             return X86_REG_R14;
         case ARGUMENT_R15:
             return X86_REG_R15;
+
+        case ARGUMENT_EAX:
+            return X86_REG_EAX;
+        case ARGUMENT_EBX:
+            return X86_REG_EBX;
+        case ARGUMENT_ECX:
+            return X86_REG_ECX;
+        case ARGUMENT_EDX:
+            return X86_REG_EDX;
+        case ARGUMENT_ESP:
+            return X86_REG_ESP;
+        case ARGUMENT_EBP:
+            return X86_REG_EBP;
+        case ARGUMENT_EDI:
+            return X86_REG_EDI;
+        case ARGUMENT_ESI:
+            return X86_REG_ESI;
+        case ARGUMENT_R8D:
+            return X86_REG_R8D;
+        case ARGUMENT_R9D:
+            return X86_REG_R9D;
+        case ARGUMENT_R10D:
+            return X86_REG_R10D;
+        case ARGUMENT_R11D:
+            return X86_REG_R11D;
+        case ARGUMENT_R12D:
+            return X86_REG_R12D;
+        case ARGUMENT_R13D:
+            return X86_REG_R13D;
+        case ARGUMENT_R14D:
+            return X86_REG_R14D;
+        case ARGUMENT_R15D:
+            return X86_REG_R15D;
+
+        case ARGUMENT_AX:
+            return X86_REG_AX;
+        case ARGUMENT_BX:
+            return X86_REG_BX;
+        case ARGUMENT_CX:
+            return X86_REG_CX;
+        case ARGUMENT_DX:
+            return X86_REG_DX;
+        case ARGUMENT_SP:
+            return X86_REG_SP;
+        case ARGUMENT_BP:
+            return X86_REG_BP;
+        case ARGUMENT_DI:
+            return X86_REG_DI;
+        case ARGUMENT_SI:
+            return X86_REG_SI;
+        case ARGUMENT_R8W:
+            return X86_REG_R8W;
+        case ARGUMENT_R9W:
+            return X86_REG_R9W;
+        case ARGUMENT_R10W:
+            return X86_REG_R10W;
+        case ARGUMENT_R11W:
+            return X86_REG_R11W;
+        case ARGUMENT_R12W:
+            return X86_REG_R12W;
+        case ARGUMENT_R13W:
+            return X86_REG_R13W;
+        case ARGUMENT_R14W:
+            return X86_REG_R14W;
+        case ARGUMENT_R15W:
+            return X86_REG_R15W;
+ 
+        case ARGUMENT_AL:
+            return X86_REG_AL;
+        case ARGUMENT_AH:
+            return X86_REG_AH;
+        case ARGUMENT_BL:
+            return X86_REG_BL;
+        case ARGUMENT_BH:
+            return X86_REG_BH;
+        case ARGUMENT_CL:
+            return X86_REG_CL;
+        case ARGUMENT_CH:
+            return X86_REG_CH;
+        case ARGUMENT_DL:
+            return X86_REG_DL;
+        case ARGUMENT_DH:
+            return X86_REG_DH;
+        case ARGUMENT_SPL:
+            return X86_REG_SPL;
+        case ARGUMENT_BPL:
+            return X86_REG_BPL;
+        case ARGUMENT_DIL:
+            return X86_REG_DIL;
+        case ARGUMENT_SIL:
+            return X86_REG_SIL;
+        case ARGUMENT_R8B:
+            return X86_REG_R8B;
+        case ARGUMENT_R9B:
+            return X86_REG_R9B;
+        case ARGUMENT_R10B:
+            return X86_REG_R10B;
+        case ARGUMENT_R11B:
+            return X86_REG_R11B;
+        case ARGUMENT_R12B:
+            return X86_REG_R12B;
+        case ARGUMENT_R13B:
+            return X86_REG_R13B;
+        case ARGUMENT_R14B:
+            return X86_REG_R14B;
+        case ARGUMENT_R15B:
+            return X86_REG_R15B;
+
         case ARGUMENT_RFLAGS:
             return X86_REG_EFLAGS;
         default:
@@ -584,6 +697,20 @@ static Type getRegType(x86_reg reg)
 }
 
 /*
+ * Return `true' for high-byte registers.
+ */
+static bool getRegHigh(x86_reg reg)
+{
+    switch (reg)
+    {
+        case X86_REG_AH: case X86_REG_BH: case X86_REG_CH: case X86_REG_DH:
+            return true;
+        default:
+            return false;
+    }
+}
+
+/*
  * Get a register name.
  */
 static const char *getRegName(x86_reg reg)
@@ -854,10 +981,15 @@ static const int *getCallerSaveRegs(bool clean, bool conditional,
         RCX_IDX, RAX_IDX, RFLAGS_IDX, R11_IDX, R10_IDX, R9_IDX, R8_IDX,
         RDX_IDX, RSI_IDX, RDI_IDX, -1
     };
+    static const int naked_save[] =
+    {
+        R11_IDX, R10_IDX, R9_IDX, R8_IDX, RCX_IDX, RDX_IDX, RSI_IDX, RDI_IDX,
+        -1
+    };
     if (clean)
         return clean_save;
     else if (!conditional)
-        return clean_save + 2 + (8 - num_args);
+        return naked_save + (8 - num_args);
     else
     {
         // If conditional, %rax must be the first register:
@@ -1228,7 +1360,8 @@ namespace e9frontend
 /*
  * Options.
  */
-static bool option_is_tty = false;
+static bool option_is_tty      = false;
+static bool option_no_warnings = false;
 
 /*
  * Backend info.
@@ -1270,6 +1403,9 @@ void NO_RETURN e9frontend::error(const char *msg, ...)
  */
 void e9frontend::warning(const char *msg, ...)
 {
+    if (option_no_warnings)
+        return;
+
     fprintf(stderr, "%swarning%s: ",
         (option_is_tty? "\33[33m": ""),
         (option_is_tty? "\33[0m" : ""));
@@ -2354,6 +2490,107 @@ static bool sendMovFromR64ToR64(FILE *out, int srcno, int dstno)
 }
 
 /*
+ * Send a `movslq %r32,%r64' instruction.
+ */
+static void sendMovFromR32ToR64(FILE *out, int srcno, int dstno)
+{
+    const uint8_t REX_MASK[] =
+        {0, 0, 0, 0, 1, 1, 0,
+         0, 1, 1, 0, 0, 1, 1, 1, 1, 0};
+    const uint8_t REX[] = {0x48, 0x4c, 0x49, 0x4d};
+    const uint8_t REG[] =
+        {0x07, 0x06, 0x02, 0x01, 0x00, 0x01, 0x00,
+         0x00, 0x02, 0x03, 0x03, 0x05, 0x04, 0x05, 0x06, 0x07, 0x04};
+    
+    uint8_t rex = REX[(REX_MASK[srcno] << 1) | REX_MASK[dstno]];
+    uint8_t modrm = (0x03 << 6) | (REG[dstno] << 3) | REG[srcno];
+    fprintf(out, "%u,%u,%u,", rex, 0x63, modrm);
+}
+
+/*
+ * Send a `movswl %r16,%r64' instruction.
+ */
+static void sendMovFromR16ToR64(FILE *out, int srcno, int dstno)
+{
+    const uint8_t REX_MASK[] =
+        {0, 0, 0, 0, 1, 1, 0,
+         0, 1, 1, 0, 0, 1, 1, 1, 1, 0};
+    const uint8_t REX[] = {0x48, 0x4c, 0x49, 0x4d};
+    const uint8_t REG[] =
+        {0x07, 0x06, 0x02, 0x01, 0x00, 0x01, 0x00,
+         0x00, 0x02, 0x03, 0x03, 0x05, 0x04, 0x05, 0x06, 0x07, 0x04};
+ 
+    uint8_t rex = REX[(REX_MASK[srcno] << 1) | REX_MASK[dstno]];
+    uint8_t modrm = (0x03 << 6) | (REG[dstno] << 3) | REG[srcno];
+    fprintf(out, "%u,%u,%u,%u,", rex, 0x0f, 0xbf, modrm);
+}
+
+/*
+ * Send a `movsbl %r8,%r32' instruction.
+ */
+static void sendMovFromR8ToR64(FILE *out, int srcno, bool srchi, int dstno)
+{
+    const uint8_t REX_MASK[] =
+        {0, 0, 0, 0, 1, 1, 0,
+         0, 1, 1, 0, 0, 1, 1, 1, 1, 0};
+    const uint8_t REX[] = {0x48, 0x4c, 0x49, 0x4d};
+    const uint8_t REG[] =
+        {0x07, 0x06, 0x02, 0x01, 0x00, 0x01, 0x00,
+         0x00, 0x02, 0x03, 0x03, 0x05, 0x04, 0x05, 0x06, 0x07, 0x04};
+    
+    uint8_t rex = REX[(REX_MASK[srcno] << 1) | REX_MASK[dstno]];
+    bool xchg = false;
+    uint8_t srcreg = REG[srcno];
+    if (rex == 0x00)
+    {
+        switch (srcno)
+        {
+            case RAX_IDX: case RBX_IDX: case RCX_IDX: case RDX_IDX:
+                if (srchi)
+                    srcreg += 4;     // Convert to %rh encoding
+                break;
+            case RDI_IDX: case RSI_IDX: case RSP_IDX: case RBP_IDX:
+                rex = 0x40; break;
+            default:
+                break;
+        }
+    }
+    else if (srchi)
+    {
+        // xchgb %rh,%rl
+        xchg = true;
+        switch (srcno)
+        {
+            case RAX_IDX:
+                fprintf(out, "%u,%u,", 0x86, 0xe0); break;
+            case RBX_IDX:
+                fprintf(out, "%u,%u,", 0x86, 0xfb); break;
+            case RCX_IDX:
+                fprintf(out, "%u,%u,", 0x86, 0xe9); break;
+            case RDX_IDX:
+                fprintf(out, "%u,%u,", 0x86, 0xf2); break;
+        }
+    }
+    uint8_t modrm = (0x03 << 6) | (REG[dstno] << 3) | srcreg;
+    fprintf(out, "%u,%u,%u,%u,", rex, 0x0f, 0xbe, modrm);
+    if (xchg)
+    {
+        // xchgb %rh,%rl
+        switch (srcno)
+        {
+            case RAX_IDX:
+                fprintf(out, "%u,%u,", 0x86, 0xe0); break;
+            case RBX_IDX:
+                fprintf(out, "%u,%u,", 0x86, 0xfb); break;
+            case RCX_IDX:
+                fprintf(out, "%u,%u,", 0x86, 0xe9); break;
+            case RDX_IDX:
+                fprintf(out, "%u,%u,", 0x86, 0xf2); break;
+        }
+    }
+}
+
+/*
  * Send a `mov offset(%rsp),%r64' instruction.
  */
 static void sendMovFromStackToR64(FILE *out, int32_t offset, int regno)
@@ -2383,6 +2620,93 @@ static void sendMovFromStackToR64(FILE *out, int32_t offset, int regno)
 }
 
 /*
+ * Send a `movslq offset(%rsp),%r64' instruction.
+ */
+static void sendMovFromStack32ToR64(FILE *out, int32_t offset, int regno)
+{
+    const uint8_t REX[] =
+        {0x48, 0x48, 0x48, 0x48, 0x4c, 0x4c, 0x00,
+         0x48, 0x4c, 0x4c, 0x48, 0x48, 0x4c, 0x4c, 0x4c, 0x4c, 0x48};
+    const uint8_t MODRM_0[] =
+        {0x3c, 0x34, 0x14, 0x0c, 0x04, 0x0c, 0x00,  
+         0x04, 0x14, 0x1c, 0x1c, 0x2c, 0x24, 0x2c, 0x34, 0x3c, 0x24};
+    const uint8_t MODRM_8[] =
+        {0x7c, 0x74, 0x54, 0x4c, 0x44, 0x4c, 0x00, 
+         0x44, 0x54, 0x5c, 0x5c, 0x6c, 0x64, 0x6c, 0x74, 0x7c, 0x64};
+    const uint8_t MODRM_32[] =
+        {0xbc, 0xb4, 0x94, 0x8c, 0x84, 0x8c, 0x00,
+         0x84, 0x94, 0x9c, 0x9c, 0xac, 0xa4, 0xac, 0xb4, 0xbc, 0xa4};
+
+    if (offset == 0)
+        fprintf(out, "%u,%u,%u,%u,",
+            REX[regno], 0x63, MODRM_0[regno], 0x24);
+    else if (offset >= INT8_MIN && offset <= INT8_MAX)
+        fprintf(out, "%u,%u,%u,%u,{\"int8\":%d},",
+            REX[regno], 0x63, MODRM_8[regno], 0x24, offset);
+    else
+        fprintf(out, "%u,%u,%u,%u,{\"int32\":%d},",
+            REX[regno], 0x63, MODRM_32[regno], 0x24, offset);
+}
+
+/*
+ * Send a `movswl offset(%rsp),%r64' instruction.
+ */
+static void sendMovFromStack16ToR64(FILE *out, int32_t offset, int regno)
+{
+    const uint8_t REX[] =
+        {0x48, 0x48, 0x48, 0x48, 0x4c, 0x4c, 0x00,
+         0x48, 0x4c, 0x4c, 0x48, 0x48, 0x4c, 0x4c, 0x4c, 0x4c, 0x48};
+    const uint8_t MODRM_0[] =
+        {0x3c, 0x34, 0x14, 0x0c, 0x04, 0x0c, 0x00,  
+         0x04, 0x14, 0x1c, 0x1c, 0x2c, 0x24, 0x2c, 0x34, 0x3c, 0x24};
+    const uint8_t MODRM_8[] =
+        {0x7c, 0x74,  0x54, 0x4c, 0x44, 0x4c, 0x00, 
+         0x44, 0x54, 0x5c, 0x5c, 0x6c, 0x64, 0x6c, 0x74, 0x7c, 0x64};
+    const uint8_t MODRM_32[] =
+        {0xbc, 0xb4,  0x94, 0x8c, 0x84, 0x8c, 0x00,
+         0x84, 0x94, 0x9c, 0x9c, 0xac, 0xa4, 0xac, 0xb4, 0xbc, 0xa4};
+
+    if (offset == 0)
+        fprintf(out, "%u,%u,%u,%u,%u,",
+            REX[regno], 0x0f, 0xbf, MODRM_0[regno], 0x24);
+    else if (offset >= INT8_MIN && offset <= INT8_MAX)
+        fprintf(out, "%u,%u,%u,%u,%u,{\"int8\":%d},",
+            REX[regno], 0x0f, 0xbf, MODRM_8[regno], 0x24, offset);
+    else
+        fprintf(out, "%u,%u,%u,%u,%u,{\"int32\":%d},",
+            REX[regno], 0x0f, 0xbf, MODRM_32[regno], 0x24, offset);
+}
+
+/*
+ * Send a `movzbl offset(%rsp),%r64' instruction.
+ */
+static void sendMovFromStack8ToR64(FILE *out, int32_t offset, int regno)
+{
+    const uint8_t REX[] =
+        {0x48, 0x48, 0x48, 0x48, 0x4c, 0x4c, 0x00,
+         0x48, 0x4c, 0x4c, 0x48, 0x48, 0x4c, 0x4c, 0x4c, 0x4c, 0x48};
+    const uint8_t MODRM_0[] =
+        {0x3c, 0x34, 0x14, 0x0c, 0x04, 0x0c, 0x00,  
+         0x04, 0x14, 0x1c, 0x1c, 0x2c, 0x24, 0x2c, 0x34, 0x3c, 0x24};
+    const uint8_t MODRM_8[] =
+        {0x7c, 0x74,  0x54, 0x4c, 0x44, 0x4c, 0x00, 
+         0x44, 0x54, 0x5c, 0x5c, 0x6c, 0x64, 0x6c, 0x74, 0x7c, 0x64};
+    const uint8_t MODRM_32[] =
+        {0xbc, 0xb4,  0x94, 0x8c, 0x84, 0x8c, 0x00,
+         0x84, 0x94, 0x9c, 0x9c, 0xac, 0xa4, 0xac, 0xb4, 0xbc, 0xa4};
+
+    if (offset == 0)
+        fprintf(out, "%u,%u,%u,%u,%u,",
+            REX[regno], 0x0f, 0xbe, MODRM_0[regno], 0x24);
+    else if (offset >= INT8_MIN && offset <= INT8_MAX)
+        fprintf(out, "%u,%u,%u,%u,%u,{\"int8\":%d},",
+            REX[regno], 0x0f, 0xbe, MODRM_8[regno], 0x24, offset);
+    else
+        fprintf(out, "%u,%u,%u,%u,%u,{\"int32\":%d},",
+            REX[regno], 0x0f, 0xbe, MODRM_32[regno], 0x24, offset);
+}
+
+/*
  * Send a `mov %r64,offset(%rsp)' instruction.
  */
 static void sendMovFromR64ToStack(FILE *out, int regno, int32_t offset)
@@ -2409,37 +2733,6 @@ static void sendMovFromR64ToStack(FILE *out, int regno, int32_t offset)
     else
         fprintf(out, "%u,%u,%u,%u,{\"int32\":%d},",
             REX[regno], 0x89, MODRM_32[regno], 0x24, offset);
-}
-
-/*
- * Send a `movzwl offset(%rsp),%r32' instruction.
- */
-static void sendMovFromStack16ToR64(FILE *out, int32_t offset, int regno)
-{
-    const uint8_t REX[] =
-        {0x00, 0x00, 0x00, 0x00, 0x44, 0x44, 0x00,
-         0x00, 0x44, 0x44, 0x00, 0x00, 0x44, 0x44, 0x44, 0x44, 0x00};
-    const uint8_t MODRM_0[] =
-        {0x3c, 0x34, 0x14, 0x0c, 0x04, 0x0c, 0x00,  
-         0x04, 0x14, 0x1c, 0x1c, 0x2c, 0x24, 0x2c, 0x34, 0x3c, 0x24};
-    const uint8_t MODRM_8[] =
-        {0x7c, 0x74,  0x54, 0x4c, 0x44, 0x4c, 0x00, 
-         0x44, 0x54, 0x5c, 0x5c, 0x6c, 0x64, 0x6c, 0x74, 0x7c, 0x64};
-    const uint8_t MODRM_32[] =
-        {0xbc, 0xb4,  0x94, 0x8c, 0x84, 0x8c, 0x00,
-         0x84, 0x94, 0x9c, 0x9c, 0xac, 0xa4, 0xac, 0xb4, 0xbc, 0xa4};
-
-    if (REX[regno] != 0x00)
-        fprintf(out, "%u,", REX[regno]);
-    if (offset == 0)
-        fprintf(out, "%u,%u,%u,%u,",
-            0x0f, 0xb7, MODRM_0[regno], 0x24);
-    else if (offset >= INT8_MIN && offset <= INT8_MAX)
-        fprintf(out, "%u,%u,%u,%u,{\"int8\":%d},",
-            0x0f, 0xb7, MODRM_8[regno], 0x24, offset);
-    else
-        fprintf(out, "%u,%u,%u,%u,{\"int32\":%d},",
-            0x0f, 0xb7, MODRM_32[regno], 0x24, offset);
 }
 
 /*
@@ -2537,7 +2830,7 @@ static void sendMovFromI64ToR64(FILE *out, intptr_t value, int regno)
 }
 
 /*
- * Send a `lea offset(%rip),%r64' instruction opcode.
+ * Send a `lea offset(%rip),%r64' instruction.
  */
 static void sendLeaFromPCRelToR64(FILE *out, const char *offset, int regno)
 {
@@ -2552,7 +2845,7 @@ static void sendLeaFromPCRelToR64(FILE *out, const char *offset, int regno)
 }
 
 /*
- * Send a `lea offset(%rip),%r64' instruction opcode.
+ * Send a `lea offset(%rip),%r64' instruction.
  */
 static void sendLeaFromPCRelToR64(FILE *out, int32_t offset, int regno)
 {
@@ -2567,7 +2860,7 @@ static void sendLeaFromPCRelToR64(FILE *out, int32_t offset, int regno)
 }
 
 /*
- * Send a `lea ...(%rsp),%r64' instruction opcode.
+ * Send a `lea offset(%rsp),%r64' instruction.
  */
 static void sendLeaFromStackToR64(FILE *out, int32_t offset, int regno)
 {

@@ -79,6 +79,61 @@ enum ArgumentKind
     ARGUMENT_TARGET,                // Call/jump target
     ARGUMENT_TRAMPOLINE,            // Trampoline
     ARGUMENT_RANDOM,                // Random number
+    
+    ARGUMENT_AL,                    // %al register
+    ARGUMENT_AH,                    // %ah register
+    ARGUMENT_BL,                    // %bl register
+    ARGUMENT_BH,                    // %bh register
+    ARGUMENT_CL,                    // %cl register
+    ARGUMENT_CH,                    // %ch register
+    ARGUMENT_DL,                    // %dl register
+    ARGUMENT_DH,                    // %dh register
+    ARGUMENT_BPL,                   // %bpl register
+    ARGUMENT_DIL,                   // %dil register
+    ARGUMENT_SIL,                   // %sil register
+    ARGUMENT_R8B,                   // %r8b register
+    ARGUMENT_R9B,                   // %r9b register
+    ARGUMENT_R10B,                  // %r10b register
+    ARGUMENT_R11B,                  // %r11b register
+    ARGUMENT_R12B,                  // %r12b register
+    ARGUMENT_R13B,                  // %r13b register
+    ARGUMENT_R14B,                  // %r14b register
+    ARGUMENT_R15B,                  // %r15b register
+    ARGUMENT_SPL,                   // %spl register
+    
+    ARGUMENT_AX,                    // %ax register
+    ARGUMENT_BX,                    // %bx register
+    ARGUMENT_CX,                    // %cx register
+    ARGUMENT_DX,                    // %dx register
+    ARGUMENT_BP,                    // %bp register
+    ARGUMENT_DI,                    // %di register
+    ARGUMENT_SI,                    // %si register
+    ARGUMENT_R8W,                   // %r8w register
+    ARGUMENT_R9W,                   // %r9w register
+    ARGUMENT_R10W,                  // %r10w register
+    ARGUMENT_R11W,                  // %r11w register
+    ARGUMENT_R12W,                  // %r12w register
+    ARGUMENT_R13W,                  // %r13w register
+    ARGUMENT_R14W,                  // %r14w register
+    ARGUMENT_R15W,                  // %r15w register
+    ARGUMENT_SP,                    // %sp register
+
+    ARGUMENT_EAX,                   // %eax register
+    ARGUMENT_EBX,                   // %ebx register
+    ARGUMENT_ECX,                   // %ecx register
+    ARGUMENT_EDX,                   // %edx register
+    ARGUMENT_EBP,                   // %ebp register
+    ARGUMENT_EDI,                   // %edi register
+    ARGUMENT_ESI,                   // %esi register
+    ARGUMENT_R8D,                   // %r8d register
+    ARGUMENT_R9D,                   // %r9d register
+    ARGUMENT_R10D,                  // %r10d register
+    ARGUMENT_R11D,                  // %r11d register
+    ARGUMENT_R12D,                  // %r12d register
+    ARGUMENT_R13D,                  // %r13d register
+    ARGUMENT_R14D,                  // %r14d register
+    ARGUMENT_R15D,                  // %r15d register
+    ARGUMENT_ESP,                   // %esp register
 
     ARGUMENT_RAX,                   // %rax register
     ARGUMENT_RBX,                   // %rbx register

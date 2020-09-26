@@ -260,8 +260,12 @@ Several arguments are supported:
 * `random` is a random value [0..2147483647].
 * `staticAddr` is the (static) address of the instruction.
 * `size` is the number of bytes in `instr`.
-* `rax`...`r15`, `rip`, `rflags` is the corresponding register value.
-* `&rax`...`&r15`, `&rflags` is the corresponding register value but
+* `ah`...`dh`, `al`...`r15b`,
+  `ax`...`r15w`, `eax`...`r15d`,
+  `rax`...`r15`, `rip`, `rflags` is the corresponding register value.
+* `&ah`...`&dh`, `&al`...`&r15b`,
+  `&ax`...`&r15w`, `&eax`...`&r15d`,
+  `&rax`...`&r15`, `&rflags` is the corresponding register value but
    passed-by-pointer.
 * `op[i]`, `src[i]`, `dst[i]`, `imm[i]`, `reg[i]`, `mem[i]` is the ith
   operand, source operand, destination operand, immediate operand, register

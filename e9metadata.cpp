@@ -355,6 +355,54 @@ static bool sendLoadFromConvertedMemToR64(FILE *out, const cs_insn *I,
 }
 
 /*
+ * Load a register to an arg register.
+ */
+static void sendLoadRegToArg(FILE *out, x86_reg reg, CallInfo &info, int argno)
+{
+    size_t size = getRegSize(reg);
+    if (info.isClobbered(reg))
+    {
+        switch (size)
+        {
+            case sizeof(int64_t):
+            default:
+                sendMovFromStackToR64(out, info.getOffset(reg), argno);
+                break;
+            case sizeof(int32_t):
+                sendMovFromStack32ToR64(out, info.getOffset(reg), argno);
+                break;
+            case sizeof(int16_t):
+                sendMovFromStack16ToR64(out, info.getOffset(reg), argno);
+                break;
+            case sizeof(int8_t):
+                sendMovFromStack8ToR64(out,
+                    info.getOffset(reg) + (getRegHigh(reg)? 1: 0), argno);
+                break;
+        }
+    }
+    else
+    {
+        switch (size)
+        {
+            case sizeof(int64_t):
+            default:
+                sendMovFromR64ToR64(out, getRegIdx(reg), argno);
+                break;
+            case sizeof(int32_t):
+                sendMovFromR32ToR64(out, getRegIdx(reg), argno);
+                break;
+            case sizeof(int16_t):
+                sendMovFromR16ToR64(out, getRegIdx(reg), argno);
+                break;
+            case sizeof(int8_t):
+                sendMovFromR8ToR64(out, getRegIdx(reg), getRegHigh(reg),
+                    argno);
+                break;
+        }
+    }
+}
+
+/*
  * Emits instructions to load a register by value or reference.
  */
 static bool sendLoadRegToArg(FILE *out, const cs_insn *I, x86_reg reg,
@@ -371,7 +419,8 @@ static bool sendLoadRegToArg(FILE *out, const cs_insn *I, x86_reg reg,
             return false;
         }
 
-        sendLeaFromStackToR64(out, info.getOffset(reg), argno);
+        sendLeaFromStackToR64(out,
+            info.getOffset(reg) + (getRegHigh(reg)? 1: 0), argno);
     }
     else
     {
@@ -385,10 +434,7 @@ static bool sendLoadRegToArg(FILE *out, const cs_insn *I, x86_reg reg,
             sendSExtFromI32ToR64(out, 0, argno);
             return false;
         }
-        if (info.isClobbered(reg))
-            sendMovFromStackToR64(out, info.getOffset(reg), argno);
-        else
-            sendMovFromR64ToR64(out, regno, argno);
+        sendLoadRegToArg(out, reg, info, argno);
     }
     return true;
 }
@@ -896,6 +942,26 @@ static Type sendLoadArgumentMetadata(FILE *out, CallInfo &info,
         case ARGUMENT_RANDOM:
             sendLoadValueMetadata(out, rand(), regno);
             break;
+
+        case ARGUMENT_AL: case ARGUMENT_AH: case ARGUMENT_BL: case ARGUMENT_BH:
+        case ARGUMENT_CL: case ARGUMENT_CH: case ARGUMENT_DL: case ARGUMENT_DH:
+        case ARGUMENT_BPL: case ARGUMENT_DIL: case ARGUMENT_SIL:
+        case ARGUMENT_R8B: case ARGUMENT_R9B: case ARGUMENT_R10B:
+        case ARGUMENT_R11B: case ARGUMENT_R12B: case ARGUMENT_R13B:
+        case ARGUMENT_R14B: case ARGUMENT_R15B:
+
+        case ARGUMENT_AX: case ARGUMENT_BX: case ARGUMENT_CX:
+        case ARGUMENT_DX: case ARGUMENT_BP: case ARGUMENT_DI:
+        case ARGUMENT_SI: case ARGUMENT_R8W: case ARGUMENT_R9W:
+        case ARGUMENT_R10W: case ARGUMENT_R11W: case ARGUMENT_R12W:
+        case ARGUMENT_R13W: case ARGUMENT_R14W: case ARGUMENT_R15W:
+
+        case ARGUMENT_EAX: case ARGUMENT_EBX: case ARGUMENT_ECX:
+        case ARGUMENT_EDX: case ARGUMENT_EBP: case ARGUMENT_EDI:
+        case ARGUMENT_ESI: case ARGUMENT_R8D: case ARGUMENT_R9D:
+        case ARGUMENT_R10D: case ARGUMENT_R11D: case ARGUMENT_R12D:
+        case ARGUMENT_R13D: case ARGUMENT_R14D: case ARGUMENT_R15D:
+
         case ARGUMENT_RAX: case ARGUMENT_RBX: case ARGUMENT_RCX:
         case ARGUMENT_RDX: case ARGUMENT_RBP: case ARGUMENT_RDI:
         case ARGUMENT_RSI: case ARGUMENT_R8: case ARGUMENT_R9:
@@ -905,10 +971,19 @@ static Type sendLoadArgumentMetadata(FILE *out, CallInfo &info,
             if (arg.ptr)
                 goto ARGUMENT_REG_PTR;
             x86_reg reg = getReg(arg.kind);
-            if (info.isClobbered(reg))
-                sendMovFromStackToR64(out, info.getOffset(reg), regno);
-            else
-                sendMovFromR64ToR64(out, getRegIdx(reg), regno);
+            sendLoadRegToArg(out, I, reg, /*ptr=*/false, info, regno);
+            switch (getRegSize(reg))
+            {
+                default:
+                case sizeof(int64_t):
+                    t = TYPE_INT64; break;
+                case sizeof(int32_t):
+                    t = TYPE_INT32; break;
+                case sizeof(int16_t):
+                    t = TYPE_INT16; break;
+                case sizeof(int8_t):
+                    t = TYPE_INT8; break;
+            }
             break;
         }
         case ARGUMENT_RIP:
@@ -924,10 +999,22 @@ static Type sendLoadArgumentMetadata(FILE *out, CallInfo &info,
                     break;
             }
             break;
+        case ARGUMENT_SPL: case ARGUMENT_SP: case ARGUMENT_ESP:
         case ARGUMENT_RSP:
             if (arg.ptr)
                 goto ARGUMENT_REG_PTR;
             sendLeaFromStackToR64(out, info.rsp_offset, regno);
+            switch (arg.kind)
+            {
+                case ARGUMENT_ESP:
+                    sendMovFromR32ToR64(out, regno, regno); break;
+                case ARGUMENT_SP:
+                    sendMovFromR16ToR64(out, regno, regno); break;
+                case ARGUMENT_SPL:
+                    sendMovFromR8ToR64(out, regno, false, regno); break;
+                default:
+                    break;
+            }
             break;
         case ARGUMENT_RFLAGS:
             if (arg.ptr)
@@ -954,8 +1041,17 @@ static Type sendLoadArgumentMetadata(FILE *out, CallInfo &info,
             x86_reg reg = getReg(arg.kind);
             sendSaveRegToStack(out, info, reg);
             sendLeaFromStackToR64(out, info.getOffset(reg), regno);
-            t = (arg.kind == ARGUMENT_RFLAGS? TYPE_INT16: TYPE_INT64) |
-                TYPE_PTR;
+            switch (getRegSize(reg))
+            {
+                case sizeof(int64_t):
+                case sizeof(int32_t):       // type of &%r32 == (int64_t *)
+                    t = TYPE_INT64; break;
+                case sizeof(int16_t):
+                    t = TYPE_INT16; break;
+                default:
+                    t = TYPE_INT8; break;
+            }
+            t |= TYPE_PTR;
             break;
         }
         case ARGUMENT_OP: case ARGUMENT_SRC: case ARGUMENT_DST:
@@ -988,7 +1084,36 @@ static Type sendLoadArgumentMetadata(FILE *out, CallInfo &info,
                 sendSExtFromI32ToR64(out, 0, regno);
                 break;
             }
-            if (!sendLoadOperandMetadata(out, I, op, arg.ptr, info, regno))
+            if (!arg.ptr && op != nullptr && op->type == X86_OP_MEM)
+            {
+                // Filter dangerous memory operand pass-by-value arguments:
+                if (action->call == CALL_AFTER)
+                {
+                    warning(CONTEXT_FORMAT "failed to load memory "
+                        "operand contents into register %s; operand may "
+                        "be invalid after instruction",
+                        CONTEXT(I), getRegName(getReg(regno)));
+                    sendSExtFromI32ToR64(out, 0, regno);
+                    t = TYPE_NULL_PTR;
+                }
+                else switch (I->id)
+                {
+                    default:
+                        if (op->access != 0)
+                            break;
+                        // Fallthrough
+                    case X86_INS_LEA: case X86_INS_NOP:
+                        warning(CONTEXT_FORMAT "failed to load memory "
+                            "operand contents into register %s; operand is "
+                            "not accessed by the %s instruction",
+                            CONTEXT(I), getRegName(getReg(regno)),
+                            I->mnemonic);
+                        sendSExtFromI32ToR64(out, 0, regno);
+                        t = TYPE_NULL_PTR;
+                        break;
+                }
+            }
+            else if (!sendLoadOperandMetadata(out, I, op, arg.ptr, info, regno))
                 t = TYPE_NULL_PTR;
             break;
         }
