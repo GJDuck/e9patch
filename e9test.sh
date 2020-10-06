@@ -21,17 +21,16 @@ mkdir -p tmp
 
 # Setup the example.so plugin
 g++ -std=c++11 -fPIC -shared -o example.so -O2 \
-    examples/plugins/example.cpp -I . -I capstone/include/
+    examples/plugins/example.cpp -I src/e9tool/ -I capstone/include/
 export LIMIT=99999999999
 
 for ACTION in \
     'passthru' \
-    'call[noalign] entry@nop' \
     'call[naked,after] entry@nop' \
     'call entry(asm,instr,rflags,rdi,rip,addr,target,next)@nop' \
     'call entry(&rsp,&rax,&rsi,&rdi,&r8,&r15,staticAddr,0x1234)@nop' \
-    'call[noalign] entry(&op[0],&src[0],&dst[0],&op[1],&src[1],&dst[1],&dst[7],&src[7])@nop' \
-    'call[noalign] entry(reg[0],&reg[0],imm[0],&imm[0],&mem[0],reg[1],&reg[1],imm[1])@nop' \
+    'call entry(&op[0],&src[0],&dst[0],&op[1],&src[1],&dst[1],&dst[7],&src[7])@nop' \
+    'call entry(reg[0],&reg[0],imm[0],&imm[0],&mem[0],reg[1],&reg[1],imm[1])@nop' \
     'plugin[example]' \
     'print'
 do
