@@ -211,6 +211,13 @@ instrumentation:
 * Tested for `XTerm(322)`
 * Tested for Google Chrome version `80.0.3987.132 (Official Build) (64-bit)`.
 
+## Projects
+
+Some other projects that use E9Patch include:
+
+* [E9Syscall](https://github.com/GJDuck/e9syscall): System call
+  interception using static binary rewriting of `libc.so`.
+
 ## Documentation
 
 If you just want to test E9Patch out, then please try the above examples.
