@@ -215,6 +215,8 @@ instrumentation:
 
 Some other projects that use E9Patch include:
 
+* [E9AFL](https://github.com/GJDuck/e9afl): Automatically insert
+  [AFL](https://github.com/google/AFL) instrumentation into binaries.
 * [E9Syscall](https://github.com/GJDuck/e9syscall): System call
   interception using static binary rewriting of `libc.so`.
 
