@@ -122,15 +122,15 @@ enum MatchKind
 };
 
 /*
- * Fields.
+ * Match fields.
  */
-enum Field
+enum MatchField
 {
-    FIELD_NONE,
-    FIELD_SIZE,
-    FIELD_TYPE,
-    FIELD_READ,
-    FIELD_WRITE
+    MATCH_FIELD_NONE,
+    MATCH_FIELD_SIZE,
+    MATCH_FIELD_TYPE,
+    MATCH_FIELD_READ,
+    MATCH_FIELD_WRITE
 };
 
 /*
@@ -177,7 +177,7 @@ struct MatchEntry
     const std::string string;
     const MatchKind   match;
     const int         idx;
-    const Field       field;
+    const MatchField  field;
     const MatchCmp    cmp;
     const char *      basename;
     Plugin * const plugin;
@@ -196,7 +196,7 @@ struct MatchEntry
         data = entry.data;
     }
 
-    MatchEntry(MatchKind match, int idx, Field field, MatchCmp cmp,
+    MatchEntry(MatchKind match, int idx, MatchField field, MatchCmp cmp,
             const char *s, Plugin *plugin, const char *basename) :
         string(s), match(match), field(field), idx(idx), cmp(cmp),
         basename(basename), plugin(plugin)
@@ -423,7 +423,7 @@ static void parseMatch(const char *str, MatchEntries &entries)
     int attr = t;
     Plugin *plugin = nullptr;
     int idx = -1;
-    Field field = FIELD_NONE;
+    MatchField field = MATCH_FIELD_NONE;
     switch (match)
     {
         case MATCH_PLUGIN:
@@ -454,13 +454,13 @@ static void parseMatch(const char *str, MatchEntries &entries)
             switch (parser.getToken())
             {
                 case TOKEN_READ:
-                    field = FIELD_READ; break;
+                    field = MATCH_FIELD_READ; break;
                 case TOKEN_SIZE:
-                    field = FIELD_SIZE; break;
+                    field = MATCH_FIELD_SIZE; break;
                 case TOKEN_WRITE:
-                    field = FIELD_WRITE; break;
+                    field = MATCH_FIELD_WRITE; break;
                 case TOKEN_TYPE:
-                    field = FIELD_TYPE; break;
+                    field = MATCH_FIELD_TYPE; break;
                 default:
                     parser.unexpectedToken();
             }
@@ -698,6 +698,7 @@ static Action *parseAction(const char *str, MatchEntries &entries)
                     t = parser.getToken();
                 }
                 ArgumentKind arg = ARGUMENT_INVALID;
+                FieldKind field  = FIELD_NONE;
                 intptr_t value = 0x0;
                 int arg_token = t;
                 const char *basename = nullptr;
@@ -925,6 +926,31 @@ static Action *parseAction(const char *str, MatchEntries &entries)
                     case ARGUMENT_IMM: case ARGUMENT_REG: case ARGUMENT_MEM:
                         option_detail = true;
                         value = parseIndex(parser, 0, 7);
+                        if (parser.peekToken() == '.')
+                        {
+                            parser.getToken();
+                            t = parser.getToken();
+                            switch (t)
+                            {
+                                case TOKEN_BASE:
+                                    field = FIELD_BASE; break;
+                                case TOKEN_INDEX:
+                                    field = FIELD_INDEX; break;
+                                case TOKEN_DISPL:
+                                    field = FIELD_DISPL; break;
+                                case TOKEN_SCALE:
+                                    field = FIELD_SCALE; break;
+                                default:
+                                    parser.unexpectedToken();
+                            }
+                            if (ptr &&
+                                (field == FIELD_DISPL || field == FIELD_SCALE))
+                            {
+                                error("failed to parse call action; cannot "
+                                    "pass field `%s' by pointer",
+                                    parser.getName(t));
+                            }
+                        }
                         break;
 
                     case ARGUMENT_AL: case ARGUMENT_AH: case ARGUMENT_BL:
@@ -970,7 +996,7 @@ static Action *parseAction(const char *str, MatchEntries &entries)
                         break;
                     }
                 }
-                args.push_back({arg, ptr, duplicate, value, basename});
+                args.push_back({arg, field, ptr, duplicate, value, basename});
                 t = parser.getToken();
                 if (t == ')')
                     break;
@@ -1118,7 +1144,7 @@ static intptr_t getNumOperands(const cs_insn *I, x86_op_type type,
 /*
  * Create match value.
  */
-static intptr_t makeMatchValue(MatchKind match, int idx, Field field,
+static intptr_t makeMatchValue(MatchKind match, int idx, MatchField field,
     const cs_insn *I, intptr_t offset, intptr_t result, bool *defined)
 {
     const cs_detail *detail = I->detail;
@@ -1164,7 +1190,7 @@ static intptr_t makeMatchValue(MatchKind match, int idx, Field field,
             {
                 switch (field)
                 {
-                    case FIELD_SIZE:
+                    case MATCH_FIELD_SIZE:
                         return getNumOperands(I, type, access);
                     default:
                         return (*defined = false);
@@ -1177,9 +1203,9 @@ static intptr_t makeMatchValue(MatchKind match, int idx, Field field,
                     return (*defined = false);
                 switch (field)
                 {
-                    case FIELD_SIZE:
+                    case MATCH_FIELD_SIZE:
                         return (intptr_t)op->size;
-                    case FIELD_TYPE:
+                    case MATCH_FIELD_TYPE:
                         switch (op->type)
                         {
                             case X86_OP_IMM:
@@ -1191,10 +1217,10 @@ static intptr_t makeMatchValue(MatchKind match, int idx, Field field,
                             default:
                                 return (*defined = false);
                         }
-                    case FIELD_READ:
+                    case MATCH_FIELD_READ:
                         return (op->type == X86_OP_IMM ||
                                (op->access & CS_AC_READ) != 0);
-                    case FIELD_WRITE:
+                    case MATCH_FIELD_WRITE:
                         return ((op->access & CS_AC_WRITE) != 0);
                     default:
                         return (*defined = false);

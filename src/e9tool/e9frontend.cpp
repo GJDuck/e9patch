@@ -2141,6 +2141,11 @@ void e9frontend::sendELFFileMessage(FILE *out, const ELF *ptr, bool absolute)
         sig = getInitSig(/*envp=*/false);
         init = ::lookupSymbol(&elf, "init", sig);
     }
+    if (init == INTPTR_MIN)
+    {
+        sig = TYPESIG_EMPTY;
+        init = ::lookupSymbol(&elf, "init", sig);
+    }
     sig = getMMapSig();
     intptr_t mmap = ::lookupSymbol(&elf, "mmap", sig);
 
@@ -2316,10 +2321,10 @@ static std::pair<bool, bool> sendPush(FILE *out, int32_t offset, bool before,
         case X86_REG_RIP:
             if (before)
                 sendLeaFromPCRelToR64(out, "{\"rel32\":\".Linstruction\"}",
-                    RAX_IDX);
+                    scratch);
             else
                 sendLeaFromPCRelToR64(out, "{\"rel32\":\".Lcontinue\"}",
-                    RAX_IDX);
+                    scratch);
             sendMovFromR64ToStack(out, scratch, offset - RIP_SLOT);
             break;
 
@@ -2430,8 +2435,8 @@ static bool sendPop(FILE *out, bool preserve_rax, x86_reg reg,
         }
 
         case X86_REG_RIP:
-            // %rip is treated as read-only, so ignore pop'ed value
-            sendLeaFromStackToR64(out, (int32_t)sizeof(uint64_t), RSP_IDX);
+            // %rip is treated as read-only & stored in a special slot.
+            // So the pop operation is treated as a NOP.
             return false;
 
         default:

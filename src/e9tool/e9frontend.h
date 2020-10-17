@@ -59,6 +59,18 @@ enum CallKind
 };
 
 /*
+ * Argument fields.
+ */
+enum FieldKind
+{
+    FIELD_NONE,                     // No field.
+    FIELD_DISPL,                    // Displacement.
+    FIELD_BASE,                     // Base register.
+    FIELD_INDEX,                    // Index register.
+    FIELD_SCALE,                    // Scale.
+};
+
+/*
  * Arguments.
  */
 enum ArgumentKind
@@ -167,6 +179,7 @@ enum ArgumentKind
 struct Argument
 {
     ArgumentKind kind;              // Argument kind.
+    FieldKind field;                // Argument field.
     bool ptr;                       // Argument is passed by pointer?
     bool duplicate;                 // Argument is a duplicate?
     intptr_t value;                 // Argument value (ARGUMENT_INTEGER/USER).

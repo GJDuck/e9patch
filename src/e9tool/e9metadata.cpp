@@ -28,13 +28,14 @@
  */
 static const cs_x86_op *getOperand(const cs_insn *I, int idx, x86_op_type type,
     uint8_t access);
-static intptr_t makeMatchValue(MatchKind match, int idx, Field field,
+static intptr_t makeMatchValue(MatchKind match, int idx, MatchField field,
     const cs_insn *I, intptr_t offset, intptr_t result, bool *defined);
 
 /*
  * Get the type of an operand.
  */
-static Type getOperandType(const cs_insn *I, const cs_x86_op *op, bool ptr)
+static Type getOperandType(const cs_insn *I, const cs_x86_op *op, bool ptr,
+    FieldKind field)
 {
     const cs_detail *detail = I->detail;
     const cs_x86 *x86       = &detail->x86;
@@ -42,6 +43,23 @@ static Type getOperandType(const cs_insn *I, const cs_x86_op *op, bool ptr)
     Type t = TYPE_NULL_PTR;
     if (op == nullptr)
         return t;
+
+    switch (field)
+    {
+        case FIELD_DISPL:
+            return (op->type ==  X86_OP_MEM? TYPE_INT32: t);
+        case FIELD_BASE:
+            t = (op->type == X86_OP_MEM? getRegType(op->mem.base): t);
+            return (ptr && t != TYPE_NULL_PTR? t | TYPE_PTR: t);
+        case FIELD_INDEX:
+            t = (op->type == X86_OP_MEM? getRegType(op->mem.index): t);
+            return (ptr && t != TYPE_NULL_PTR? t | TYPE_PTR: t);
+        case FIELD_SCALE:
+            return (op->type == X86_OP_MEM? TYPE_INT8: t);
+        default:
+            break;
+    }
+
     switch (op->type)
     {
         case X86_OP_REG:
@@ -444,8 +462,68 @@ static bool sendLoadRegToArg(FILE *out, const cs_insn *I, x86_reg reg,
  * regno register.  If the operand does not exist, load 0.
  */
 static bool sendLoadOperandMetadata(FILE *out, const cs_insn *I,
-    const cs_x86_op *op, bool ptr, CallInfo &info, int argno)
+    const cs_x86_op *op, bool ptr, FieldKind field, CallInfo &info, int argno)
 {
+    if (field != FIELD_NONE)
+    {
+        const char *name = nullptr;
+        switch (field)
+        {
+            case FIELD_DISPL:
+                name = "displacement"; break;
+            case FIELD_BASE:
+                name = "base"; break;
+            case FIELD_INDEX:
+                name = "index"; break;
+            case FIELD_SCALE:
+                name = "scale"; break;
+            default:
+                name = "???"; break;
+        }
+        if (op->type != X86_OP_MEM)
+        {
+            warning(CONTEXT_FORMAT "failed to load %s into register %s; "
+                "cannot load %s of non-memory operand", CONTEXT(I), name,
+                getRegName(getReg(argno)), name);
+            sendSExtFromI32ToR64(out, 0, argno);
+            return false;
+        }
+        switch (field)
+        {
+            case FIELD_DISPL:
+                sendLoadValueMetadata(out, op->mem.disp, argno);
+                return true;
+            case FIELD_BASE:
+                if (op->mem.base == X86_REG_INVALID)
+                {
+                    warning(CONTEXT_FORMAT "failed to load memory operand "
+                        "base into register %s; operand does not use a base "
+                        "register", CONTEXT(I), getRegName(getReg(argno)));
+                    sendSExtFromI32ToR64(out, 0, argno);
+                    return false;
+                }
+                return sendLoadRegToArg(out, I, op->mem.base, ptr, info,
+                    argno);
+            case FIELD_INDEX:
+                if (op->mem.index == X86_REG_INVALID)
+                {
+                    warning(CONTEXT_FORMAT "failed to load memory operand "
+                        "index into register %s; operand does not use an "
+                        "index register", CONTEXT(I),
+                        getRegName(getReg(argno)));
+                    sendSExtFromI32ToR64(out, 0, argno);
+                    return false;
+                }
+                return sendLoadRegToArg(out, I, op->mem.index, ptr, info,
+                    argno);
+            case FIELD_SCALE:
+                sendLoadValueMetadata(out, op->mem.scale, argno);
+                return true;
+            default:
+                error("unknown field (%d)", field);
+        }
+    }
+
     switch (op->type)
     {
         case X86_OP_REG:
@@ -1065,7 +1143,7 @@ static Type sendLoadArgumentMetadata(FILE *out, CallInfo &info,
                                (arg.kind == ARGUMENT_MEM? X86_OP_MEM:
                                 X86_OP_INVALID)));
             const cs_x86_op *op = getOperand(I, (int)arg.value, type, access);
-            t = getOperandType(I, op, arg.ptr);
+            t = getOperandType(I, op, arg.ptr, arg.field);
             if (op == nullptr)
             {
                 const char *kind = "???";
@@ -1084,7 +1162,8 @@ static Type sendLoadArgumentMetadata(FILE *out, CallInfo &info,
                 sendSExtFromI32ToR64(out, 0, regno);
                 break;
             }
-            if (!arg.ptr && op != nullptr && op->type == X86_OP_MEM)
+            if (!arg.ptr && arg.field == FIELD_NONE && op != nullptr &&
+                    op->type == X86_OP_MEM)
             {
                 // Filter dangerous memory operand pass-by-value arguments:
                 if (action->call == CALL_AFTER)
@@ -1113,7 +1192,8 @@ static Type sendLoadArgumentMetadata(FILE *out, CallInfo &info,
                         break;
                 }
             }
-            else if (!sendLoadOperandMetadata(out, I, op, arg.ptr, info, regno))
+            else if (!sendLoadOperandMetadata(out, I, op, arg.ptr, arg.field,
+                    info, regno))
                 t = TYPE_NULL_PTR;
             break;
         }
