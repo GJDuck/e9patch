@@ -1306,7 +1306,7 @@ static Metadata *buildMetadata(const Action *action, const cs_insn *I,
             }
             argno = 0;
             int32_t rsp_args_offset = 0;
-            for (int argno = 0; argno < (int)action->args.size(); argno++)
+            for (int argno = (int)action->args.size()-1; argno >= 0; argno--)
             {
                 // Send stack arguments:
                 int regno = getArgRegIdx(argno);
