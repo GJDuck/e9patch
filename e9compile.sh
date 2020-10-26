@@ -43,9 +43,9 @@ DIRNAME=`dirname $1`
 shift
 
 CFLAGS="-fno-stack-protector \
-    -fpie -O2 \
+    -fpie -O2 -Wno-unused-function \
     -mno-mmx -mno-sse -mno-avx -mno-avx2 -mno-avx512f -msoft-float \
-    -fno-tree-vectorize"
+    -fno-tree-vectorize -fomit-frame-pointer"
 COMPILE="$CC $CFLAGS -c -Wall $@ \"$DIRNAME/$BASENAME.$EXTENSION\""
 
 echo "$COMPILE" | xargs

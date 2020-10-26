@@ -2,7 +2,7 @@
  * configurable DELAY instrumentation (does nothing, but slowly).
  */
 
-#define NULL ((void *)0x0)
+#include "stdlib.c"
 
 static unsigned delay = 0;
 
@@ -14,22 +14,9 @@ void entry(void)
 
 void init(int argc, char **argv, char **envp)
 {
-    for (; envp && *envp != NULL; envp++)
-    {
-        char *var = *envp;
-        if (var[0] == 'D' &&
-            var[1] == 'E' &&
-            var[2] == 'L' &&
-            var[3] == 'A' &&
-            var[4] == 'Y' &&
-            var[5] == '=')
-        {
-            unsigned val = 0;
-            for (unsigned i = 6; var[i] >= '0' && var[i] <= '9'; i++)
-                val = 10 * val + (var[i] - '0');
-            delay = val;
-            break;
-        }
-    }
+    environ = envp;
+    const char *val = getenv("DELAY");
+    if (val != NULL)
+        delay = (unsigned)atoi(val);
 }
 

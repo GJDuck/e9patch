@@ -2,87 +2,49 @@
  * PRINT instrumentation.
  */
 
-/*
- * strcat()
- */
-static char *str_cat(const char *string, char *str)
-{
-    char c;
-    while ((c = *string++) != '\0')
-        *str++ = c;
-    return str;
-}
+#include "stdlib.c"
 
-/*
- * Print hex.
- */
-static const char digs[] = "0123456789abcdef";
-static char *hex_to_str(unsigned long long x, char *str)
-{
-    int shift = (15 * 4);
-    while (shift >= 0)
-    {
-        char c = digs[(x >> shift) & 0xF];
-        shift -= 4;
-        *str++ = c;
-    }
-    return str;
-}
-
-/*
- * Print byte.
- */
-static char *byte_to_str(unsigned char x, char *str)
-{
-    *str++ = digs[x >> 4];
-    *str++ = digs[x & 0xF];
-    return str;
-}
+#define RED     "\33[31m"
+#define GREEN   "\33[32m"
+#define YELLOW  "\33[33m"
+#define WHITE   "\33[0m"
 
 /*
  * Entry point.
  *
  * call entry(addr,instr,size,asm)@print
  */
-void entry(const void *addr, const unsigned char *instr, unsigned long size,
+void entry(const void *addr, const uint8_t *instr, size_t size,
     const char *_asm)
 {
-    char buf[512];
-    char *str = buf;
+    static mutex_t mutex = MUTEX_INITIALIZER;
+    if (mutex_lock(&mutex) < 0)
+        return;
 
-    unsigned i;
-    str = str_cat("\33[31m", str);
-    str = hex_to_str((unsigned long long)addr, str);
-    for (i = (unsigned)(str - buf); i < 16; i++)
-        *str++ = ' ';
-    str = str_cat("\33[0m: \33[33m", str);
+    clearerr_unlocked(stderr);
+    fprintf_unlocked(stderr, RED "%.16lx" WHITE ": " YELLOW, addr);
+    int i;
     for (i = 0; i < size; i++)
     {
-        str = byte_to_str(instr[i], str);
-        *str++ = ' ';
+        fprintf_unlocked(stderr, "%.2x ", instr[i]);
         if (i == 7 && size > 8)
-        {
-            str = str_cat("\33[32m", str);
-            str = str_cat(_asm, str);
-            str = str_cat("\33[33m\n                  ", str);
-        }
+            fprintf_unlocked(stderr, GREEN "%s" WHITE "\n                  "
+                YELLOW, _asm);
     }
-    if (i < 8)
+    if (i <= 8)
     {
         for (; i < 8; i++)
-            str = str_cat("   ", str);
-        str = str_cat("\33[32m", str);
-        str = str_cat(_asm, str);
+            fputs_unlocked("   ", stderr);
+        fprintf_unlocked(stderr, GREEN "%s", _asm);
     }
-    str = str_cat("\33[0m\n", str);
+    fputs_unlocked(WHITE "\n", stderr);
+    fflush_unlocked(stderr);
 
-    register const char *str_ptr asm("rsi") = buf;
-    register unsigned long long str_len asm("rdx") = str - buf;
-    
-    asm volatile (
-        "mov $0x2,%%edi\n"
-        "mov $0x1,%%eax\n"
-        "syscall\n": : "r"(str_ptr), "r"(str_len):
-            "rdi", "rax", "rcx", "r11");
+    mutex_unlock(&mutex);
+}
+
+void init(void)
+{
+    setvbuf(stderr, NULL, _IOFBF, 0);
 }
 
