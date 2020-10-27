@@ -112,6 +112,7 @@
 #define lseek               __hide__lseek
 #define mmap                __hide__mmap
 #define mprotect            __hide__mprotect
+#define msync               __hide__msync
 #define munmap              __hide__munmap
 #define ioctl               __hide__ioctl
 #define pipe                __hide__pipe
@@ -146,7 +147,9 @@
 #define getrusage           __hide__getrusage
 #define getuid              __hide__getuid
 #define geteuid             __hide__geteuid
+#define pipe2               __hide__pipe2
 #define dup3                __hide__dup3
+#define isatty              __hide__isatty
 
 #define malloc              __hide__malloc
 #define realloc             __hide__realloc
@@ -162,6 +165,7 @@
 #define abort               __hide__abort
 #define abs                 __hide__abs
 #define labs                __hide__labs
+#define environ             __hide__environ
 
 #define FILE                __hide__FILE
 #define fopen               __hide__fopen
@@ -242,6 +246,7 @@
 
 #include <sys/fcntl.h>
 #include <sys/file.h>
+#include <sys/ioctl.h>
 #include <sys/mman.h>
 #include <sys/poll.h>
 #include <sys/resource.h>
@@ -250,9 +255,12 @@
 #include <sys/types.h>
 #include <sys/wait.h>
 
+#ifndef _GNU_SOURCE
 #define _GNU_SOURCE
+#endif
 #include <sys/syscall.h>
 #include <fcntl.h>
+#include <termios.h>
 #include <unistd.h>
 
 #undef __errno_location
@@ -268,6 +276,7 @@
 #undef lseek
 #undef mmap
 #undef mprotect
+#undef msync
 #undef munmap
 #undef ioctl
 #undef pipe
@@ -302,7 +311,9 @@
 #undef getrusage
 #undef getuid
 #undef geteuid
+#undef pipe2
 #undef dup3
+#undef isatty
 
 #undef malloc
 #undef realloc
@@ -318,6 +329,7 @@
 #undef abort
 #undef abs
 #undef labs
+#undef environ
 
 #undef FILE
 #undef fopen
@@ -385,6 +397,11 @@
 #undef strcpy
 #undef strncpy
 #undef strerror
+
+#ifdef __cplusplus
+extern "C"
+{
+#endif
 
 /****************************************************************************/
 /* CONFIG                                                                   */
@@ -595,6 +612,11 @@ static int mprotect(void *addr, size_t len, int prot)
     return (int)syscall(SYS_mprotect, addr, len, prot);
 }
 
+static int msync(void *addr, size_t length, int flags)
+{
+    return (int)syscall(SYS_msync, addr, length, flags);
+}
+
 static int munmap(void *addr, size_t length)
 {
     return (int)syscall(SYS_munmap, addr, length);
@@ -801,6 +823,18 @@ static int pipe2(int pipefd[2], int flags)
 static int getrandom(void *buf, size_t buflen, unsigned int flags)
 {
     return (int)syscall(SYS_getrandom, buf, buflen, flags);
+}
+
+static int isatty(int fd)
+{
+    struct termios buf;
+    if (ioctl(fd, TCGETS, &buf) < 0)
+    {
+        if (errno == EINVAL)
+            errno = ENOTTY;
+        return 0;
+    }
+    return 1;
 }
 
 /****************************************************************************/
@@ -1620,8 +1654,8 @@ static int atoi_digit(char c, int base)
     return d;
 }
 
-static __int128 atoi_convert(const char * restrict nptr,
-    char ** restrict endptr, int base, __int128 min, __int128 max)
+static __int128 atoi_convert(const char * __restrict__ nptr,
+    char ** __restrict__ endptr, int base, __int128 min, __int128 max)
 {
     char *dummy_endptr;
     if (endptr == NULL)
@@ -1704,28 +1738,28 @@ static __int128 atoi_convert(const char * restrict nptr,
     return x;
 }
 
-static unsigned long long int strtoull(const char * restrict nptr,
-    char ** restrict endptr, int base)
+static unsigned long long int strtoull(const char * __restrict__ nptr,
+    char ** __restrict__ endptr, int base)
 {
     return (unsigned long long int)atoi_convert(nptr, endptr, base, 0,
         ULLONG_MAX);
 }
 
-static unsigned long int strtoul(const char * restrict nptr,
-    char ** restrict endptr, int base)
+static unsigned long int strtoul(const char * __restrict__ nptr,
+    char ** __restrict__ endptr, int base)
 {
     return (unsigned long int)atoi_convert(nptr, endptr, base, 0, ULONG_MAX);
 }
 
-static long long int strtoll(const char * restrict nptr,
-    char ** restrict endptr, int base)
+static long long int strtoll(const char * __restrict__ nptr,
+    char ** __restrict__ endptr, int base)
 {
     return (long long int)atoi_convert(nptr, endptr, base, LLONG_MIN,
         LLONG_MAX);
 }
 
-static long int strtol(const char * restrict nptr, char ** restrict endptr,
-    int base)
+static long int strtol(const char * __restrict__ nptr,
+    char ** __restrict__ endptr, int base)
 {
     return (long int)atoi_convert(nptr, endptr, base, LONG_MIN, LONG_MAX);
 }
@@ -3004,6 +3038,10 @@ static long int labs(long int x)
 {
     return (x < 0? -x: x);
 }
+
+#ifdef __cplusplus
+}       // extern "C"
+#endif
 
 #pragma GCC pop_options
 
