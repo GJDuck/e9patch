@@ -19,8 +19,8 @@
  * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
  * IN THE SOFTWARE.
  *
- * NOTE: This file (and only this file) is under the MIT license, whereas
- *       the rest of the E9Tool/E9Patch source code is GPLv3.
+ * NOTE: As a special exception, this file is under the MIT license.  The
+ *       rest of the E9Patch/E9Tool source code is under the GPLv3 license.
  */
 
 /*

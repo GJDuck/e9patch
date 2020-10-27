@@ -56,8 +56,8 @@ rewrite `x86_64` Linux ELF binaries
 ***without modifying the set of jump targets***.
 To do so, E9Patch uses a set of novel low-level binary rewriting
 techniques, such as *instruction punning, padding and eviction* that can
-insert or replace binary code *without the need to move existing
-instructions*.
+insert or replace binary code without the need to move existing
+instructions.
 Since existing instructions are not moved, the set of jump targets
 remains unchanged, meaning that calls/jumps do not need to be corrected
 (including cross binary calls/jumps).
@@ -247,6 +247,9 @@ has been improved.
 ## License
 
 This software has been released under the GNU Public License (GPL) Version 3.
+
+Some specific files are released under the MIT license (check the file
+preamble).
 
 ## Acknowledgements
 
