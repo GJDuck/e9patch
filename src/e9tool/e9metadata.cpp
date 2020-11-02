@@ -886,43 +886,14 @@ static const char *buildMetadataString(FILE *out, char *buf, long *pos)
 /*
  * Lookup a value from a CSV file based on the matching.
  */
+static bool matchEval(const MatchExpr *expr, const cs_insn *I, intptr_t offset,
+    const char *basename = nullptr, const Record **record = nullptr);
 static intptr_t lookupValue(const Action *action, const cs_insn *I,
     intptr_t offset, const char *basename, intptr_t idx)
 {
     const Record *record = nullptr;
-    for (auto &entry: action->entries)
-    {
-        if (entry.cmp != MATCH_CMP_EQ || entry.basename == nullptr ||
-                strcmp(entry.basename, basename) != 0)
-            continue;
-        switch (entry.match)
-        {
-            case MATCH_TRUE: case MATCH_FALSE: case MATCH_ADDRESS:
-            case MATCH_CALL: case MATCH_JUMP: case MATCH_OFFSET:
-            case MATCH_OP: case MATCH_SRC: case MATCH_DST:
-            case MATCH_IMM: case MATCH_REG: case MATCH_MEM:
-            case MATCH_PLUGIN: case MATCH_RANDOM: case MATCH_RETURN:
-            case MATCH_SIZE:
-            {
-                bool defined = true;
-                intptr_t x = makeMatchValue(entry.match, entry.idx,
-                    entry.field, I, offset,
-                    (entry.match == MATCH_PLUGIN? entry.plugin->result: 0),
-                    &defined);
-                auto i = entry.values->find(x);
-                if (!defined || i == entry.values->end())
-                    continue;
-                if (record != nullptr && i->second != record)
-                    error("failed to lookup value from file \"%s.csv\"; "
-                        "matching is ambiguous", basename);
-                record = i->second;
-                break;
-            }
-            default:
-                continue;
-        }
-    }
-    if (record == nullptr)
+    bool pass = matchEval(action->match, I, offset, basename, &record);
+    if (!pass || record == nullptr)
         error("failed to lookup value from file \"%s.csv\"; matching is "
             "ambiguous", basename);
     if (idx >= (intptr_t)record->size())

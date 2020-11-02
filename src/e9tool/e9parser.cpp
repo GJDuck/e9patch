@@ -41,21 +41,17 @@ enum Token
     TOKEN_STRING,
     TOKEN_REGEX,
 
-    TOKEN_NEQ,
-    TOKEN_LEQ,
-    TOKEN_GEQ,
-
     TOKEN_MACRO_FALSE,
     TOKEN_MACRO_IMM,
     TOKEN_MACRO_MEM,
     TOKEN_MACRO_REG,
     TOKEN_MACRO_TRUE,
 
-    // Must be in alphabetical order:
     TOKEN_ADDR,
     TOKEN_AFTER,
     TOKEN_AH,
     TOKEN_AL,
+    TOKEN_AND,
     TOKEN_ASM,
     TOKEN_AX,
     TOKEN_BASE,
@@ -88,17 +84,22 @@ enum Token
     TOKEN_ESI,
     TOKEN_ESP,
     TOKEN_FALSE,
+    TOKEN_GEQ,
     TOKEN_IMM,
     TOKEN_INDEX,
     TOKEN_INSTR,
     TOKEN_JUMP,
     TOKEN_LENGTH,
+    TOKEN_LEQ,
     TOKEN_MEM,
     TOKEN_MNEMONIC,
     TOKEN_NAKED,
+    TOKEN_NEQ,
     TOKEN_NEXT,
+    TOKEN_NOT,
     TOKEN_OFFSET,
     TOKEN_OP,
+    TOKEN_OR,
     TOKEN_PASSTHRU,
     TOKEN_PLUGIN,
     TOKEN_PRINT,
@@ -183,6 +184,7 @@ static const TokenInfo tokens[] =
     {"!",           (Token)'!'},
     {"!=",          TOKEN_NEQ},
     {"&",           (Token)'&'},
+    {"&&",          TOKEN_AND},
     {"(",           (Token)'('},
     {")",           (Token)')'},
     {",",           (Token)','},
@@ -206,6 +208,7 @@ static const TokenInfo tokens[] =
     {"after",       TOKEN_AFTER},
     {"ah",          TOKEN_AH},
     {"al",          TOKEN_AL},
+    {"and",         TOKEN_AND},
     {"asm",         TOKEN_ASM},
     {"ax",          TOKEN_AX},
     {"base",        TOKEN_BASE},
@@ -248,8 +251,10 @@ static const TokenInfo tokens[] =
     {"mnemonic",    TOKEN_MNEMONIC},
     {"naked",       TOKEN_NAKED},
     {"next",        TOKEN_NEXT},
+    {"not",         TOKEN_NOT},
     {"offset",      TOKEN_OFFSET},
     {"op",          TOKEN_OP},
+    {"or",          TOKEN_OR},
     {"passthru",    TOKEN_PASSTHRU},
     {"plugin",      TOKEN_PLUGIN},
     {"print",       TOKEN_PRINT},
@@ -313,7 +318,8 @@ static const TokenInfo tokens[] =
     {"trap",        TOKEN_TRAP},
     {"true",        TOKEN_TRUE},
     {"type",        TOKEN_TYPE},
-    {"write",       TOKEN_WRITE}
+    {"write",       TOKEN_WRITE},
+    {"||",          TOKEN_OR},
 };
 
 /*
@@ -324,12 +330,6 @@ static int compareName(const void *ptr1, const void *ptr2)
     const TokenInfo *info1 = (const TokenInfo *)ptr1;
     const TokenInfo *info2 = (const TokenInfo *)ptr2;
     return strcmp(info1->name, info2->name);
-}
-static int compareToken(const void *ptr1, const void *ptr2)
-{
-    const TokenInfo *info1 = (const TokenInfo *)ptr1;
-    const TokenInfo *info2 = (const TokenInfo *)ptr2;
-    return (int)info1->token - (int)info2->token;
 }
 
 /*
@@ -343,12 +343,6 @@ static Token getTokenFromName(const char *name)
         compareName);
     if (entry == nullptr)
         return TOKEN_ERROR;
-    if (entry->token == TOKEN_COUNT)        // XXX
-    {
-        warning("the \"count\" token has been deprecated; use \"size\" "
-            "instead");
-        return TOKEN_ERROR;
-    }
     return entry->token;
 }
 
@@ -379,15 +373,15 @@ static intptr_t expandMacro(Token t)
  */
 static const char *getNameFromToken(Token token)
 {
-    // Special or unordered tokens:
+    // Special tokens:
     switch ((int)token)
     {
-        case TOKEN_NEQ:
-            return "!=";
-        case TOKEN_LEQ:
-            return "<=";
-        case TOKEN_GEQ:
-            return ">=";
+        case TOKEN_NOT:
+            return "not";
+        case TOKEN_AND:
+            return "and";
+        case TOKEN_OR:
+            return "or";
         case TOKEN_ERROR:
             return "<bad-token>";
         case TOKEN_END:
@@ -401,10 +395,15 @@ static const char *getNameFromToken(Token token)
         default:
             break;
     }
-    TokenInfo key = {nullptr, token};
-    const TokenInfo *entry = (const TokenInfo *)bsearch(&key, tokens + 1,
-        sizeof(tokens) / sizeof(tokens[0]) - 1, sizeof(tokens[0]),
-        compareToken);
+    const TokenInfo *entry = nullptr;
+    for (size_t i = 1; i < sizeof(tokens) / sizeof(tokens[0]); i++)
+    {
+        if (tokens[i].token == token)
+        {
+            entry = tokens + i;
+            break;
+        }
+    }
     if (entry == nullptr)
         return "???";
     while ((entry-1)->token == token)
@@ -455,7 +454,12 @@ struct Parser
             case '&': case '.':
                 s[0] = c; s[1] = '\0';
                 pos++;
-                return (Token)c;
+                if (buf[pos] == '&')
+                {
+                    s[1] = '&'; s[2] = '\0';
+                    pos++;
+                }
+                return getTokenFromName(s);
             case '!': case '<': case '>': case '=':
                 s[0] = c; s[1] = '\0';
                 pos++;
@@ -465,6 +469,14 @@ struct Parser
                     pos++;
                 }
                 return getTokenFromName(s);
+            case '|':
+                if (buf[pos+1] == '|')
+                {
+                    s[0] = s[1] = '|'; s[2] = '\0';
+                    pos += 2;
+                    return TOKEN_OR;
+                }
+                // Fallthrough:
             default:
                 break;
         }
@@ -618,8 +630,18 @@ struct Parser
             return getToken();
         unsigned j;
         for (j = 0; j < TOKEN_MAXLEN && buf[pos] != '\0'; j++)
+        {
+            if (isspace(buf[pos]))
+                break;
+            if (buf[pos] == '\\' && isspace(buf[pos+1]))
+            {
+                s[j] = buf[pos+1];
+                pos += 2;
+                continue;
+            }
             s[j] = buf[pos++];
-        if (buf[pos] != '\0')
+        }
+        if (j >= TOKEN_MAXLEN)
             unexpectedToken();
         s[j] = '\0';
         return TOKEN_REGEX;

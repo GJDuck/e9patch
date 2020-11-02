@@ -172,15 +172,14 @@ enum ActionKind
 /*
  * A match entry.
  */
-struct MatchEntry
+struct MatchTest
 {
-    const std::string string;
-    const MatchKind   match;
-    const int         idx;
-    const MatchField  field;
-    const MatchCmp    cmp;
-    const char *      basename;
-    Plugin * const plugin;
+    const MatchKind  match;
+    const int        idx;
+    const MatchField field;
+    const MatchCmp   cmp;
+    const char *     basename;
+    Plugin * const   plugin;
     union
     {
         void *data;
@@ -188,23 +187,57 @@ struct MatchEntry
         Index<intptr_t> *values;
     };
 
-    MatchEntry(MatchEntry &&entry) :
-        string(std::move(entry.string)), match(entry.match),
-        field(entry.field), idx(entry.idx), cmp(entry.cmp),
-        basename(entry.basename), plugin(entry.plugin)
-    {
-        data = entry.data;
-    }
-
-    MatchEntry(MatchKind match, int idx, MatchField field, MatchCmp cmp,
-            const char *s, Plugin *plugin, const char *basename) :
-        string(s), match(match), field(field), idx(idx), cmp(cmp),
-        basename(basename), plugin(plugin)
+    MatchTest(MatchKind match, int idx, MatchField field, MatchCmp cmp,
+            Plugin *plugin, const char *basename) :
+        match(match), field(field), idx(idx), cmp(cmp), basename(basename),
+        plugin(plugin)
     {
         data = nullptr;
     }
 };
-typedef std::vector<MatchEntry> MatchEntries;
+
+/*
+ * Match operations.
+ */
+enum MatchOp
+{
+    MATCH_OP_NOT,
+    MATCH_OP_AND,
+    MATCH_OP_OR,
+    MATCH_OP_TEST,
+};
+
+/*
+ * A match expression.
+ */
+struct MatchExpr
+{
+    const MatchOp op;
+    union
+    {
+        const MatchExpr *arg1;
+        const MatchTest *test;
+    };
+    const MatchExpr *arg2;
+
+    MatchExpr(MatchOp op, const MatchExpr *arg) :
+        op(op), arg1(arg), arg2(nullptr)
+    {
+        assert(op == MATCH_OP_NOT);
+    }
+
+    MatchExpr(MatchOp op, const MatchExpr *arg1, const MatchExpr *arg2) :
+        op(op), arg1(arg1), arg2(arg2)
+    {
+        assert(op == MATCH_OP_AND || op == MATCH_OP_OR);
+    }
+
+    MatchExpr(MatchOp op, const MatchTest *test) : op(op), test(test),
+        arg2(nullptr)
+    {
+        assert(op == MATCH_OP_TEST);
+    }
+};
 
 /*
  * Actions.
@@ -212,7 +245,7 @@ typedef std::vector<MatchEntry> MatchEntries;
 struct Action
 {
     const std::string string;
-    const MatchEntries entries;
+    const MatchExpr *match;
     const ActionKind kind;
     const char * const name;
     const char * const filename;
@@ -224,12 +257,12 @@ struct Action
     const bool clean;
     const CallKind call;
 
-    Action(const char *string, MatchEntries &&entries, ActionKind kind,
+    Action(const char *string, const MatchExpr *match, ActionKind kind,
             const char *name, const char *filename, const char *symbol,
             Plugin *plugin, const std::vector<Argument> &&args, bool clean,
             CallKind call) :
-            string(string), entries(std::move(entries)), kind(kind),
-            name(name), filename(filename), symbol(symbol), elf(nullptr),
+            string(string), match(match), kind(kind), name(name),
+            filename(filename), symbol(symbol), elf(nullptr),
             plugin(plugin), context(nullptr), args(args), clean(clean),
             call(call)
     {
@@ -366,18 +399,11 @@ static intptr_t parseIndex(Parser &parser, intptr_t lb, intptr_t ub)
 }
 
 /*
- * Parse a match.
+ * Parse a match test.
  */
-static void parseMatch(const char *str, MatchEntries &entries)
+static MatchTest *parseTest(Parser &parser)
 {
-    Parser parser(str, "matching");
-    bool neg = false;
     int t = parser.getToken();
-    if (t == '!')
-    {
-        neg = true;
-        t = parser.getToken();
-    }
     MatchKind match = MATCH_INVALID;
     switch (t)
     {
@@ -469,7 +495,7 @@ static void parseMatch(const char *str, MatchEntries &entries)
             break;
     }
     MatchCmp cmp = MATCH_CMP_INVALID;
-    switch (parser.getToken())
+    switch (parser.peekToken())
     {
         case '=':
             cmp = MATCH_CMP_EQ; break;
@@ -483,35 +509,11 @@ static void parseMatch(const char *str, MatchEntries &entries)
             cmp = MATCH_CMP_GT; break;
         case TOKEN_GEQ:
             cmp = MATCH_CMP_GEQ; break;
-        case TOKEN_END:
-            cmp = MATCH_CMP_NEQ_ZERO; break;
         default:
-            parser.unexpectedToken();
+            cmp = MATCH_CMP_NEQ_ZERO; break;
     }
-    if (neg)
-    {
-        switch (cmp)
-        {
-            case MATCH_CMP_EQ:
-                cmp = MATCH_CMP_NEQ; break;
-            case MATCH_CMP_NEQ:
-                cmp = MATCH_CMP_EQ; break;
-            case MATCH_CMP_LT:
-                cmp = MATCH_CMP_GEQ; break;
-            case MATCH_CMP_LEQ:
-                cmp = MATCH_CMP_GT; break;
-            case MATCH_CMP_GT:
-                cmp = MATCH_CMP_LEQ; break;
-            case MATCH_CMP_GEQ:
-                cmp = MATCH_CMP_LT; break;
-            case MATCH_CMP_NEQ_ZERO:
-                cmp = MATCH_CMP_EQ_ZERO; break;
-            case MATCH_CMP_EQ_ZERO:
-                cmp = MATCH_CMP_NEQ_ZERO; break;
-            default:
-                break;
-        }
-    }
+    if (cmp != MATCH_CMP_NEQ_ZERO)
+        (void)parser.getToken();
     switch (match)
     {
         case MATCH_ASSEMBLY: case MATCH_MNEMONIC:
@@ -529,7 +531,7 @@ static void parseMatch(const char *str, MatchEntries &entries)
             break;
     }
 
-    MatchEntry entry(match, idx, field, cmp, str, plugin, nullptr);
+    MatchTest *test = new MatchTest(match, idx, field, cmp, plugin, nullptr);
     switch (match)
     {
         case MATCH_ASSEMBLY: case MATCH_MNEMONIC:
@@ -556,10 +558,8 @@ static void parseMatch(const char *str, MatchEntries &entries)
                 default:
                     parser.unexpectedToken();
             }
-            parser.expectToken(TOKEN_END);
-            entry.regex = new std::regex(str);
-            entries.push_back(std::move(entry));
-            return;
+            test->regex = new std::regex(str);
+            return test;
         }
         case MATCH_TRUE: case MATCH_FALSE: case MATCH_ADDRESS:
         case MATCH_CALL: case MATCH_JUMP: case MATCH_OFFSET:
@@ -568,49 +568,115 @@ static void parseMatch(const char *str, MatchEntries &entries)
         case MATCH_PLUGIN: case MATCH_RANDOM: case MATCH_RETURN:
         case MATCH_SIZE:
             if (cmp == MATCH_CMP_EQ_ZERO || cmp == MATCH_CMP_NEQ_ZERO)
-            {
-                entries.push_back(std::move(entry));
-                return;
-            }
-            entry.values = new Index<intptr_t>;
+                return test;
+            test->values = new Index<intptr_t>;
             switch (parser.getToken())
             {
                 case TOKEN_INTEGER:
-                    entry.values->insert({parser.i, nullptr});
+                    test->values->insert({parser.i, nullptr});
                     while (parser.peekToken() == ',')
                     {
                         parser.getToken();
                         parser.expectToken(TOKEN_INTEGER);
-                        entry.values->insert({parser.i, nullptr});
+                        test->values->insert({parser.i, nullptr});
                     }
                     break;
                 case TOKEN_STRING:
                 {
-                    entry.basename = strDup(parser.s);
+                    test->basename = strDup(parser.s);
                     std::string filename(parser.s);
                     filename += ".csv";
                     intptr_t idx = parseIndex(parser, INTPTR_MIN, INTPTR_MAX);
                     Data *data = parseCSV(filename.c_str());
-                    buildIntIndex(entry.basename, *data, idx, *entry.values);
+                    buildIntIndex(test->basename, *data, idx, *test->values);
                     break;
                 }
                 default:
                     parser.unexpectedToken();
             }
-            parser.expectToken(TOKEN_END);
-            entries.push_back(std::move(entry));
-            return;
+            return test;
         default:
-            return;
+            return test;
     }
+}
+
+/*
+ * Parse a match test expr.
+ */
+static MatchExpr *parseMatchExpr(Parser &parser, MatchOp op);
+static MatchExpr *parseTestExpr(Parser &parser)
+{
+    MatchExpr *expr = nullptr;
+    switch (parser.peekToken())
+    {
+        case '(':
+            (void)parser.getToken();
+            expr = parseMatchExpr(parser, MATCH_OP_OR);
+            parser.expectToken(')');
+            break;
+        case TOKEN_NOT:
+            (void)parser.getToken();
+            expr = parseMatchExpr(parser, MATCH_OP_OR);
+            expr = new MatchExpr(MATCH_OP_NOT, expr);
+            break;
+        default:
+        {
+            MatchTest *test = parseTest(parser);
+            expr = new MatchExpr(MATCH_OP_TEST, test);
+            break;
+        }
+    }
+    return expr;
+}
+
+/*
+ * Parse a match expr.
+ */
+static MatchExpr *parseMatchExpr(Parser &parser, MatchOp op)
+{
+    MatchExpr *expr = nullptr;
+    if (op == MATCH_OP_AND)
+        expr = parseTestExpr(parser);
+    else
+        expr = parseMatchExpr(parser, MATCH_OP_AND);
+    while (true)
+    {
+        MatchExpr *arg = nullptr;
+        switch (parser.peekToken())
+        {
+            case TOKEN_AND:
+                (void)parser.getToken();
+                arg = parseTestExpr(parser);
+                expr = new MatchExpr(MATCH_OP_AND, expr, arg);
+                break;
+            case TOKEN_OR:
+                (void)parser.getToken();
+                arg = parseMatchExpr(parser, MATCH_OP_AND);
+                expr = new MatchExpr(MATCH_OP_OR, expr, arg);
+                break;
+            default:
+                return expr;
+        }
+    }
+}
+
+/*
+ * Parse a match expr.
+ */
+static MatchExpr *parseMatch(const char *str)
+{
+    Parser parser(str, "matching");
+    MatchExpr *expr = parseMatchExpr(parser, MATCH_OP_OR);
+    parser.expectToken(TOKEN_END);
+    return expr;
 }
 
 /*
  * Parse an action.
  */
-static Action *parseAction(const char *str, MatchEntries &entries)
+static Action *parseAction(const char *str, const MatchExpr *expr)
 {
-    if (entries.size() == 0)
+    if (expr == nullptr)
         error("failed to parse action; the `--action' or `-A' option must be "
             "preceded by one or more `--match' or `-M' options");
 
@@ -906,17 +972,9 @@ static Action *parseAction(const char *str, MatchEntries &entries)
                         arg = ARGUMENT_INTEGER;
                         break;
                     case TOKEN_STRING:
-                        for (const auto &entry: entries)
-                        {
-                            if (entry.basename != nullptr &&
-                                    strcmp(entry.basename, parser.s) == 0)
-                            {
-                                basename = entry.basename;
-                                arg = ARGUMENT_USER;
-                                break;
-                            }
-                        }
-                        // Fallthrough:
+                        basename = strDup(parser.s);
+                        arg = ARGUMENT_USER;
+                        break;
                     default:
                         parser.unexpectedToken();
                 }
@@ -980,6 +1038,10 @@ static Action *parseAction(const char *str, MatchEntries &entries)
                     case ARGUMENT_R12: case ARGUMENT_R13: case ARGUMENT_R14:
                     case ARGUMENT_R15: case ARGUMENT_RFLAGS:
                         break;
+
+                    case ARGUMENT_USER:
+                        value = parseIndex(parser, INTPTR_MIN, INTPTR_MAX);
+                        // Fallthrough:
 
                     default:
                         if (ptr)
@@ -1066,8 +1128,8 @@ static Action *parseAction(const char *str, MatchEntries &entries)
             break;
     }
 
-    Action *action = new Action(str, std::move(entries), kind, name, filename,
-        symbol, plugin, std::move(args), clean, call);
+    Action *action = new Action(str, expr, kind, name, filename, symbol,
+        plugin, std::move(args), clean, call);
     return action;
 }
 
@@ -1246,11 +1308,130 @@ static intptr_t makeMatchValue(MatchKind match, int idx, MatchField field,
 }
 
 /*
+ * Evaluate a matching.
+ */
+static bool matchEval(const MatchExpr *expr, const cs_insn *I, intptr_t offset,
+    const char *basename, const Record **record)
+{
+    if (expr == nullptr)
+        return true;
+    bool pass = false;
+    const MatchTest *test = nullptr;
+    switch (expr->op)
+    {
+        case MATCH_OP_NOT:
+            pass = matchEval(expr->arg1, I, offset, nullptr, nullptr);
+            return !pass;
+        case MATCH_OP_AND:
+            pass = matchEval(expr->arg1, I, offset, basename, record);
+            if (!pass)
+                return false;
+            return matchEval(expr->arg2, I, offset, basename, record);
+        case MATCH_OP_OR:
+            pass = matchEval(expr->arg1, I, offset, basename, record);
+            if (pass)
+                return true;
+            return matchEval(expr->arg2, I, offset, basename, record);
+        case MATCH_OP_TEST:
+            test = expr->test;
+            break;
+        default:
+            return false;
+    }
+
+    switch (test->match)
+    {
+        case MATCH_ASSEMBLY:
+        case MATCH_MNEMONIC:
+        {
+            char buf[BUFSIZ];
+            const char *str = makeMatchString(test->match, I, buf,
+                sizeof(buf)-1);
+            std::cmatch cmatch;
+            pass = std::regex_match(str, cmatch, *test->regex);
+            pass = (test->cmp == MATCH_CMP_NEQ? !pass: pass);
+            break;
+        }
+        case MATCH_TRUE: case MATCH_FALSE: case MATCH_ADDRESS:
+        case MATCH_CALL: case MATCH_JUMP: case MATCH_OFFSET:
+        case MATCH_OP: case MATCH_SRC: case MATCH_DST:
+        case MATCH_IMM: case MATCH_REG: case MATCH_MEM:
+        case MATCH_PLUGIN: case MATCH_RANDOM: case MATCH_RETURN:
+        case MATCH_SIZE:
+        {
+            bool defined = true;
+            if (test->cmp != MATCH_CMP_EQ_ZERO &&
+                test->cmp != MATCH_CMP_NEQ_ZERO &&
+                    test->values->size() == 0)
+                break;
+            intptr_t x = makeMatchValue(test->match, test->idx,
+                test->field, I, offset,
+                (test->match == MATCH_PLUGIN?  test->plugin->result: 0),
+                &defined);
+            switch (test->cmp)
+            {
+                case MATCH_CMP_EQ_ZERO:
+                    pass = (x == 0);
+                    break;
+                case MATCH_CMP_NEQ_ZERO:
+                    pass = (x != 0);
+                    break;
+                case MATCH_CMP_EQ:
+                    pass = (test->values->find(x) != test->values->end());
+                    break;
+                case MATCH_CMP_NEQ:
+                    pass = (test->values->size() == 1?
+                            test->values->find(x) == test->values->end():
+                            true);
+                    break;
+                case MATCH_CMP_LT:
+                    pass = (x < test->values->rbegin()->first);
+                    break;
+                case MATCH_CMP_LEQ:
+                    pass = (x <= test->values->rbegin()->first);
+                    break;
+                case MATCH_CMP_GT:
+                    pass = (x > test->values->begin()->first);
+                    break;
+                case MATCH_CMP_GEQ:
+                    pass = (x >= test->values->begin()->first);
+                    break;
+                default:
+                    return false;
+            }
+            pass = pass && defined;
+    
+            if (pass && basename != nullptr && record != nullptr && 
+                test->cmp == MATCH_CMP_EQ &&
+                strcmp(test->basename, basename) == 0)
+            {
+                auto i = test->values->find(x);
+                if (i != test->values->end())
+                {
+                    if (*record != nullptr && i->second != *record)
+                        error("failed to lookup value from file \"%s.csv\"; "
+                            "matching is ambiguous", basename);
+                    *record = i->second;
+                }
+            }
+            break;
+        }
+        case MATCH_INVALID:
+        default:
+            return false;
+    }
+
+    return pass;
+}
+
+/*
  * Matching.
  */
 static bool matchAction(csh handle, const Action *action, const cs_insn *I,
     intptr_t offset)
 {
+#if 0
+    // TODO: fix option_debug
     if (option_debug)
     {
         fprintf(stderr, "%s0x%lx%s [%s%s%s]:",
@@ -1261,75 +1442,9 @@ static bool matchAction(csh handle, const Action *action, const cs_insn *I,
             (I->op_str[0] == '\0'? "": " "),
             I->op_str);
     }
-    bool pass = false;
-    for (auto &entry: action->entries)
-    {
-        switch (entry.match)
-        {
-            case MATCH_ASSEMBLY:
-            case MATCH_MNEMONIC:
-            {
-                char buf[BUFSIZ];
-                const char *str = makeMatchString(entry.match, I, buf,
-                    sizeof(buf)-1);
-                std::cmatch cmatch;
-                pass = std::regex_match(str, cmatch, *entry.regex);
-                pass = (entry.cmp == MATCH_CMP_NEQ? !pass: pass);
-                break;
-            }
-            case MATCH_TRUE: case MATCH_FALSE: case MATCH_ADDRESS:
-            case MATCH_CALL: case MATCH_JUMP: case MATCH_OFFSET:
-            case MATCH_OP: case MATCH_SRC: case MATCH_DST:
-            case MATCH_IMM: case MATCH_REG: case MATCH_MEM:
-            case MATCH_PLUGIN: case MATCH_RANDOM: case MATCH_RETURN:
-            case MATCH_SIZE:
-            {
-                bool defined = true;
-                if (entry.cmp != MATCH_CMP_EQ_ZERO &&
-                    entry.cmp != MATCH_CMP_NEQ_ZERO &&
-                        entry.values->size() == 0)
-                    break;
-                intptr_t x = makeMatchValue(entry.match, entry.idx,
-                    entry.field, I, offset,
-                    (entry.match == MATCH_PLUGIN?  entry.plugin->result: 0),
-                    &defined);
-                switch (entry.cmp)
-                {
-                    case MATCH_CMP_EQ_ZERO:
-                        pass = (x == 0);
-                        break;
-                    case MATCH_CMP_NEQ_ZERO:
-                        pass = (x != 0);
-                        break;
-                    case MATCH_CMP_EQ:
-                        pass = (entry.values->find(x) != entry.values->end());
-                        break;
-                    case MATCH_CMP_NEQ:
-                        pass = (entry.values->size() == 1?
-                                entry.values->find(x) == entry.values->end():
-                                true);
-                        break;
-                    case MATCH_CMP_LT:
-                        pass = (x < entry.values->rbegin()->first);
-                        break;
-                    case MATCH_CMP_LEQ:
-                        pass = (x <= entry.values->rbegin()->first);
-                        break;
-                    case MATCH_CMP_GT:
-                        pass = (x > entry.values->begin()->first);
-                        break;
-                    case MATCH_CMP_GEQ:
-                        pass = (x >= entry.values->begin()->first);
-                        break;
-                    default:
-                        return false;
-                }
-                pass = pass && defined;
-                break;
-            }
-            case MATCH_INVALID:
-                return false;
-        }
+#endif
+    bool pass = matchEval(action->match, I, offset);
+#if 0
         if (option_debug)
         {
             fprintf(stderr, " [%s%s%s]",
@@ -1352,6 +1467,7 @@ static bool matchAction(csh handle, const Action *action, const cs_insn *I,
             action->string.c_str(),
             (option_is_tty? "\33[0m": ""));
     }
+#endif
     return pass;
 }
 
@@ -1857,7 +1973,7 @@ int main(int argc, char **argv)
     bool option_executable = false, option_shared = false,
         option_static_loader = false;
     std::string option_start(""), option_end(""), option_backend("./e9patch");
-    MatchEntries option_match;
+    MatchExpr *option_match = nullptr;
     while (true)
     {
         int idx;
@@ -1871,6 +1987,7 @@ int main(int argc, char **argv)
             {
                 Action *action = parseAction(optarg, option_match);
                 option_actions.push_back(action);
+                option_match = nullptr;
                 break;
             }
             case OPTION_BACKEND:
@@ -1915,8 +2032,12 @@ int main(int argc, char **argv)
                 break;
             case OPTION_MATCH:
             case 'M':
-                parseMatch(optarg, option_match);
+            {
+                MatchExpr *expr = parseMatch(optarg);
+                option_match = (option_match == nullptr? expr:
+                    new MatchExpr(MATCH_OP_AND, option_match, expr));
                 break;
+            }
             case OPTION_OUTPUT:
             case 'o':
                 option_output = optarg;
@@ -1966,7 +2087,7 @@ int main(int argc, char **argv)
         error("missing input file; try `--help' for more information");
         return EXIT_FAILURE;
     }
-    if (option_match.size() != 0)
+    if (option_match != nullptr)
         error("failed to parse command-line arguments; detected extraneous "
             "matching option(s) (`--match' or `-M') that are not paired "
             "with a corresponding action (`--action' or `-A')"); 
