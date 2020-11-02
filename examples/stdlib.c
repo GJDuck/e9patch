@@ -88,12 +88,6 @@
  */
 
 /*
- * Assumes -Os.
- */
-#pragma GCC push_options
-#pragma GCC optimize ("Os")
-
-/*
  * Note: We need to redefine libc functions from "extern" to "static".
  *       There does not seem to be an elegant way of doing this, so we
  *       rename the functions in the #include'd files.
@@ -225,6 +219,9 @@
 #define tolower             __hide__tolower
 
 #define memcmp              __hide__memcmp
+#define memcpy              __hide__memcpy
+#define memset              __hide__memset
+#define strlen              __hide__strlen
 #define strnlen             __hide__strnlen
 #define strcmp              __hide__strcmp
 #define strncmp             __hide__strncmp
@@ -389,6 +386,9 @@
 #undef tolower
 
 #undef memcmp
+#undef memset
+#undef memcpy
+#undef strlen
 #undef strnlen
 #undef strcmp
 #undef strncmp
@@ -928,7 +928,12 @@ static pid_t *mutex_get_ptr(const mutex_t *m)
     return (pid_t *)(ptr & ~0x3ull);
 }
 
-static __attribute__((__noinline__)) int mutex_lock(mutex_t *m)
+/*
+ * NOTE: mutex_lock() is marked with the __warn_unused_result__ attribute.
+ *       This is because this function can fail with EDEADLOCK in normal use
+ *       cases, so the return value should always be checked.
+ */
+static __attribute__((__noinline__, __warn_unused_result__)) int mutex_lock(mutex_t *m)
 {
     pid_t *x = mutex_get_ptr(m);
     if (mutex_fast_lock(x))
@@ -1361,6 +1366,7 @@ static void free(void *ptr)
 
 static void free_unlocked(void *ptr) __attribute__((__alias__("free")));
 
+static void *memcpy(void *dst, const void *src, size_t n);
 static void *malloc_reallocate(void *ptr, size_t size, bool lock)
 {
     if (ptr == NULL)
@@ -1462,9 +1468,30 @@ static int tolower(int c)
 /* STRING                                                                   */
 /****************************************************************************/
 
-// memset() is builtin
-// memcpy() is builtin
-// strlen() is builtin
+static void *memset(void *s, int c, size_t n)
+{
+    int8_t *s1 = (int8_t *)s;
+    for (size_t i = 0; i < n; i++)
+        s1[i] = (int8_t)c;
+    return s;
+}
+
+static void *memcpy(void *dst, const void *src, size_t n)
+{
+    int8_t *dst1 = (int8_t *)dst1;
+    const int8_t *src1 = (const int8_t *)src;
+    for (size_t i = 0; i < n; i++)
+        dst1[i] = src1[i];
+    return dst;
+}
+
+static size_t strlen(const char *s)
+{
+    size_t len = 0;
+    while (*s++ != '\0')
+        len++;
+    return len;
+}
 
 static int memcmp(const void *s1, const void *s2, size_t n)
 {
@@ -3042,7 +3069,5 @@ static long int labs(long int x)
 #ifdef __cplusplus
 }       // extern "C"
 #endif
-
-#pragma GCC pop_options
 
 #endif
