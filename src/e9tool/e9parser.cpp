@@ -66,7 +66,6 @@ enum Token
     TOKEN_CL,
     TOKEN_CLEAN,
     TOKEN_CONDITIONAL,
-    TOKEN_COUNT,
     TOKEN_CX,
     TOKEN_DH,
     TOKEN_DI,
@@ -180,7 +179,6 @@ struct TokenInfo
  */
 static const TokenInfo tokens[] =
 {
-    {nullptr,       TOKEN_ERROR},
     {"!",           (Token)'!'},
     {"!=",          TOKEN_NEQ},
     {"&",           (Token)'&'},
@@ -223,7 +221,6 @@ static const TokenInfo tokens[] =
     {"cl",          TOKEN_CL},
     {"clean",       TOKEN_CLEAN},
     {"conditional", TOKEN_CONDITIONAL},
-    {"count",       TOKEN_COUNT},
     {"cx",          TOKEN_CX},
     {"dh",          TOKEN_DH},
     {"di",          TOKEN_DI},
@@ -338,9 +335,8 @@ static int compareName(const void *ptr1, const void *ptr2)
 static Token getTokenFromName(const char *name)
 {
     TokenInfo key = {name, TOKEN_ERROR};
-    const TokenInfo *entry = (const TokenInfo *)bsearch(&key, tokens + 1,
-        sizeof(tokens) / sizeof(tokens[0]) - 1, sizeof(tokens[0]),
-        compareName);
+    const TokenInfo *entry = (const TokenInfo *)bsearch(&key, tokens,
+        sizeof(tokens) / sizeof(tokens[0]), sizeof(tokens[0]), compareName);
     if (entry == nullptr)
         return TOKEN_ERROR;
     return entry->token;
@@ -396,7 +392,7 @@ static const char *getNameFromToken(Token token)
             break;
     }
     const TokenInfo *entry = nullptr;
-    for (size_t i = 1; i < sizeof(tokens) / sizeof(tokens[0]); i++)
+    for (size_t i = 0; i < sizeof(tokens) / sizeof(tokens[0]); i++)
     {
         if (tokens[i].token == token)
         {
@@ -406,8 +402,6 @@ static const char *getNameFromToken(Token token)
     }
     if (entry == nullptr)
         return "???";
-    while ((entry-1)->token == token)
-        entry--;
     return entry->name;
 }
 
@@ -454,7 +448,7 @@ struct Parser
             case '&': case '.':
                 s[0] = c; s[1] = '\0';
                 pos++;
-                if (buf[pos] == '&')
+                if (c == '&' && buf[pos] == '&')
                 {
                     s[1] = '&'; s[2] = '\0';
                     pos++;
