@@ -998,11 +998,13 @@ static Action *parseAction(const char *str, const MatchExpr *expr)
                                     field = FIELD_DISPL; break;
                                 case TOKEN_SCALE:
                                     field = FIELD_SCALE; break;
+                                case TOKEN_SIZE:
+                                    field = FIELD_SIZE; break;
                                 default:
                                     parser.unexpectedToken();
                             }
                             if (ptr &&
-                                (field == FIELD_DISPL || field == FIELD_SCALE))
+                                (field != FIELD_BASE && field != FIELD_INDEX))
                             {
                                 error("failed to parse call action; cannot "
                                     "pass field `%s' by pointer",

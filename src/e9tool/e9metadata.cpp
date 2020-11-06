@@ -477,6 +477,8 @@ static bool sendLoadOperandMetadata(FILE *out, const cs_insn *I,
                 name = "index"; break;
             case FIELD_SCALE:
                 name = "scale"; break;
+            case FIELD_SIZE:
+                name = "size"; break;
             default:
                 name = "???"; break;
         }
@@ -518,6 +520,9 @@ static bool sendLoadOperandMetadata(FILE *out, const cs_insn *I,
                     argno);
             case FIELD_SCALE:
                 sendLoadValueMetadata(out, op->mem.scale, argno);
+                return true;
+            case FIELD_SIZE:
+                sendLoadValueMetadata(out, op->size, argno);
                 return true;
             default:
                 error("unknown field (%d)", field);

@@ -68,6 +68,7 @@ enum FieldKind
     FIELD_BASE,                     // Base register.
     FIELD_INDEX,                    // Index register.
     FIELD_SCALE,                    // Scale.
+    FIELD_SIZE,                     // Operand size.
 };
 
 /*
