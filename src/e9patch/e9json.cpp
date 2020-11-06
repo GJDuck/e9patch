@@ -582,7 +582,7 @@ static uintptr_t convertInteger(const Parser &parser, intptr_t x,
 {
     if (x < min || x > max)
         parse_error(parser, "failed to parse %u-bit integer; value %zd is "
-            "not within the range %zd..%zd", bits, min, max);
+            "not within the range %zd..%zd", bits, x, min, max);
     if (x < 0)
         x += (max + 1);
     return x;
