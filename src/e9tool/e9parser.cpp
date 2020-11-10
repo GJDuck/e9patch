@@ -31,23 +31,198 @@
 using namespace e9frontend;
 
 /*
+ * Operand types.
+ */
+#define OP_TYPE_MAGIC       0x004F5000000000ull
+#define OP_TYPE(n)          (OP_TYPE_MAGIC | (n))
+
+#define OP_TYPE_IMM         OP_TYPE(1)
+#define OP_TYPE_REG         OP_TYPE(2)
+#define OP_TYPE_MEM         OP_TYPE(3)
+
+/*
+ * Register names.
+ */
+#define REG_NAME_MAGIC      0x52454700000000ull
+#define REG_NAME(b, h, n)   (REG_NAME_MAGIC | (b) | ((h) << 8) | ((n) << 16))
+
+#define REG_NAME_AL         REG_NAME(8, 0, 0)
+#define REG_NAME_AH         REG_NAME(8, 1, 0)
+#define REG_NAME_AX         REG_NAME(16, 0, 0)
+#define REG_NAME_EAX        REG_NAME(32, 0, 0)
+#define REG_NAME_RAX        REG_NAME(64, 0, 0)
+
+#define REG_NAME_CL         REG_NAME(8, 0, 1)
+#define REG_NAME_CH         REG_NAME(8, 1, 1)
+#define REG_NAME_CX         REG_NAME(16, 0, 1)
+#define REG_NAME_ECX        REG_NAME(32, 0, 1)
+#define REG_NAME_RCX        REG_NAME(64, 0, 1)
+
+#define REG_NAME_DL         REG_NAME(8, 0, 2)
+#define REG_NAME_DH         REG_NAME(8, 1, 2)
+#define REG_NAME_DX         REG_NAME(16, 0, 2)
+#define REG_NAME_EDX        REG_NAME(32, 0, 2)
+#define REG_NAME_RDX        REG_NAME(64, 0, 2)
+
+#define REG_NAME_BL         REG_NAME(8, 0, 3)
+#define REG_NAME_BH         REG_NAME(8, 1, 3)
+#define REG_NAME_BX         REG_NAME(16, 0, 3)
+#define REG_NAME_EBX        REG_NAME(32, 0, 3)
+#define REG_NAME_RBX        REG_NAME(64, 0, 3)
+
+#define REG_NAME_SPL        REG_NAME(8, 0, 4)
+#define REG_NAME_SP         REG_NAME(16, 0, 4)
+#define REG_NAME_ESP        REG_NAME(32, 0, 4)
+#define REG_NAME_RSP        REG_NAME(64, 0, 4)
+
+#define REG_NAME_BPL        REG_NAME(8, 0, 5)
+#define REG_NAME_BP         REG_NAME(16, 0, 5)
+#define REG_NAME_EBP        REG_NAME(32, 0, 5)
+#define REG_NAME_RBP        REG_NAME(64, 0, 5)
+
+#define REG_NAME_SIL        REG_NAME(8, 0, 6)
+#define REG_NAME_SI         REG_NAME(16, 0, 6)
+#define REG_NAME_ESI        REG_NAME(32, 0, 6)
+#define REG_NAME_RSI        REG_NAME(64, 0, 6)
+
+#define REG_NAME_DIL        REG_NAME(8, 0, 7)
+#define REG_NAME_DI         REG_NAME(16, 0, 7)
+#define REG_NAME_EDI        REG_NAME(32, 0, 7)
+#define REG_NAME_RDI        REG_NAME(64, 0, 7)
+
+#define REG_NAME_R8B        REG_NAME(8, 0, 8)
+#define REG_NAME_R8W        REG_NAME(16, 0, 8)
+#define REG_NAME_R8D        REG_NAME(32, 0, 8)
+#define REG_NAME_R8         REG_NAME(64, 0, 8)
+
+#define REG_NAME_R9B        REG_NAME(8, 0, 9)
+#define REG_NAME_R9W        REG_NAME(16, 0, 9)
+#define REG_NAME_R9D        REG_NAME(32, 0, 9)
+#define REG_NAME_R9         REG_NAME(64, 0, 9)
+
+#define REG_NAME_R10B       REG_NAME(8, 0, 10)
+#define REG_NAME_R10W       REG_NAME(16, 0, 10)
+#define REG_NAME_R10D       REG_NAME(32, 0, 10)
+#define REG_NAME_R10        REG_NAME(64, 0, 10)
+
+#define REG_NAME_R11B       REG_NAME(8, 0, 11)
+#define REG_NAME_R11W       REG_NAME(16, 0, 11)
+#define REG_NAME_R11D       REG_NAME(32, 0, 11)
+#define REG_NAME_R11        REG_NAME(64, 0, 11)
+
+#define REG_NAME_R12B       REG_NAME(8, 0, 12)
+#define REG_NAME_R12W       REG_NAME(16, 0, 12)
+#define REG_NAME_R12D       REG_NAME(32, 0, 12)
+#define REG_NAME_R12        REG_NAME(64, 0, 12)
+
+#define REG_NAME_R13B       REG_NAME(8, 0, 13)
+#define REG_NAME_R13W       REG_NAME(16, 0, 13)
+#define REG_NAME_R13D       REG_NAME(32, 0, 13)
+#define REG_NAME_R13        REG_NAME(64, 0, 13)
+
+#define REG_NAME_R14B       REG_NAME(8, 0, 14)
+#define REG_NAME_R14W       REG_NAME(16, 0, 14)
+#define REG_NAME_R14D       REG_NAME(32, 0, 14)
+#define REG_NAME_R14        REG_NAME(64, 0, 14)
+
+#define REG_NAME_R15B       REG_NAME(8, 0, 15)
+#define REG_NAME_R15W       REG_NAME(16, 0, 15)
+#define REG_NAME_R15D       REG_NAME(32, 0, 15)
+#define REG_NAME_R15        REG_NAME(64, 0, 15)
+
+#define REG_NAME_RIP        REG_NAME(64, 0, 16)
+#define REG_NAME_RFLAGS     REG_NAME(16, 0, 17)
+
+/*
  * Tokens.
  */
 enum Token
 {
     TOKEN_ERROR = -1,
     TOKEN_END = '\0',
-    TOKEN_INTEGER = 3000,
+    TOKEN_INTEGER = 2000,
     TOKEN_STRING,
     TOKEN_REGEX,
 
+    // Must be in alphabetical order:
+    TOKEN_MACRO_AH = 3000,
+    TOKEN_MACRO_AL,
+    TOKEN_MACRO_AX,
+    TOKEN_MACRO_BH,
+    TOKEN_MACRO_BL,
+    TOKEN_MACRO_BP,
+    TOKEN_MACRO_BPL,
+    TOKEN_MACRO_BX,
+    TOKEN_MACRO_CH,
+    TOKEN_MACRO_CL,
+    TOKEN_MACRO_CX,
+    TOKEN_MACRO_DH,
+    TOKEN_MACRO_DI,
+    TOKEN_MACRO_DIL,
+    TOKEN_MACRO_DL,
+    TOKEN_MACRO_DX,
+    TOKEN_MACRO_EAX,
+    TOKEN_MACRO_EBP,
+    TOKEN_MACRO_EBX,
+    TOKEN_MACRO_ECX,
+    TOKEN_MACRO_EDI,
+    TOKEN_MACRO_EDX,
+    TOKEN_MACRO_ESI,
+    TOKEN_MACRO_ESP,
     TOKEN_MACRO_FALSE,
     TOKEN_MACRO_IMM,
     TOKEN_MACRO_MEM,
+    TOKEN_MACRO_NIL,
+    TOKEN_MACRO_R10,
+    TOKEN_MACRO_R10B,
+    TOKEN_MACRO_R10D,
+    TOKEN_MACRO_R10W,
+    TOKEN_MACRO_R11,
+    TOKEN_MACRO_R11B,
+    TOKEN_MACRO_R11D,
+    TOKEN_MACRO_R11W,
+    TOKEN_MACRO_R12,
+    TOKEN_MACRO_R12B,
+    TOKEN_MACRO_R12D,
+    TOKEN_MACRO_R12W,
+    TOKEN_MACRO_R13,
+    TOKEN_MACRO_R13B,
+    TOKEN_MACRO_R13D,
+    TOKEN_MACRO_R13W,
+    TOKEN_MACRO_R14,
+    TOKEN_MACRO_R14B,
+    TOKEN_MACRO_R14D,
+    TOKEN_MACRO_R14W,
+    TOKEN_MACRO_R15,
+    TOKEN_MACRO_R15B,
+    TOKEN_MACRO_R15D,
+    TOKEN_MACRO_R15W,
+    TOKEN_MACRO_R8,
+    TOKEN_MACRO_R8B,
+    TOKEN_MACRO_R8D,
+    TOKEN_MACRO_R8W,
+    TOKEN_MACRO_R9,
+    TOKEN_MACRO_R9B,
+    TOKEN_MACRO_R9D,
+    TOKEN_MACRO_R9W,
+    TOKEN_MACRO_RAX,
+    TOKEN_MACRO_RBP,
+    TOKEN_MACRO_RBX,
+    TOKEN_MACRO_RCX,
+    TOKEN_MACRO_RDI,
+    TOKEN_MACRO_RDX,
     TOKEN_MACRO_REG,
+    TOKEN_MACRO_RFLAGS,
+    TOKEN_MACRO_RIP,
+    TOKEN_MACRO_RSI,
+    TOKEN_MACRO_RSP,
+    TOKEN_MACRO_SI,
+    TOKEN_MACRO_SIL,
+    TOKEN_MACRO_SP,
+    TOKEN_MACRO_SPL,
     TOKEN_MACRO_TRUE,
 
-    TOKEN_ADDR,
+    TOKEN_ADDR = 4000,
     TOKEN_AFTER,
     TOKEN_AH,
     TOKEN_AL,
@@ -175,6 +350,15 @@ struct TokenInfo
 };
 
 /*
+ * Macro info.
+ */
+struct MacroInfo
+{
+    Token token;
+    intptr_t value;
+};
+
+/*
  * All tokens.
  */
 static const TokenInfo tokens[] =
@@ -194,10 +378,81 @@ static const TokenInfo tokens[] =
     {">",           (Token)'>'},
     {">=",          TOKEN_GEQ},
     {"@",           (Token)'@'},
+    {"AH",          TOKEN_MACRO_AH},
+    {"AL",          TOKEN_MACRO_AL},
+    {"AX",          TOKEN_MACRO_AX},
+    {"BH",          TOKEN_MACRO_BH},
+    {"BL",          TOKEN_MACRO_BL},
+    {"BP",          TOKEN_MACRO_BP},
+    {"BPL",         TOKEN_MACRO_BPL},
+    {"BX",          TOKEN_MACRO_BX},
+    {"CH",          TOKEN_MACRO_CH},
+    {"CL",          TOKEN_MACRO_CL},
+    {"CX",          TOKEN_MACRO_CX},
+    {"DH",          TOKEN_MACRO_DH},
+    {"DI",          TOKEN_MACRO_DI},
+    {"DIL",         TOKEN_MACRO_DIL},
+    {"DL",          TOKEN_MACRO_DL},
+    {"DX",          TOKEN_MACRO_DX},
+    {"EAX",         TOKEN_MACRO_EAX},
+    {"EBP",         TOKEN_MACRO_EBP},
+    {"EBX",         TOKEN_MACRO_EBX},
+    {"ECX",         TOKEN_MACRO_ECX},
+    {"EDI",         TOKEN_MACRO_EDI},
+    {"EDX",         TOKEN_MACRO_EDX},
+    {"ESI",         TOKEN_MACRO_ESI},
+    {"ESP",         TOKEN_MACRO_ESP},
     {"FALSE",       TOKEN_MACRO_FALSE},
     {"IMM",         TOKEN_MACRO_IMM},
     {"MEM",         TOKEN_MACRO_MEM},
+    {"NIL",         TOKEN_MACRO_NIL},
+    {"R10",         TOKEN_MACRO_R10},
+    {"R10B",        TOKEN_MACRO_R10B},
+    {"R10D",        TOKEN_MACRO_R10D},
+    {"R10W",        TOKEN_MACRO_R10W},
+    {"R11",         TOKEN_MACRO_R11},
+    {"R11B",        TOKEN_MACRO_R11B},
+    {"R11D",        TOKEN_MACRO_R11D},
+    {"R11W",        TOKEN_MACRO_R11W},
+    {"R12",         TOKEN_MACRO_R12},
+    {"R12B",        TOKEN_MACRO_R12B},
+    {"R12D",        TOKEN_MACRO_R12D},
+    {"R12W",        TOKEN_MACRO_R12W},
+    {"R13",         TOKEN_MACRO_R13},
+    {"R13B",        TOKEN_MACRO_R13B},
+    {"R13D",        TOKEN_MACRO_R13D},
+    {"R13W",        TOKEN_MACRO_R13W},
+    {"R14",         TOKEN_MACRO_R14},
+    {"R14B",        TOKEN_MACRO_R14B},
+    {"R14D",        TOKEN_MACRO_R14D},
+    {"R14W",        TOKEN_MACRO_R14W},
+    {"R15",         TOKEN_MACRO_R15},
+    {"R15B",        TOKEN_MACRO_R15B},
+    {"R15D",        TOKEN_MACRO_R15D},
+    {"R15W",        TOKEN_MACRO_R15W},
+    {"R8",          TOKEN_MACRO_R8},
+    {"R8B",         TOKEN_MACRO_R8B},
+    {"R8D",         TOKEN_MACRO_R8D},
+    {"R8W",         TOKEN_MACRO_R8W},
+    {"R9",          TOKEN_MACRO_R9},
+    {"R9B",         TOKEN_MACRO_R8B},
+    {"R9D",         TOKEN_MACRO_R8D},
+    {"R9W",         TOKEN_MACRO_R8W},
+    {"RAX",         TOKEN_MACRO_RAX},
+    {"RBP",         TOKEN_MACRO_RBP},
+    {"RBX",         TOKEN_MACRO_RBX},
+    {"RCX",         TOKEN_MACRO_RCX},
+    {"RDI",         TOKEN_MACRO_RDI},
+    {"RDX",         TOKEN_MACRO_RDX},
     {"REG",         TOKEN_MACRO_REG},
+    {"RFLAGS",      TOKEN_MACRO_RFLAGS},
+    {"RIP",         TOKEN_MACRO_RIP},
+    {"RSI",         TOKEN_MACRO_RSI},
+    {"RSP",         TOKEN_MACRO_RSP},
+    {"SI",          TOKEN_MACRO_SI},
+    {"SIL",         TOKEN_MACRO_SIL},
+    {"SP",          TOKEN_MACRO_SP},
+    {"SPL",         TOKEN_MACRO_SPL},
     {"TRUE",        TOKEN_MACRO_TRUE},
     {"[",           (Token)'['},
     {"]",           (Token)']'},
@@ -284,9 +539,9 @@ static const TokenInfo tokens[] =
     {"r8d",         TOKEN_R8D},
     {"r8w",         TOKEN_R8W},
     {"r9",          TOKEN_R9},
-    {"r9b",         TOKEN_R8B},
-    {"r9d",         TOKEN_R8D},
-    {"r9w",         TOKEN_R8W},
+    {"r9b",         TOKEN_R9B},
+    {"r9d",         TOKEN_R9D},
+    {"r9w",         TOKEN_R9W},
     {"random",      TOKEN_RANDOM},
     {"rax",         TOKEN_RAX},
     {"rbp",         TOKEN_RBP},
@@ -319,6 +574,86 @@ static const TokenInfo tokens[] =
     {"||",          TOKEN_OR},
 };
 
+static const MacroInfo macros[] =
+{
+    {TOKEN_MACRO_AH,     REG_NAME_AH},      
+    {TOKEN_MACRO_AL,     REG_NAME_AL},
+    {TOKEN_MACRO_AX,     REG_NAME_AX},
+    {TOKEN_MACRO_BH,     REG_NAME_BH},
+    {TOKEN_MACRO_BL,     REG_NAME_BL},
+    {TOKEN_MACRO_BP,     REG_NAME_BP},
+    {TOKEN_MACRO_BPL,    REG_NAME_BPL},
+    {TOKEN_MACRO_BX,     REG_NAME_BX},
+    {TOKEN_MACRO_CH,     REG_NAME_CH},
+    {TOKEN_MACRO_CL,     REG_NAME_CL},
+    {TOKEN_MACRO_CX,     REG_NAME_CX},
+    {TOKEN_MACRO_DH,     REG_NAME_DH},
+    {TOKEN_MACRO_DI,     REG_NAME_DI},
+    {TOKEN_MACRO_DIL,    REG_NAME_DIL},
+    {TOKEN_MACRO_DL,     REG_NAME_DL},
+    {TOKEN_MACRO_DX,     REG_NAME_DX},
+    {TOKEN_MACRO_EAX,    REG_NAME_EAX},
+    {TOKEN_MACRO_EBP,    REG_NAME_EBP},
+    {TOKEN_MACRO_EBX,    REG_NAME_EBX},
+    {TOKEN_MACRO_ECX,    REG_NAME_ECX},
+    {TOKEN_MACRO_EDI,    REG_NAME_EDI},
+    {TOKEN_MACRO_EDX,    REG_NAME_EDX},
+    {TOKEN_MACRO_ESI,    REG_NAME_ESI},
+    {TOKEN_MACRO_ESP,    REG_NAME_ESP},
+    {TOKEN_MACRO_FALSE,  false},
+    {TOKEN_MACRO_IMM,    OP_TYPE_IMM},
+    {TOKEN_MACRO_MEM,    OP_TYPE_MEM},
+    {TOKEN_MACRO_NIL,    0},
+    {TOKEN_MACRO_R10,    REG_NAME_R10},
+    {TOKEN_MACRO_R10B,   REG_NAME_R10B},
+    {TOKEN_MACRO_R10D,   REG_NAME_R10D},
+    {TOKEN_MACRO_R10W,   REG_NAME_R10W},
+    {TOKEN_MACRO_R11,    REG_NAME_R11},
+    {TOKEN_MACRO_R11B,   REG_NAME_R11B},
+    {TOKEN_MACRO_R11D,   REG_NAME_R11D},
+    {TOKEN_MACRO_R11W,   REG_NAME_R11W},
+    {TOKEN_MACRO_R12,    REG_NAME_R12},
+    {TOKEN_MACRO_R12B,   REG_NAME_R12B},
+    {TOKEN_MACRO_R12D,   REG_NAME_R12D},
+    {TOKEN_MACRO_R12W,   REG_NAME_R12W},
+    {TOKEN_MACRO_R13,    REG_NAME_R13},
+    {TOKEN_MACRO_R13B,   REG_NAME_R13B},
+    {TOKEN_MACRO_R13D,   REG_NAME_R13D},
+    {TOKEN_MACRO_R13W,   REG_NAME_R13W},
+    {TOKEN_MACRO_R14,    REG_NAME_R14},
+    {TOKEN_MACRO_R14B,   REG_NAME_R14B},
+    {TOKEN_MACRO_R14D,   REG_NAME_R14D},
+    {TOKEN_MACRO_R14W,   REG_NAME_R14W},
+    {TOKEN_MACRO_R15,    REG_NAME_R15},
+    {TOKEN_MACRO_R15B,   REG_NAME_R15B},
+    {TOKEN_MACRO_R15D,   REG_NAME_R15D},
+    {TOKEN_MACRO_R15W,   REG_NAME_R15W},
+    {TOKEN_MACRO_R8,     REG_NAME_R8},
+    {TOKEN_MACRO_R8B,    REG_NAME_R8B},
+    {TOKEN_MACRO_R8D,    REG_NAME_R8D},
+    {TOKEN_MACRO_R8W,    REG_NAME_R8W},
+    {TOKEN_MACRO_R9,     REG_NAME_R9},
+    {TOKEN_MACRO_R9B,    REG_NAME_R9B},
+    {TOKEN_MACRO_R9D,    REG_NAME_R9D},
+    {TOKEN_MACRO_R9W,    REG_NAME_R9W},
+    {TOKEN_MACRO_RAX,    REG_NAME_RAX},
+    {TOKEN_MACRO_RBP,    REG_NAME_RBP},
+    {TOKEN_MACRO_RBX,    REG_NAME_RBX},
+    {TOKEN_MACRO_RCX,    REG_NAME_RCX},
+    {TOKEN_MACRO_RDI,    REG_NAME_RDI},
+    {TOKEN_MACRO_RDX,    REG_NAME_RDX},
+    {TOKEN_MACRO_REG,    OP_TYPE_REG},
+    {TOKEN_MACRO_RFLAGS, REG_NAME_RFLAGS},
+    {TOKEN_MACRO_RIP,    REG_NAME_RIP},
+    {TOKEN_MACRO_RSI,    REG_NAME_RSI},
+    {TOKEN_MACRO_RSP,    REG_NAME_RSP},
+    {TOKEN_MACRO_SI,     REG_NAME_SI},
+    {TOKEN_MACRO_SIL,    REG_NAME_SIL},
+    {TOKEN_MACRO_SP,     REG_NAME_SP},
+    {TOKEN_MACRO_SPL,    REG_NAME_SPL},
+    {TOKEN_MACRO_TRUE,   true}
+};
+
 /*
  * Compare token infos.
  */
@@ -327,6 +662,16 @@ static int compareName(const void *ptr1, const void *ptr2)
     const TokenInfo *info1 = (const TokenInfo *)ptr1;
     const TokenInfo *info2 = (const TokenInfo *)ptr2;
     return strcmp(info1->name, info2->name);
+}
+
+/*
+ * Compare macro infos.
+ */
+static int compareMacro(const void *ptr1, const void *ptr2)
+{
+    const MacroInfo *info1 = (const MacroInfo *)ptr1;
+    const MacroInfo *info2 = (const MacroInfo *)ptr2;
+    return (int)info1->token - (int)info2->token;
 }
 
 /*
@@ -347,21 +692,12 @@ static Token getTokenFromName(const char *name)
  */
 static intptr_t expandMacro(Token t)
 {
-    switch (t)
-    {
-        case TOKEN_MACRO_TRUE:
-            return 1;
-        case TOKEN_MACRO_FALSE:
-            return 0;
-        case TOKEN_MACRO_IMM:
-            return OP_TYPE_IMM;
-        case TOKEN_MACRO_MEM:
-            return OP_TYPE_MEM;
-        case TOKEN_MACRO_REG:
-            return OP_TYPE_REG;
-        default:
-            return -1;
-    }
+    MacroInfo key = {t, 0};
+    const MacroInfo *entry = (const MacroInfo *)bsearch(&key, macros,
+        sizeof(macros) / sizeof(macros[0]), sizeof(macros[0]), compareMacro);
+    if (entry == nullptr)
+        return -1;
+    return entry->value;
 }
 
 /*

@@ -127,10 +127,14 @@ enum MatchKind
 enum MatchField
 {
     MATCH_FIELD_NONE,
-    MATCH_FIELD_SIZE,
     MATCH_FIELD_TYPE,
     MATCH_FIELD_READ,
-    MATCH_FIELD_WRITE
+    MATCH_FIELD_WRITE,
+    MATCH_FIELD_SIZE,
+    MATCH_FIELD_DISPL,
+    MATCH_FIELD_BASE,
+    MATCH_FIELD_INDEX,
+    MATCH_FIELD_SCALE,
 };
 
 /*
@@ -161,13 +165,6 @@ enum ActionKind
     ACTION_PRINT,
     ACTION_TRAP,
 };
-
-/*
- * Operand types.
- */
-#define OP_TYPE_IMM     1
-#define OP_TYPE_REG     2
-#define OP_TYPE_MEM     3
 
 /*
  * A match entry.
@@ -479,14 +476,22 @@ static MatchTest *parseTest(Parser &parser)
             parser.expectToken('.');
             switch (parser.getToken())
             {
-                case TOKEN_READ:
-                    field = MATCH_FIELD_READ; break;
-                case TOKEN_SIZE:
-                    field = MATCH_FIELD_SIZE; break;
-                case TOKEN_WRITE:
-                    field = MATCH_FIELD_WRITE; break;
                 case TOKEN_TYPE:
                     field = MATCH_FIELD_TYPE; break;
+                case TOKEN_READ:
+                    field = MATCH_FIELD_READ; break;
+                case TOKEN_WRITE:
+                    field = MATCH_FIELD_WRITE; break;
+                case TOKEN_SIZE:
+                    field = MATCH_FIELD_SIZE; break;
+                case TOKEN_DISPL:
+                    field = MATCH_FIELD_DISPL; break;
+                case TOKEN_BASE:
+                    field = MATCH_FIELD_BASE; break;
+                case TOKEN_INDEX:
+                    field = MATCH_FIELD_INDEX; break;
+                case TOKEN_SCALE:
+                    field = MATCH_FIELD_SCALE; break;
                 default:
                     parser.unexpectedToken();
             }
@@ -1206,6 +1211,87 @@ static intptr_t getNumOperands(const cs_insn *I, x86_op_type type,
 }
 
 /*
+ * Convert a register to a name.
+ */
+static intptr_t regToName(x86_reg reg)
+{
+    switch (reg)
+    {
+        case X86_REG_AH:      return REG_NAME_AH;
+        case X86_REG_AL:      return REG_NAME_AL;    
+        case X86_REG_BH:      return REG_NAME_BH;    
+        case X86_REG_BL:      return REG_NAME_BL;    
+        case X86_REG_CH:      return REG_NAME_CH;    
+        case X86_REG_CL:      return REG_NAME_CL;    
+        case X86_REG_BPL:     return REG_NAME_BPL;   
+        case X86_REG_DIL:     return REG_NAME_DIL;   
+        case X86_REG_DL:      return REG_NAME_DL;    
+        case X86_REG_DH:      return REG_NAME_DH;    
+        case X86_REG_SIL:     return REG_NAME_SIL;   
+        case X86_REG_SPL:     return REG_NAME_SPL;   
+        case X86_REG_R8B:     return REG_NAME_R8B;   
+        case X86_REG_R9B:     return REG_NAME_R9B;   
+        case X86_REG_R10B:    return REG_NAME_R10B;  
+        case X86_REG_R11B:    return REG_NAME_R11B;  
+        case X86_REG_R12B:    return REG_NAME_R12B;  
+        case X86_REG_R13B:    return REG_NAME_R13B;  
+        case X86_REG_R14B:    return REG_NAME_R14B;  
+        case X86_REG_R15B:    return REG_NAME_R15B;  
+        case X86_REG_EFLAGS:  return REG_NAME_RFLAGS;
+        case X86_REG_AX:      return REG_NAME_AX;    
+        case X86_REG_BP:      return REG_NAME_BP;    
+        case X86_REG_BX:      return REG_NAME_BX;    
+        case X86_REG_CX:      return REG_NAME_CX;    
+        case X86_REG_DX:      return REG_NAME_DX;    
+        case X86_REG_DI:      return REG_NAME_DI;    
+        case X86_REG_SI:      return REG_NAME_SI;    
+        case X86_REG_SP:      return REG_NAME_SP;    
+        case X86_REG_R8W:     return REG_NAME_R8W;   
+        case X86_REG_R9W:     return REG_NAME_R9W;   
+        case X86_REG_R10W:    return REG_NAME_R10W;  
+        case X86_REG_R11W:    return REG_NAME_R11W;  
+        case X86_REG_R12W:    return REG_NAME_R12W;  
+        case X86_REG_R13W:    return REG_NAME_R13W;  
+        case X86_REG_R14W:    return REG_NAME_R14W;  
+        case X86_REG_R15W:    return REG_NAME_R15W;  
+        case X86_REG_EAX:     return REG_NAME_EAX;   
+        case X86_REG_EBP:     return REG_NAME_EBP;   
+        case X86_REG_EBX:     return REG_NAME_EBX;   
+        case X86_REG_ECX:     return REG_NAME_ECX;   
+        case X86_REG_EDI:     return REG_NAME_EDI;   
+        case X86_REG_EDX:     return REG_NAME_EDX;   
+        case X86_REG_ESI:     return REG_NAME_ESI;   
+        case X86_REG_ESP:     return REG_NAME_ESP;   
+        case X86_REG_R8D:     return REG_NAME_R8D;   
+        case X86_REG_R9D:     return REG_NAME_R9D;   
+        case X86_REG_R10D:    return REG_NAME_R10D;  
+        case X86_REG_R11D:    return REG_NAME_R11D;  
+        case X86_REG_R12D:    return REG_NAME_R12D;  
+        case X86_REG_R13D:    return REG_NAME_R13D;  
+        case X86_REG_R14D:    return REG_NAME_R14D;  
+        case X86_REG_R15D:    return REG_NAME_R15D;  
+        case X86_REG_RAX:     return REG_NAME_RAX;   
+        case X86_REG_RBP:     return REG_NAME_RBP;   
+        case X86_REG_RBX:     return REG_NAME_RBX;   
+        case X86_REG_RCX:     return REG_NAME_RCX;   
+        case X86_REG_RDI:     return REG_NAME_RDI;   
+        case X86_REG_RDX:     return REG_NAME_RDX;   
+        case X86_REG_RIP:     return REG_NAME_RIP;   
+        case X86_REG_RSI:     return REG_NAME_RSI;   
+        case X86_REG_RSP:     return REG_NAME_RSP;   
+        case X86_REG_R8:      return REG_NAME_R8;    
+        case X86_REG_R9:      return REG_NAME_R9;    
+        case X86_REG_R10:     return REG_NAME_R10;   
+        case X86_REG_R11:     return REG_NAME_R11;   
+        case X86_REG_R12:     return REG_NAME_R12;   
+        case X86_REG_R13:     return REG_NAME_R13;   
+        case X86_REG_R14:     return REG_NAME_R14;   
+        case X86_REG_R15:     return REG_NAME_R15;   
+        default:              return 0;
+    }
+}
+
+/*
  * Create match value.
  */
 static intptr_t makeMatchValue(MatchKind match, int idx, MatchField field,
@@ -1286,6 +1372,22 @@ static intptr_t makeMatchValue(MatchKind match, int idx, MatchField field,
                                (op->access & CS_AC_READ) != 0);
                     case MATCH_FIELD_WRITE:
                         return ((op->access & CS_AC_WRITE) != 0);
+                    case MATCH_FIELD_DISPL:
+                        if (op->type != X86_OP_MEM)
+                            return (*defined = false);
+                        return (intptr_t)op->mem.disp;
+                    case MATCH_FIELD_BASE:
+                        if (op->type != X86_OP_MEM)
+                            return (*defined = false);
+                        return regToName(op->mem.base);
+                    case MATCH_FIELD_INDEX:
+                        if (op->type != X86_OP_MEM)
+                            return (*defined = false);
+                        return regToName(op->mem.index);
+                    case MATCH_FIELD_SCALE:
+                        if (op->type != X86_OP_MEM)
+                            return (*defined = false);
+                        return (intptr_t)op->mem.scale;
                     default:
                         return (*defined = false);
                 }
