@@ -128,8 +128,7 @@ enum MatchField
 {
     MATCH_FIELD_NONE,
     MATCH_FIELD_TYPE,
-    MATCH_FIELD_READ,
-    MATCH_FIELD_WRITE,
+    MATCH_FIELD_ACCESS,
     MATCH_FIELD_SIZE,
     MATCH_FIELD_DISPL,
     MATCH_FIELD_BASE,
@@ -473,27 +472,33 @@ static MatchTest *parseTest(Parser &parser)
                 default:
                     parser.unexpectedToken();
             }
-            parser.expectToken('.');
-            switch (parser.getToken())
+            if (parser.peekToken() == '.')
             {
-                case TOKEN_TYPE:
-                    field = MATCH_FIELD_TYPE; break;
-                case TOKEN_READ:
-                    field = MATCH_FIELD_READ; break;
-                case TOKEN_WRITE:
-                    field = MATCH_FIELD_WRITE; break;
-                case TOKEN_SIZE:
-                    field = MATCH_FIELD_SIZE; break;
-                case TOKEN_DISPL:
-                    field = MATCH_FIELD_DISPL; break;
-                case TOKEN_BASE:
-                    field = MATCH_FIELD_BASE; break;
-                case TOKEN_INDEX:
-                    field = MATCH_FIELD_INDEX; break;
-                case TOKEN_SCALE:
-                    field = MATCH_FIELD_SCALE; break;
-                default:
-                    parser.unexpectedToken();
+                parser.getToken();
+                switch (parser.getToken())
+                {
+                    case TOKEN_TYPE:
+                        field = MATCH_FIELD_TYPE; break;
+                    case TOKEN_ACCESS:
+                        field = MATCH_FIELD_ACCESS; break;
+                    case TOKEN_SIZE:
+                        field = MATCH_FIELD_SIZE; break;
+                    case TOKEN_DISPL:
+                        field = MATCH_FIELD_DISPL; break;
+                    case TOKEN_BASE:
+                        field = MATCH_FIELD_BASE; break;
+                    case TOKEN_INDEX:
+                        field = MATCH_FIELD_INDEX; break;
+                    case TOKEN_SCALE:
+                        field = MATCH_FIELD_SCALE; break;
+                    case TOKEN_READ: case TOKEN_WRITE:
+                        // TODO: remove
+                        error("failed to parse matching; the read/write "
+                            "fields are deprecated; use the `access' field "
+                            "instead");
+                    default:
+                        parser.unexpectedToken();
+                }
             }
             break;
         default:
@@ -1353,6 +1358,16 @@ static intptr_t makeMatchValue(MatchKind match, int idx, MatchField field,
                     return (*defined = false);
                 switch (field)
                 {
+                    case MATCH_FIELD_NONE:
+                        switch (op->type)
+                        {
+                            case X86_OP_IMM:
+                                return (intptr_t)op->imm;
+                            case X86_OP_REG:
+                                return regToName(op->reg);
+                            default:
+                                return (*defined = false);
+                        }
                     case MATCH_FIELD_SIZE:
                         return (intptr_t)op->size;
                     case MATCH_FIELD_TYPE:
@@ -1367,11 +1382,20 @@ static intptr_t makeMatchValue(MatchKind match, int idx, MatchField field,
                             default:
                                 return (*defined = false);
                         }
-                    case MATCH_FIELD_READ:
-                        return (op->type == X86_OP_IMM ||
-                               (op->access & CS_AC_READ) != 0);
-                    case MATCH_FIELD_WRITE:
-                        return ((op->access & CS_AC_WRITE) != 0);
+                    case MATCH_FIELD_ACCESS:
+                    {
+                        if (op->type == X86_OP_IMM)
+                            return ACCESS_READ;
+                        intptr_t access = 0;
+                        if ((op->access & CS_AC_READ) != 0)
+                            access |= ACCESS_READ;
+                        if ((op->access & CS_AC_WRITE) != 0)
+                            access |= ACCESS_WRITE;
+                        if (op->type == X86_OP_MEM &&
+                                (I->id == X86_INS_LEA || I->id == X86_INS_NOP))
+                            access = 0;     // Capstone bug workaround
+                        return access;
+                    }
                     case MATCH_FIELD_DISPL:
                         if (op->type != X86_OP_MEM)
                             return (*defined = false);

@@ -41,6 +41,15 @@ using namespace e9frontend;
 #define OP_TYPE_MEM         OP_TYPE(3)
 
 /*
+ * Access types.
+ */
+#define ACCESS_MAGIC        0x41434300000000ull
+#define ACCESS(n)           (ACCESS_MAGIC | (n))
+
+#define ACCESS_READ         ACCESS(0x1)
+#define ACCESS_WRITE        ACCESS(0x2)
+
+/*
  * Register names.
  */
 #define REG_NAME_MAGIC      0x52454700000000ull
@@ -211,18 +220,22 @@ enum Token
     TOKEN_MACRO_RCX,
     TOKEN_MACRO_RDI,
     TOKEN_MACRO_RDX,
+    TOKEN_MACRO_READ,
     TOKEN_MACRO_REG,
     TOKEN_MACRO_RFLAGS,
     TOKEN_MACRO_RIP,
     TOKEN_MACRO_RSI,
     TOKEN_MACRO_RSP,
+    TOKEN_MACRO_RW,
     TOKEN_MACRO_SI,
     TOKEN_MACRO_SIL,
     TOKEN_MACRO_SP,
     TOKEN_MACRO_SPL,
     TOKEN_MACRO_TRUE,
+    TOKEN_MACRO_WRITE,
 
-    TOKEN_ADDR = 4000,
+    TOKEN_ACCESS = 4000,
+    TOKEN_ADDR,
     TOKEN_AFTER,
     TOKEN_AH,
     TOKEN_AL,
@@ -316,7 +329,7 @@ enum Token
     TOKEN_RCX,
     TOKEN_RDI,
     TOKEN_RDX,
-    TOKEN_READ,
+    TOKEN_READ,             // TODO: remove
     TOKEN_REG,
     TOKEN_REPLACE,
     TOKEN_RETURN,
@@ -337,7 +350,7 @@ enum Token
     TOKEN_TRAP,
     TOKEN_TRUE,
     TOKEN_TYPE,
-    TOKEN_WRITE
+    TOKEN_WRITE             // TODO: remove
 };
 
 /*
@@ -444,18 +457,22 @@ static const TokenInfo tokens[] =
     {"RCX",         TOKEN_MACRO_RCX},
     {"RDI",         TOKEN_MACRO_RDI},
     {"RDX",         TOKEN_MACRO_RDX},
+    {"READ",        TOKEN_MACRO_READ},
     {"REG",         TOKEN_MACRO_REG},
     {"RFLAGS",      TOKEN_MACRO_RFLAGS},
     {"RIP",         TOKEN_MACRO_RIP},
     {"RSI",         TOKEN_MACRO_RSI},
     {"RSP",         TOKEN_MACRO_RSP},
+    {"RW",          TOKEN_MACRO_RW},
     {"SI",          TOKEN_MACRO_SI},
     {"SIL",         TOKEN_MACRO_SIL},
     {"SP",          TOKEN_MACRO_SP},
     {"SPL",         TOKEN_MACRO_SPL},
     {"TRUE",        TOKEN_MACRO_TRUE},
+    {"WRITE",       TOKEN_MACRO_WRITE},
     {"[",           (Token)'['},
     {"]",           (Token)']'},
+    {"access",      TOKEN_ACCESS},
     {"addr",        TOKEN_ADDR},
     {"address",     TOKEN_ADDR},
     {"after",       TOKEN_AFTER},
@@ -642,16 +659,19 @@ static const MacroInfo macros[] =
     {TOKEN_MACRO_RCX,    REG_NAME_RCX},
     {TOKEN_MACRO_RDI,    REG_NAME_RDI},
     {TOKEN_MACRO_RDX,    REG_NAME_RDX},
+    {TOKEN_MACRO_READ,   ACCESS_READ},
     {TOKEN_MACRO_REG,    OP_TYPE_REG},
     {TOKEN_MACRO_RFLAGS, REG_NAME_RFLAGS},
     {TOKEN_MACRO_RIP,    REG_NAME_RIP},
     {TOKEN_MACRO_RSI,    REG_NAME_RSI},
     {TOKEN_MACRO_RSP,    REG_NAME_RSP},
+    {TOKEN_MACRO_RW,     ACCESS_READ | ACCESS_WRITE},
     {TOKEN_MACRO_SI,     REG_NAME_SI},
     {TOKEN_MACRO_SIL,    REG_NAME_SIL},
     {TOKEN_MACRO_SP,     REG_NAME_SP},
     {TOKEN_MACRO_SPL,    REG_NAME_SPL},
-    {TOKEN_MACRO_TRUE,   true}
+    {TOKEN_MACRO_TRUE,   true},
+    {TOKEN_MACRO_WRITE,  ACCESS_WRITE},
 };
 
 /*
