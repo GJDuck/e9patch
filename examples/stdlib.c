@@ -108,6 +108,7 @@
 #define mprotect            __hide__mprotect
 #define msync               __hide__msync
 #define munmap              __hide__munmap
+#define sigaction(a, b, c)  __hide__sigaction(a, b, c)
 #define ioctl               __hide__ioctl
 #define pipe                __hide__pipe
 #define select              __hide__select
@@ -275,6 +276,7 @@
 #undef mprotect
 #undef msync
 #undef munmap
+#undef sigaction
 #undef ioctl
 #undef pipe
 #undef select
@@ -1401,6 +1403,49 @@ static void *realloc(void *ptr, size_t size)
 static void *realloc_unlocked(void *ptr, size_t size)
 {
     return malloc_reallocate(ptr, size, /*lock=*/false);
+}
+
+/****************************************************************************/
+/* SIGNAL                                                                   */
+/****************************************************************************/
+
+struct ksigaction
+{
+    void *sa_handler_2;
+    unsigned long sa_flags;
+    void (*sa_restorer)(void);
+    sigset_t sa_mask;
+};
+#define SA_RESTORER 0x04000000
+
+static void signal_restorer(void)
+{
+    (void)syscall(SYS_rt_sigreturn);
+}
+
+static int sigaction(int signum, const struct sigaction *act,
+    struct sigaction *oldact)
+{
+    struct ksigaction kact, koldact;
+    if (act != NULL)
+    {
+        kact.sa_handler_2 = act->sa_handler;
+        memcpy(&kact.sa_mask, &act->sa_mask, sizeof(kact.sa_mask));
+        kact.sa_flags = act->sa_flags | SA_RESTORER;
+        kact.sa_restorer = signal_restorer;
+    }
+    int result = (int)syscall(SYS_rt_sigaction, signum, &kact, &koldact,
+        _NSIG / 8);
+    if (result < 0)
+        return result;
+    if (oldact != NULL)
+    {
+        oldact->sa_handler = koldact.sa_handler_2;
+        memcpy(&oldact->sa_mask, &koldact.sa_mask, sizeof(oldact->sa_mask));
+        oldact->sa_flags = (koldact.sa_flags & ~SA_RESTORER);
+        oldact->sa_restorer = NULL;
+    }
+    return result;
 }
 
 /****************************************************************************/
