@@ -1,7 +1,7 @@
 #CC=clang
 #CXX=clang++
 
-CXXFLAGS = -std=c++11 -Wall -Wno-reorder -fPIC -pie
+CXXFLAGS = -std=c++14 -Wall -Wno-reorder -fPIC -pie
 
 E9PATCH_OBJS=\
     src/e9patch/e9alloc.o \

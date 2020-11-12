@@ -33,7 +33,7 @@ using namespace e9frontend;
 /*
  * Operand types.
  */
-#define OP_TYPE_MAGIC       0x004F5000000000ull
+#define OP_TYPE_MAGIC       0x004F5000000000ll
 #define OP_TYPE(n)          (OP_TYPE_MAGIC | (n))
 
 #define OP_TYPE_IMM         OP_TYPE(1)
@@ -43,7 +43,7 @@ using namespace e9frontend;
 /*
  * Access types.
  */
-#define ACCESS_MAGIC        0x41434300000000ull
+#define ACCESS_MAGIC        0x41434300000000ll
 #define ACCESS(n)           (ACCESS_MAGIC | (n))
 
 #define ACCESS_READ         ACCESS(0x1)
@@ -52,95 +52,280 @@ using namespace e9frontend;
 /*
  * Register names.
  */
-#define REG_NAME_MAGIC      0x52454700000000ull
-#define REG_NAME(b, h, n)   (REG_NAME_MAGIC | (b) | ((h) << 8) | ((n) << 16))
+#define REG_NAME_MAGIC      0x52454700000000ll
+#define REG_NAME(r)         \
+    (REG_NAME_MAGIC | (regType(r) << 16) | regIdx(r))
 
-#define REG_NAME_AL         REG_NAME(8, 0, 0)
-#define REG_NAME_AH         REG_NAME(8, 1, 0)
-#define REG_NAME_AX         REG_NAME(16, 0, 0)
-#define REG_NAME_EAX        REG_NAME(32, 0, 0)
-#define REG_NAME_RAX        REG_NAME(64, 0, 0)
+static constexpr intptr_t regType(x86_reg reg)
+{
+    switch (reg)
+    {
+        case X86_REG_RIP:
+            return 1;
 
-#define REG_NAME_CL         REG_NAME(8, 0, 1)
-#define REG_NAME_CH         REG_NAME(8, 1, 1)
-#define REG_NAME_CX         REG_NAME(16, 0, 1)
-#define REG_NAME_ECX        REG_NAME(32, 0, 1)
-#define REG_NAME_RCX        REG_NAME(64, 0, 1)
+        case X86_REG_EFLAGS:
+            return 2;
 
-#define REG_NAME_DL         REG_NAME(8, 0, 2)
-#define REG_NAME_DH         REG_NAME(8, 1, 2)
-#define REG_NAME_DX         REG_NAME(16, 0, 2)
-#define REG_NAME_EDX        REG_NAME(32, 0, 2)
-#define REG_NAME_RDX        REG_NAME(64, 0, 2)
+        case X86_REG_AH: case X86_REG_BH: case X86_REG_CH:
+        case X86_REG_DH:
+            return 3;
 
-#define REG_NAME_BL         REG_NAME(8, 0, 3)
-#define REG_NAME_BH         REG_NAME(8, 1, 3)
-#define REG_NAME_BX         REG_NAME(16, 0, 3)
-#define REG_NAME_EBX        REG_NAME(32, 0, 3)
-#define REG_NAME_RBX        REG_NAME(64, 0, 3)
+        case X86_REG_AL: case X86_REG_BL: case X86_REG_CL:
+        case X86_REG_BPL: case X86_REG_DL: case X86_REG_SIL:
+        case X86_REG_SPL: case X86_REG_R8B: case X86_REG_R9B:
+        case X86_REG_R10B: case X86_REG_R11B: case X86_REG_R12B:
+        case X86_REG_R13B: case X86_REG_R14B: case X86_REG_R15B:
+            return 4;
 
-#define REG_NAME_SPL        REG_NAME(8, 0, 4)
-#define REG_NAME_SP         REG_NAME(16, 0, 4)
-#define REG_NAME_ESP        REG_NAME(32, 0, 4)
-#define REG_NAME_RSP        REG_NAME(64, 0, 4)
+        case X86_REG_AX: case X86_REG_BP: case X86_REG_BX:
+        case X86_REG_CX: case X86_REG_DX: case X86_REG_DI:
+        case X86_REG_IP: case X86_REG_SI: case X86_REG_SP:
+        case X86_REG_R8W: case X86_REG_R9W: case X86_REG_R10W:
+        case X86_REG_R11W: case X86_REG_R12W: case X86_REG_R13W:
+        case X86_REG_R14W: case X86_REG_R15W:
+            return 5;
 
-#define REG_NAME_BPL        REG_NAME(8, 0, 5)
-#define REG_NAME_BP         REG_NAME(16, 0, 5)
-#define REG_NAME_EBP        REG_NAME(32, 0, 5)
-#define REG_NAME_RBP        REG_NAME(64, 0, 5)
+        case X86_REG_EAX: case X86_REG_EBP: case X86_REG_EBX:
+        case X86_REG_ECX: case X86_REG_EDI: case X86_REG_EDX:
+        case X86_REG_EIP: case X86_REG_EIZ: case X86_REG_ESI:
+        case X86_REG_ESP: case X86_REG_R8D: case X86_REG_R9D:
+        case X86_REG_R10D: case X86_REG_R11D: case X86_REG_R12D:
+        case X86_REG_R13D: case X86_REG_R14D: case X86_REG_R15D:
+            return 6;
 
-#define REG_NAME_SIL        REG_NAME(8, 0, 6)
-#define REG_NAME_SI         REG_NAME(16, 0, 6)
-#define REG_NAME_ESI        REG_NAME(32, 0, 6)
-#define REG_NAME_RSI        REG_NAME(64, 0, 6)
+        case X86_REG_RAX: case X86_REG_RBP: case X86_REG_RBX:
+        case X86_REG_RCX: case X86_REG_RDI: case X86_REG_RDX:
+        case X86_REG_RIZ: case X86_REG_RSI: case X86_REG_RSP:
+        case X86_REG_R8: case X86_REG_R9: case X86_REG_R10:
+        case X86_REG_R11: case X86_REG_R12: case X86_REG_R13:
+        case X86_REG_R14: case X86_REG_R15:
+            return 7;
 
-#define REG_NAME_DIL        REG_NAME(8, 0, 7)
-#define REG_NAME_DI         REG_NAME(16, 0, 7)
-#define REG_NAME_EDI        REG_NAME(32, 0, 7)
-#define REG_NAME_RDI        REG_NAME(64, 0, 7)
+        case X86_REG_XMM0: case X86_REG_XMM1: case X86_REG_XMM2:
+        case X86_REG_XMM3: case X86_REG_XMM4: case X86_REG_XMM5:
+        case X86_REG_XMM6: case X86_REG_XMM7: case X86_REG_XMM8:
+        case X86_REG_XMM9: case X86_REG_XMM10: case X86_REG_XMM11:
+        case X86_REG_XMM12: case X86_REG_XMM13: case X86_REG_XMM14:
+        case X86_REG_XMM15: case X86_REG_XMM16: case X86_REG_XMM17:
+        case X86_REG_XMM18: case X86_REG_XMM19: case X86_REG_XMM20:
+        case X86_REG_XMM21: case X86_REG_XMM22: case X86_REG_XMM23:
+        case X86_REG_XMM24: case X86_REG_XMM25: case X86_REG_XMM26:
+        case X86_REG_XMM27: case X86_REG_XMM28: case X86_REG_XMM29:
+        case X86_REG_XMM30: case X86_REG_XMM31:
+            return 8;
 
-#define REG_NAME_R8B        REG_NAME(8, 0, 8)
-#define REG_NAME_R8W        REG_NAME(16, 0, 8)
-#define REG_NAME_R8D        REG_NAME(32, 0, 8)
-#define REG_NAME_R8         REG_NAME(64, 0, 8)
+        case X86_REG_YMM0: case X86_REG_YMM1: case X86_REG_YMM2:
+        case X86_REG_YMM3: case X86_REG_YMM4: case X86_REG_YMM5:
+        case X86_REG_YMM6: case X86_REG_YMM7: case X86_REG_YMM8:
+        case X86_REG_YMM9: case X86_REG_YMM10: case X86_REG_YMM11:
+        case X86_REG_YMM12: case X86_REG_YMM13: case X86_REG_YMM14:
+        case X86_REG_YMM15: case X86_REG_YMM16: case X86_REG_YMM17:
+        case X86_REG_YMM18: case X86_REG_YMM19: case X86_REG_YMM20:
+        case X86_REG_YMM21: case X86_REG_YMM22: case X86_REG_YMM23:
+        case X86_REG_YMM24: case X86_REG_YMM25: case X86_REG_YMM26:
+        case X86_REG_YMM27: case X86_REG_YMM28: case X86_REG_YMM29:
+        case X86_REG_YMM30: case X86_REG_YMM31:
+            return 9;
 
-#define REG_NAME_R9B        REG_NAME(8, 0, 9)
-#define REG_NAME_R9W        REG_NAME(16, 0, 9)
-#define REG_NAME_R9D        REG_NAME(32, 0, 9)
-#define REG_NAME_R9         REG_NAME(64, 0, 9)
+        case X86_REG_ZMM0: case X86_REG_ZMM1: case X86_REG_ZMM2:
+        case X86_REG_ZMM3: case X86_REG_ZMM4: case X86_REG_ZMM5:
+        case X86_REG_ZMM6: case X86_REG_ZMM7: case X86_REG_ZMM8:
+        case X86_REG_ZMM9: case X86_REG_ZMM10: case X86_REG_ZMM11:
+        case X86_REG_ZMM12: case X86_REG_ZMM13: case X86_REG_ZMM14:
+        case X86_REG_ZMM15: case X86_REG_ZMM16: case X86_REG_ZMM17:
+        case X86_REG_ZMM18: case X86_REG_ZMM19: case X86_REG_ZMM20:
+        case X86_REG_ZMM21: case X86_REG_ZMM22: case X86_REG_ZMM23:
+        case X86_REG_ZMM24: case X86_REG_ZMM25: case X86_REG_ZMM26:
+        case X86_REG_ZMM27: case X86_REG_ZMM28: case X86_REG_ZMM29:
+        case X86_REG_ZMM30: case X86_REG_ZMM31:
+            return 10;
 
-#define REG_NAME_R10B       REG_NAME(8, 0, 10)
-#define REG_NAME_R10W       REG_NAME(16, 0, 10)
-#define REG_NAME_R10D       REG_NAME(32, 0, 10)
-#define REG_NAME_R10        REG_NAME(64, 0, 10)
+        case X86_REG_ES: case X86_REG_CS: case X86_REG_SS:
+        case X86_REG_DS: case X86_REG_FS: case X86_REG_GS:
+            return 11;
 
-#define REG_NAME_R11B       REG_NAME(8, 0, 11)
-#define REG_NAME_R11W       REG_NAME(16, 0, 11)
-#define REG_NAME_R11D       REG_NAME(32, 0, 11)
-#define REG_NAME_R11        REG_NAME(64, 0, 11)
+        case X86_REG_CR0: case X86_REG_CR1: case X86_REG_CR2:
+        case X86_REG_CR3: case X86_REG_CR4: case X86_REG_CR5:
+        case X86_REG_CR6: case X86_REG_CR7: case X86_REG_CR8:
+        case X86_REG_CR9: case X86_REG_CR10: case X86_REG_CR11:
+        case X86_REG_CR12: case X86_REG_CR13: case X86_REG_CR14:
+        case X86_REG_CR15:
+            return 12;
+        
+        case X86_REG_DR0: case X86_REG_DR1: case X86_REG_DR2:
+        case X86_REG_DR3: case X86_REG_DR4: case X86_REG_DR5:
+        case X86_REG_DR6: case X86_REG_DR7: case X86_REG_DR8:
+        case X86_REG_DR9: case X86_REG_DR10: case X86_REG_DR11:
+        case X86_REG_DR12: case X86_REG_DR13: case X86_REG_DR14:
+        case X86_REG_DR15:
+            return 13;
+        
+        case X86_REG_FP0: case X86_REG_FP1: case X86_REG_FP2:
+        case X86_REG_FP3: case X86_REG_FP4: case X86_REG_FP5:
+        case X86_REG_FP6: case X86_REG_FP7:
+            return 14;
+ 
+        case X86_REG_K0: case X86_REG_K1: case X86_REG_K2:
+        case X86_REG_K3: case X86_REG_K4: case X86_REG_K5:
+        case X86_REG_K6: case X86_REG_K7:
+            return 15;
+        
+        case X86_REG_MM0: case X86_REG_MM1: case X86_REG_MM2:
+        case X86_REG_MM3: case X86_REG_MM4: case X86_REG_MM5:
+        case X86_REG_MM6: case X86_REG_MM7:
+            return 16;
 
-#define REG_NAME_R12B       REG_NAME(8, 0, 12)
-#define REG_NAME_R12W       REG_NAME(16, 0, 12)
-#define REG_NAME_R12D       REG_NAME(32, 0, 12)
-#define REG_NAME_R12        REG_NAME(64, 0, 12)
+        case X86_REG_ST0: case X86_REG_ST1: case X86_REG_ST2:
+        case X86_REG_ST3: case X86_REG_ST4: case X86_REG_ST5:
+        case X86_REG_ST6: case X86_REG_ST7:
+            return 17;
+        
+        case X86_REG_FPSW: 
+            return 18;
 
-#define REG_NAME_R13B       REG_NAME(8, 0, 13)
-#define REG_NAME_R13W       REG_NAME(16, 0, 13)
-#define REG_NAME_R13D       REG_NAME(32, 0, 13)
-#define REG_NAME_R13        REG_NAME(64, 0, 13)
+        default:
+            return UINT8_MAX;
+    }
+}
 
-#define REG_NAME_R14B       REG_NAME(8, 0, 14)
-#define REG_NAME_R14W       REG_NAME(16, 0, 14)
-#define REG_NAME_R14D       REG_NAME(32, 0, 14)
-#define REG_NAME_R14        REG_NAME(64, 0, 14)
+static constexpr intptr_t regIdx(x86_reg reg)
+{
+    switch (reg)
+    {
+        case X86_REG_AH: case X86_REG_AL: case X86_REG_EFLAGS:
+        case X86_REG_AX: case X86_REG_EAX: case X86_REG_RAX: 
+        case X86_REG_XMM0: case X86_REG_YMM0: case X86_REG_ZMM0: 
+        case X86_REG_ES: case X86_REG_CR0: case X86_REG_DR0:
+        case X86_REG_FP0: case X86_REG_K0: case X86_REG_MM0:
+        case X86_REG_ST0: case X86_REG_FPSW:
+            return 0;
 
-#define REG_NAME_R15B       REG_NAME(8, 0, 15)
-#define REG_NAME_R15W       REG_NAME(16, 0, 15)
-#define REG_NAME_R15D       REG_NAME(32, 0, 15)
-#define REG_NAME_R15        REG_NAME(64, 0, 15)
+        case X86_REG_CH: case X86_REG_CL: case X86_REG_CX:
+        case X86_REG_ECX: case X86_REG_RCX: case X86_REG_XMM1:
+        case X86_REG_YMM1: case X86_REG_ZMM1: case X86_REG_CS:
+        case X86_REG_CR1: case X86_REG_DR1: case X86_REG_FP1:
+        case X86_REG_K1: case X86_REG_MM1: case X86_REG_ST1:
+            return 1;
 
-#define REG_NAME_RIP        REG_NAME(64, 0, 16)
-#define REG_NAME_RFLAGS     REG_NAME(16, 0, 17)
+        case X86_REG_DH: case X86_REG_DL: case X86_REG_DX:
+        case X86_REG_EDX: case X86_REG_RDX: case X86_REG_XMM2:
+        case X86_REG_YMM2: case X86_REG_ZMM2: case X86_REG_SS:
+        case X86_REG_CR2: case X86_REG_DR2: case X86_REG_FP2:
+        case X86_REG_K2: case X86_REG_MM2: case X86_REG_ST2:
+            return 2;
+
+        case X86_REG_BH: case X86_REG_BL: case X86_REG_BX:
+        case X86_REG_EBX: case X86_REG_RBX: case X86_REG_XMM3:
+        case X86_REG_YMM3: case X86_REG_ZMM3: case X86_REG_DS:
+        case X86_REG_CR3: case X86_REG_DR3: case X86_REG_FP3:
+        case X86_REG_K3: case X86_REG_MM3: case X86_REG_ST3:
+            return 3;
+        
+        case X86_REG_SPL: case X86_REG_SP: case X86_REG_ESP:
+        case X86_REG_RSP: case X86_REG_XMM4: case X86_REG_YMM4:
+        case X86_REG_ZMM4: case X86_REG_FS: case X86_REG_CR4:
+        case X86_REG_DR4: case X86_REG_FP4: case X86_REG_K4:
+        case X86_REG_MM4: case X86_REG_ST4:
+            return 4;
+        
+        case X86_REG_BPL: case X86_REG_BP: case X86_REG_EBP:
+        case X86_REG_RBP: case X86_REG_XMM5: case X86_REG_YMM5:
+        case X86_REG_ZMM5: case X86_REG_GS: case X86_REG_CR5:
+        case X86_REG_DR5: case X86_REG_FP5: case X86_REG_K5:
+        case X86_REG_MM5: case X86_REG_ST5:
+            return 5;
+        
+        case X86_REG_SIL: case X86_REG_SI: case X86_REG_ESI:
+        case X86_REG_RSI: case X86_REG_XMM6: case X86_REG_YMM6:
+        case X86_REG_ZMM6: case X86_REG_CR6: case X86_REG_DR6:
+        case X86_REG_FP6: case X86_REG_K6: case X86_REG_MM6:
+        case X86_REG_ST6:
+            return 6;
+        
+        case X86_REG_DIL: case X86_REG_DI: case X86_REG_EDI:
+        case X86_REG_RDI: case X86_REG_XMM7: case X86_REG_YMM7:
+        case X86_REG_ZMM7: case X86_REG_CR7: case X86_REG_DR7:
+        case X86_REG_FP7: case X86_REG_K7: case X86_REG_MM7:
+        case X86_REG_ST7:
+            return 7;
+        
+        case X86_REG_R8B: case X86_REG_R8W: case X86_REG_R8D:
+        case X86_REG_R8: case X86_REG_XMM8: case X86_REG_YMM8:
+        case X86_REG_ZMM8: case X86_REG_CR8: case X86_REG_DR8:
+            return 8;
+        
+        case X86_REG_R9B: case X86_REG_R9W: case X86_REG_R9D:
+        case X86_REG_R9: case X86_REG_XMM9: case X86_REG_YMM9:
+        case X86_REG_ZMM9: case X86_REG_CR9: case X86_REG_DR9:
+            return 9;
+        
+        case X86_REG_R10B: case X86_REG_R10W: case X86_REG_R10D:
+        case X86_REG_R10: case X86_REG_XMM10: case X86_REG_YMM10:
+        case X86_REG_ZMM10: case X86_REG_CR10: case X86_REG_DR10:
+            return 10;
+
+        case X86_REG_R11B: case X86_REG_R11W: case X86_REG_R11D:
+        case X86_REG_R11: case X86_REG_XMM11: case X86_REG_YMM11:
+        case X86_REG_ZMM11: case X86_REG_CR11: case X86_REG_DR11:
+            return 11;
+        
+        case X86_REG_R12B: case X86_REG_R12W: case X86_REG_R12D:
+        case X86_REG_R12: case X86_REG_XMM12: case X86_REG_YMM12:
+        case X86_REG_ZMM12: case X86_REG_CR12: case X86_REG_DR12:
+            return 12;
+        
+        case X86_REG_R13B: case X86_REG_R13W: case X86_REG_R13D:
+        case X86_REG_R13: case X86_REG_XMM13: case X86_REG_YMM13:
+        case X86_REG_ZMM13: case X86_REG_CR13: case X86_REG_DR13:
+            return 13;
+        
+        case X86_REG_R14B: case X86_REG_R14W: case X86_REG_R14D:
+        case X86_REG_R14: case X86_REG_XMM14: case X86_REG_YMM14:
+        case X86_REG_ZMM14: case X86_REG_CR14: case X86_REG_DR14:
+            return 14;
+        
+        case X86_REG_R15B: case X86_REG_R15W: case X86_REG_R15D:
+        case X86_REG_R15: case X86_REG_XMM15: case X86_REG_YMM15:
+        case X86_REG_ZMM15: case X86_REG_CR15: case X86_REG_DR15:
+            return 15;
+        
+        case X86_REG_XMM16: case X86_REG_YMM16: case X86_REG_ZMM16:
+            return 16;
+        case X86_REG_XMM17: case X86_REG_YMM17: case X86_REG_ZMM17:
+            return 17;
+        case X86_REG_XMM18: case X86_REG_YMM18: case X86_REG_ZMM18:
+            return 18;
+        case X86_REG_XMM19: case X86_REG_YMM19: case X86_REG_ZMM19:
+            return 19;
+        case X86_REG_XMM20: case X86_REG_YMM20: case X86_REG_ZMM20:
+            return 20;
+        case X86_REG_XMM21: case X86_REG_YMM21: case X86_REG_ZMM21:
+            return 21;
+        case X86_REG_XMM22: case X86_REG_YMM22: case X86_REG_ZMM22:
+            return 22;
+        case X86_REG_XMM23: case X86_REG_YMM23: case X86_REG_ZMM23:
+            return 23;
+        case X86_REG_XMM24: case X86_REG_YMM24: case X86_REG_ZMM24:
+            return 24;
+        case X86_REG_XMM25: case X86_REG_YMM25: case X86_REG_ZMM25:
+            return 25;
+        case X86_REG_XMM26: case X86_REG_YMM26: case X86_REG_ZMM26:
+            return 26;
+        case X86_REG_XMM27: case X86_REG_YMM27: case X86_REG_ZMM27:
+            return 27;
+        case X86_REG_XMM28: case X86_REG_YMM28: case X86_REG_ZMM28:
+            return 28;
+        case X86_REG_XMM29: case X86_REG_YMM29: case X86_REG_ZMM29:
+            return 29;
+        case X86_REG_XMM30: case X86_REG_YMM30: case X86_REG_ZMM30:
+            return 30;
+        case X86_REG_XMM31: case X86_REG_YMM31: case X86_REG_ZMM31:
+            return 31;
+
+        default:
+            return UINT8_MAX;
+    }
+}
 
 /*
  * Tokens.
@@ -233,6 +418,102 @@ enum Token
     TOKEN_MACRO_SPL,
     TOKEN_MACRO_TRUE,
     TOKEN_MACRO_WRITE,
+    TOKEN_MACRO_XMM0,
+    TOKEN_MACRO_XMM1,
+    TOKEN_MACRO_XMM2,
+    TOKEN_MACRO_XMM3,
+    TOKEN_MACRO_XMM4,
+    TOKEN_MACRO_XMM5,
+    TOKEN_MACRO_XMM6,
+    TOKEN_MACRO_XMM7,
+    TOKEN_MACRO_XMM8,
+    TOKEN_MACRO_XMM9,
+    TOKEN_MACRO_XMM10,
+    TOKEN_MACRO_XMM11,
+    TOKEN_MACRO_XMM12,
+    TOKEN_MACRO_XMM13,
+    TOKEN_MACRO_XMM14,
+    TOKEN_MACRO_XMM15,
+    TOKEN_MACRO_XMM16,
+    TOKEN_MACRO_XMM17,
+    TOKEN_MACRO_XMM18,
+    TOKEN_MACRO_XMM19,
+    TOKEN_MACRO_XMM20,
+    TOKEN_MACRO_XMM21,
+    TOKEN_MACRO_XMM22,
+    TOKEN_MACRO_XMM23,
+    TOKEN_MACRO_XMM24,
+    TOKEN_MACRO_XMM25,
+    TOKEN_MACRO_XMM26,
+    TOKEN_MACRO_XMM27,
+    TOKEN_MACRO_XMM28,
+    TOKEN_MACRO_XMM29,
+    TOKEN_MACRO_XMM30,
+    TOKEN_MACRO_XMM31,
+    TOKEN_MACRO_YMM0,
+    TOKEN_MACRO_YMM1,
+    TOKEN_MACRO_YMM2,
+    TOKEN_MACRO_YMM3,
+    TOKEN_MACRO_YMM4,
+    TOKEN_MACRO_YMM5,
+    TOKEN_MACRO_YMM6,
+    TOKEN_MACRO_YMM7,
+    TOKEN_MACRO_YMM8,
+    TOKEN_MACRO_YMM9,
+    TOKEN_MACRO_YMM10,
+    TOKEN_MACRO_YMM11,
+    TOKEN_MACRO_YMM12,
+    TOKEN_MACRO_YMM13,
+    TOKEN_MACRO_YMM14,
+    TOKEN_MACRO_YMM15,
+    TOKEN_MACRO_YMM16,
+    TOKEN_MACRO_YMM17,
+    TOKEN_MACRO_YMM18,
+    TOKEN_MACRO_YMM19,
+    TOKEN_MACRO_YMM20,
+    TOKEN_MACRO_YMM21,
+    TOKEN_MACRO_YMM22,
+    TOKEN_MACRO_YMM23,
+    TOKEN_MACRO_YMM24,
+    TOKEN_MACRO_YMM25,
+    TOKEN_MACRO_YMM26,
+    TOKEN_MACRO_YMM27,
+    TOKEN_MACRO_YMM28,
+    TOKEN_MACRO_YMM29,
+    TOKEN_MACRO_YMM30,
+    TOKEN_MACRO_YMM31,
+    TOKEN_MACRO_ZMM0,
+    TOKEN_MACRO_ZMM1,
+    TOKEN_MACRO_ZMM2,
+    TOKEN_MACRO_ZMM3,
+    TOKEN_MACRO_ZMM4,
+    TOKEN_MACRO_ZMM5,
+    TOKEN_MACRO_ZMM6,
+    TOKEN_MACRO_ZMM7,
+    TOKEN_MACRO_ZMM8,
+    TOKEN_MACRO_ZMM9,
+    TOKEN_MACRO_ZMM10,
+    TOKEN_MACRO_ZMM11,
+    TOKEN_MACRO_ZMM12,
+    TOKEN_MACRO_ZMM13,
+    TOKEN_MACRO_ZMM14,
+    TOKEN_MACRO_ZMM15,
+    TOKEN_MACRO_ZMM16,
+    TOKEN_MACRO_ZMM17,
+    TOKEN_MACRO_ZMM18,
+    TOKEN_MACRO_ZMM19,
+    TOKEN_MACRO_ZMM20,
+    TOKEN_MACRO_ZMM21,
+    TOKEN_MACRO_ZMM22,
+    TOKEN_MACRO_ZMM23,
+    TOKEN_MACRO_ZMM24,
+    TOKEN_MACRO_ZMM25,
+    TOKEN_MACRO_ZMM26,
+    TOKEN_MACRO_ZMM27,
+    TOKEN_MACRO_ZMM28,
+    TOKEN_MACRO_ZMM29,
+    TOKEN_MACRO_ZMM30,
+    TOKEN_MACRO_ZMM31,
 
     TOKEN_ACCESS = 4000,
     TOKEN_ADDR,
@@ -470,6 +751,102 @@ static const TokenInfo tokens[] =
     {"SPL",         TOKEN_MACRO_SPL},
     {"TRUE",        TOKEN_MACRO_TRUE},
     {"WRITE",       TOKEN_MACRO_WRITE},
+    {"XMM0",        TOKEN_MACRO_XMM0},
+    {"XMM1",        TOKEN_MACRO_XMM1},
+    {"XMM10",       TOKEN_MACRO_XMM10},
+    {"XMM11",       TOKEN_MACRO_XMM11},
+    {"XMM12",       TOKEN_MACRO_XMM12},
+    {"XMM13",       TOKEN_MACRO_XMM13},
+    {"XMM14",       TOKEN_MACRO_XMM14},
+    {"XMM15",       TOKEN_MACRO_XMM15},
+    {"XMM16",       TOKEN_MACRO_XMM16},
+    {"XMM17",       TOKEN_MACRO_XMM17},
+    {"XMM18",       TOKEN_MACRO_XMM18},
+    {"XMM19",       TOKEN_MACRO_XMM19},
+    {"XMM2",        TOKEN_MACRO_XMM2},
+    {"XMM20",       TOKEN_MACRO_XMM20},
+    {"XMM21",       TOKEN_MACRO_XMM21},
+    {"XMM22",       TOKEN_MACRO_XMM22},
+    {"XMM23",       TOKEN_MACRO_XMM23},
+    {"XMM24",       TOKEN_MACRO_XMM24},
+    {"XMM25",       TOKEN_MACRO_XMM25},
+    {"XMM26",       TOKEN_MACRO_XMM26},
+    {"XMM27",       TOKEN_MACRO_XMM27},
+    {"XMM28",       TOKEN_MACRO_XMM28},
+    {"XMM29",       TOKEN_MACRO_XMM29},
+    {"XMM3",        TOKEN_MACRO_XMM3},
+    {"XMM30",       TOKEN_MACRO_XMM30},
+    {"XMM31",       TOKEN_MACRO_XMM31},
+    {"XMM4",        TOKEN_MACRO_XMM4},
+    {"XMM5",        TOKEN_MACRO_XMM5},
+    {"XMM6",        TOKEN_MACRO_XMM6},
+    {"XMM7",        TOKEN_MACRO_XMM7},
+    {"XMM8",        TOKEN_MACRO_XMM8},
+    {"XMM9",        TOKEN_MACRO_XMM9},
+    {"YMM0",        TOKEN_MACRO_YMM0},
+    {"YMM1",        TOKEN_MACRO_YMM1},
+    {"YMM10",       TOKEN_MACRO_YMM10},
+    {"YMM11",       TOKEN_MACRO_YMM11},
+    {"YMM12",       TOKEN_MACRO_YMM12},
+    {"YMM13",       TOKEN_MACRO_YMM13},
+    {"YMM14",       TOKEN_MACRO_YMM14},
+    {"YMM15",       TOKEN_MACRO_YMM15},
+    {"YMM16",       TOKEN_MACRO_YMM16},
+    {"YMM17",       TOKEN_MACRO_YMM17},
+    {"YMM18",       TOKEN_MACRO_YMM18},
+    {"YMM19",       TOKEN_MACRO_YMM19},
+    {"YMM2",        TOKEN_MACRO_YMM2},
+    {"YMM20",       TOKEN_MACRO_YMM20},
+    {"YMM21",       TOKEN_MACRO_YMM21},
+    {"YMM22",       TOKEN_MACRO_YMM22},
+    {"YMM23",       TOKEN_MACRO_YMM23},
+    {"YMM24",       TOKEN_MACRO_YMM24},
+    {"YMM25",       TOKEN_MACRO_YMM25},
+    {"YMM26",       TOKEN_MACRO_YMM26},
+    {"YMM27",       TOKEN_MACRO_YMM27},
+    {"YMM28",       TOKEN_MACRO_YMM28},
+    {"YMM29",       TOKEN_MACRO_YMM29},
+    {"YMM3",        TOKEN_MACRO_YMM3},
+    {"YMM30",       TOKEN_MACRO_YMM30},
+    {"YMM31",       TOKEN_MACRO_YMM31},
+    {"YMM4",        TOKEN_MACRO_YMM4},
+    {"YMM5",        TOKEN_MACRO_YMM5},
+    {"YMM6",        TOKEN_MACRO_YMM6},
+    {"YMM7",        TOKEN_MACRO_YMM7},
+    {"YMM8",        TOKEN_MACRO_YMM8},
+    {"YMM9",        TOKEN_MACRO_YMM9},
+    {"ZMM0",        TOKEN_MACRO_ZMM0},
+    {"ZMM1",        TOKEN_MACRO_ZMM1},
+    {"ZMM10",       TOKEN_MACRO_ZMM10},
+    {"ZMM11",       TOKEN_MACRO_ZMM11},
+    {"ZMM12",       TOKEN_MACRO_ZMM12},
+    {"ZMM13",       TOKEN_MACRO_ZMM13},
+    {"ZMM14",       TOKEN_MACRO_ZMM14},
+    {"ZMM15",       TOKEN_MACRO_ZMM15},
+    {"ZMM16",       TOKEN_MACRO_ZMM16},
+    {"ZMM17",       TOKEN_MACRO_ZMM17},
+    {"ZMM18",       TOKEN_MACRO_ZMM18},
+    {"ZMM19",       TOKEN_MACRO_ZMM19},
+    {"ZMM2",        TOKEN_MACRO_ZMM2},
+    {"ZMM20",       TOKEN_MACRO_ZMM20},
+    {"ZMM21",       TOKEN_MACRO_ZMM21},
+    {"ZMM22",       TOKEN_MACRO_ZMM22},
+    {"ZMM23",       TOKEN_MACRO_ZMM23},
+    {"ZMM24",       TOKEN_MACRO_ZMM24},
+    {"ZMM25",       TOKEN_MACRO_ZMM25},
+    {"ZMM26",       TOKEN_MACRO_ZMM26},
+    {"ZMM27",       TOKEN_MACRO_ZMM27},
+    {"ZMM28",       TOKEN_MACRO_ZMM28},
+    {"ZMM29",       TOKEN_MACRO_ZMM29},
+    {"ZMM3",        TOKEN_MACRO_ZMM3},
+    {"ZMM30",       TOKEN_MACRO_ZMM30},
+    {"ZMM31",       TOKEN_MACRO_ZMM31},
+    {"ZMM4",        TOKEN_MACRO_ZMM4},
+    {"ZMM5",        TOKEN_MACRO_ZMM5},
+    {"ZMM6",        TOKEN_MACRO_ZMM6},
+    {"ZMM7",        TOKEN_MACRO_ZMM7},
+    {"ZMM8",        TOKEN_MACRO_ZMM8},
+    {"ZMM9",        TOKEN_MACRO_ZMM9},
     {"[",           (Token)'['},
     {"]",           (Token)']'},
     {"access",      TOKEN_ACCESS},
@@ -593,85 +970,181 @@ static const TokenInfo tokens[] =
 
 static const MacroInfo macros[] =
 {
-    {TOKEN_MACRO_AH,     REG_NAME_AH},      
-    {TOKEN_MACRO_AL,     REG_NAME_AL},
-    {TOKEN_MACRO_AX,     REG_NAME_AX},
-    {TOKEN_MACRO_BH,     REG_NAME_BH},
-    {TOKEN_MACRO_BL,     REG_NAME_BL},
-    {TOKEN_MACRO_BP,     REG_NAME_BP},
-    {TOKEN_MACRO_BPL,    REG_NAME_BPL},
-    {TOKEN_MACRO_BX,     REG_NAME_BX},
-    {TOKEN_MACRO_CH,     REG_NAME_CH},
-    {TOKEN_MACRO_CL,     REG_NAME_CL},
-    {TOKEN_MACRO_CX,     REG_NAME_CX},
-    {TOKEN_MACRO_DH,     REG_NAME_DH},
-    {TOKEN_MACRO_DI,     REG_NAME_DI},
-    {TOKEN_MACRO_DIL,    REG_NAME_DIL},
-    {TOKEN_MACRO_DL,     REG_NAME_DL},
-    {TOKEN_MACRO_DX,     REG_NAME_DX},
-    {TOKEN_MACRO_EAX,    REG_NAME_EAX},
-    {TOKEN_MACRO_EBP,    REG_NAME_EBP},
-    {TOKEN_MACRO_EBX,    REG_NAME_EBX},
-    {TOKEN_MACRO_ECX,    REG_NAME_ECX},
-    {TOKEN_MACRO_EDI,    REG_NAME_EDI},
-    {TOKEN_MACRO_EDX,    REG_NAME_EDX},
-    {TOKEN_MACRO_ESI,    REG_NAME_ESI},
-    {TOKEN_MACRO_ESP,    REG_NAME_ESP},
+    {TOKEN_MACRO_AH,     REG_NAME(X86_REG_AH)},      
+    {TOKEN_MACRO_AL,     REG_NAME(X86_REG_AL)},
+    {TOKEN_MACRO_AX,     REG_NAME(X86_REG_AX)},
+    {TOKEN_MACRO_BH,     REG_NAME(X86_REG_BH)},
+    {TOKEN_MACRO_BL,     REG_NAME(X86_REG_BL)},
+    {TOKEN_MACRO_BP,     REG_NAME(X86_REG_BP)},
+    {TOKEN_MACRO_BPL,    REG_NAME(X86_REG_BPL)},
+    {TOKEN_MACRO_BX,     REG_NAME(X86_REG_BX)},
+    {TOKEN_MACRO_CH,     REG_NAME(X86_REG_CH)},
+    {TOKEN_MACRO_CL,     REG_NAME(X86_REG_CL)},
+    {TOKEN_MACRO_CX,     REG_NAME(X86_REG_CX)},
+    {TOKEN_MACRO_DH,     REG_NAME(X86_REG_DH)},
+    {TOKEN_MACRO_DI,     REG_NAME(X86_REG_DI)},
+    {TOKEN_MACRO_DIL,    REG_NAME(X86_REG_DIL)},
+    {TOKEN_MACRO_DL,     REG_NAME(X86_REG_DL)},
+    {TOKEN_MACRO_DX,     REG_NAME(X86_REG_DX)},
+    {TOKEN_MACRO_EAX,    REG_NAME(X86_REG_EAX)},
+    {TOKEN_MACRO_EBP,    REG_NAME(X86_REG_EBP)},
+    {TOKEN_MACRO_EBX,    REG_NAME(X86_REG_EBX)},
+    {TOKEN_MACRO_ECX,    REG_NAME(X86_REG_ECX)},
+    {TOKEN_MACRO_EDI,    REG_NAME(X86_REG_EDI)},
+    {TOKEN_MACRO_EDX,    REG_NAME(X86_REG_EDX)},
+    {TOKEN_MACRO_ESI,    REG_NAME(X86_REG_ESI)},
+    {TOKEN_MACRO_ESP,    REG_NAME(X86_REG_ESP)},
     {TOKEN_MACRO_FALSE,  false},
     {TOKEN_MACRO_IMM,    OP_TYPE_IMM},
     {TOKEN_MACRO_MEM,    OP_TYPE_MEM},
     {TOKEN_MACRO_NIL,    0},
-    {TOKEN_MACRO_R10,    REG_NAME_R10},
-    {TOKEN_MACRO_R10B,   REG_NAME_R10B},
-    {TOKEN_MACRO_R10D,   REG_NAME_R10D},
-    {TOKEN_MACRO_R10W,   REG_NAME_R10W},
-    {TOKEN_MACRO_R11,    REG_NAME_R11},
-    {TOKEN_MACRO_R11B,   REG_NAME_R11B},
-    {TOKEN_MACRO_R11D,   REG_NAME_R11D},
-    {TOKEN_MACRO_R11W,   REG_NAME_R11W},
-    {TOKEN_MACRO_R12,    REG_NAME_R12},
-    {TOKEN_MACRO_R12B,   REG_NAME_R12B},
-    {TOKEN_MACRO_R12D,   REG_NAME_R12D},
-    {TOKEN_MACRO_R12W,   REG_NAME_R12W},
-    {TOKEN_MACRO_R13,    REG_NAME_R13},
-    {TOKEN_MACRO_R13B,   REG_NAME_R13B},
-    {TOKEN_MACRO_R13D,   REG_NAME_R13D},
-    {TOKEN_MACRO_R13W,   REG_NAME_R13W},
-    {TOKEN_MACRO_R14,    REG_NAME_R14},
-    {TOKEN_MACRO_R14B,   REG_NAME_R14B},
-    {TOKEN_MACRO_R14D,   REG_NAME_R14D},
-    {TOKEN_MACRO_R14W,   REG_NAME_R14W},
-    {TOKEN_MACRO_R15,    REG_NAME_R15},
-    {TOKEN_MACRO_R15B,   REG_NAME_R15B},
-    {TOKEN_MACRO_R15D,   REG_NAME_R15D},
-    {TOKEN_MACRO_R15W,   REG_NAME_R15W},
-    {TOKEN_MACRO_R8,     REG_NAME_R8},
-    {TOKEN_MACRO_R8B,    REG_NAME_R8B},
-    {TOKEN_MACRO_R8D,    REG_NAME_R8D},
-    {TOKEN_MACRO_R8W,    REG_NAME_R8W},
-    {TOKEN_MACRO_R9,     REG_NAME_R9},
-    {TOKEN_MACRO_R9B,    REG_NAME_R9B},
-    {TOKEN_MACRO_R9D,    REG_NAME_R9D},
-    {TOKEN_MACRO_R9W,    REG_NAME_R9W},
-    {TOKEN_MACRO_RAX,    REG_NAME_RAX},
-    {TOKEN_MACRO_RBP,    REG_NAME_RBP},
-    {TOKEN_MACRO_RBX,    REG_NAME_RBX},
-    {TOKEN_MACRO_RCX,    REG_NAME_RCX},
-    {TOKEN_MACRO_RDI,    REG_NAME_RDI},
-    {TOKEN_MACRO_RDX,    REG_NAME_RDX},
+    {TOKEN_MACRO_R10,    REG_NAME(X86_REG_R10)},
+    {TOKEN_MACRO_R10B,   REG_NAME(X86_REG_R10B)},
+    {TOKEN_MACRO_R10D,   REG_NAME(X86_REG_R10D)},
+    {TOKEN_MACRO_R10W,   REG_NAME(X86_REG_R10W)},
+    {TOKEN_MACRO_R11,    REG_NAME(X86_REG_R11)},
+    {TOKEN_MACRO_R11B,   REG_NAME(X86_REG_R11B)},
+    {TOKEN_MACRO_R11D,   REG_NAME(X86_REG_R11D)},
+    {TOKEN_MACRO_R11W,   REG_NAME(X86_REG_R11W)},
+    {TOKEN_MACRO_R12,    REG_NAME(X86_REG_R12)},
+    {TOKEN_MACRO_R12B,   REG_NAME(X86_REG_R12B)},
+    {TOKEN_MACRO_R12D,   REG_NAME(X86_REG_R12D)},
+    {TOKEN_MACRO_R12W,   REG_NAME(X86_REG_R12W)},
+    {TOKEN_MACRO_R13,    REG_NAME(X86_REG_R13)},
+    {TOKEN_MACRO_R13B,   REG_NAME(X86_REG_R13B)},
+    {TOKEN_MACRO_R13D,   REG_NAME(X86_REG_R13D)},
+    {TOKEN_MACRO_R13W,   REG_NAME(X86_REG_R13W)},
+    {TOKEN_MACRO_R14,    REG_NAME(X86_REG_R14)},
+    {TOKEN_MACRO_R14B,   REG_NAME(X86_REG_R14B)},
+    {TOKEN_MACRO_R14D,   REG_NAME(X86_REG_R14D)},
+    {TOKEN_MACRO_R14W,   REG_NAME(X86_REG_R14W)},
+    {TOKEN_MACRO_R15,    REG_NAME(X86_REG_R15)},
+    {TOKEN_MACRO_R15B,   REG_NAME(X86_REG_R15B)},
+    {TOKEN_MACRO_R15D,   REG_NAME(X86_REG_R15D)},
+    {TOKEN_MACRO_R15W,   REG_NAME(X86_REG_R15W)},
+    {TOKEN_MACRO_R8,     REG_NAME(X86_REG_R8)},
+    {TOKEN_MACRO_R8B,    REG_NAME(X86_REG_R8B)},
+    {TOKEN_MACRO_R8D,    REG_NAME(X86_REG_R8D)},
+    {TOKEN_MACRO_R8W,    REG_NAME(X86_REG_R8W)},
+    {TOKEN_MACRO_R9,     REG_NAME(X86_REG_R9)},
+    {TOKEN_MACRO_R9B,    REG_NAME(X86_REG_R9B)},
+    {TOKEN_MACRO_R9D,    REG_NAME(X86_REG_R9D)},
+    {TOKEN_MACRO_R9W,    REG_NAME(X86_REG_R9W)},
+    {TOKEN_MACRO_RAX,    REG_NAME(X86_REG_RAX)},
+    {TOKEN_MACRO_RBP,    REG_NAME(X86_REG_RBP)},
+    {TOKEN_MACRO_RBX,    REG_NAME(X86_REG_RBX)},
+    {TOKEN_MACRO_RCX,    REG_NAME(X86_REG_RCX)},
+    {TOKEN_MACRO_RDI,    REG_NAME(X86_REG_RDI)},
+    {TOKEN_MACRO_RDX,    REG_NAME(X86_REG_RDX)},
     {TOKEN_MACRO_READ,   ACCESS_READ},
     {TOKEN_MACRO_REG,    OP_TYPE_REG},
-    {TOKEN_MACRO_RFLAGS, REG_NAME_RFLAGS},
-    {TOKEN_MACRO_RIP,    REG_NAME_RIP},
-    {TOKEN_MACRO_RSI,    REG_NAME_RSI},
-    {TOKEN_MACRO_RSP,    REG_NAME_RSP},
+    {TOKEN_MACRO_RFLAGS, REG_NAME(X86_REG_EFLAGS)},
+    {TOKEN_MACRO_RIP,    REG_NAME(X86_REG_RIP)},
+    {TOKEN_MACRO_RSI,    REG_NAME(X86_REG_RSI)},
+    {TOKEN_MACRO_RSP,    REG_NAME(X86_REG_RSP)},
     {TOKEN_MACRO_RW,     ACCESS_READ | ACCESS_WRITE},
-    {TOKEN_MACRO_SI,     REG_NAME_SI},
-    {TOKEN_MACRO_SIL,    REG_NAME_SIL},
-    {TOKEN_MACRO_SP,     REG_NAME_SP},
-    {TOKEN_MACRO_SPL,    REG_NAME_SPL},
+    {TOKEN_MACRO_SI,     REG_NAME(X86_REG_SI)},
+    {TOKEN_MACRO_SIL,    REG_NAME(X86_REG_SIL)},
+    {TOKEN_MACRO_SP,     REG_NAME(X86_REG_SP)},
+    {TOKEN_MACRO_SPL,    REG_NAME(X86_REG_SPL)},
     {TOKEN_MACRO_TRUE,   true},
     {TOKEN_MACRO_WRITE,  ACCESS_WRITE},
+    {TOKEN_MACRO_XMM0,   REG_NAME(X86_REG_XMM0)},
+    {TOKEN_MACRO_XMM1,   REG_NAME(X86_REG_XMM1)}, 
+    {TOKEN_MACRO_XMM2,   REG_NAME(X86_REG_XMM2)},
+    {TOKEN_MACRO_XMM3,   REG_NAME(X86_REG_XMM3)},
+    {TOKEN_MACRO_XMM4,   REG_NAME(X86_REG_XMM4)}, 
+    {TOKEN_MACRO_XMM5,   REG_NAME(X86_REG_XMM5)}, 
+    {TOKEN_MACRO_XMM6,   REG_NAME(X86_REG_XMM6)}, 
+    {TOKEN_MACRO_XMM7,   REG_NAME(X86_REG_XMM7)}, 
+    {TOKEN_MACRO_XMM8,   REG_NAME(X86_REG_XMM8)},  
+    {TOKEN_MACRO_XMM9,   REG_NAME(X86_REG_XMM9)},  
+    {TOKEN_MACRO_XMM10,  REG_NAME(X86_REG_XMM10)},  
+    {TOKEN_MACRO_XMM11,  REG_NAME(X86_REG_XMM11)},  
+    {TOKEN_MACRO_XMM12,  REG_NAME(X86_REG_XMM12)},  
+    {TOKEN_MACRO_XMM13,  REG_NAME(X86_REG_XMM13)},  
+    {TOKEN_MACRO_XMM14,  REG_NAME(X86_REG_XMM14)},  
+    {TOKEN_MACRO_XMM15,  REG_NAME(X86_REG_XMM15)},  
+    {TOKEN_MACRO_XMM16,  REG_NAME(X86_REG_XMM16)},  
+    {TOKEN_MACRO_XMM17,  REG_NAME(X86_REG_XMM17)},  
+    {TOKEN_MACRO_XMM18,  REG_NAME(X86_REG_XMM18)},  
+    {TOKEN_MACRO_XMM19,  REG_NAME(X86_REG_XMM19)},  
+    {TOKEN_MACRO_XMM20,  REG_NAME(X86_REG_XMM20)},  
+    {TOKEN_MACRO_XMM21,  REG_NAME(X86_REG_XMM21)},  
+    {TOKEN_MACRO_XMM22,  REG_NAME(X86_REG_XMM22)},  
+    {TOKEN_MACRO_XMM23,  REG_NAME(X86_REG_XMM23)},  
+    {TOKEN_MACRO_XMM24,  REG_NAME(X86_REG_XMM24)},  
+    {TOKEN_MACRO_XMM25,  REG_NAME(X86_REG_XMM25)},  
+    {TOKEN_MACRO_XMM26,  REG_NAME(X86_REG_XMM26)},  
+    {TOKEN_MACRO_XMM27,  REG_NAME(X86_REG_XMM27)},  
+    {TOKEN_MACRO_XMM28,  REG_NAME(X86_REG_XMM28)},  
+    {TOKEN_MACRO_XMM29,  REG_NAME(X86_REG_XMM29)},   
+    {TOKEN_MACRO_XMM30,  REG_NAME(X86_REG_XMM30)},  
+    {TOKEN_MACRO_XMM31,  REG_NAME(X86_REG_XMM31)},  
+    {TOKEN_MACRO_YMM0,   REG_NAME(X86_REG_YMM0)},
+    {TOKEN_MACRO_YMM1,   REG_NAME(X86_REG_YMM1)}, 
+    {TOKEN_MACRO_YMM2,   REG_NAME(X86_REG_YMM2)},
+    {TOKEN_MACRO_YMM3,   REG_NAME(X86_REG_YMM3)},
+    {TOKEN_MACRO_YMM4,   REG_NAME(X86_REG_YMM4)}, 
+    {TOKEN_MACRO_YMM5,   REG_NAME(X86_REG_YMM5)}, 
+    {TOKEN_MACRO_YMM6,   REG_NAME(X86_REG_YMM6)}, 
+    {TOKEN_MACRO_YMM7,   REG_NAME(X86_REG_YMM7)}, 
+    {TOKEN_MACRO_YMM8,   REG_NAME(X86_REG_YMM8)},  
+    {TOKEN_MACRO_YMM9,   REG_NAME(X86_REG_YMM9)},  
+    {TOKEN_MACRO_YMM10,  REG_NAME(X86_REG_YMM10)},  
+    {TOKEN_MACRO_YMM11,  REG_NAME(X86_REG_YMM11)},  
+    {TOKEN_MACRO_YMM12,  REG_NAME(X86_REG_YMM12)},  
+    {TOKEN_MACRO_YMM13,  REG_NAME(X86_REG_YMM13)},  
+    {TOKEN_MACRO_YMM14,  REG_NAME(X86_REG_YMM14)},  
+    {TOKEN_MACRO_YMM15,  REG_NAME(X86_REG_YMM15)},  
+    {TOKEN_MACRO_YMM16,  REG_NAME(X86_REG_YMM16)},  
+    {TOKEN_MACRO_YMM17,  REG_NAME(X86_REG_YMM17)},  
+    {TOKEN_MACRO_YMM18,  REG_NAME(X86_REG_YMM18)},  
+    {TOKEN_MACRO_YMM19,  REG_NAME(X86_REG_YMM19)},  
+    {TOKEN_MACRO_YMM20,  REG_NAME(X86_REG_YMM20)},  
+    {TOKEN_MACRO_YMM21,  REG_NAME(X86_REG_YMM21)},  
+    {TOKEN_MACRO_YMM22,  REG_NAME(X86_REG_YMM22)},  
+    {TOKEN_MACRO_YMM23,  REG_NAME(X86_REG_YMM23)},  
+    {TOKEN_MACRO_YMM24,  REG_NAME(X86_REG_YMM24)},  
+    {TOKEN_MACRO_YMM25,  REG_NAME(X86_REG_YMM25)},  
+    {TOKEN_MACRO_YMM26,  REG_NAME(X86_REG_YMM26)},  
+    {TOKEN_MACRO_YMM27,  REG_NAME(X86_REG_YMM27)},  
+    {TOKEN_MACRO_YMM28,  REG_NAME(X86_REG_YMM28)},  
+    {TOKEN_MACRO_YMM29,  REG_NAME(X86_REG_YMM29)},   
+    {TOKEN_MACRO_YMM30,  REG_NAME(X86_REG_YMM30)},  
+    {TOKEN_MACRO_YMM31,  REG_NAME(X86_REG_YMM31)},  
+    {TOKEN_MACRO_ZMM0,   REG_NAME(X86_REG_ZMM0)},
+    {TOKEN_MACRO_ZMM1,   REG_NAME(X86_REG_ZMM1)}, 
+    {TOKEN_MACRO_ZMM2,   REG_NAME(X86_REG_ZMM2)},
+    {TOKEN_MACRO_ZMM3,   REG_NAME(X86_REG_ZMM3)},
+    {TOKEN_MACRO_ZMM4,   REG_NAME(X86_REG_ZMM4)}, 
+    {TOKEN_MACRO_ZMM5,   REG_NAME(X86_REG_ZMM5)}, 
+    {TOKEN_MACRO_ZMM6,   REG_NAME(X86_REG_ZMM6)}, 
+    {TOKEN_MACRO_ZMM7,   REG_NAME(X86_REG_ZMM7)}, 
+    {TOKEN_MACRO_ZMM8,   REG_NAME(X86_REG_ZMM8)},  
+    {TOKEN_MACRO_ZMM9,   REG_NAME(X86_REG_ZMM9)},  
+    {TOKEN_MACRO_ZMM10,  REG_NAME(X86_REG_ZMM10)},  
+    {TOKEN_MACRO_ZMM11,  REG_NAME(X86_REG_ZMM11)},  
+    {TOKEN_MACRO_ZMM12,  REG_NAME(X86_REG_ZMM12)},  
+    {TOKEN_MACRO_ZMM13,  REG_NAME(X86_REG_ZMM13)},  
+    {TOKEN_MACRO_ZMM14,  REG_NAME(X86_REG_ZMM14)},  
+    {TOKEN_MACRO_ZMM15,  REG_NAME(X86_REG_ZMM15)},  
+    {TOKEN_MACRO_ZMM16,  REG_NAME(X86_REG_ZMM16)},  
+    {TOKEN_MACRO_ZMM17,  REG_NAME(X86_REG_ZMM17)},  
+    {TOKEN_MACRO_ZMM18,  REG_NAME(X86_REG_ZMM18)},  
+    {TOKEN_MACRO_ZMM19,  REG_NAME(X86_REG_ZMM19)},  
+    {TOKEN_MACRO_ZMM20,  REG_NAME(X86_REG_ZMM20)},  
+    {TOKEN_MACRO_ZMM21,  REG_NAME(X86_REG_ZMM21)},  
+    {TOKEN_MACRO_ZMM22,  REG_NAME(X86_REG_ZMM22)},  
+    {TOKEN_MACRO_ZMM23,  REG_NAME(X86_REG_ZMM23)},  
+    {TOKEN_MACRO_ZMM24,  REG_NAME(X86_REG_ZMM24)},  
+    {TOKEN_MACRO_ZMM25,  REG_NAME(X86_REG_ZMM25)},  
+    {TOKEN_MACRO_ZMM26,  REG_NAME(X86_REG_ZMM26)},  
+    {TOKEN_MACRO_ZMM27,  REG_NAME(X86_REG_ZMM27)},  
+    {TOKEN_MACRO_ZMM28,  REG_NAME(X86_REG_ZMM28)},  
+    {TOKEN_MACRO_ZMM29,  REG_NAME(X86_REG_ZMM29)},   
+    {TOKEN_MACRO_ZMM30,  REG_NAME(X86_REG_ZMM30)},  
+    {TOKEN_MACRO_ZMM31,  REG_NAME(X86_REG_ZMM31)},  
 };
 
 /*
