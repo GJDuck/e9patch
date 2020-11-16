@@ -361,7 +361,10 @@ static void patchUnused(Patch *P, unsigned offset)
     for (unsigned i = offset; i < P->I->size; i++)
     {
         if (P->I->patched.state[i] == STATE_INSTRUCTION)
+        {
+            P->I->patched.bytes[i] = /*int3=*/0xcc;
             P->I->patched.state[i] = STATE_FREE;
+        }
     }
 }
 
