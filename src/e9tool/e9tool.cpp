@@ -450,10 +450,15 @@ static MatchTest *parseTest(Parser &parser)
     {
         case MATCH_PLUGIN:
         {
-            parser.expectToken('[');
+            parser.expectToken('(');
             parser.expectToken(TOKEN_STRING);
-            plugin = openPlugin(parser.s);
-            parser.expectToken(']');
+            std::string filename(parser.s);
+            parser.expectToken(')');
+            parser.expectToken('.');
+            parser.expectToken(TOKEN_MATCH);
+            parser.expectToken('(');
+            parser.expectToken(')');
+            plugin = openPlugin(filename.c_str());
             if (plugin->matchFunc == nullptr)
                 error("failed to parse matching; plugin \"%s\" does not "
                     "export the \"e9_plugin_match_v1\" function",
@@ -718,11 +723,15 @@ static Action *parseAction(const char *str, const MatchExpr *expr)
     std::vector<Argument> args;
     if (kind == ACTION_PLUGIN)
     {
-        parser.expectToken('[');
+        parser.expectToken('(');
         parser.expectToken(TOKEN_STRING);
         filename = strDup(parser.s);
-        plugin = openPlugin(parser.s);
-        parser.expectToken(']');
+        parser.expectToken(')');
+        parser.expectToken('.');
+        parser.expectToken(TOKEN_PATCH);
+        parser.expectToken('(');
+        parser.expectToken(')');
+        plugin = openPlugin(filename);
         option_detail = true;
     }
     else if (kind == ACTION_CALL)
@@ -1689,7 +1698,7 @@ static void usage(FILE *stream, const char *progname)
     fputs("\t\t\t- \"size\"      : the instruction size in bytes. E.g.: 3\n",
         stream);
     fputs("\t\t\t                TYPE: integer\n", stream);
-    fputs("\t\t\t- \"plugin[NAME]\"\n", stream);
+    fputs("\t\t\t- \"plugin(NAME).match()\"\n", stream);
     fputs("\t\t\t              : the value returned by NAME.so's\n", stream);
     fputs("\t\t\t                e9_plugin_match_v1() function.\n", stream);
     fputs("\t\t\t                TYPE: integer\n", stream);
@@ -1731,7 +1740,7 @@ static void usage(FILE *stream, const char *progname)
     fputs("\t\t\t- \"trap\"    : SIGTRAP instrumentation.\n", stream);
     fputs("\t\t\t- CALL      : call user instrumentation (see below).\n",
         stream);
-    fputs("\t\t\t- \"plugin[NAME]\"\n", stream);
+    fputs("\t\t\t- \"plugin(NAME).patch()\"\n", stream);
     fputs("\t\t\t            : plugin instrumentation (see below).\n",
         stream);
     fputc('\n', stream);

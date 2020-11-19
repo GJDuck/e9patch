@@ -97,43 +97,34 @@ Additional examples of *call instrumentation* are also
 [available here](https://github.com/GJDuck/e9patch/tree/master/examples).
 
 ---
-### 1.1 Limitations
+### 1.1 Libc Support
 
-The main limitation with *call instrumentation* is that there is
-no access to `libc`.
-This means that standard functions like `printf` cannot be called
-directly.
-The reason is that the instrumentation code is very low-level, and
-bypasses all of the standard dynamic-linking infrastructure.
+A parallel implementation of common libc functions is provided in the
+`examples/stdlib.c` file.
+To use, simply include this file into your project:
 
-One option is to use *system calls* directly rather than relying on
-`libc`.
-For example, the following code implements a generic `syscall()`
-function (see `man syscall`):
+        #include "stdlib.c"
 
-        #include <sys/syscall.h>
-		asm
-		(
-		    ".globl syscall\n"
-		    "syscall:\n"
-		    "mov %edi,%eax\n"
-		    "mov %rsi,%rdi\n"
-		    "mov %rdx,%rsi\n"
-		    "mov %rcx,%rdx\n"
-		    "mov %r8,%r10\n"
-		    "mov %r9,%r8\n"
-		    "mov 0x8(%rsp),%r9\n"
-		    "syscall\n"
-		    "retq\n"
-		);
+This version of libc is designed to be compatible with call instrumentation.
+However, only a subset of libc is implemented, so it is WYSIWYG.
+That said, many common libc functions, including file I/O and memory
+allocation, have been implemented.
 
-The generic `syscall()` function can then be used for file I/O, etc.:
+It is not advisable to call the "real" `glibc` functions from call
+instrumentation, namely:
 
-        // Implements write(1, "Hello World!\n", 13):
+* `glibc` functions use the System V ABI which is not compatible with
+  the clean call ABI.
+  Specifically, the clean ABI does not align the stack nor save/restore
+  floating point registers for performance reasons.
+* Many `glibc` functions are not reentrant and access/modify global state
+  such as `errno`.
+  Thus, calling `glibc` functions directly can break transparency and/or cause
+  problems such as deadlocks.
 
-        syscall(SYS_write, 1, "Hello World!\n", 13);
-
-Most of the low-level POSIX programming API can be implemented this way.
+Unlike `glibc`,
+the parallel libc is designed to be compatible with the clean ABI and
+handle problems such as deadlocks gracefully.
 
 ---
 ### 1.2 Initialization
@@ -428,7 +419,7 @@ Several builtin labels are also implicitly defined, including:
 
         {
             "jsonrpc": "2.0",
-             "method": "trampoline",
+            "method": "trampoline",
             "params":
             {
                 "name":"print",
@@ -665,7 +656,7 @@ The `"emit"` message instructs E9Patch to emit the patched binary file.
     This controls the aggressiveness of the *Physical Page Grouping*
     optimization.
     Valid values must be a power-of-two times the page size (4096),
-    which smaller values corresponding to more aggressive space optimization.
+    where smaller values corresponding to more aggressive space optimization.
 
 #### Example:
 
@@ -730,7 +721,7 @@ Some API function return a value, including:
 
 * `e9_plugin_init_v1()` returns an optional `context` that will be
   passed to all other API calls.
-* `e9_plugin_instr_v1()` returns an integer value of the plugin's
+* `e9_plugin_match_v1()` returns an integer value of the plugin's
    choosing.  This integer value can be matched using by the `--match`
    E9Tool command-line option, else the value will be ignored.
 
@@ -778,21 +769,21 @@ Plugins can be used by E9Tool and the `--action` option.
 For example:
 
         g++ -std=c++11 -fPIC -shared -o myPlugin.so myPlugin.cpp -I . -I capstone/include/
-        ./e9tool --match 'asm=j.*' --action 'plugin[myPlugin]' `which xterm` -o a.out
+        ./e9tool --match 'asm=j.*' --action 'plugin(myPlugin).patch()' `which xterm` -o a.out
 
 The syntax is as follows:
 
 * `--action`: Selects the E9Tool "action" command-line option.
   This tells E9Tool what patching/instrumentation action to do.
-* `plugin[myPlugin]`: Specifies that instrument the program using the
+* `plugin(myPlugin).patchh()`: Specifies that instrument the program using the
   `myPlugin.so` plugin.
 
-If `myPlugin.so` exports the `e9_plugin_instr_v1()` function, it is also
+If `myPlugin.so` exports the `e9_plugin_match_v1()` function, it is also
 possible to match against the return value.
 For example:
 
-        ./e9tool --match 'plugin[myPlugin] > 0x333' --action 'plugin[myPlugin]' `which xterm` -o a.out
+        ./e9tool --match 'plugin(myPlugin).match() > 0x333' --action 'plugin(myPlugin).patch()' `which xterm` -o a.out
 
-This command will only patch instructions where the `e9_plugin_instr_v1()`
+This command will only patch instructions where the `e9_plugin_match_v1()`
 function returns a value greater than `0x333`.
 
