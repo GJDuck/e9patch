@@ -67,7 +67,7 @@ instrumentation*.
 For example, to instrument all jump instructions in `xterm` the command-line
 syntax is as follows:
 
-        ./e9tool --match 'asm=j.*' --action 'call entry@counter' `which xterm` -o a.out
+        ./e9tool --match 'asm=j.*' --action 'call entry@counter' xterm
 
 The syntax is as follows:
 
@@ -89,6 +89,7 @@ saving and restoring the CPU state, and
 embedding the `counter` executable inside the patched binary.
 This makes *call instrumentation* relatively simple to use.
 
+By default the modified binary will be wrtten to `a.out`.
 The instrumented `a.out` file will call the `counter` function each
 time a jump instruction is executed.
 After 100000 jumps, the program will terminate with `SIGTRAP`.
@@ -132,20 +133,17 @@ handle problems such as deadlocks gracefully.
 It is also possible to define an initialization function.
 For example:
 
+        #include "stdlib.c"
+
+        static int max = 1000;
+
         void init(int argc, char **argv, char **envp)
         {
-            for (; envp && *envp != NULL; envp++)
-            {
-                char *var = *envp;
-                if (var[0] == 'M' && var[1] == 'A' && var[2] == 'X' &&
-                    var[3] == '\0')
-                {
-                    max = 0;
-                    for (unsigned i = 4; var[i] >= '0' && var[i] <= '9'; i++)
-                        max = 10 * max + (var[i] - '0');
-                    break;
-                }
-            }
+            environ = envp;     // Init getenv()
+
+            const char *MAX = getenv("MAX");
+            if (MAX != NULL)
+                max = atoi(MAX);
         }
 
 The initialization function must be named `init`, and will be called
@@ -157,7 +155,7 @@ arguments are only available for patched executables.
 These arguments will be zero/`NULL` for patched shared objects.
 
 In the example above, the initialization function searches for an
-environment variable `MAX`, and sets the max counter accordingly.
+environment variable `MAX`, and sets the `max` counter accordingly.
 
 ---
 ### 1.3 Advanced Options
@@ -167,7 +165,7 @@ are specified in square brackets after the `call` token
 in the `--action` option.
 For example:
 
-        ./e9tool --match 'asm=j.*' --action 'call[after] entry@counter' `which xterm` -o a.out
+        ./e9tool --match 'asm=j.*' --action 'call[after] entry@counter' xterm
 
 This specifies the `after` option, which means the `entry()`
 function should be called after the patched instruction
@@ -218,7 +216,7 @@ E9Tool also supports passing arguments to the called function.
 The syntax uses the `C`-style round brackets.
 For example:
 
-        ./e9tool --match 'asm=j.*' --action 'call entry(rip)@counter' `which xterm` -o a.out
+        ./e9tool --match 'asm=j.*' --action 'call entry(rip)@counter' xterm
 
 This specifies that the current value of the instruction pointer
 (`%rip`) should be passed as the first argument to the function
@@ -769,7 +767,7 @@ Plugins can be used by E9Tool and the `--action` option.
 For example:
 
         g++ -std=c++11 -fPIC -shared -o myPlugin.so myPlugin.cpp -I . -I capstone/include/
-        ./e9tool --match 'asm=j.*' --action 'plugin(myPlugin).patch()' `which xterm` -o a.out
+        ./e9tool --match 'asm=j.*' --action 'plugin(myPlugin).patch()' xterm
 
 The syntax is as follows:
 
@@ -782,7 +780,7 @@ If `myPlugin.so` exports the `e9_plugin_match_v1()` function, it is also
 possible to match against the return value.
 For example:
 
-        ./e9tool --match 'plugin(myPlugin).match() > 0x333' --action 'plugin(myPlugin).patch()' `which xterm` -o a.out
+        ./e9tool --match 'plugin(myPlugin).match() > 0x333' --action 'plugin(myPlugin).patch()' xterm
 
 This command will only patch instructions where the `e9_plugin_match_v1()`
 function returns a value greater than `0x333`.
