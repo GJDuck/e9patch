@@ -269,7 +269,7 @@ parse_error:
  * Build an integer index.
  */
 static void buildIntIndex(const char *basename, const Data &data, unsigned i,
-    Index<intptr_t> &index)
+    Index<MatchValue> &index)
 {
     for (const auto &record: data)
     {
@@ -278,31 +278,14 @@ static void buildIntIndex(const char *basename, const Data &data, unsigned i,
                 "out-of-range (0..%zu)\n", basename, i, record.size()-1);
         const char *name = record[i];
         intptr_t x = nameToInt(basename, name);
-        auto i = index.find(x);
+        MatchValue key = {0};
+        key.type = MATCH_TYPE_INTEGER;
+        key.i    = x;
+        auto i = index.find(key);
         if (i != index.end())
             error("failed to build index for CSV file \"%s.csv\"; duplicate "
                 "value \"%s\"", basename, name);
-        index.insert(i, {x, &record});
-    }
-}
-
-/*
- * Build a string index.
- */
-static void buildStringIndex(const char *basename, const Data &data,
-    unsigned i, Index<const char *, CStrCmp> &index)
-{
-    for (const auto &record: data)
-    {
-        if (i >= record.size())
-            error("failed to build index for CSV file \"%s.csv\"; index %u is "
-                "out-of-range (0..%zu)\n", basename, i, record.size()-1);
-        const char *str = record[i];
-        auto i = index.find(str);
-        if (i != index.end())
-            error("failed to build index for CSV file \"%s.csv\"; duplicate "
-                "value \"%s\"", basename, str);
-        index.insert(i, {str, &record});
+        index.insert(i, {key, &record});
     }
 }
 

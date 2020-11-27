@@ -47,7 +47,6 @@
 
 #include "e9plugin.h"
 #include "e9frontend.cpp"
-#include "e9csv.cpp"
 
 /*
  * Options.
@@ -130,10 +129,107 @@ enum MatchField
     MATCH_FIELD_TYPE,
     MATCH_FIELD_ACCESS,
     MATCH_FIELD_SIZE,
+    MATCH_FIELD_SEG,
     MATCH_FIELD_DISPL,
     MATCH_FIELD_BASE,
     MATCH_FIELD_INDEX,
     MATCH_FIELD_SCALE,
+};
+
+/*
+ * Operand types.
+ */
+enum OpType
+{
+    OP_TYPE_IMM = 1,
+    OP_TYPE_REG,
+    OP_TYPE_MEM
+};
+
+/*
+ * Access types.
+ */
+typedef unsigned Access;
+#define ACCESS_READ             0x01
+#define ACCESS_WRITE            0x02
+
+/*
+ * Match types.
+ */
+typedef unsigned MatchType;
+#define MATCH_TYPE_UNDEFINED    0x00
+#define MATCH_TYPE_NIL          0x01
+#define MATCH_TYPE_INTEGER      0x02
+#define MATCH_TYPE_OPERAND      0x04
+#define MATCH_TYPE_ACCESS       0x08
+#define MATCH_TYPE_REGISTER     0x10
+#define MATCH_TYPE_MEMORY       0x20
+#define MATCH_TYPE_STRING       0x40
+
+/*
+ * Parser implementation.
+ */
+#include "e9parser.cpp"
+
+/*
+ * Match value.
+ */
+struct MatchValue
+{
+    MatchType type;
+    union
+    {
+        intptr_t i;
+        OpType op;
+        Access access;
+        Register reg;
+    };
+
+    int compare(const MatchValue &value) const
+    {
+        if (value.type < type)
+            return 1;
+        if (value.type > type)
+            return -1;
+        switch (type)
+        {
+            case MATCH_TYPE_INTEGER:
+                return (value.i < i? 1:
+                       (value.i > i? -1: 0));
+            case MATCH_TYPE_OPERAND:
+                return (value.op < op? 1:
+                       (value.op > op? -1: 0));
+            case MATCH_TYPE_ACCESS:
+                return (value.access < access? 1:
+                       (value.access > access? -1: 0));
+            case MATCH_TYPE_REGISTER:
+                return (value.reg < reg? 1:
+                       (value.reg > reg? -1: 0));
+            default:
+                return 0;
+        }
+    }
+
+    bool operator==(const MatchValue &value) const
+    {
+        return (compare(value) == 0);
+    }
+    bool operator<(const MatchValue &value) const
+    {
+        return (compare(value) < 0);
+    }
+    bool operator<=(const MatchValue &value) const
+    {
+        return (compare(value) <= 0);
+    }
+    bool operator>(const MatchValue &value) const
+    {
+        return (compare(value) > 0);
+    }
+    bool operator>=(const MatchValue &value) const
+    {
+        return (compare(value) >= 0);
+    }
 };
 
 /*
@@ -142,6 +238,7 @@ enum MatchField
 enum MatchCmp
 {
     MATCH_CMP_INVALID,
+    MATCH_CMP_DEFINED,
     MATCH_CMP_EQ_ZERO,
     MATCH_CMP_NEQ_ZERO,
     MATCH_CMP_EQ,
@@ -151,6 +248,11 @@ enum MatchCmp
     MATCH_CMP_GT,
     MATCH_CMP_GEQ
 };
+
+/*
+ * CSV implementation.
+ */
+#include "e9csv.cpp"
 
 /*
  * Action kinds.
@@ -180,7 +282,7 @@ struct MatchTest
     {
         void *data;
         std::regex *regex;
-        Index<intptr_t> *values;
+        Index<MatchValue> *values;
     };
 
     MatchTest(MatchKind match, int idx, MatchField field, MatchCmp cmp,
@@ -268,10 +370,9 @@ struct Action
 typedef std::map<size_t, Action *> Actions;
 
 /*
- * Implementations.
+ * Metadata implementation.
  */
 #include "e9metadata.cpp"
-#include "e9parser.cpp"
 
 /*
  * Open a new plugin object.
@@ -395,15 +496,66 @@ static intptr_t parseIndex(Parser &parser, intptr_t lb, intptr_t ub)
 }
 
 /*
+ * Parse values.
+ */
+static void parseValues(Parser &parser, MatchType type,
+    MatchCmp cmp, Index<MatchValue> &index)
+{
+    while (true)
+    {
+        MatchValue value = {0};
+        switch (parser.getToken())
+        {
+            case TOKEN_NIL:
+                value.type = MATCH_TYPE_NIL;
+                break;
+            case TOKEN_INTEGER:
+                value.type = MATCH_TYPE_INTEGER;
+                value.i    = parser.i;
+                break;
+            case TOKEN_REGISTER:
+                value.type = MATCH_TYPE_REGISTER;
+                value.reg  = (Register)parser.i;
+                break;
+            case TOKEN_IMM: case TOKEN_REG: case TOKEN_MEM:
+                value.type = MATCH_TYPE_OPERAND;
+                value.op   = (OpType)parser.i;
+                break;
+            case TOKEN_NONE: case TOKEN_READ: case TOKEN_WRITE: case TOKEN_RW:
+                value.type   = MATCH_TYPE_ACCESS;
+                value.access = (Access)parser.i;
+                break;
+            default:
+                parser.unexpectedToken();
+        }
+        if ((type & value.type) == 0)
+            parser.unexpectedToken();       // Type error
+        index.insert({value, nullptr});
+        if (cmp != MATCH_CMP_EQ || parser.peekToken() != ',')
+            break;
+        parser.getToken();
+    }
+}
+
+/*
  * Parse a match test.
  */
 static MatchTest *parseTest(Parser &parser)
 {
     int t = parser.getToken();
     MatchKind match = MATCH_INVALID;
+    MatchType type  = MATCH_TYPE_INTEGER;
+    MatchCmp  cmp   = MATCH_CMP_INVALID;
+    if (t == TOKEN_DEFINED)
+    {
+        parser.expectToken('(');
+        cmp = MATCH_CMP_DEFINED;
+        t = parser.getToken();
+    }
     switch (t)
     {
         case TOKEN_ASM:
+            type = MATCH_TYPE_STRING;
             match = MATCH_ASSEMBLY; break;
         case TOKEN_ADDR:
             match = MATCH_ADDRESS; break;
@@ -420,6 +572,7 @@ static MatchTest *parseTest(Parser &parser)
         case TOKEN_MEM:
             match = MATCH_MEM; break;
         case TOKEN_MNEMONIC:
+            type = MATCH_TYPE_STRING;
             match = MATCH_MNEMONIC; break;
         case TOKEN_OFFSET:
             match = MATCH_OFFSET; break;
@@ -480,59 +633,73 @@ static MatchTest *parseTest(Parser &parser)
             if (parser.peekToken() == '.')
             {
                 parser.getToken();
-                switch (parser.getToken())
+                bool need_idx = true;
+                switch (parser.peekToken())
                 {
                     case TOKEN_TYPE:
+                        type = MATCH_TYPE_OPERAND;
                         field = MATCH_FIELD_TYPE; break;
                     case TOKEN_ACCESS:
+                        type = MATCH_TYPE_ACCESS;
                         field = MATCH_FIELD_ACCESS; break;
                     case TOKEN_SIZE:
+                        need_idx = false;
                         field = MATCH_FIELD_SIZE; break;
-                    case TOKEN_DISPL:
+                    case TOKEN_SEGMENT:
+                        type = MATCH_TYPE_REGISTER | MATCH_TYPE_NIL;
+                        field = MATCH_FIELD_SEG; break;
+                    case TOKEN_DISPLACEMENT:
                         field = MATCH_FIELD_DISPL; break;
                     case TOKEN_BASE:
+                        type = MATCH_TYPE_REGISTER | MATCH_TYPE_NIL;
                         field = MATCH_FIELD_BASE; break;
                     case TOKEN_INDEX:
+                        type = MATCH_TYPE_REGISTER | MATCH_TYPE_NIL;
                         field = MATCH_FIELD_INDEX; break;
                     case TOKEN_SCALE:
                         field = MATCH_FIELD_SCALE; break;
-                    case TOKEN_READ: case TOKEN_WRITE:
-                        // TODO: remove
-                        error("failed to parse matching; the read/write "
-                            "fields are deprecated; use the `access' field "
-                            "instead");
                     default:
                         parser.unexpectedToken();
                 }
+                if (need_idx && idx < 0)
+                    parser.unexpectedToken();
+                parser.getToken();
             }
+            else if (idx >= 0)
+                type = MATCH_TYPE_INTEGER | MATCH_TYPE_REGISTER;
             break;
         default:
             break;
     }
-    MatchCmp cmp = MATCH_CMP_INVALID;
-    switch (parser.peekToken())
+    if (cmp == MATCH_CMP_DEFINED)
+        parser.expectToken(')');
+    else
     {
-        case '=':
-            cmp = MATCH_CMP_EQ; break;
-        case TOKEN_NEQ:
-            cmp = MATCH_CMP_NEQ; break;
-        case '<':
-            cmp = MATCH_CMP_LT; break;
-        case TOKEN_LEQ:
-            cmp = MATCH_CMP_LEQ; break;
-        case '>':
-            cmp = MATCH_CMP_GT; break;
-        case TOKEN_GEQ:
-            cmp = MATCH_CMP_GEQ; break;
-        default:
-            cmp = MATCH_CMP_NEQ_ZERO; break;
+        switch (parser.peekToken())
+        {
+            case '=':
+                cmp = MATCH_CMP_EQ; break;
+            case TOKEN_NEQ:
+                cmp = MATCH_CMP_NEQ; break;
+            case '<':
+                cmp = MATCH_CMP_LT; break;
+            case TOKEN_LEQ:
+                cmp = MATCH_CMP_LEQ; break;
+            case '>':
+                cmp = MATCH_CMP_GT; break;
+            case TOKEN_GEQ:
+                cmp = MATCH_CMP_GEQ; break;
+            default:
+                cmp = MATCH_CMP_NEQ_ZERO; break;
+        }
+        if (cmp != MATCH_CMP_NEQ_ZERO)
+            (void)parser.getToken();
     }
-    if (cmp != MATCH_CMP_NEQ_ZERO)
-        (void)parser.getToken();
     switch (match)
     {
         case MATCH_ASSEMBLY: case MATCH_MNEMONIC:
-            if (cmp != MATCH_CMP_EQ && cmp != MATCH_CMP_NEQ)
+            if (cmp != MATCH_CMP_EQ && cmp != MATCH_CMP_NEQ &&
+                    cmp != MATCH_CMP_DEFINED)
                 error("failed to parse matching; invalid match "
                     "comparison operator \"%s\" for attribute \"%s\"",
                     parser.s, parser.getName(attr));
@@ -547,72 +714,46 @@ static MatchTest *parseTest(Parser &parser)
     }
 
     MatchTest *test = new MatchTest(match, idx, field, cmp, plugin, nullptr);
-    switch (match)
+    if (cmp == MATCH_CMP_DEFINED)
+        return test;
+    else if (type == MATCH_TYPE_STRING)
     {
-        case MATCH_ASSEMBLY: case MATCH_MNEMONIC:
+        t = parser.getRegex();
+        std::string str;
+        switch (t)
         {
-            t = parser.getRegex();
-            std::string str;
-            switch (t)
-            {
-                case TOKEN_REGEX:
-                    str = parser.s;
-                    break;
-                case TOKEN_STRING:
-                    str += '(';
-                    str += parser.s;
-                    while (parser.peekToken() == ',')
-                    {
-                        parser.getToken();
-                        str += ")|(";
-                        parser.expectToken(TOKEN_STRING);
-                        str += parser.s;
-                    }
-                    str += ')';
-                    break;
-                default:
-                    parser.unexpectedToken();
-            }
-            test->regex = new std::regex(str);
-            return test;
+            case TOKEN_REGEX:
+                str = parser.s;
+                break;
+            case TOKEN_STRING:
+                str += parser.s;
+                break;
+            default:
+                parser.unexpectedToken();
         }
-        case MATCH_TRUE: case MATCH_FALSE: case MATCH_ADDRESS:
-        case MATCH_CALL: case MATCH_JUMP: case MATCH_OFFSET:
-        case MATCH_OP: case MATCH_SRC: case MATCH_DST:
-        case MATCH_IMM: case MATCH_REG: case MATCH_MEM:
-        case MATCH_PLUGIN: case MATCH_RANDOM: case MATCH_RETURN:
-        case MATCH_SIZE:
-            if (cmp == MATCH_CMP_EQ_ZERO || cmp == MATCH_CMP_NEQ_ZERO)
-                return test;
-            test->values = new Index<intptr_t>;
-            switch (parser.getToken())
-            {
-                case TOKEN_INTEGER:
-                    test->values->insert({parser.i, nullptr});
-                    while (parser.peekToken() == ',')
-                    {
-                        parser.getToken();
-                        parser.expectToken(TOKEN_INTEGER);
-                        test->values->insert({parser.i, nullptr});
-                    }
-                    break;
-                case TOKEN_STRING:
-                {
-                    test->basename = strDup(parser.s);
-                    std::string filename(parser.s);
-                    filename += ".csv";
-                    intptr_t idx = parseIndex(parser, INTPTR_MIN, INTPTR_MAX);
-                    Data *data = parseCSV(filename.c_str());
-                    buildIntIndex(test->basename, *data, idx, *test->values);
-                    break;
-                }
-                default:
-                    parser.unexpectedToken();
-            }
-            return test;
-        default:
-            return test;
+        test->regex = new std::regex(str);
     }
+    else
+    {
+        if (cmp == MATCH_CMP_EQ_ZERO || cmp == MATCH_CMP_NEQ_ZERO)
+            return test;
+        test->values = new Index<MatchValue>;
+        if (parser.peekToken() == TOKEN_STRING)
+        {
+            parser.getToken();
+            if ((type & MATCH_TYPE_INTEGER) == 0)
+                parser.unexpectedToken();
+            test->basename = strDup(parser.s);
+            std::string filename(parser.s);
+            filename += ".csv";
+            intptr_t idx = parseIndex(parser, INTPTR_MIN, INTPTR_MAX);
+            Data *data = parseCSV(filename.c_str());
+            buildIntIndex(test->basename, *data, idx, *test->values);
+        }
+        else
+            parseValues(parser, type, cmp, *test->values);
+    }
+    return test;
 }
 
 /*
@@ -629,7 +770,7 @@ static MatchExpr *parseTestExpr(Parser &parser)
             expr = parseMatchExpr(parser, MATCH_OP_OR);
             parser.expectToken(')');
             break;
-        case TOKEN_NOT:
+        case '!': case TOKEN_NOT:
             (void)parser.getToken();
             expr = parseMatchExpr(parser, MATCH_OP_OR);
             expr = new MatchExpr(MATCH_OP_NOT, expr);
@@ -840,151 +981,159 @@ static Action *parseAction(const char *str, const MatchExpr *expr)
                         break;
                     case TOKEN_TRAMPOLINE:
                         arg = ARGUMENT_TRAMPOLINE; break;
-                    
-                    case TOKEN_AL:
-                        arg = ARGUMENT_AL; break;
-                    case TOKEN_AH:
-                        arg = ARGUMENT_AH; break;
-                    case TOKEN_BL:
-                        arg = ARGUMENT_BL; break;
-                    case TOKEN_BH:
-                        arg = ARGUMENT_BH; break;
-                    case TOKEN_CL:
-                        arg = ARGUMENT_CL; break;
-                    case TOKEN_CH:
-                        arg = ARGUMENT_CH; break;
-                    case TOKEN_DL:
-                        arg = ARGUMENT_DL; break;
-                    case TOKEN_DH:
-                        arg = ARGUMENT_DH; break;
-                    case TOKEN_BPL:
-                        arg = ARGUMENT_BPL; break;
-                    case TOKEN_SPL:
-                        arg = ARGUMENT_SPL; break; 
-                    case TOKEN_DIL:
-                        arg = ARGUMENT_DIL; break;
-                    case TOKEN_SIL: 
-                        arg = ARGUMENT_SIL; break; 
-                    case TOKEN_R8B:
-                        arg = ARGUMENT_R8B; break;
-                    case TOKEN_R9B:
-                        arg = ARGUMENT_R9B; break;
-                    case TOKEN_R10B:
-                        arg = ARGUMENT_R10B; break;
-                    case TOKEN_R11B:
-                        arg = ARGUMENT_R11B; break;
-                    case TOKEN_R12B:
-                        arg = ARGUMENT_R12B; break;
-                    case TOKEN_R13B:
-                        arg = ARGUMENT_R13B; break;
-                    case TOKEN_R14B:
-                        arg = ARGUMENT_R14B; break;
-                    case TOKEN_R15B:
-                        arg = ARGUMENT_R15B; break;
-                    
-                    case TOKEN_AX:
-                        arg = ARGUMENT_AX; break;
-                    case TOKEN_BX:
-                        arg = ARGUMENT_BX; break;
-                    case TOKEN_CX:
-                        arg = ARGUMENT_CX; break;
-                    case TOKEN_DX:
-                        arg = ARGUMENT_DX; break;
-                    case TOKEN_BP:
-                        arg = ARGUMENT_BP; break;
-                    case TOKEN_SP:
-                        arg = ARGUMENT_SP; break; 
-                    case TOKEN_DI:
-                        arg = ARGUMENT_DI; break;
-                    case TOKEN_SI: 
-                        arg = ARGUMENT_SI; break; 
-                    case TOKEN_R8W:
-                        arg = ARGUMENT_R8W; break;
-                    case TOKEN_R9W:
-                        arg = ARGUMENT_R9W; break;
-                    case TOKEN_R10W:
-                        arg = ARGUMENT_R10W; break;
-                    case TOKEN_R11W:
-                        arg = ARGUMENT_R11W; break;
-                    case TOKEN_R12W:
-                        arg = ARGUMENT_R12W; break;
-                    case TOKEN_R13W:
-                        arg = ARGUMENT_R13W; break;
-                    case TOKEN_R14W:
-                        arg = ARGUMENT_R14W; break;
-                    case TOKEN_R15W:
-                        arg = ARGUMENT_R15W; break;
-                    
-                    case TOKEN_EAX:
-                        arg = ARGUMENT_EAX; break;
-                    case TOKEN_EBX:
-                        arg = ARGUMENT_EBX; break;
-                    case TOKEN_ECX:
-                        arg = ARGUMENT_ECX; break;
-                    case TOKEN_EDX:
-                        arg = ARGUMENT_EDX; break;
-                    case TOKEN_EBP:
-                        arg = ARGUMENT_EBP; break;
-                    case TOKEN_ESP:
-                        arg = ARGUMENT_ESP; break; 
-                    case TOKEN_EDI:
-                        arg = ARGUMENT_EDI; break;
-                    case TOKEN_ESI: 
-                        arg = ARGUMENT_ESI; break; 
-                    case TOKEN_R8D:
-                        arg = ARGUMENT_R8D; break;
-                    case TOKEN_R9D:
-                        arg = ARGUMENT_R9D; break;
-                    case TOKEN_R10D:
-                        arg = ARGUMENT_R10D; break;
-                    case TOKEN_R11D:
-                        arg = ARGUMENT_R11D; break;
-                    case TOKEN_R12D:
-                        arg = ARGUMENT_R12D; break;
-                    case TOKEN_R13D:
-                        arg = ARGUMENT_R13D; break;
-                    case TOKEN_R14D:
-                        arg = ARGUMENT_R14D; break;
-                    case TOKEN_R15D:
-                        arg = ARGUMENT_R15D; break;
-                    
-                    case TOKEN_RAX:
-                        arg = ARGUMENT_RAX; break;
-                    case TOKEN_RBX:
-                        arg = ARGUMENT_RBX; break;
-                    case TOKEN_RCX:
-                        arg = ARGUMENT_RCX; break;
-                    case TOKEN_RDX:
-                        arg = ARGUMENT_RDX; break;
-                    case TOKEN_RBP:
-                        arg = ARGUMENT_RBP; break;
-                    case TOKEN_RSP:
-                        arg = ARGUMENT_RSP; break;
-                    case TOKEN_RSI:
-                        arg = ARGUMENT_RSI; break;
-                    case TOKEN_RDI:
-                        arg = ARGUMENT_RDI; break;
-                    case TOKEN_R8:
-                        arg = ARGUMENT_R8; break;
-                    case TOKEN_R9:
-                        arg = ARGUMENT_R9; break;
-                    case TOKEN_R10:
-                        arg = ARGUMENT_R10; break;
-                    case TOKEN_R11:
-                        arg = ARGUMENT_R11; break;
-                    case TOKEN_R12:
-                        arg = ARGUMENT_R12; break;
-                    case TOKEN_R13:
-                        arg = ARGUMENT_R13; break;
-                    case TOKEN_R14:
-                        arg = ARGUMENT_R14; break;
-                    case TOKEN_R15:
-                        arg = ARGUMENT_R15; break;
 
-                    case TOKEN_RFLAGS:
-                        arg = ARGUMENT_RFLAGS; break;
-                    case TOKEN_RIP:
-                        arg = ARGUMENT_RIP; break;
+                    case TOKEN_REGISTER:
+                        switch ((Register)parser.i)
+                        {
+                            case REGISTER_AL:
+                                arg = ARGUMENT_AL; break;
+                            case REGISTER_AH:
+                                arg = ARGUMENT_AH; break;
+                            case REGISTER_BL:
+                                arg = ARGUMENT_BL; break;
+                            case REGISTER_BH:
+                                arg = ARGUMENT_BH; break;
+                            case REGISTER_CL:
+                                arg = ARGUMENT_CL; break;
+                            case REGISTER_CH:
+                                arg = ARGUMENT_CH; break;
+                            case REGISTER_DL:
+                                arg = ARGUMENT_DL; break;
+                            case REGISTER_DH:
+                                arg = ARGUMENT_DH; break;
+                            case REGISTER_BPL:
+                                arg = ARGUMENT_BPL; break;
+                            case REGISTER_SPL:
+                                arg = ARGUMENT_SPL; break; 
+                            case REGISTER_DIL:
+                                arg = ARGUMENT_DIL; break;
+                            case REGISTER_SIL: 
+                                arg = ARGUMENT_SIL; break; 
+                            case REGISTER_R8B:
+                                arg = ARGUMENT_R8B; break;
+                            case REGISTER_R9B:
+                                arg = ARGUMENT_R9B; break;
+                            case REGISTER_R10B:
+                                arg = ARGUMENT_R10B; break;
+                            case REGISTER_R11B:
+                                arg = ARGUMENT_R11B; break;
+                            case REGISTER_R12B:
+                                arg = ARGUMENT_R12B; break;
+                            case REGISTER_R13B:
+                                arg = ARGUMENT_R13B; break;
+                            case REGISTER_R14B:
+                                arg = ARGUMENT_R14B; break;
+                            case REGISTER_R15B:
+                                arg = ARGUMENT_R15B; break;
+                            
+                            case REGISTER_AX:
+                                arg = ARGUMENT_AX; break;
+                            case REGISTER_BX:
+                                arg = ARGUMENT_BX; break;
+                            case REGISTER_CX:
+                                arg = ARGUMENT_CX; break;
+                            case REGISTER_DX:
+                                arg = ARGUMENT_DX; break;
+                            case REGISTER_BP:
+                                arg = ARGUMENT_BP; break;
+                            case REGISTER_SP:
+                                arg = ARGUMENT_SP; break; 
+                            case REGISTER_DI:
+                                arg = ARGUMENT_DI; break;
+                            case REGISTER_SI: 
+                                arg = ARGUMENT_SI; break; 
+                            case REGISTER_R8W:
+                                arg = ARGUMENT_R8W; break;
+                            case REGISTER_R9W:
+                                arg = ARGUMENT_R9W; break;
+                            case REGISTER_R10W:
+                                arg = ARGUMENT_R10W; break;
+                            case REGISTER_R11W:
+                                arg = ARGUMENT_R11W; break;
+                            case REGISTER_R12W:
+                                arg = ARGUMENT_R12W; break;
+                            case REGISTER_R13W:
+                                arg = ARGUMENT_R13W; break;
+                            case REGISTER_R14W:
+                                arg = ARGUMENT_R14W; break;
+                            case REGISTER_R15W:
+                                arg = ARGUMENT_R15W; break;
+                            
+                            case REGISTER_EAX:
+                                arg = ARGUMENT_EAX; break;
+                            case REGISTER_EBX:
+                                arg = ARGUMENT_EBX; break;
+                            case REGISTER_ECX:
+                                arg = ARGUMENT_ECX; break;
+                            case REGISTER_EDX:
+                                arg = ARGUMENT_EDX; break;
+                            case REGISTER_EBP:
+                                arg = ARGUMENT_EBP; break;
+                            case REGISTER_ESP:
+                                arg = ARGUMENT_ESP; break; 
+                            case REGISTER_EDI:
+                                arg = ARGUMENT_EDI; break;
+                            case REGISTER_ESI: 
+                                arg = ARGUMENT_ESI; break; 
+                            case REGISTER_R8D:
+                                arg = ARGUMENT_R8D; break;
+                            case REGISTER_R9D:
+                                arg = ARGUMENT_R9D; break;
+                            case REGISTER_R10D:
+                                arg = ARGUMENT_R10D; break;
+                            case REGISTER_R11D:
+                                arg = ARGUMENT_R11D; break;
+                            case REGISTER_R12D:
+                                arg = ARGUMENT_R12D; break;
+                            case REGISTER_R13D:
+                                arg = ARGUMENT_R13D; break;
+                            case REGISTER_R14D:
+                                arg = ARGUMENT_R14D; break;
+                            case REGISTER_R15D:
+                                arg = ARGUMENT_R15D; break;
+                            
+                            case REGISTER_RAX:
+                                arg = ARGUMENT_RAX; break;
+                            case REGISTER_RBX:
+                                arg = ARGUMENT_RBX; break;
+                            case REGISTER_RCX:
+                                arg = ARGUMENT_RCX; break;
+                            case REGISTER_RDX:
+                                arg = ARGUMENT_RDX; break;
+                            case REGISTER_RBP:
+                                arg = ARGUMENT_RBP; break;
+                            case REGISTER_RSP:
+                                arg = ARGUMENT_RSP; break;
+                            case REGISTER_RSI:
+                                arg = ARGUMENT_RSI; break;
+                            case REGISTER_RDI:
+                                arg = ARGUMENT_RDI; break;
+                            case REGISTER_R8:
+                                arg = ARGUMENT_R8; break;
+                            case REGISTER_R9:
+                                arg = ARGUMENT_R9; break;
+                            case REGISTER_R10:
+                                arg = ARGUMENT_R10; break;
+                            case REGISTER_R11:
+                                arg = ARGUMENT_R11; break;
+                            case REGISTER_R12:
+                                arg = ARGUMENT_R12; break;
+                            case REGISTER_R13:
+                                arg = ARGUMENT_R13; break;
+                            case REGISTER_R14:
+                                arg = ARGUMENT_R14; break;
+                            case REGISTER_R15:
+                                arg = ARGUMENT_R15; break;
+
+                            case REGISTER_EFLAGS:
+                                arg = ARGUMENT_RFLAGS; break;
+                            case REGISTER_RIP:
+                                arg = ARGUMENT_RIP; break;
+ 
+                            default:
+                                parser.unexpectedToken();
+                        }
+                        break;
                     
                     case TOKEN_INTEGER:
                         value = parser.i;
@@ -1013,7 +1162,7 @@ static Action *parseAction(const char *str, const MatchExpr *expr)
                                     field = FIELD_BASE; break;
                                 case TOKEN_INDEX:
                                     field = FIELD_INDEX; break;
-                                case TOKEN_DISPL:
+                                case TOKEN_DISPLACEMENT:
                                     field = FIELD_DISPL; break;
                                 case TOKEN_SCALE:
                                     field = FIELD_SCALE; break;
@@ -1227,13 +1376,16 @@ static intptr_t getNumOperands(const cs_insn *I, x86_op_type type,
 /*
  * Create match value.
  */
-static intptr_t makeMatchValue(MatchKind match, int idx, MatchField field,
-    const cs_insn *I, intptr_t offset, intptr_t result, bool *defined)
+static MatchValue makeMatchValue(MatchKind match, int idx, MatchField field,
+    const cs_insn *I, intptr_t offset, intptr_t plugin_val)
 {
+    MatchValue result = {0};
+    result.type = MATCH_TYPE_INTEGER;
     const cs_detail *detail = I->detail;
     const cs_x86_op *op = nullptr;
     x86_op_type type = X86_OP_INVALID;
     uint8_t access = CS_AC_READ | CS_AC_WRITE;
+    bool found = false;
     switch (match)
     {
         case MATCH_SRC:
@@ -1252,21 +1404,23 @@ static intptr_t makeMatchValue(MatchKind match, int idx, MatchField field,
     switch (match)
     {
         case MATCH_TRUE:
-            return 1;
+            result.i = true; return result;
         case MATCH_FALSE:
-            return 0;
+            result.i = false; return result;
         case MATCH_ADDRESS:
-            return I->address;
+            result.i = (intptr_t)I->address; return result;
         case MATCH_CALL:
-            for (uint8_t i = 0; i < detail->groups_count; i++)
+            for (uint8_t i = 0; !found && i < detail->groups_count; i++)
                 if (detail->groups[i] == CS_GRP_CALL)
-                    return 1;
-            return 0;
+                    found = true;
+            result.i = found;
+            return result;
         case MATCH_JUMP:
-            for (uint8_t i = 0; i < detail->groups_count; i++)
+            for (uint8_t i = 0; !found && i < detail->groups_count; i++)
                 if (detail->groups[i] == CS_GRP_JUMP)
-                    return 1;
-            return 0;
+                    found = true;
+            result.i = found;
+            return result;
         case MATCH_OP: case MATCH_SRC: case MATCH_DST:
         case MATCH_IMM: case MATCH_REG: case MATCH_MEM:
             if (idx < 0)
@@ -1274,47 +1428,59 @@ static intptr_t makeMatchValue(MatchKind match, int idx, MatchField field,
                 switch (field)
                 {
                     case MATCH_FIELD_SIZE:
-                        return getNumOperands(I, type, access);
+                        result.i = getNumOperands(I, type, access);
+                        return result;
                     default:
-                        return (*defined = false);
+                        goto undefined;
                 }
             }
             else
             {
                 op = getOperand(I, idx, type, access);
                 if (op == nullptr)
-                    return (*defined = false);
+                    goto undefined;
                 switch (field)
                 {
                     case MATCH_FIELD_NONE:
                         switch (op->type)
                         {
                             case X86_OP_IMM:
-                                return (intptr_t)op->imm;
+                                result.i = (intptr_t)op->imm;
+                                return result;
                             case X86_OP_REG:
-                                return REG_NAME(op->reg);
+                                result.type = MATCH_TYPE_REGISTER;
+                                result.reg  = getReg(op->reg);
+                                return result;
+                            case X86_OP_MEM:
+                                result.type = MATCH_TYPE_MEMORY;
+                                return result;
                             default:
-                                return (*defined = false);
+                                goto undefined;
                         }
                     case MATCH_FIELD_SIZE:
-                        return (intptr_t)op->size;
+                        result.i = (intptr_t)op->size; return result;
                     case MATCH_FIELD_TYPE:
+                        result.type = MATCH_TYPE_OPERAND;
                         switch (op->type)
                         {
                             case X86_OP_IMM:
-                                return OP_TYPE_IMM;
+                                result.op = OP_TYPE_IMM; return result;
                             case X86_OP_REG:
-                                return OP_TYPE_REG;
+                                result.op = OP_TYPE_REG; return result;
                             case X86_OP_MEM:
-                                return OP_TYPE_MEM;
+                                result.op = OP_TYPE_MEM; return result;
                             default:
-                                return (*defined = false);
+                                goto undefined;
                         }
                     case MATCH_FIELD_ACCESS:
                     {
+                        result.type = MATCH_TYPE_ACCESS;
                         if (op->type == X86_OP_IMM)
-                            return ACCESS_READ;
-                        intptr_t access = 0;
+                        {
+                            result.access = ACCESS_READ;
+                            return result;
+                        }
+                        Access access = 0;
                         if ((op->access & CS_AC_READ) != 0)
                             access |= ACCESS_READ;
                         if ((op->access & CS_AC_WRITE) != 0)
@@ -1322,44 +1488,75 @@ static intptr_t makeMatchValue(MatchKind match, int idx, MatchField field,
                         if (op->type == X86_OP_MEM &&
                                 (I->id == X86_INS_LEA || I->id == X86_INS_NOP))
                             access = 0;     // Capstone bug workaround
-                        return access;
+                        result.access = access;
+                        return result;
                     }
+                    case MATCH_FIELD_SEG:
+                        if (op->type != X86_OP_MEM)
+                            goto undefined;
+                        if (op->mem.segment == X86_REG_INVALID)
+                        {
+                            result.type = MATCH_TYPE_NIL;
+                            return result;
+                        }
+                        result.type = MATCH_TYPE_REGISTER;
+                        result.reg  = getReg(op->mem.segment);
+                        return result;
                     case MATCH_FIELD_DISPL:
                         if (op->type != X86_OP_MEM)
-                            return (*defined = false);
-                        return (intptr_t)op->mem.disp;
+                            goto undefined;
+                        result.i = (intptr_t)op->mem.disp;
+                        return result;
                     case MATCH_FIELD_BASE:
                         if (op->type != X86_OP_MEM)
-                            return (*defined = false);
-                        return REG_NAME(op->mem.base);
+                            goto undefined;
+                        if (op->mem.base == X86_REG_INVALID)
+                        {
+                            result.type = MATCH_TYPE_NIL;
+                            return result;
+                        }
+                        result.type = MATCH_TYPE_REGISTER;
+                        result.reg  = getReg(op->mem.base);
+                        return result;
                     case MATCH_FIELD_INDEX:
                         if (op->type != X86_OP_MEM)
-                            return (*defined = false);
-                        return REG_NAME(op->mem.index);
+                            goto undefined;
+                        if (op->mem.index == X86_REG_INVALID)
+                        {
+                            result.type = MATCH_TYPE_NIL;
+                            return result;
+                        }
+                        result.type = MATCH_TYPE_REGISTER;
+                        result.reg  = getReg(op->mem.index);
+                        return result;
                     case MATCH_FIELD_SCALE:
                         if (op->type != X86_OP_MEM)
-                            return (*defined = false);
-                        return (intptr_t)op->mem.scale;
+                            goto undefined;
+                        result.i = (intptr_t)op->mem.scale;
+                        return result;
                     default:
-                        return (*defined = false);
+                        goto undefined;
                 }
             }
-            return (*defined = false);
+            goto undefined;
         case MATCH_OFFSET:
-            return offset;
+            result.i = offset; return result;
         case MATCH_PLUGIN:
-            return result;
+            result.i = plugin_val; return result;
         case MATCH_RANDOM:
-            return (intptr_t)rand();
+            result.i = (intptr_t)rand(); return result;
         case MATCH_RETURN:
-            for (uint8_t i = 0; i < detail->groups_count; i++)
+            for (uint8_t i = 0; !found && i < detail->groups_count; i++)
                 if (detail->groups[i] == CS_GRP_RET)
-                    return 1;
-            return 0;
+                    found = true;
+            result.i = found;
+            return result;
         case MATCH_SIZE:
-            return I->size;
+            result.i = (intptr_t)I->size; return result;
         default:
-            return (*defined = false);
+        undefined:
+            result.type = MATCH_TYPE_UNDEFINED;
+            return result;
     }
 }
 
@@ -1397,9 +1594,13 @@ static bool matchEval(const MatchExpr *expr, const cs_insn *I, intptr_t offset,
 
     switch (test->match)
     {
-        case MATCH_ASSEMBLY:
-        case MATCH_MNEMONIC:
+        case MATCH_ASSEMBLY: case MATCH_MNEMONIC:
         {
+            if (test->cmp == MATCH_CMP_DEFINED)
+            {
+                pass = true;
+                break;
+            }
             char buf[BUFSIZ];
             const char *str = makeMatchString(test->match, I, buf,
                 sizeof(buf)-1);
@@ -1415,22 +1616,22 @@ static bool matchEval(const MatchExpr *expr, const cs_insn *I, intptr_t offset,
         case MATCH_PLUGIN: case MATCH_RANDOM: case MATCH_RETURN:
         case MATCH_SIZE:
         {
-            bool defined = true;
-            if (test->cmp != MATCH_CMP_EQ_ZERO &&
-                test->cmp != MATCH_CMP_NEQ_ZERO &&
-                    test->values->size() == 0)
+            if (test->cmp != MATCH_CMP_EQ_ZERO && test->cmp != MATCH_CMP_NEQ_ZERO &&
+                test->cmp != MATCH_CMP_DEFINED && test->values->size() == 0)
                 break;
-            intptr_t x = makeMatchValue(test->match, test->idx,
+            MatchValue x = makeMatchValue(test->match, test->idx,
                 test->field, I, offset,
-                (test->match == MATCH_PLUGIN?  test->plugin->result: 0),
-                &defined);
+                (test->match == MATCH_PLUGIN?  test->plugin->result: 0));
             switch (test->cmp)
             {
+                case MATCH_CMP_DEFINED:
+                    pass = true;
+                    break;
                 case MATCH_CMP_EQ_ZERO:
-                    pass = (x == 0);
+                    pass = (x.type == MATCH_TYPE_INTEGER && x.i == 0);
                     break;
                 case MATCH_CMP_NEQ_ZERO:
-                    pass = (x != 0);
+                    pass = (x.type == MATCH_TYPE_INTEGER && x.i != 0);
                     break;
                 case MATCH_CMP_EQ:
                     pass = (test->values->find(x) != test->values->end());
@@ -1455,7 +1656,8 @@ static bool matchEval(const MatchExpr *expr, const cs_insn *I, intptr_t offset,
                 default:
                     return false;
             }
-            pass = pass && defined;
+            if (x.type == MATCH_TYPE_UNDEFINED)
+                pass = false;
     
             if (pass && basename != nullptr && record != nullptr && 
                 test->cmp == MATCH_CMP_EQ &&
@@ -1631,7 +1833,13 @@ static void usage(FILE *stream, const char *progname)
     fputs("\t\tSpecifies an instruction matching MATCH in the following "
         "form:\n", stream);
     fputc('\n', stream);
-    fputs("\t\t\tMATCH     ::= [ '!' ] ATTRIBUTE [ CMP VALUES ]\n", stream);
+    fputs("\t\t\tMATCH     ::=   TEST\n", stream);
+    fputs("\t\t\t              | '(' MATCH ')'\n", stream);
+    fputs("\t\t\t              | 'not' MATCH\n", stream);
+    fputs("\t\t\t              | MATCH 'and' MATCH\n", stream);
+    fputs("\t\t\t              | MATCH 'or' MATCH\n", stream);
+    fputs("\t\t\tTEST      ::=   'defined' '(' ATTRIBUTE ')'\n", stream);
+    fputs("\t\t\t              | ATTRIBUTE [ CMP VALUES ]\n", stream);
     fputs("\t\t\tCMP       ::=   '='\n", stream);
     fputs("\t\t\t              | '=='\n", stream);
     fputs("\t\t\t              | '!='\n", stream);
@@ -1653,7 +1861,7 @@ static void usage(FILE *stream, const char *progname)
     fputs("\t\tValue (CSV) file (for integer attributes):\n", stream);
     fputc('\n', stream);
     fputs("\t\t\tVALUES ::=   REGULAR-EXPRESSION\n", stream);
-    fputs("\t\t\t           | INTEGER [ ',' INTEGER ] *\n", stream);
+    fputs("\t\t\t           | VALUE [ ',' VALUE ] *\n", stream);
     fputs("\t\t\t           | BASENAME '[' INTEGER ']'\n", stream);
     fputc('\n', stream);
     fputs("\t\tHere, BASENAME is the basename of a CSV file, and the "
@@ -1666,42 +1874,78 @@ static void usage(FILE *stream, const char *progname)
     fputc('\n', stream);
     fputs("\t\tPossible ATTRIBUTEs and attribute TYPEs are:\n", stream);
     fputc('\n', stream);
-    fputs("\t\t\t- \"true\"      : the value 1.\n", stream);
-    fputs("\t\t\t                TYPE: integer\n", stream);
-    fputs("\t\t\t- \"false\"     : the value 0.\n", stream);
-    fputs("\t\t\t                TYPE: integer\n", stream);
-    fputs("\t\t\t- \"asm\"       : the instruction assembly string.  E.g.:\n",
+    fputs("\t\t\t- \"true\" is the integer 1.\n", stream);
+    fputs("\t\t\t- \"false\" is the integer 0.\n", stream);
+    fputs("\t\t\t- \"asm\" is the instruction assembly string, e.g.:\n",
         stream);
-    fputs("\t\t\t                \"cmpb %r11b, 0x436fe0(%rdi)\"\n", stream);
-    fputs("\t\t\t                TYPE: string\n", stream);
-    fputs("\t\t\t- \"addr\"      : the instruction address.  E.g.:\n", stream);
-    fputs("\t\t\t                0x4234a7\n", stream);
-    fputs("\t\t\t                TYPE: integer\n", stream);
-    fputs("\t\t\t- \"call\"      : 1 for call instructions, else 0\n", stream);
-    fputs("\t\t\t                TYPE: integer [0..1]\n", stream);
-    fputs("\t\t\t- \"jump\"      : 1 for jump instructions, else 0\n", stream);
-    fputs("\t\t\t                TYPE: integer [0..1]\n", stream);
-    fputs("\t\t\t- \"mnemonic\"  : the instruction mnemomic.  E.g.:\n",
+    fputs("\t\t\t    \"cmpb %r11b, 0x436fe0(%rdi)\".  [TYPE=string]\n", stream);
+    fputs("\t\t\t- \"addr\" is the instruction address, e.g.: 0x4234a7.\n",
         stream);
-    fputs("\t\t\t                \"cmpb\"\n", stream);
-    fputs("\t\t\t                TYPE: string\n", stream);
-    fputs("\t\t\t- \"offset\"    : the instruction file offset.  E.g.:\n",
+    fputs("\t\t\t    [TYPE=integer]\n", stream);
+    fputs("\t\t\t- \"call\" is 1 for call instructions, else 0.\n", stream);
+    fputs("\t\t\t- \"jump\" is 1 for jump instructions, else 0.\n", stream);
+    fputs("\t\t\t- \"mnemonic\" is the instruction mnemomic, e.g.:\n",
         stream);
-    fputs("\t\t\t                +49521\n", stream);
-    fputs("\t\t\t                TYPE: integer\n", stream);
-    fprintf(stream, "\t\t\t- \"random\"    : a random value [0..%lu].\n",
+    fputs("\t\t\t    \"cmpb\".  [TYPE=string]\n", stream);
+    fputs("\t\t\t- \"offset\" is the instruction file offset, e.g.:\n",
+        stream);
+    fputs("\t\t\t    +49521.  [TYPE=integer]\n", stream);
+    fprintf(stream, "\t\t\t- \"random\" is a random integer [0..%lu].\n",
         (uintptr_t)RAND_MAX);
-    fputs("\t\t\t                TYPE: integer\n", stream);
-    fputs("\t\t\t- \"return\"    : 1 for return instructions, else 0\n",
+    fputs("\t\t\t- \"return\" is 1 for return instructions, else 0.\n",
         stream);
-    fputs("\t\t\t                TYPE: integer [0..1]\n", stream);
-    fputs("\t\t\t- \"size\"      : the instruction size in bytes. E.g.: 3\n",
+    fputs("\t\t\t- \"size\" is the instruction size in bytes.\n", stream);
+    fputs("\t\t\t    [TYPE=integer]\n", stream);
+    fputs("\t\t\t- \"op.size\", \"src.size\", \"dst.size\",\n", stream);
+    fputs("\t\t\t  \"imm.size\", \"reg.size\", \"mem.size\"\n", stream);
+    fputs("\t\t\t    are the number of operands, source operands,\n",
         stream);
-    fputs("\t\t\t                TYPE: integer\n", stream);
-    fputs("\t\t\t- \"plugin(NAME).match()\"\n", stream);
-    fputs("\t\t\t              : the value returned by NAME.so's\n", stream);
-    fputs("\t\t\t                e9_plugin_match_v1() function.\n", stream);
-    fputs("\t\t\t                TYPE: integer\n", stream);
+    fputs("\t\t\t    destination operands, immediate operands,\n",
+        stream);
+    fputs("\t\t\t    register operands, and memory operands\n", stream);
+    fputs("\t\t\t    respectively.  [TYPE=integer]\n", stream);
+    fputs("\t\t\t- \"op[i]\", \"src[i]\", \"dst[i]\",\n", stream);
+    fputs("\t\t\t  \"imm[i]\", \"reg[i]\", \"mem[i]\"\n", stream);
+    fputs("\t\t\t    is the ith operand, source operand,\n",
+        stream);
+    fputs("\t\t\t    destination operand, immediate operand,\n",
+        stream);
+    fputs("\t\t\t    register operand, and memory operand\n", stream);
+    fputs("\t\t\t    respectively.  The TYPE is an integer for\n", stream);
+    fputs("\t\t\t    immediate operands, and a register name for\n",
+        stream);
+    fputs("\t\t\t    register operands.\n", stream);
+    fputs("\t\t\t- \"op[i].FIELD\", \"src[i].FIELD\", \"dst[i].FIELD\",\n",
+        stream);
+    fputs("\t\t\t  \"imm[i].FIELD\", \"reg[i].FIELD\", \"mem[i].FIELD\"\n",
+        stream);
+    fputs("\t\t\t    where FIELD is:\n", stream);
+    fputs("\t\t\t      - \"access\" is the operand access mode.\n",
+        stream);
+    fputs("\t\t\t          [TYPE={-,r,w,rw}]\n", stream);
+    fputs("\t\t\t      - \"base\" is the memory operand base register.\n",
+        stream);
+    fputs("\t\t\t          [TYPE=register]\n", stream);
+    fputs("\t\t\t      - \"disp\" is the memory operand displacement.\n",
+        stream);
+    fputs("\t\t\t          [TYPE=integer]\n", stream);
+    fputs("\t\t\t      - \"index\" is the memory operand index register.\n",
+        stream);
+    fputs("\t\t\t          [TYPE=register]\n", stream);
+    fputs("\t\t\t      - \"scale\" is the memory operand scale.\n",
+        stream);
+    fputs("\t\t\t          [TYPE=integer]\n", stream);
+    fputs("\t\t\t      - \"seg\" is the memory operand segment register.\n",
+        stream);
+    fputs("\t\t\t          [TYPE=register]\n", stream);
+    fputs("\t\t\t      - \"size\" is the operand size.  [TYPE=integer]\n",
+        stream);
+    fputs("\t\t\t      - \"type\" is the operand type.\n", stream);
+    fputs("\t\t\t          [TYPE={imm,reg,mem}]\n", stream);
+    fputs("\t\t\t- \"plugin(NAME).match()\" is the value returned by\n",
+        stream);
+    fputs("\t\t\t    NAME.so's e9_plugin_match_v1() function.\n", stream);
+    fputs("\t\t\t    [TYPE=integer]\n", stream);
     fputc('\n', stream);
     fputs("\t\tMultiple `--match'/`-M' options can be combined, which will\n",
         stream);
