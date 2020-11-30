@@ -118,6 +118,10 @@ enum MatchKind
     MATCH_IMM,
     MATCH_REG,
     MATCH_MEM,
+
+    MATCH_REGS,
+    MATCH_READS,
+    MATCH_WRITES,
 };
 
 /*
@@ -246,7 +250,8 @@ enum MatchCmp
     MATCH_CMP_LT,
     MATCH_CMP_LEQ,
     MATCH_CMP_GT,
-    MATCH_CMP_GEQ
+    MATCH_CMP_GEQ,
+    MATCH_CMP_IN
 };
 
 /*
@@ -283,6 +288,7 @@ struct MatchTest
         void *data;
         std::regex *regex;
         Index<MatchValue> *values;
+        std::set<Register> *regs;
     };
 
     MatchTest(MatchKind match, int idx, MatchField field, MatchCmp cmp,
@@ -546,6 +552,7 @@ static MatchTest *parseTest(Parser &parser)
     MatchKind match = MATCH_INVALID;
     MatchType type  = MATCH_TYPE_INTEGER;
     MatchCmp  cmp   = MATCH_CMP_INVALID;
+    std::set<Register> regs;
     if (t == TOKEN_DEFINED)
     {
         parser.expectToken('(');
@@ -577,21 +584,48 @@ static MatchTest *parseTest(Parser &parser)
         case TOKEN_OFFSET:
             match = MATCH_OFFSET; break;
         case TOKEN_OP:
-             match = MATCH_OP; break;
+            match = MATCH_OP; break;
         case TOKEN_PLUGIN:
-             match = MATCH_PLUGIN; break;
+            match = MATCH_PLUGIN; break;
         case TOKEN_RANDOM:
-             match = MATCH_RANDOM; break;
+            match = MATCH_RANDOM; break;
         case TOKEN_REG:
-             match = MATCH_REG; break;
+            match = MATCH_REG; break;
         case TOKEN_RETURN:
-             match = MATCH_RETURN; break;
-        case TOKEN_SIZE:
-             match = MATCH_SIZE; break;
+            match = MATCH_RETURN; break;
+        case TOKEN_SIZE: case TOKEN_LENGTH:
+            match = MATCH_SIZE; break;
         case TOKEN_SRC:
-             match = MATCH_SRC; break;
+            match = MATCH_SRC; break;
         case TOKEN_TRUE:
-             match = MATCH_TRUE; break;
+            match = MATCH_TRUE; break;
+        case TOKEN_REGISTER:
+            cmp = MATCH_CMP_IN;
+            regs.insert((Register)parser.i);
+            while (parser.peekToken() == ',')
+            {
+                parser.getToken();
+                parser.expectToken(TOKEN_REGISTER);
+                regs.insert((Register)parser.i);
+            }
+            parser.expectToken(TOKEN_IN);
+            t = parser.getToken();
+            // Fallthrough:
+        case TOKEN_READS: case TOKEN_WRITES: case TOKEN_REGS:
+            if (cmp == MATCH_CMP_INVALID)
+                parser.unexpectedToken();
+            switch (t)
+            {
+                case TOKEN_REGS:
+                    match = MATCH_REGS; break;
+                case TOKEN_READS:
+                    match = MATCH_READS; break;
+                case TOKEN_WRITES:
+                    match = MATCH_WRITES; break;
+                default:
+                    parser.unexpectedToken();
+            }
+            break;
         default:
             parser.unexpectedToken();
     }
@@ -618,6 +652,7 @@ static MatchTest *parseTest(Parser &parser)
                     plugin->filename);
             break;
         }
+
         case MATCH_OP: case MATCH_SRC: case MATCH_DST:
         case MATCH_IMM: case MATCH_REG: case MATCH_MEM:
             switch (parser.peekToken())
@@ -642,7 +677,7 @@ static MatchTest *parseTest(Parser &parser)
                     case TOKEN_ACCESS:
                         type = MATCH_TYPE_ACCESS;
                         field = MATCH_FIELD_ACCESS; break;
-                    case TOKEN_SIZE:
+                    case TOKEN_SIZE: case TOKEN_LENGTH:
                         need_idx = false;
                         field = MATCH_FIELD_SIZE; break;
                     case TOKEN_SEGMENT:
@@ -668,12 +703,14 @@ static MatchTest *parseTest(Parser &parser)
             else if (idx >= 0)
                 type = MATCH_TYPE_INTEGER | MATCH_TYPE_REGISTER;
             break;
+
         default:
             break;
     }
+
     if (cmp == MATCH_CMP_DEFINED)
         parser.expectToken(')');
-    else
+    else if (cmp != MATCH_CMP_IN)
     {
         switch (parser.peekToken())
         {
@@ -707,6 +744,7 @@ static MatchTest *parseTest(Parser &parser)
         case MATCH_CALL: case MATCH_JUMP: case MATCH_RETURN: case MATCH_PLUGIN:
         case MATCH_OP: case MATCH_SRC: case MATCH_DST:
         case MATCH_IMM: case MATCH_REG: case MATCH_MEM:
+        case MATCH_READS: case MATCH_WRITES: case MATCH_REGS:
             option_detail = true;
             break;
         default:
@@ -716,6 +754,11 @@ static MatchTest *parseTest(Parser &parser)
     MatchTest *test = new MatchTest(match, idx, field, cmp, plugin, nullptr);
     if (cmp == MATCH_CMP_DEFINED)
         return test;
+    else if (cmp == MATCH_CMP_IN)
+    {
+        test->regs = new std::set<Register>;
+        test->regs->swap(regs);
+    }
     else if (type == MATCH_TYPE_STRING)
     {
         t = parser.getRegex();
@@ -969,7 +1012,7 @@ static Action *parseAction(const char *str, const MatchExpr *expr)
                         arg = ARGUMENT_RANDOM; break;
                     case TOKEN_REG:
                         arg = ARGUMENT_REG; break;
-                    case TOKEN_SIZE:
+                    case TOKEN_SIZE: case TOKEN_LENGTH:
                         arg = ARGUMENT_BYTES_SIZE; break;
                     case TOKEN_STATIC_ADDR:
                         arg = ARGUMENT_STATIC_ADDR; break;
@@ -1166,7 +1209,7 @@ static Action *parseAction(const char *str, const MatchExpr *expr)
                                     field = FIELD_DISPL; break;
                                 case TOKEN_SCALE:
                                     field = FIELD_SCALE; break;
-                                case TOKEN_SIZE:
+                                case TOKEN_SIZE: case TOKEN_LENGTH:
                                     field = FIELD_SIZE; break;
                                 default:
                                     parser.unexpectedToken();
@@ -1449,7 +1492,7 @@ static MatchValue makeMatchValue(MatchKind match, int idx, MatchField field,
                                 return result;
                             case X86_OP_REG:
                                 result.type = MATCH_TYPE_REGISTER;
-                                result.reg  = getReg(op->reg);
+                                result.reg  = getRegister(op->reg);
                                 return result;
                             case X86_OP_MEM:
                                 result.type = MATCH_TYPE_MEMORY;
@@ -1500,7 +1543,7 @@ static MatchValue makeMatchValue(MatchKind match, int idx, MatchField field,
                             return result;
                         }
                         result.type = MATCH_TYPE_REGISTER;
-                        result.reg  = getReg(op->mem.segment);
+                        result.reg  = getRegister(op->mem.segment);
                         return result;
                     case MATCH_FIELD_DISPL:
                         if (op->type != X86_OP_MEM)
@@ -1516,7 +1559,7 @@ static MatchValue makeMatchValue(MatchKind match, int idx, MatchField field,
                             return result;
                         }
                         result.type = MATCH_TYPE_REGISTER;
-                        result.reg  = getReg(op->mem.base);
+                        result.reg  = getRegister(op->mem.base);
                         return result;
                     case MATCH_FIELD_INDEX:
                         if (op->type != X86_OP_MEM)
@@ -1527,7 +1570,7 @@ static MatchValue makeMatchValue(MatchKind match, int idx, MatchField field,
                             return result;
                         }
                         result.type = MATCH_TYPE_REGISTER;
-                        result.reg  = getReg(op->mem.index);
+                        result.reg  = getRegister(op->mem.index);
                         return result;
                     case MATCH_FIELD_SCALE:
                         if (op->type != X86_OP_MEM)
@@ -1563,8 +1606,8 @@ static MatchValue makeMatchValue(MatchKind match, int idx, MatchField field,
 /*
  * Evaluate a matching.
  */
-static bool matchEval(const MatchExpr *expr, const cs_insn *I, intptr_t offset,
-    const char *basename, const Record **record)
+static bool matchEval(csh handle, const MatchExpr *expr, const cs_insn *I,
+    intptr_t offset, const char *basename, const Record **record)
 {
     if (expr == nullptr)
         return true;
@@ -1573,18 +1616,18 @@ static bool matchEval(const MatchExpr *expr, const cs_insn *I, intptr_t offset,
     switch (expr->op)
     {
         case MATCH_OP_NOT:
-            pass = matchEval(expr->arg1, I, offset, nullptr, nullptr);
+            pass = matchEval(handle, expr->arg1, I, offset, nullptr, nullptr);
             return !pass;
         case MATCH_OP_AND:
-            pass = matchEval(expr->arg1, I, offset, basename, record);
+            pass = matchEval(handle, expr->arg1, I, offset, basename, record);
             if (!pass)
                 return false;
-            return matchEval(expr->arg2, I, offset, basename, record);
+            return matchEval(handle, expr->arg2, I, offset, basename, record);
         case MATCH_OP_OR:
-            pass = matchEval(expr->arg1, I, offset, basename, record);
+            pass = matchEval(handle, expr->arg1, I, offset, basename, record);
             if (pass)
                 return true;
-            return matchEval(expr->arg2, I, offset, basename, record);
+            return matchEval(handle, expr->arg2, I, offset, basename, record);
         case MATCH_OP_TEST:
             test = expr->test;
             break;
@@ -1609,6 +1652,33 @@ static bool matchEval(const MatchExpr *expr, const cs_insn *I, intptr_t offset,
             pass = (test->cmp == MATCH_CMP_NEQ? !pass: pass);
             break;
         }
+        case MATCH_READS: case MATCH_WRITES: case MATCH_REGS:
+        {
+            if (test->cmp == MATCH_CMP_DEFINED)
+            {
+                pass = true;
+                break;
+            }
+            cs_regs reads, writes;
+            uint8_t reads_len, writes_len;
+            cs_err err = cs_regs_access(handle, I, reads, &reads_len,
+                writes, &writes_len);
+            if (err != 0)
+                error("failed to get registers for instruction");
+            for (uint8_t i = 0; !pass && test->match != MATCH_WRITES &&
+                    i < reads_len; i++)
+            {
+                auto j = test->regs->find(getRegister((x86_reg)reads[i]));
+                pass = (j != test->regs->end());
+            }
+            for (uint8_t i = 0; !pass && test->match != MATCH_READS &&
+                    i < writes_len; i++)
+            {
+                auto j = test->regs->find(getRegister((x86_reg)writes[i]));
+                pass = (j != test->regs->end());
+            }
+            break;
+        }
         case MATCH_TRUE: case MATCH_FALSE: case MATCH_ADDRESS:
         case MATCH_CALL: case MATCH_JUMP: case MATCH_OFFSET:
         case MATCH_OP: case MATCH_SRC: case MATCH_DST:
@@ -1616,7 +1686,8 @@ static bool matchEval(const MatchExpr *expr, const cs_insn *I, intptr_t offset,
         case MATCH_PLUGIN: case MATCH_RANDOM: case MATCH_RETURN:
         case MATCH_SIZE:
         {
-            if (test->cmp != MATCH_CMP_EQ_ZERO && test->cmp != MATCH_CMP_NEQ_ZERO &&
+            if (test->cmp != MATCH_CMP_EQ_ZERO &&
+                test->cmp != MATCH_CMP_NEQ_ZERO &&
                 test->cmp != MATCH_CMP_DEFINED && test->values->size() == 0)
                 break;
             MatchValue x = makeMatchValue(test->match, test->idx,
@@ -1701,7 +1772,7 @@ static bool matchAction(csh handle, const Action *action, const cs_insn *I,
             I->op_str);
     }
 #endif
-    bool pass = matchEval(action->match, I, offset);
+    bool pass = matchEval(handle, action->match, I, offset);
 #if 0
         if (option_debug)
         {
@@ -1839,6 +1910,7 @@ static void usage(FILE *stream, const char *progname)
     fputs("\t\t\t              | MATCH 'and' MATCH\n", stream);
     fputs("\t\t\t              | MATCH 'or' MATCH\n", stream);
     fputs("\t\t\tTEST      ::=   'defined' '(' ATTRIBUTE ')'\n", stream);
+    fputs("\t\t\t              | VALUES 'in' ATTRIBUTE\n", stream);
     fputs("\t\t\t              | ATTRIBUTE [ CMP VALUES ]\n", stream);
     fputs("\t\t\tCMP       ::=   '='\n", stream);
     fputs("\t\t\t              | '=='\n", stream);
@@ -1942,6 +2014,13 @@ static void usage(FILE *stream, const char *progname)
         stream);
     fputs("\t\t\t      - \"type\" is the operand type.\n", stream);
     fputs("\t\t\t          [TYPE={imm,reg,mem}]\n", stream);
+    fputs("\t\t\t- \"regs\", \"reads\", \"writes\" is respectively the "
+        "set of\n", stream);
+    fputs("\t\t\t    all registers, set of all read-from registers, and\n",
+        stream);
+    fputs("\t\t\t    the set of all written-to registers, used by the\n",
+        stream);
+    fputs("\t\t\t    instruction.  [TYPE=set of register]\n", stream);
     fputs("\t\t\t- \"plugin(NAME).match()\" is the value returned by\n",
         stream);
     fputs("\t\t\t    NAME.so's e9_plugin_match_v1() function.\n", stream);
@@ -2672,8 +2751,8 @@ int main(int argc, char **argv)
             // Builtin actions:
             char buf[4096];
             Metadata metadata_buf[MAX_ARGNO+1];
-            Metadata *metadata = buildMetadata(action, I, offset, metadata_buf,
-                buf, sizeof(buf)-1);
+            Metadata *metadata = buildMetadata(handle, action, I, offset,
+                metadata_buf, buf, sizeof(buf)-1);
             sendPatchMessage(backend.out, action->name, offset, metadata);
         }
     }

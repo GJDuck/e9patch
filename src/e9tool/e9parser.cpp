@@ -298,7 +298,7 @@ enum Register
     REGISTER_UNKNOWN,
 };
 
-static Register getReg(x86_reg reg)
+static Register getRegister(x86_reg reg)
 {
     switch (reg)
     {
@@ -616,6 +616,7 @@ enum Token
     TOKEN_FALSE,
     TOKEN_GEQ,
     TOKEN_IMM,
+    TOKEN_IN,
     TOKEN_INDEX,
     TOKEN_INSTR,
     TOKEN_JUMP,
@@ -677,7 +678,9 @@ enum Token
     TOKEN_RDI,
     TOKEN_RDX,
     TOKEN_READ,
+    TOKEN_READS,
     TOKEN_REG,
+    TOKEN_REGS,
     TOKEN_REPLACE,
     TOKEN_RETURN,
     TOKEN_RFLAGS,
@@ -699,7 +702,8 @@ enum Token
     TOKEN_TRAP,
     TOKEN_TRUE,
     TOKEN_TYPE,
-    TOKEN_WRITE
+    TOKEN_WRITE,
+    TOKEN_WRITES,
 };
 
 /*
@@ -785,6 +789,7 @@ static const TokenInfo tokens[] =
     {"fs",              TOKEN_REGISTER,         REGISTER_FS},
     {"gs",              TOKEN_REGISTER,         REGISTER_GS},
     {"imm",             TOKEN_IMM,              OP_TYPE_IMM},
+    {"in",              TOKEN_IN,               0},
     {"index",           TOKEN_INDEX,            0},
     {"instr",           TOKEN_INSTR,            0},
     {"jump",            TOKEN_JUMP,             0},
@@ -846,7 +851,9 @@ static const TokenInfo tokens[] =
     {"rdi",             TOKEN_REGISTER,         REGISTER_RDI},
     {"rdx",             TOKEN_REGISTER,         REGISTER_RDX},
     {"read",            TOKEN_READ,             ACCESS_READ},
+    {"reads",           TOKEN_READS,            0},
     {"reg",             TOKEN_REG,              OP_TYPE_REG},
+    {"regs",            TOKEN_REGS,             0},
     {"replace",         TOKEN_REPLACE,          0},
     {"return",          TOKEN_RETURN,           0},
     {"rflags",          TOKEN_REGISTER,         REGISTER_EFLAGS},
@@ -872,6 +879,7 @@ static const TokenInfo tokens[] =
     {"type",            TOKEN_TYPE,             0},
     {"w",               TOKEN_WRITE,            ACCESS_WRITE},
     {"write",           TOKEN_WRITE,            ACCESS_WRITE},
+    {"writes",          TOKEN_WRITES,           0},
     {"xmm0",            TOKEN_REGISTER,         REGISTER_XMM0},
     {"xmm1",            TOKEN_REGISTER,         REGISTER_XMM1},
     {"xmm10",           TOKEN_REGISTER,         REGISTER_XMM10},

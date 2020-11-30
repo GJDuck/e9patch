@@ -891,13 +891,14 @@ static const char *buildMetadataString(FILE *out, char *buf, long *pos)
 /*
  * Lookup a value from a CSV file based on the matching.
  */
-static bool matchEval(const MatchExpr *expr, const cs_insn *I, intptr_t offset,
-    const char *basename = nullptr, const Record **record = nullptr);
-static intptr_t lookupValue(const Action *action, const cs_insn *I,
-    intptr_t offset, const char *basename, intptr_t idx)
+static bool matchEval(csh handle, const MatchExpr *expr, const cs_insn *I,
+    intptr_t offset, const char *basename = nullptr,
+    const Record **record = nullptr);
+static intptr_t lookupValue(csh handle, const Action *action,
+    const cs_insn *I, intptr_t offset, const char *basename, intptr_t idx)
 {
     const Record *record = nullptr;
-    bool pass = matchEval(action->match, I, offset, basename, &record);
+    bool pass = matchEval(handle, action->match, I, offset, basename, &record);
     if (!pass || record == nullptr)
         error("failed to lookup value from file \"%s.csv\"; matching is "
             "ambiguous", basename);
@@ -913,8 +914,8 @@ static intptr_t lookupValue(const Action *action, const cs_insn *I,
  * Send instructions to load an argument into a register.
  */
 static Type sendLoadArgumentMetadata(FILE *out, CallInfo &info,
-    const Action *action, const Argument &arg, const cs_insn *I, off_t offset,
-    int argno)
+    csh handle, const Action *action, const Argument &arg, const cs_insn *I,
+    off_t offset, int argno)
 {
     int regno = getArgRegIdx(argno);
     if (regno < 0)
@@ -927,7 +928,7 @@ static Type sendLoadArgumentMetadata(FILE *out, CallInfo &info,
     {
         case ARGUMENT_USER:
         {
-            intptr_t value = lookupValue(action, I, offset, arg.name,
+            intptr_t value = lookupValue(handle, action, I, offset, arg.name,
                 arg.value);
             sendLoadValueMetadata(out, value, regno);
             break;
@@ -1228,8 +1229,9 @@ static void sendArgumentDataMetadata(FILE *out, const Argument &arg,
 /*
  * Build metadata.
  */
-static Metadata *buildMetadata(const Action *action, const cs_insn *I,
-    off_t offset, Metadata *metadata, char *buf, size_t size)
+static Metadata *buildMetadata(csh handle, const Action *action,
+    const cs_insn *I, off_t offset, Metadata *metadata, char *buf,
+    size_t size)
 {
     if (action == nullptr || action->kind == ACTION_PASSTHRU ||
             action->kind == ACTION_TRAP || action->kind == ACTION_PLUGIN)
@@ -1275,8 +1277,8 @@ static Metadata *buildMetadata(const Action *action, const cs_insn *I,
             TypeSig sig = TYPESIG_EMPTY;
             for (const auto &arg: action->args)
             {
-                Type t = sendLoadArgumentMetadata(out, info, action, arg, I,
-                    offset, argno);
+                Type t = sendLoadArgumentMetadata(out, info, handle, action,
+                    arg, I, offset, argno);
                 sig = setType(sig, t, argno);
                 argno++;
             }
