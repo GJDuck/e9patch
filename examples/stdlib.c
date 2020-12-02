@@ -94,7 +94,6 @@
  *       Even this method can fail, e.g., if the header #undef's it.
  */
 #define __errno_location    __hide____errno_location
-#define syscall             __hide__syscall
 #define read                __hide__read
 #define write               __hide__write
 #define open                __hide__open
@@ -262,7 +261,6 @@
 #include <unistd.h>
 
 #undef __errno_location
-#undef syscall
 #undef read
 #undef write
 #undef open
@@ -494,63 +492,60 @@ register int errno asm ("r11");
 /* SYSCALL                                                                  */
 /****************************************************************************/
 
-static __attribute__((__noinline__)) long syscall(long callno, ...)
-{
-    register long res asm ("rax");
-
 #ifdef ERRNO_TLS
-    asm volatile (
-        "mov %%edi,%%eax\n"
-        "mov %%rsi,%%rdi\n"
-        "mov %%rdx,%%rsi\n"
-        "mov %%rcx,%%rdx\n"
-        "mov %%r8,%%r10\n"
-        "mov %%r9,%%r8\n"
-        "mov 0x8(%%rsp),%%r9\n"
+asm (
+    ".globl syscall\n"
+    "syscall:\n"
 
-        "syscall\n"
+    "mov %edi,%eax\n"
+    "mov %rsi,%rdi\n"
+    "mov %rdx,%rsi\n"
+    "mov %rcx,%rdx\n"
+    "mov %r8,%r10\n"
+    "mov %r9,%r8\n"
+    "mov 0x8(%rsp),%r9\n"
 
-        "test %%rax,%%rax\n"
-        "jge .Lsyscall_ok\n"
+    "syscall\n"
 
-        "neg %%rax\n"
-        "mov %%rax,%%fs:" STRING(ERRNO_TLS_OFFSET) "\n"
-        "mov $-1,%0\n"
-        ".Lsyscall_ok:\n" :
-            "=r"(res) : :
-            "rdi", "rsi", "rdx", "rdx", "r8", "r9", "r10", "r11"
-    );
+    "test %rax,%rax\n"
+    "jge .Lsyscall_ok\n"
+
+    "neg %rax\n"
+    "mov %rax,%fs:" STRING(ERRNO_TLS_OFFSET) "\n"
+    "mov $-1,%rax\n"
+    ".Lsyscall_ok:\n"
+    "retq\n"
+);
 #endif
 
 #ifdef ERRNO_REG
-    asm volatile (
-        "push %%r11\n"
-        "mov %%edi,%%eax\n"
-        "mov %%rsi,%%rdi\n"
-        "mov %%rdx,%%rsi\n"
-        "mov %%rcx,%%rdx\n"
-        "mov %%r8,%%r10\n"
-        "mov %%r9,%%r8\n"
-        "mov 0x10(%%rsp),%%r9\n"
+asm (
+    ".globl syscall\n"
+    "syscall:\n"
 
-        "syscall\n"
+    "push %r11\n"
+    "mov %edi,%eax\n"
+    "mov %rsi,%rdi\n"
+    "mov %rdx,%rsi\n"
+    "mov %rcx,%rdx\n"
+    "mov %r8,%r10\n"
+    "mov %r9,%r8\n"
+    "mov 0x10(%rsp),%r9\n"
 
-        "pop %%r11\n" 
-        "test %%rax,%%rax\n"
-        "jge .Lsyscall_ok\n"
+    "syscall\n"
 
-        "neg %%rax\n"
-        "mov %%rax,%%r11\n"         // Store into errno
-        "mov $-1,%0\n"
+    "pop %r11\n" 
+    "test %rax,%rax\n"
+    "jge .Lsyscall_ok\n"
 
-        ".Lsyscall_ok:\n" :
-            "=r"(res) : :
-            "rdi", "rsi", "rdx", "rdx", "r8", "r9", "r10", "r11"
-    );
+    "neg %rax\n"
+    "mov %rax,%r11\n"         // Store into errno
+    "mov $-1,%rax\n"
+
+    ".Lsyscall_ok:\n"
+    "retq\n"
+);
 #endif
-
-    return res;
-}
 
 static ssize_t read(int fd, void *buf, size_t count)
 {
