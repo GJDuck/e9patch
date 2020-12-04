@@ -227,7 +227,12 @@ extern unsigned sendTrampolineMessage(FILE *out, const char *name,
  */
 extern ELF *parseELF(const char *filename, intptr_t base);
 extern void freeELF(ELF *elf);
-extern intptr_t lookupSymbol(const ELF *elf, const char *symbol);
+extern const uint8_t *getELFData(const ELF *elf);
+extern size_t getELFDataSize(const ELF *elf);
+extern intptr_t getSymbol(const ELF *elf, const char *symbol);
+extern intptr_t getTextAddr(const ELF *elf);
+extern off_t getTextOffset(const ELF *elf);
+extern size_t getTextSize(const ELF *elf);
 extern void NO_RETURN error(const char *msg, ...);
 extern void warning(const char *msg, ...);
 

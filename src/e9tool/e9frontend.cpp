@@ -2102,6 +2102,30 @@ void freeELF(ELF *elf)
 }
 
 /*
+ * ELF getters.
+ */
+const uint8_t *getData(const ELF *elf)
+{
+    return elf->data;
+}
+const size_t getDataSize(const ELF *elf)
+{
+    return elf->size;
+}
+const intptr_t getTextAddr(const ELF *elf)
+{
+    return elf->text_addr;
+}
+const off_t getTextOffset(const ELF *elf)
+{
+    return elf->text_offset;
+}
+const off_t getTextSize(const ELF *elf)
+{
+    return elf->text_offset;
+}
+
+/*
  * Symbol handling implementations.
  */
 #include "e9types.cpp"
@@ -2109,7 +2133,7 @@ void freeELF(ELF *elf)
 /*
  * Lookup the address of a symbol, or INTPTR_MIN if not found.
  */
-intptr_t e9frontend::lookupSymbol(const ELF *elf, const char *symbol)
+intptr_t e9frontend::getSymbol(const ELF *elf, const char *symbol)
 {
     return ::lookupSymbol(elf, symbol, TYPESIG_UNTYPED);
 }
