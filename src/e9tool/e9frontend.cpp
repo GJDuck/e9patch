@@ -2104,11 +2104,11 @@ void freeELF(ELF *elf)
 /*
  * ELF getters.
  */
-const uint8_t *getData(const ELF *elf)
+const uint8_t *getELFData(const ELF *elf)
 {
     return elf->data;
 }
-const size_t getDataSize(const ELF *elf)
+const size_t getELFDataSize(const ELF *elf)
 {
     return elf->size;
 }
