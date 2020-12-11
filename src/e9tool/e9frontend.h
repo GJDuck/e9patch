@@ -216,6 +216,7 @@ extern void sendELFFileMessage(FILE *out, const ELF *elf,
 extern unsigned sendPassthruTrampolineMessage(FILE *out);
 extern unsigned sendPrintTrampolineMessage(FILE *out);
 extern unsigned sendTrapTrampolineMessage(FILE *out);
+extern unsigned sendExitTrampolineMessage(FILE *out, int status);
 extern unsigned sendCallTrampolineMessage(FILE *out, const char *name,
     const std::vector<Argument> &args, bool clean = true, 
     CallKind call = CALL_BEFORE);

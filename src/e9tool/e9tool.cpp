@@ -266,6 +266,7 @@ enum ActionKind
 {
     ACTION_INVALID,
     ACTION_CALL,
+    ACTION_EXIT,
     ACTION_PASSTHRU,
     ACTION_PLUGIN,
     ACTION_PRINT,
@@ -360,15 +361,16 @@ struct Action
     const std::vector<Argument> args;
     const bool clean;
     const CallKind call;
+    int status;
 
     Action(const char *string, const MatchExpr *match, ActionKind kind,
             const char *name, const char *filename, const char *symbol,
             Plugin *plugin, const std::vector<Argument> &&args, bool clean,
-            CallKind call) :
+            CallKind call, int status) :
             string(string), match(match), kind(kind), name(name),
             filename(filename), symbol(symbol), elf(nullptr),
             plugin(plugin), context(nullptr), args(args), clean(clean),
-            call(call)
+            call(call), status(status)
     {
         ;
     }
@@ -885,6 +887,8 @@ static Action *parseAction(const char *str, const MatchExpr *expr)
     {
         case TOKEN_CALL:
             kind = ACTION_CALL; break;
+        case TOKEN_EXIT:
+            kind = ACTION_EXIT; break;
         case TOKEN_PASSTHRU:
             kind = ACTION_PASSTHRU; break;
         case TOKEN_PRINT:
@@ -897,7 +901,7 @@ static Action *parseAction(const char *str, const MatchExpr *expr)
             parser.unexpectedToken();
     }
 
-    // Parse call or plugin (if necessary):
+    // Parse the rest of the action (if necessary):
     CallKind call = CALL_BEFORE;
     bool clean = false, naked = false, before = false, after = false,
          replace = false, conditional = false;
@@ -905,7 +909,18 @@ static Action *parseAction(const char *str, const MatchExpr *expr)
     const char *filename = nullptr;
     Plugin *plugin = nullptr;
     std::vector<Argument> args;
-    if (kind == ACTION_PLUGIN)
+    int status = 0;
+    if (kind == ACTION_EXIT)
+    {
+        parser.expectToken('(');
+        parser.expectToken(TOKEN_INTEGER);
+        if (parser.i < 0 || parser.i > 255)
+            error("failed to parse action; exit status must be an "
+                "integer within the range 0..255");
+        status = (int)parser.i;
+        parser.expectToken(')');
+    }
+    else if (kind == ACTION_PLUGIN)
     {
         parser.expectToken('(');
         parser.expectToken(TOKEN_STRING);
@@ -1330,6 +1345,13 @@ static Action *parseAction(const char *str, const MatchExpr *expr)
             name = strDup(call_name.c_str());
             break;
         }
+        case ACTION_EXIT:
+        {
+            std::string exit_name("exit_");
+            exit_name += std::to_string(status);
+            name = strDup(exit_name.c_str());
+            break;
+        }
         case ACTION_PLUGIN:
         {
             std::string plugin_name("plugin_");
@@ -1342,7 +1364,7 @@ static Action *parseAction(const char *str, const MatchExpr *expr)
     }
 
     Action *action = new Action(str, expr, kind, name, filename, symbol,
-        plugin, std::move(args), clean, call);
+        plugin, std::move(args), clean, call, status);
     return action;
 }
 
@@ -2052,19 +2074,22 @@ static void usage(FILE *stream, const char *progname)
     fputs("\t\t\tACTION ::=   'passthru'\n", stream);
     fputs("\t\t\t           | 'print' \n", stream);
     fputs("\t\t\t           | 'trap' \n", stream);
+    fputs("\t\t\t           | 'exit' '(' CODE ')'\n", stream);
     fputs("\t\t\t           | CALL \n", stream);
     fputs("\t\t\t           | 'plugin' '[' NAME ']'\n", stream);
     fputc('\n', stream);
     fputs("\t\tWhere:\n", stream);
     fputc('\n', stream);
-    fputs("\t\t\t- \"passthru\": empty (NOP) instrumentation;\n", stream);
-    fputs("\t\t\t- \"print\"   : instruction printing instrumentation.\n",
+    fputs("\t\t\t- \"passthru\"   : empty (NOP) instrumentation;\n", stream);
+    fputs("\t\t\t- \"print\"      : instruction printing instrumentation.\n",
         stream);
-    fputs("\t\t\t- \"trap\"    : SIGTRAP instrumentation.\n", stream);
-    fputs("\t\t\t- CALL      : call user instrumentation (see below).\n",
+    fputs("\t\t\t- \"trap\"       : SIGTRAP instrumentation.\n", stream);
+    fputs("\t\t\t- \"exit(CODE)\" : exit with CODE instrumentation.\n",
+        stream);
+    fputs("\t\t\t- CALL         : call user instrumentation (see below).\n",
         stream);
     fputs("\t\t\t- \"plugin(NAME).patch()\"\n", stream);
-    fputs("\t\t\t            : plugin instrumentation (see below).\n",
+    fputs("\t\t\t               : plugin instrumentation (see below).\n",
         stream);
     fputc('\n', stream);
     fputs("\t\tThe CALL INSTRUMENTATION makes it possible to invoke a\n",
@@ -2533,6 +2558,7 @@ int main(int argc, char **argv)
     bool have_print = false, have_passthru = false, have_trap = false;
     std::map<const char *, ELF *, CStrCmp> files;
     std::set<const char *, CStrCmp> have_call;
+    std::set<int> have_exit;
     intptr_t file_addr = elf.free_addr + 0x1000000;     // XXX
     for (const auto action: option_actions)
     {
@@ -2547,6 +2573,16 @@ int main(int argc, char **argv)
             case ACTION_TRAP:
                 have_trap = true;
                 break;
+            case ACTION_EXIT:
+            {
+                auto i = have_exit.find(action->status);
+                if (i == have_exit.end())
+                {
+                    sendExitTrampolineMessage(backend.out, action->status);
+                    have_exit.insert(action->status);
+                }
+                break;
+            }
             case ACTION_CALL:
             {
                 // Step (1): Ensure the ELF file is loaded:

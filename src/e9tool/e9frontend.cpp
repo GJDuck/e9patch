@@ -1794,6 +1794,29 @@ unsigned e9frontend::sendPrintTrampolineMessage(FILE *out)
 }
 
 /*
+ * Send an "exit" "trampoline" message.
+ */
+unsigned e9frontend::sendExitTrampolineMessage(FILE *out, int status)
+{
+    sendMessageHeader(out, "trampoline");
+    sendParamHeader(out, "name");
+    fprintf(out, "\"exit_%d\"", status);
+    sendSeparator(out);
+    sendParamHeader(out, "template");
+    
+    putc('[', out);
+    fprintf(out, "%u,{\"int32\":%d},",              // mov $status, %edi
+        0xbf, status);
+    fprintf(out, "%u,{\"int32\":%d},",              // mov $SYS_EXIT, %eax
+        0xb8, 60);
+    fprintf(out, "%u,%u", 0x0f, 0x05);              // syscall
+    putc(']', out);
+
+    sendSeparator(out, /*last=*/true);
+    return sendMessageFooter(out, /*sync=*/true);
+}
+
+/*
  * Send a "trap" "trampoline" message.
  */
 unsigned e9frontend::sendTrapTrampolineMessage(FILE *out)

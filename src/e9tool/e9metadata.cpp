@@ -1233,10 +1233,15 @@ static Metadata *buildMetadata(csh handle, const Action *action,
     const cs_insn *I, off_t offset, Metadata *metadata, char *buf,
     size_t size)
 {
-    if (action == nullptr || action->kind == ACTION_PASSTHRU ||
-            action->kind == ACTION_TRAP || action->kind == ACTION_PLUGIN)
-    {
+    if (action == nullptr)
         return nullptr;
+    switch (action->kind)
+    {
+        case ACTION_EXIT: case ACTION_PASSTHRU:
+        case ACTION_PLUGIN: case ACTION_TRAP:
+            return nullptr;
+        default:
+            break;
     }
 
     FILE *out = fmemopen(buf, size, "w");
@@ -1392,7 +1397,7 @@ static Metadata *buildMetadata(csh handle, const Action *action,
         }
 
         default:
-            break;
+            assert(false);
     }
 
     fclose(out);
