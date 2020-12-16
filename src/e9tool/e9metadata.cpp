@@ -1053,6 +1053,7 @@ static Type sendLoadArgumentMetadata(FILE *out, CallInfo &info,
                         regno);
                     break;
             }
+            t = TYPE_CONST_VOID_PTR;
             break;
         case ARGUMENT_SPL: case ARGUMENT_SP: case ARGUMENT_ESP:
         case ARGUMENT_RSP:
