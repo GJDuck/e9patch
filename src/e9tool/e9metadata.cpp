@@ -1140,6 +1140,7 @@ static Type sendLoadArgumentMetadata(FILE *out, CallInfo &info,
                 sendSExtFromI32ToR64(out, 0, regno);
                 break;
             }
+            bool dangerous = false;
             if (!arg.ptr && arg.field == FIELD_NONE && op != nullptr &&
                     op->type == X86_OP_MEM)
             {
@@ -1152,6 +1153,7 @@ static Type sendLoadArgumentMetadata(FILE *out, CallInfo &info,
                         CONTEXT(I), getRegName(getReg(regno)));
                     sendSExtFromI32ToR64(out, 0, regno);
                     t = TYPE_NULL_PTR;
+                    dangerous = true;
                 }
                 else switch (I->id)
                 {
@@ -1167,10 +1169,12 @@ static Type sendLoadArgumentMetadata(FILE *out, CallInfo &info,
                             I->mnemonic);
                         sendSExtFromI32ToR64(out, 0, regno);
                         t = TYPE_NULL_PTR;
+                        dangerous = true;
                         break;
                 }
             }
-            else if (!sendLoadOperandMetadata(out, I, op, arg.ptr, arg.field,
+            if (!dangerous &&
+                !sendLoadOperandMetadata(out, I, op, arg.ptr, arg.field,
                     info, regno))
                 t = TYPE_NULL_PTR;
             break;
