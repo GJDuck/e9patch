@@ -16,13 +16,13 @@ There are three main ways to integrate E9Patch into your project:
   [advanced, low-level, flexible]
 
 If performance is not an issue,
-then we recommend using [E9Tool call instrumentation](e9tool-call).
+then we recommend using [E9Tool call instrumentation](#e9tool-call).
 For serious/optimized applications, we recommend using
 an [E9Tool plugin](#e9tool-plugin) or
 the [E9Patch JSON-RPC interface](#json-rpc-interface).
 
 ---
-## 1. E9Tool Call Instrumentation
+## <a id="e9tool-call">1. E9Tool Call Instrumentation</a>
 
 E9Tool supports a generic instruction patching capability in the form of
 *call instrumentation*.
@@ -94,180 +94,11 @@ The instrumented `a.out` file will call the `counter` function each
 time a jump instruction is executed.
 After 100000 jumps, the program will terminate with `SIGTRAP`.
 
+More information about *call instrumentation* can be found in the
+[E9Tool User's Guide](https://github.com/GJDuck/e9patch/blob/master/doc/e9tool-user-guide.md).
+
 Additional examples of *call instrumentation* are also
 [available here](https://github.com/GJDuck/e9patch/tree/master/examples).
-
----
-### 1.1 Libc Support
-
-A parallel implementation of common libc functions is provided in the
-`examples/stdlib.c` file.
-To use, simply include this file into your project:
-
-        #include "stdlib.c"
-
-This version of libc is designed to be compatible with call instrumentation.
-However, only a subset of libc is implemented, so it is WYSIWYG.
-That said, many common libc functions, including file I/O and memory
-allocation, have been implemented.
-
-It is not advisable to call the "real" `glibc` functions from call
-instrumentation, namely:
-
-* `glibc` functions use the System V ABI which is not compatible with
-  the clean call ABI.
-  Specifically, the clean ABI does not align the stack nor save/restore
-  floating point registers for performance reasons.
-* Many `glibc` functions are not reentrant and access/modify global state
-  such as `errno`.
-  Thus, calling `glibc` functions directly can break transparency and/or cause
-  problems such as deadlocks.
-
-Unlike `glibc`,
-the parallel libc is designed to be compatible with the clean ABI and
-handle problems such as deadlocks gracefully.
-
----
-### 1.2 Initialization
-
-It is also possible to define an initialization function.
-For example:
-
-        #include "stdlib.c"
-
-        static int max = 1000;
-
-        void init(int argc, char **argv, char **envp)
-        {
-            environ = envp;     // Init getenv()
-
-            const char *MAX = getenv("MAX");
-            if (MAX != NULL)
-                max = atoi(MAX);
-        }
-
-The initialization function must be named `init`, and will be called
-once during the patched program's initialization.
-For patched executables, the command line arguments (`argc` and `argv`) and
-the environment pointer (`envp`) will be passed as arguments to the function.
-Note that, for technical reasons, the `argc`/`argv`/`envp`
-arguments are only available for patched executables.
-These arguments will be zero/`NULL` for patched shared objects.
-
-In the example above, the initialization function searches for an
-environment variable `MAX`, and sets the `max` counter accordingly.
-
----
-### 1.3 Advanced Options
-
-*Call instrumentation* supports advanced options that
-are specified in square brackets after the `call` token
-in the `--action` option.
-For example:
-
-        ./e9tool --match 'asm=j.*' --action 'call[after] entry@counter' xterm
-
-This specifies the `after` option, which means the `entry()`
-function should be called after the patched instruction
-(the default is before).
-
-The options are:
-
-* `clean`/`naked` for clean/naked calls.
-* `before`/`after`/`replace`/`conditional` for inserting the
-  call before/after the instruction, or (conditionally) replacing
-  the instruction by the call.
-
-Here the `naked` option indicates that the called function will be
-responsible for preserving the CPU state, and not E9Tool.
-This usually means the function must be implemented in assembly.
-For some applications, this can enable more optimized code.
-The default is `clean`, which means E9Tool will automatically
-generate code for saving/restoring the CPU state.
-Note that, for efficiency reasons, the `clean` call ABI differs from
-the standard System V ABI in the following way:
-
-* The x87/MMX/SSE/AVX/AVX2/AVX512 registers are *not* saved.
-* The stack pointer `%rsp` is *not* guaranteed to be aligned to a 16-byte
-  boundary.
-
-These differences are generally safe provided the instrumentation code
-exclusively uses general-purpose registers
-(as is enforced by `e9compile.sh`).
-Otherwise, it will be necessary to save the registers and align the
-stack manually inside the instrumentation code.
-
-The `before`/`after`/`replace` option specifies where the
-instrumented call should be placed.
-For `replace`, the original instruction is essentially deleted
-from the patched binary, and it is up to the called function to
-execute/emulate a replacement.
-For `conditional`, the return value of the called function will
-be examined.
-If zero is returned, the behavior will be same as `replace` and the original
-instruction will not be executed.
-Otherwise if non-zero, the behavior will be same as `before` and the
-original instruction will be executed in its original context.
-
----
-### 1.4 Arguments
-
-E9Tool also supports passing arguments to the called function.
-The syntax uses the `C`-style round brackets.
-For example:
-
-        ./e9tool --match 'asm=j.*' --action 'call entry(rip)@counter' xterm
-
-This specifies that the current value of the instruction pointer
-(`%rip`) should be passed as the first argument to the function
-`entry()`.
-The called function can use this argument, e.g.:
-
-
-        void entry(void *rip)
-        {
-            counter++;
-            if (counter >= max || (unsigned long)rip < 0x10000000)
-                asm volatile ("int3");
-        }
-
-The modified function will now immediately trap for any instruction
-that is less than the address `0x10000000` (e.g., to enforce PIC code).
-
-Several arguments are supported:
-
-* `asm` is a pointer to a string representation of the instruction.
-* `asm.size` is the number of bytes in `asm`.
-* `asm.len` is the length of `asm`.
-* `addr` is the address of the instruction.
-* `base` is the PIC base address.
-* `instr` is the bytes of the instruction.
-* `next` is the address of the next instruction.
-* `offset` is the file offset of the instruction.
-* `target` is the jump/call/return target address, else -1.
-* `trampoline` is the address of the trampoline.
-* `random` is a random value [0..2147483647].
-* `staticAddr` is the (static) address of the instruction.
-* `size` is the number of bytes in `instr`.
-* `ah`...`dh`, `al`...`r15b`,
-  `ax`...`r15w`, `eax`...`r15d`,
-  `rax`...`r15`, `rip`, `rflags` is the corresponding register value.
-* `&ah`...`&dh`, `&al`...`&r15b`,
-  `&ax`...`&r15w`, `&eax`...`&r15d`,
-  `&rax`...`&r15`, `&rflags` is the corresponding register value but
-   passed-by-pointer.
-* `op[i]`, `src[i]`, `dst[i]`, `imm[i]`, `reg[i]`, `mem[i]` is the ith
-  operand, source operand, destination operand, immediate operand, register
-  operand, memory operand respectively.
-* `&op[i]`, `&src[i]`, `&dst[i]`, `&imm[i]`, `&reg[i]`, `&mem[i]` is the
-   same as above but passed-by-pointer.
-* An integer constant.
-* A file lookup of the form `basename[index]` where
-  `basename` is the basename of a CSV file used in
-  the matching, and `index` is a column index.
-  Note that the matching must select a unique row.
-
-Note that the current E9Tool supports a maximum of 8 arguments.
 
 ---
 ## <a id="json-rpc-interface">2. E9Patch JSON-RPC API</a>

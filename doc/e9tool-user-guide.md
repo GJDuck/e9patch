@@ -2,7 +2,27 @@
 
 **NOTE**: This guide is a work-in-progress and still incomplete.
 
-## Matching Language
+---
+## Contents
+
+* [1. Matching Language](#s1)
+    - [1.1 Attributes](#s11)
+    - [1.2 Definedness](#s12)
+    - [1.3 Examples](#s13)
+* [2. Action Language](#s2)
+    - [2.1 Builtin Actions](#s21)
+    - [2.2 Call Actions](#s22)
+        * [2.2.1 Call Action Arguments](#s221)
+            - [2.2.1.1 Pass-by-pointer](#s2211)
+            - [2.2.1.2 Polymorphic Arguments](#s2212)
+            - [2.2.1.3 Undefined Arguments](#s2213)
+        * [2.2.2 Call Action Options](#s222)
+        * [2.2.3 Call Action Standard Library](#s223)
+        * [2.2.4 Call Action Initialization](#s224)
+    - [2.3 Plugin Actions](#s23)
+
+---
+## <a id="s1">1. Matching Language</a>
 
 The *matching language* specifies what instructions should be patched by
 the corresponding *action* (see below).
@@ -70,7 +90,8 @@ This means that the corresponding attribute value must either
 match (for `==`) or not match (for `!=`) the regular expression,
 depending on the comparison operator.
 
-### Attributes
+---
+### <a id="s11">1.1 Attributes</a>
 
 The following `ATTRIBUTE`s (with corresponding types) are
 supported:
@@ -110,73 +131,73 @@ supported:
 <tr><td><b><tt>mem.size</tt></b></td><td><tt>Integer</tt></td>
     <td>The number of memory operands</td></tr>
 <tr><td><b><tt>op[i]</tt></b></td><td><tt>Operand</tt></td>
-    <td>The <tt>i</tt><sup>th</sup> operand</td></tr>
+    <td>The <i>i</i><sup>th</sup> operand</td></tr>
 <tr><td><b><tt>src[i]</tt></b></td><td><tt>Operand</tt></td>
-    <td>The <tt>i</tt><sup>th</sup> source operand</td></tr>
+    <td>The <i>i</i><sup>th</sup> source operand</td></tr>
 <tr><td><b><tt>dst[i]</tt></b></td><td><tt>Operand</tt></td>
-    <td>The <tt>i</tt><sup>th</sup> destination operand</td></tr>
+    <td>The <i>i</i><sup>th</sup> destination operand</td></tr>
 <tr><td><b><tt>imm[i]</tt></b></td><td><tt>Operand</tt></td>
-    <td>The <tt>i</tt><sup>th</sup> immediate operand</td></tr>
+    <td>The <i>i</i><sup>th</sup> immediate operand</td></tr>
 <tr><td><b><tt>reg[i]</tt></b></td><td><tt>Operand</tt></td>
-    <td>The <tt>i</tt><sup>th</sup> register operand</td></tr>
+    <td>The <i>i</i><sup>th</sup> register operand</td></tr>
 <tr><td><b><tt>mem[i]</tt></b></td><td><tt>Operand</tt></td>
-    <td>The <tt>i</tt><sup>th</sup> memory operand</td></tr>
+    <td>The <i>i</i><sup>th</sup> memory operand</td></tr>
 <tr><td><b><tt>op[i].type</tt></b></td><td><tt>{imm,reg,mem}</tt></td>
-    <td>The <tt>i</tt><sup>th</sup> operand type</td></tr>
+    <td>The <i>i</i><sup>th</sup> operand type</td></tr>
 <tr><td><b><tt>src[i].type</tt></b></td><td><tt>{imm,reg,mem}</tt></td>
-    <td>The <tt>i</tt><sup>th</sup> source operand type</td></tr>
+    <td>The <i>i</i><sup>th</sup> source operand type</td></tr>
 <tr><td><b><tt>dst[i].type</tt></b></td><td><tt>{imm,reg,mem}</tt></td>
-    <td>The <tt>i</tt><sup>th</sup> destination operand type</td></tr>
+    <td>The <i>i</i><sup>th</sup> destination operand type</td></tr>
 <tr><td><b><tt>op[i].access</tt></b></td><td><tt>{-,r,w,rw}</tt></td>
-    <td>The <tt>i</tt><sup>th</sup> operand access</td></tr>
+    <td>The <i>i</i><sup>th</sup> operand access</td></tr>
 <tr><td><b><tt>src[i].access</tt></b></td><td><tt>{-,r,w,rw}</tt></td>
-    <td>The <tt>i</tt><sup>th</sup> source operand access</td></tr>
+    <td>The <i>i</i><sup>th</sup> source operand access</td></tr>
 <tr><td><b><tt>dst[i].access</tt></b></td><td><tt>{-,r,w,rw}</tt></td>
-    <td>The <tt>i</tt><sup>th</sup> destination operand access</td></tr>
+    <td>The <i>i</i><sup>th</sup> destination operand access</td></tr>
 <tr><td><b><tt>reg[i].access</tt></b></td><td><tt>{-,r,w,rw}</tt></td>
-    <td>The <tt>i</tt><sup>th</sup> register operand access</td></tr>
+    <td>The <i>i</i><sup>th</sup> register operand access</td></tr>
 <tr><td><b><tt>mem[i].access</tt></b></td><td><tt>{-,r,w,rw}</tt></td>
-    <td>The <tt>i</tt><sup>th</sup> memory operand access</td></tr>
+    <td>The <i>i</i><sup>th</sup> memory operand access</td></tr>
 <tr><td><b><tt>op[i].seg</tt></b></td><td><tt>Register</tt></td>
-    <td>The <tt>i</tt><sup>th</sup> operand segment register</td></tr>
+    <td>The <i>i</i><sup>th</sup> operand segment register</td></tr>
 <tr><td><b><tt>src[i].seg</tt></b></td><td><tt>Register</tt></td>
-    <td>The <tt>i</tt><sup>th</sup> source operand segment register</td></tr>
+    <td>The <i>i</i><sup>th</sup> source operand segment register</td></tr>
 <tr><td><b><tt>dst[i].seg</tt></b></td><td><tt>Register</tt></td>
-    <td>The <tt>i</tt><sup>th</sup> destination operand segment register</td></tr>
+    <td>The <i>i</i><sup>th</sup> destination operand segment register</td></tr>
 <tr><td><b><tt>mem[i].seg</tt></b></td><td><tt>Register</tt></td>
-    <td>The <tt>i</tt><sup>th</sup> memory operand segment register</td></tr>
+    <td>The <i>i</i><sup>th</sup> memory operand segment register</td></tr>
 <tr><td><b><tt>op[i].disp</tt></b></td><td><tt>Integer</tt></td>
-    <td>The <tt>i</tt><sup>th</sup> operand displacement</td></tr>
+    <td>The <i>i</i><sup>th</sup> operand displacement</td></tr>
 <tr><td><b><tt>src[i].disp</tt></b></td><td><tt>Integer</tt></td>
-    <td>The <tt>i</tt><sup>th</sup> source operand displacement</td></tr>
+    <td>The <i>i</i><sup>th</sup> source operand displacement</td></tr>
 <tr><td><b><tt>dst[i].disp</tt></b></td><td><tt>Integer</tt></td>
-    <td>The <tt>i</tt><sup>th</sup> destination operand displacement</td></tr>
+    <td>The <i>i</i><sup>th</sup> destination operand displacement</td></tr>
 <tr><td><b><tt>mem[i].disp</tt></b></td><td><tt>Integer</tt></td>
-    <td>The <tt>i</tt><sup>th</sup> memory operand displacement</td></tr>
+    <td>The <i>i</i><sup>th</sup> memory operand displacement</td></tr>
 <tr><td><b><tt>op[i].base</tt></b></td><td><tt>Register</tt></td>
-    <td>The <tt>i</tt><sup>th</sup> operand base register</td></tr>
+    <td>The <i>i</i><sup>th</sup> operand base register</td></tr>
 <tr><td><b><tt>src[i].base</tt></b></td><td><tt>Register</tt></td>
-    <td>The <tt>i</tt><sup>th</sup> source operand base register</td></tr>
+    <td>The <i>i</i><sup>th</sup> source operand base register</td></tr>
 <tr><td><b><tt>dst[i].base</tt></b></td><td><tt>Register</tt></td>
-    <td>The <tt>i</tt><sup>th</sup> destination operand base register</td></tr>
+    <td>The <i>i</i><sup>th</sup> destination operand base register</td></tr>
 <tr><td><b><tt>mem[i].base</tt></b></td><td><tt>Register</tt></td>
-    <td>The <tt>i</tt><sup>th</sup> memory operand base register</td></tr>
+    <td>The <i>i</i><sup>th</sup> memory operand base register</td></tr>
 <tr><td><b><tt>op[i].index</tt></b></td><td><tt>Register</tt></td>
-    <td>The <tt>i</tt><sup>th</sup> operand index register</td></tr>
+    <td>The <i>i</i><sup>th</sup> operand index register</td></tr>
 <tr><td><b><tt>src[i].index</tt></b></td><td><tt>Register</tt></td>
-    <td>The <tt>i</tt><sup>th</sup> source operand index register</td></tr>
+    <td>The <i>i</i><sup>th</sup> source operand index register</td></tr>
 <tr><td><b><tt>dst[i].index</tt></b></td><td><tt>Register</tt></td>
-    <td>The <tt>i</tt><sup>th</sup> destination operand index register</td></tr>
+    <td>The <i>i</i><sup>th</sup> destination operand index register</td></tr>
 <tr><td><b><tt>mem[i].index</tt></b></td><td><tt>Register</tt></td>
-    <td>The <tt>i</tt><sup>th</sup> memory operand index register</td></tr>
+    <td>The <i>i</i><sup>th</sup> memory operand index register</td></tr>
 <tr><td><b><tt>op[i].scale</tt></b></td><td><tt>Integer</tt></td>
-    <td>The <tt>i</tt><sup>th</sup> operand scale</td></tr>
+    <td>The <i>i</i><sup>th</sup> operand scale</td></tr>
 <tr><td><b><tt>src[i].scale</tt></b></td><td><tt>Integer</tt></td>
-    <td>The <tt>i</tt><sup>th</sup> source operand scale</td></tr>
+    <td>The <i>i</i><sup>th</sup> source operand scale</td></tr>
 <tr><td><b><tt>dst[i].scale</tt></b></td><td><tt>Integer</tt></td>
-    <td>The <tt>i</tt><sup>th</sup> destination operand scale</td></tr>
+    <td>The <i>i</i><sup>th</sup> destination operand scale</td></tr>
 <tr><td><b><tt>mem[i].scale</tt></b></td><td><tt>Integer</tt></td>
-    <td>The <tt>i</tt><sup>th</sup> memory operand scale</td></tr>
+    <td>The <i>i</i><sup>th</sup> memory operand scale</td></tr>
 <tr><td><b><tt>regs</tt></b></td><td><tt>Set&lt;Register&gt;</tt></td>
     <td>The set of all accessed registers</td></tr>
 <tr><td><b><tt>reads</tt></b></td><td><tt>Set&lt;Register&gt;</tt></td>
@@ -212,7 +233,8 @@ Thus the `Operand` type is the union of the `Integer` and `Register` types:
 
         Operand = Integer | Register
 
-### Definedness
+---
+### <a id="s12">1.2 Definedness</a>
 
 Not all attributes are defined for all instructions.
 For example, if the instruction has 3 operands, then only `op[0]`, `op[1]`,
@@ -232,7 +254,8 @@ for undefined values.
 The special `defined(ATTRIBUTE)` test can be used to determine if
 an attribute is defined or not.
 
-### Examples
+---
+### <a id="s13">1.3 Examples</a>
 
 * (`true`):
   match every instruction.
@@ -281,7 +304,8 @@ an attribute is defined or not.
 * `defined(mem[0])`:
   match all instructions that have at least one memory operand.
 
-## Action Language
+---
+## <a id="s2">2. Action Language</a>
 
 The *action language* specifies how to patch matching instructions
 from the input binary.
@@ -302,7 +326,8 @@ the following high-level grammar:
 
 An action is either *builtin*, a *call*, or a defined by a *plugin*.
 
-### Builtin Actions
+---
+### <a id="s21">2.1 Builtin Actions</a>
 
 The builtin actions include:
 
@@ -330,7 +355,8 @@ Here:
   assembly representation of the instrumented instruction to `stderr`.
   This can be used for testing and debugging.
 
-### Call Actions
+---
+### <a id="s22">2.2 Call Actions</a>
 
 A *call* action calls a user-defined function that can be implemented
 in a high-level programming language such as C or C++.
@@ -376,8 +402,24 @@ compatible binary:
 
         ./e9compile.sh counter.c
 
+---
+#### <a id="s221">2.2.1 Call Action Arguments</a>
 
-#### Call Action Arguments
+Call actions also support passing arguments to the called function.
+The syntax uses the `C`-style round brackets.
+For example:
+
+        ./e9tool -M ... -A 'call func(rip)@example' xterm
+
+This specifies that the current value of the instruction pointer
+`%rip` should be passed as the first argument to the function
+`func()`.
+The called function can use this argument, e.g.:
+
+        void func(const void *rip)
+        {
+            ...
+        }
 
 Call actions support up to eight *arguments*.
 The following arguments are supported:
@@ -435,121 +477,122 @@ The following arguments are supported:
 <tr><td><b><tt>&amp;rflags</tt></b></td><td><tt>int16_t &#42;</tt></td>
     <td>The <tt>rflags</tt> register (passed-by-pointer)</td></tr>
 <tr><td><b><tt>op[i]</tt></b></td><td><tt>int8/16/32/64_t</tt></td>
-    <td>The matching instruction's <tt>i</tt><sup>th</sup> operand</td></tr>
+    <td>The matching instruction's <i>i</i><sup>th</sup> operand</td></tr>
 <tr><td><b><tt>src[i]</tt></b></td><td><tt>int8/16/32/64_t</tt></td>
-    <td>The matching instruction's <tt>i</tt><sup>th</sup> source operand</td></tr>
+    <td>The matching instruction's <i>i</i><sup>th</sup> source operand</td></tr>
 <tr><td><b><tt>dst[i]</tt></b></td><td><tt>int8/16/32/64_t</tt></td>
-    <td>The matching instruction's <tt>i</tt><sup>th</sup> destination operand</td></tr>
+    <td>The matching instruction's <i>i</i><sup>th</sup> destination operand</td></tr>
 <tr><td><b><tt>imm[i]</tt></b></td><td><tt>int8/16/32/64_t</tt></td>
-    <td>The matching instruction's <tt>i</tt><sup>th</sup> immediate operand</td></tr>
+    <td>The matching instruction's <i>i</i><sup>th</sup> immediate operand</td></tr>
 <tr><td><b><tt>reg[i]</tt></b></td><td><tt>int8/16/32/64_t</tt></td>
-    <td>The matching instruction's <tt>i</tt><sup>th</sup> register operand</td></tr>
+    <td>The matching instruction's <i>i</i><sup>th</sup> register operand</td></tr>
 <tr><td><b><tt>mem[i]</tt></b></td><td><tt>int8/16/32/64_t</tt></td>
-    <td>The matching instruction's <tt>i</tt><sup>th</sup> memory operand</td></tr>
+    <td>The matching instruction's <i>i</i><sup>th</sup> memory operand</td></tr>
 <tr><td><b><tt>&amp;op[i]</tt></b></td><td><tt>(const) int8/16/32/64_t &#42;</tt></td>
-    <td>The matching instruction's <tt>i</tt><sup>th</sup> operand (passed-by-pointer)</td></tr>
-<tr><td><b><tt>&amp;src[i]</tt></b></td><td><tt>const int8/16/32/64_t &#42;</tt></td>
-    <td>The matching instruction's <tt>i</tt><sup>th</sup> source operand (passed-by-pointer)</td></tr>
+    <td>The matching instruction's <i>i</i><sup>th</sup> operand (passed-by-pointer)</td></tr>
+<tr><td><b><tt>&amp;src[i]</tt></b></td><td><tt>(const) int8/16/32/64_t &#42;</tt></td>
+    <td>The matching instruction's <i>i</i><sup>th</sup> source operand (passed-by-pointer)</td></tr>
 <tr><td><b><tt>&amp;dst[i]</tt></b></td><td><tt>int8/16/32/64_t &#42;</tt></td>
-    <td>The matching instruction's <tt>i</tt><sup>th</sup> destination operand (passed-by-pointer)</td></tr>
+    <td>The matching instruction's <i>i</i><sup>th</sup> destination operand (passed-by-pointer)</td></tr>
 <tr><td><b><tt>&amp;imm[i]</tt></b></td><td><tt>const int8/16/32/64_t &#42;</tt></td>
-    <td>The matching instruction's <tt>i</tt><sup>th</sup> immediate operand (passed-by-pointer)</td></tr>
+    <td>The matching instruction's <i>i</i><sup>th</sup> immediate operand (passed-by-pointer)</td></tr>
 <tr><td><b><tt>&amp;reg[i]</tt></b></td><td><tt>(const) int8/16/32/64_t &#42;</tt></td>
-    <td>The matching instruction's <tt>i</tt><sup>th</sup> register operand (passed-by-pointer)</td></tr>
-<tr><td><b><tt>&amp;mem[i]</tt></b></td><td><tt>(const) int8/16/32/64_t &#42;</tt></td>
-    <td>The matching instruction's <tt>i</tt><sup>th</sup> memory operand (passed-by-pointer)</td></tr>
+    <td>The matching instruction's <i>i</i><sup>th</sup> register operand (passed-by-pointer)</td></tr>
+<tr><td><b><tt>&amp;mem[i]</tt></b></td><td><tt>int8/16/32/64_t &#42;</tt></td>
+    <td>The matching instruction's <i>i</i><sup>th</sup> memory operand (passed-by-pointer)</td></tr>
 <tr><td><b><tt>op[i].size</tt></b></td><td><tt>size_t</tt></td>
-    <td>The matching instruction's <tt>i</tt><sup>th</sup> operand size</td></tr>
+    <td>The matching instruction's <i>i</i><sup>th</sup> operand size</td></tr>
 <tr><td><b><tt>src[i].size</tt></b></td><td><tt>size_t</tt></td>
-    <td>The matching instruction's <tt>i</tt><sup>th</sup> source operand
+    <td>The matching instruction's <i>i</i><sup>th</sup> source operand
     size</td></tr>
 <tr><td><b><tt>dst[i].size</tt></b></td><td><tt>size_t</tt></td>
-    <td>The matching instruction's <tt>i</tt><sup>th</sup> destination
+    <td>The matching instruction's <i>i</i><sup>th</sup> destination
     operand size</td></tr>
 <tr><td><b><tt>imm[i].size</tt></b></td><td><tt>size_t</tt></td>
-    <td>The matching instruction's <tt>i</tt><sup>th</sup> immediate operand
+    <td>The matching instruction's <i>i</i><sup>th</sup> immediate operand
     size</td></tr>
 <tr><td><b><tt>reg[i].size</tt></b></td><td><tt>size_t</tt></td>
-    <td>The matching instruction's <tt>i</tt><sup>th</sup> register operand
+    <td>The matching instruction's <i>i</i><sup>th</sup> register operand
     size</td></tr>
 <tr><td><b><tt>mem[i].size</tt></b></td><td><tt>size_t</tt></td>
-    <td>The matching instruction's <tt>i</tt><sup>th</sup> memory operand
+    <td>The matching instruction's <i>i</i><sup>th</sup> memory operand
     size</td></tr>
 <tr><td><b><tt>op[i].disp</tt></b></td><td><tt>int32_t</tt></td>
-    <td>The matching instruction's <tt>i</tt><sup>th</sup> operand 
+    <td>The matching instruction's <i>i</i><sup>th</sup> operand 
     displacement</td></tr>
 <tr><td><b><tt>src[i].disp</tt></b></td><td><tt>int32_t</tt></td>
-    <td>The matching instruction's <tt>i</tt><sup>th</sup> source operand
+    <td>The matching instruction's <i>i</i><sup>th</sup> source operand
     displacement</td></tr>
 <tr><td><b><tt>dst[i].disp</tt></b></td><td><tt>int32_t</tt></td>
-    <td>The matching instruction's <tt>i</tt><sup>th</sup> destination
+    <td>The matching instruction's <i>i</i><sup>th</sup> destination
     operand displacement</td></tr>
 <tr><td><b><tt>mem[i].disp</tt></b></td><td><tt>int32_t</tt></td>
-    <td>The matching instruction's <tt>i</tt><sup>th</sup> memory operand
+    <td>The matching instruction's <i>i</i><sup>th</sup> memory operand
     displacement</td></tr>
 <tr><td><b><tt>op[i].base</tt></b></td><td><tt>int32/64_t</tt></td>
-    <td>The matching instruction's <tt>i</tt><sup>th</sup> operand base
+    <td>The matching instruction's <i>i</i><sup>th</sup> operand base
     register</td></tr>
 <tr><td><b><tt>src[i].base</tt></b></td><td><tt>int32/64_t</tt></td>
-    <td>The matching instruction's <tt>i</tt><sup>th</sup> source operand
+    <td>The matching instruction's <i>i</i><sup>th</sup> source operand
     base register</td></tr>
 <tr><td><b><tt>dst[i].base</tt></b></td><td><tt>int32/64_t</tt></td>
-    <td>The matching instruction's <tt>i</tt><sup>th</sup> destination
+    <td>The matching instruction's <i>i</i><sup>th</sup> destination
     operand base register</td></tr>
 <tr><td><b><tt>mem[i].base</tt></b></td><td><tt>int32/64_t</tt></td>
-    <td>The matching instruction's <tt>i</tt><sup>th</sup> memory operand
+    <td>The matching instruction's <i>i</i><sup>th</sup> memory operand
     base register</td></tr>
 <tr><td><b><tt>&amp;op[i].base</tt></b></td><td><tt>int32/64_t &#42;</tt></td>
-    <td>The matching instruction's <tt>i</tt><sup>th</sup> operand base
+    <td>The matching instruction's <i>i</i><sup>th</sup> operand base
     register (passed-by-pointer)</td></tr>
 <tr><td><b><tt>&amp;src[i].base</tt></b></td><td><tt>int32/64_t &#42;</tt></td>
-    <td>The matching instruction's <tt>i</tt><sup>th</sup> source operand
+    <td>The matching instruction's <i>i</i><sup>th</sup> source operand
     base register (passed-by-pointer)</td></tr>
 <tr><td><b><tt>&amp;dst[i].base</tt></b></td><td><tt>int32/64_t &#42;</tt></td>
-    <td>The matching instruction's <tt>i</tt><sup>th</sup> destination
+    <td>The matching instruction's <i>i</i><sup>th</sup> destination
     operand base register (passed-by-pointer)</td></tr>
 <tr><td><b><tt>&amp;mem[i].base</tt></b></td><td><tt>int32/64_t &#42;</tt></td>
-    <td>The matching instruction's <tt>i</tt><sup>th</sup> memory operand
+    <td>The matching instruction's <i>i</i><sup>th</sup> memory operand
     base register (passed-by-pointer)</td></tr>
 <tr><td><b><tt>op[i].index</tt></b></td><td><tt>int32/64_t</tt></td>
-    <td>The matching instruction's <tt>i</tt><sup>th</sup> operand index
+    <td>The matching instruction's <i>i</i><sup>th</sup> operand index
     register</td></tr>
 <tr><td><b><tt>src[i].index</tt></b></td><td><tt>int32/64_t</tt></td>
-    <td>The matching instruction's <tt>i</tt><sup>th</sup> source operand
+    <td>The matching instruction's <i>i</i><sup>th</sup> source operand
     index register</td></tr>
 <tr><td><b><tt>dst[i].index</tt></b></td><td><tt>int32/64_t</tt></td>
-    <td>The matching instruction's <tt>i</tt><sup>th</sup> destination
+    <td>The matching instruction's <i>i</i><sup>th</sup> destination
     operand index register</td></tr>
 <tr><td><b><tt>mem[i].index</tt></b></td><td><tt>int32/64_t</tt></td>
-    <td>The matching instruction's <tt>i</tt><sup>th</sup> memory operand
+    <td>The matching instruction's <i>i</i><sup>th</sup> memory operand
     index register</td></tr>
 <tr><td><b><tt>&amp;op[i].index</tt></b></td><td><tt>int32/64_t &#42;</tt></td>
-    <td>The matching instruction's <tt>i</tt><sup>th</sup> operand index
+    <td>The matching instruction's <i>i</i><sup>th</sup> operand index
     register (passed-by-pointer)</td></tr>
 <tr><td><b><tt>&amp;src[i].index</tt></b></td><td><tt>int32/64_t &#42;</tt></td>
-    <td>The matching instruction's <tt>i</tt><sup>th</sup> source operand
+    <td>The matching instruction's <i>i</i><sup>th</sup> source operand
     index register (passed-by-pointer)</td></tr>
 <tr><td><b><tt>&amp;dst[i].index</tt></b></td><td><tt>int32/64_t &#42;</tt></td>
-    <td>The matching instruction's <tt>i</tt><sup>th</sup> destination
+    <td>The matching instruction's <i>i</i><sup>th</sup> destination
     operand index register (passed-by-pointer)</td></tr>
 <tr><td><b><tt>&amp;mem[i].index</tt></b></td><td><tt>int32/64_t &#42;</tt></td>
-    <td>The matching instruction's <tt>i</tt><sup>th</sup> memory operand
+    <td>The matching instruction's <i>i</i><sup>th</sup> memory operand
     index register (passed-by-pointer)</td></tr>
 <tr><td><b><tt>op[i].scale</tt></b></td><td><tt>int8_t</tt></td>
-    <td>The matching instruction's <tt>i</tt><sup>th</sup> operand 
+    <td>The matching instruction's <i>i</i><sup>th</sup> operand 
     scale</td></tr>
 <tr><td><b><tt>src[i].scale</tt></b></td><td><tt>int8_t</tt></td>
-    <td>The matching instruction's <tt>i</tt><sup>th</sup> source operand
+    <td>The matching instruction's <i>i</i><sup>th</sup> source operand
     scale</td></tr>
 <tr><td><b><tt>dst[i].scale</tt></b></td><td><tt>int8_t</tt></td>
-    <td>The matching instruction's <tt>i</tt><sup>th</sup> destination
+    <td>The matching instruction's <i>i</i><sup>th</sup> destination
     operand scale</td></tr>
 <tr><td><b><tt>mem[i].scale</tt></b></td><td><tt>int8_t</tt></td>
-    <td>The matching instruction's <tt>i</tt><sup>th</sup> memory operand
+    <td>The matching instruction's <i>i</i><sup>th</sup> memory operand
     scale</td></tr>
 </table>
 
-##### Pass-by-pointer
+---
+##### <a id="s2211">2.2.1.1 Pass-by-pointer</a>
 
 Some arguments can be passed by pointer.
 This allows the corresponding value to be modified (provided the
@@ -577,17 +620,25 @@ Attempting to write to a `const` pointer is undefined behavior.
 Typically, this will result in a crash or the written value will be
 silently ignored.
 
-For memory operands, e.g. `&mem[i]`, the passed pointer will be exactly
-the runtime pointer value calculated by the operand itself.
-For example, consider the instruction (`mov 0x33(%rax,%rbx,2),%rcx`),
-then the value for `&mem[0]` will be (`0x33+%rax+2*%rbx`).
+The passed pointer depends on the operand type:
+
+* For immediate operands (e.g., `&imm[i]`), the pointer will
+  point to a constant value stored in read-only memory.
+* For register operands (e.g., `&reg[i]`), the pointer will
+  point to a temporary location that holds the register value.
+* For memory operands (e.g., `&mem[i]`), the pointer will be exactly
+  the runtime pointer value calculated by the operand itself.
+  For example, consider the instruction (`mov 0x33(%rax,%rbx,2),%rcx`),
+  then the value for `&mem[0]` will be (`0x33+%rax+2*%rbx`).
+
 Generally, it is recommended to pass memory operands by pointer rather
 than by value.
 If passed by value, the memory operand pointer will be dereferenced, which
 may result in a crash for instructions such as (`nop`) and (`lea`) that
 do not access the operand.
 
-##### Polymorphic Arguments
+---
+##### <a id="s2212">2.2.1.2 Polymorphic Arguments</a>
 
 Some arguments can have different types, depending on the instruction.
 For example, with:
@@ -620,7 +671,8 @@ E9Tool will automatically select the function instance that best
 matches the argument types, or generate an error if no appropriate
 match can be found.
 
-##### Undefined Arguments
+---
+##### <a id="s2213">2.2.1.3 Undefined Arguments</a>
 
 Some arguments may be undefined, e.g., `op[3]` for a 2-operand instruction.
 In this case, the `NULL` pointer will be passed and the type will
@@ -629,7 +681,8 @@ This can also be used for function overloading:
 
         void func(std::nullptr_t x) { ... }
 
-#### Call Action Options
+---
+#### <a id="s222">2.2.2 Call Action Options</a>
 
 Call actions support different *options*.
 
@@ -657,9 +710,7 @@ jumps (taken), calls or returns.
 The `naked` option specifies that the function should be called
 directly and to minimize the saving/restoring any state.
 By default, the `clean` call option will save/restore all scratch
-registers that are potentially clobbered by `C`/`C++` code,
-including
-`%rax`, `%rdi`, `%rsi`, `%rdx`, `%rcx`, `%r8`, `%r9`, `%r10`, and `%r11`.
+registers that are potentially clobbered by `C`/`C++` code.
 In contrast, `naked` calls will not save any register unless it is
 explicitly used to pass an argument, and it is up to the function to
 save/restore any state as necessary.
@@ -670,7 +721,25 @@ the function will usually need to be implemented directly in assembly.
 As such, the `naked` option is not recommended 
 unless you know what you are doing.
 
-#### Call Action Standard Library
+The default is `clean`, which means E9Tool will automatically
+generate code for saving/restoring the CPU state,
+including all caller-saved registers
+`%rax`, `%rdi`, `%rsi`, `%rdx`, `%rcx`, `%r8`, `%r9`, `%r10`, and `%r11`.
+Note that, for performance reasons, the `clean` call ABI differs from
+the standard System V ABI in the following way:
+
+* The x87/MMX/SSE/AVX/AVX2/AVX512 registers are *not* saved.
+* The stack pointer `%rsp` is *not* guaranteed to be aligned to a 16-byte
+  boundary.
+
+These differences are generally safe provided the instrumentation code
+exclusively uses general-purpose registers
+(as is enforced by `e9compile.sh`).
+Otherwise, it will be necessary to save the registers and align the
+stack manually inside the instrumentation code.
+
+---
+#### <a id="s223">2.2.3 Call Action Standard Library</a>
 
 The main limitation of call actions is that the instrumentation
 cannot use dynamically linked libraries, including `glibc`.
@@ -704,7 +773,39 @@ Unlike `glibc`,
 the parallel libc is designed to be compatible with the clean ABI and
 handle problems such as deadlocks gracefully.
 
-### Plugin Actions
+---
+#### <a id="s224">2.2.4 Call Action Initialization</a>
+
+It is also possible to define an initialization function in the
+instrumentation code.
+For example:
+
+        #include "stdlib.c"
+
+        static int max = 1000;
+
+        void init(int argc, char **argv, char **envp)
+        {
+            environ = envp;     // Init getenv()
+
+            const char *MAX = getenv("MAX");
+            if (MAX != NULL)
+                max = atoi(MAX);
+        }
+
+The initialization function must be named `init`, and will be called
+once during the patched program's initialization.
+For patched executables, the command line arguments (`argc` and `argv`) and
+the environment pointer (`envp`) will be passed as arguments to the function.
+Note that, for technical reasons, the `argc`/`argv`/`envp`
+arguments are not available for patched executables, and will be
+zero/`NULL` for patched shared objects.
+
+In the example above, the initialization function searches for an
+environment variable `MAX`, and sets the `max` counter accordingly.
+
+---
+### <a id="s23">2.3 Plugin Actions</a>
 
 Call action trampolines call the instrumentation binary from the
 trampoline.
@@ -716,5 +817,5 @@ However, this requires a very fine-grained control over the
 generated trampolines.
 This is possible using *plugin actions*, which allow a very fine-grained
 control over the contents of the generated trampolines.
-For more information, please see the *E9Patch Programmer's Guide*.
+For more information, please see the [E9Patch Programmer's Guide](https://github.com/GJDuck/e9patch/blob/master/doc/e9patch-programming-guide.md).
 
