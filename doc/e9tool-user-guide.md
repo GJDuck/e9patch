@@ -2,6 +2,13 @@
 
 **NOTE**: This guide is a work-in-progress and still incomplete.
 
+E9Tool is a frontend for E9Patch.
+Basically, E9Tool translates high-level patching commands
+(i.e., *what* instructions to patch, and *how* to patch them)
+into low-level commands for E9Patch.
+E9Patch is very low-level tool and not designed
+to be used directly.
+
 ---
 ## Contents
 
@@ -239,7 +246,7 @@ Thus the `Operand` type is the union of the `Integer` and `Register` types:
 Not all attributes are defined for all instructions.
 For example, if the instruction has 3 operands, then only `op[0]`, `op[1]`,
 and `op[2]` will be *defined*, and `op[3]` and beyond will be
-be *undefined*.
+*undefined*.
 Similarly, `op[0].base` will be *undefined* if the first operand of the
 instruction is not a memory operand.
 
@@ -324,7 +331,7 @@ the following high-level grammar:
                | <b>plugin(</b>NAME<b>).patch()</b>
 </pre>
 
-An action is either *builtin*, a *call*, or a defined by a *plugin*.
+An action is either *builtin*, a *call*, or defined by a *plugin*.
 
 ---
 ### <a id="s21">2.1 Builtin Actions</a>
@@ -798,7 +805,7 @@ once during the patched program's initialization.
 For patched executables, the command line arguments (`argc` and `argv`) and
 the environment pointer (`envp`) will be passed as arguments to the function.
 Note that, for technical reasons, the `argc`/`argv`/`envp`
-arguments are not available for patched executables, and will be
+arguments are only available for patched executables, and will be
 zero/`NULL` for patched shared objects.
 
 In the example above, the initialization function searches for an
@@ -811,7 +818,7 @@ Call action trampolines call the instrumentation binary from the
 trampoline.
 This adds an extra layer of indirection, namely, from the main
 program, to the trampoline, and to the call instrumentation.
-For highly optimized, it is better to inline the instrumentation
+For highly optimized applications, it is better to inline the instrumentation
 directly inside the trampoline.
 However, this requires a very fine-grained control over the
 generated trampolines.
