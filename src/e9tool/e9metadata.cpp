@@ -997,100 +997,83 @@ static Type sendLoadArgumentMetadata(FILE *out, CallInfo &info,
         case ARGUMENT_RANDOM:
             sendLoadValueMetadata(out, rand(), regno);
             break;
-
-        case ARGUMENT_AL: case ARGUMENT_AH: case ARGUMENT_BL: case ARGUMENT_BH:
-        case ARGUMENT_CL: case ARGUMENT_CH: case ARGUMENT_DL: case ARGUMENT_DH:
-        case ARGUMENT_BPL: case ARGUMENT_DIL: case ARGUMENT_SIL:
-        case ARGUMENT_R8B: case ARGUMENT_R9B: case ARGUMENT_R10B:
-        case ARGUMENT_R11B: case ARGUMENT_R12B: case ARGUMENT_R13B:
-        case ARGUMENT_R14B: case ARGUMENT_R15B:
-
-        case ARGUMENT_AX: case ARGUMENT_BX: case ARGUMENT_CX:
-        case ARGUMENT_DX: case ARGUMENT_BP: case ARGUMENT_DI:
-        case ARGUMENT_SI: case ARGUMENT_R8W: case ARGUMENT_R9W:
-        case ARGUMENT_R10W: case ARGUMENT_R11W: case ARGUMENT_R12W:
-        case ARGUMENT_R13W: case ARGUMENT_R14W: case ARGUMENT_R15W:
-
-        case ARGUMENT_EAX: case ARGUMENT_EBX: case ARGUMENT_ECX:
-        case ARGUMENT_EDX: case ARGUMENT_EBP: case ARGUMENT_EDI:
-        case ARGUMENT_ESI: case ARGUMENT_R8D: case ARGUMENT_R9D:
-        case ARGUMENT_R10D: case ARGUMENT_R11D: case ARGUMENT_R12D:
-        case ARGUMENT_R13D: case ARGUMENT_R14D: case ARGUMENT_R15D:
-
-        case ARGUMENT_RAX: case ARGUMENT_RBX: case ARGUMENT_RCX:
-        case ARGUMENT_RDX: case ARGUMENT_RBP: case ARGUMENT_RDI:
-        case ARGUMENT_RSI: case ARGUMENT_R8: case ARGUMENT_R9:
-        case ARGUMENT_R10: case ARGUMENT_R11: case ARGUMENT_R12:
-        case ARGUMENT_R13: case ARGUMENT_R14: case ARGUMENT_R15:
-        {
+        case ARGUMENT_REGISTER:
             if (arg.ptr)
                 goto ARGUMENT_REG_PTR;
-            x86_reg reg = getReg(arg.kind);
-            sendLoadRegToArg(out, I, reg, /*ptr=*/false, info, regno);
-            switch (getRegSize(reg))
+            switch ((Register)arg.value)
             {
+                case REGISTER_RIP:
+                    switch (action->call)
+                    {
+                        case CALL_BEFORE: case CALL_REPLACE:
+                        case CALL_CONDITIONAL:
+                            sendLeaFromPCRelToR64(out,
+                                "{\"rel32\":\".Linstruction\"}", regno);
+                            break;
+                        case CALL_AFTER:
+                            sendLeaFromPCRelToR64(out,
+                                "{\"rel32\":\".Lcontinue\"}", regno);
+                        break;
+                    }
+                    t = TYPE_CONST_VOID_PTR;
+                    break;
+                case REGISTER_SPL:
+                    sendLeaFromStackToR64(out, info.rsp_offset, regno);
+                    sendMovFromR8ToR64(out, regno, false, regno);
+                    t = TYPE_INT8;
+                    break;
+                case REGISTER_SP:
+                    sendLeaFromStackToR64(out, info.rsp_offset, regno);
+                    sendMovFromR16ToR64(out, regno, regno);
+                    t = TYPE_INT16;
+                    break;
+                case REGISTER_ESP:
+                    sendLeaFromStackToR64(out, info.rsp_offset, regno);
+                    sendMovFromR32ToR64(out, regno, regno);
+                    t = TYPE_INT32;
+                    break;
+                case REGISTER_RSP:
+                    sendLeaFromStackToR64(out, info.rsp_offset, regno);
+                    break;
+                case REGISTER_EFLAGS:
+                    if (info.isSaved(X86_REG_EFLAGS))
+                        sendMovFromStack16ToR64(out,
+                            info.getOffset(X86_REG_EFLAGS), regno);
+                    else
+                    {
+                        x86_reg exclude[] = {X86_REG_RAX, getReg(regno),
+                            X86_REG_INVALID};
+                        int slot = 0;
+                        int scratch = sendTemporarySaveReg(out, info,
+                            X86_REG_RAX, exclude, &slot);
+                        // seto %al
+                        // lahf
+                        fprintf(out, "%u,%u,%u,", 0x0f, 0x90, 0xc0);
+                        fprintf(out, "%u,", 0x9f);
+                        sendMovFromRAX16ToR64(out, regno);
+                        sendUndoTemporaryMovReg(out, X86_REG_RAX, scratch);
+                    }
+                    t = TYPE_INT16;
+                    break;
                 default:
-                case sizeof(int64_t):
-                    t = TYPE_INT64; break;
-                case sizeof(int32_t):
-                    t = TYPE_INT32; break;
-                case sizeof(int16_t):
-                    t = TYPE_INT16; break;
-                case sizeof(int8_t):
-                    t = TYPE_INT8; break;
-            }
-            break;
-        }
-        case ARGUMENT_RIP:
-            switch (action->call)
-            {
-                case CALL_BEFORE: case CALL_REPLACE: case CALL_CONDITIONAL:
-                    sendLeaFromPCRelToR64(out, "{\"rel32\":\".Linstruction\"}",
-                        regno);
+                {
+                    x86_reg reg = getReg((Register)arg.value);
+                    sendLoadRegToArg(out, I, reg, /*ptr=*/false, info, regno);
+                    switch (getRegSize(reg))
+                    {
+                        default:
+                        case sizeof(int64_t):
+                            t = TYPE_INT64; break;
+                        case sizeof(int32_t):
+                            t = TYPE_INT32; break;
+                        case sizeof(int16_t):
+                            t = TYPE_INT16; break;
+                        case sizeof(int8_t):
+                            t = TYPE_INT8; break;
+                    }
                     break;
-                case CALL_AFTER:
-                    sendLeaFromPCRelToR64(out, "{\"rel32\":\".Lcontinue\"}",
-                        regno);
-                    break;
+                }
             }
-            t = TYPE_CONST_VOID_PTR;
-            break;
-        case ARGUMENT_SPL: case ARGUMENT_SP: case ARGUMENT_ESP:
-        case ARGUMENT_RSP:
-            if (arg.ptr)
-                goto ARGUMENT_REG_PTR;
-            sendLeaFromStackToR64(out, info.rsp_offset, regno);
-            switch (arg.kind)
-            {
-                case ARGUMENT_ESP:
-                    sendMovFromR32ToR64(out, regno, regno); break;
-                case ARGUMENT_SP:
-                    sendMovFromR16ToR64(out, regno, regno); break;
-                case ARGUMENT_SPL:
-                    sendMovFromR8ToR64(out, regno, false, regno); break;
-                default:
-                    break;
-            }
-            break;
-        case ARGUMENT_RFLAGS:
-            if (arg.ptr)
-                goto ARGUMENT_REG_PTR;
-            else if (info.isSaved(X86_REG_EFLAGS))
-                sendMovFromStack16ToR64(out, info.getOffset(X86_REG_EFLAGS),
-                    regno);
-            else
-            {
-                x86_reg exclude[] = {X86_REG_RAX, getReg(regno),
-                    X86_REG_INVALID};
-                int slot = 0;
-                int scratch = sendTemporarySaveReg(out, info, X86_REG_RAX,
-                    exclude, &slot);
-                fprintf(out, "%u,%u,%u,", 0x0f, 0x90, 0xc0);// seto   %al
-                fprintf(out, "%u,", 0x9f);                  // lahf
-                sendMovFromRAX16ToR64(out, regno);
-                sendUndoTemporaryMovReg(out, X86_REG_RAX, scratch);
-            }
-            t = TYPE_INT16;
             break;
         ARGUMENT_REG_PTR:
         {

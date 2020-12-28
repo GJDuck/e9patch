@@ -1039,160 +1039,10 @@ static Action *parseAction(const char *str, const MatchExpr *expr)
                         break;
                     case TOKEN_TRAMPOLINE:
                         arg = ARGUMENT_TRAMPOLINE; break;
-
                     case TOKEN_REGISTER:
-                        switch ((Register)parser.i)
-                        {
-                            case REGISTER_AL:
-                                arg = ARGUMENT_AL; break;
-                            case REGISTER_AH:
-                                arg = ARGUMENT_AH; break;
-                            case REGISTER_BL:
-                                arg = ARGUMENT_BL; break;
-                            case REGISTER_BH:
-                                arg = ARGUMENT_BH; break;
-                            case REGISTER_CL:
-                                arg = ARGUMENT_CL; break;
-                            case REGISTER_CH:
-                                arg = ARGUMENT_CH; break;
-                            case REGISTER_DL:
-                                arg = ARGUMENT_DL; break;
-                            case REGISTER_DH:
-                                arg = ARGUMENT_DH; break;
-                            case REGISTER_BPL:
-                                arg = ARGUMENT_BPL; break;
-                            case REGISTER_SPL:
-                                arg = ARGUMENT_SPL; break; 
-                            case REGISTER_DIL:
-                                arg = ARGUMENT_DIL; break;
-                            case REGISTER_SIL: 
-                                arg = ARGUMENT_SIL; break; 
-                            case REGISTER_R8B:
-                                arg = ARGUMENT_R8B; break;
-                            case REGISTER_R9B:
-                                arg = ARGUMENT_R9B; break;
-                            case REGISTER_R10B:
-                                arg = ARGUMENT_R10B; break;
-                            case REGISTER_R11B:
-                                arg = ARGUMENT_R11B; break;
-                            case REGISTER_R12B:
-                                arg = ARGUMENT_R12B; break;
-                            case REGISTER_R13B:
-                                arg = ARGUMENT_R13B; break;
-                            case REGISTER_R14B:
-                                arg = ARGUMENT_R14B; break;
-                            case REGISTER_R15B:
-                                arg = ARGUMENT_R15B; break;
-                            
-                            case REGISTER_AX:
-                                arg = ARGUMENT_AX; break;
-                            case REGISTER_BX:
-                                arg = ARGUMENT_BX; break;
-                            case REGISTER_CX:
-                                arg = ARGUMENT_CX; break;
-                            case REGISTER_DX:
-                                arg = ARGUMENT_DX; break;
-                            case REGISTER_BP:
-                                arg = ARGUMENT_BP; break;
-                            case REGISTER_SP:
-                                arg = ARGUMENT_SP; break; 
-                            case REGISTER_DI:
-                                arg = ARGUMENT_DI; break;
-                            case REGISTER_SI: 
-                                arg = ARGUMENT_SI; break; 
-                            case REGISTER_R8W:
-                                arg = ARGUMENT_R8W; break;
-                            case REGISTER_R9W:
-                                arg = ARGUMENT_R9W; break;
-                            case REGISTER_R10W:
-                                arg = ARGUMENT_R10W; break;
-                            case REGISTER_R11W:
-                                arg = ARGUMENT_R11W; break;
-                            case REGISTER_R12W:
-                                arg = ARGUMENT_R12W; break;
-                            case REGISTER_R13W:
-                                arg = ARGUMENT_R13W; break;
-                            case REGISTER_R14W:
-                                arg = ARGUMENT_R14W; break;
-                            case REGISTER_R15W:
-                                arg = ARGUMENT_R15W; break;
-                            
-                            case REGISTER_EAX:
-                                arg = ARGUMENT_EAX; break;
-                            case REGISTER_EBX:
-                                arg = ARGUMENT_EBX; break;
-                            case REGISTER_ECX:
-                                arg = ARGUMENT_ECX; break;
-                            case REGISTER_EDX:
-                                arg = ARGUMENT_EDX; break;
-                            case REGISTER_EBP:
-                                arg = ARGUMENT_EBP; break;
-                            case REGISTER_ESP:
-                                arg = ARGUMENT_ESP; break; 
-                            case REGISTER_EDI:
-                                arg = ARGUMENT_EDI; break;
-                            case REGISTER_ESI: 
-                                arg = ARGUMENT_ESI; break; 
-                            case REGISTER_R8D:
-                                arg = ARGUMENT_R8D; break;
-                            case REGISTER_R9D:
-                                arg = ARGUMENT_R9D; break;
-                            case REGISTER_R10D:
-                                arg = ARGUMENT_R10D; break;
-                            case REGISTER_R11D:
-                                arg = ARGUMENT_R11D; break;
-                            case REGISTER_R12D:
-                                arg = ARGUMENT_R12D; break;
-                            case REGISTER_R13D:
-                                arg = ARGUMENT_R13D; break;
-                            case REGISTER_R14D:
-                                arg = ARGUMENT_R14D; break;
-                            case REGISTER_R15D:
-                                arg = ARGUMENT_R15D; break;
-                            
-                            case REGISTER_RAX:
-                                arg = ARGUMENT_RAX; break;
-                            case REGISTER_RBX:
-                                arg = ARGUMENT_RBX; break;
-                            case REGISTER_RCX:
-                                arg = ARGUMENT_RCX; break;
-                            case REGISTER_RDX:
-                                arg = ARGUMENT_RDX; break;
-                            case REGISTER_RBP:
-                                arg = ARGUMENT_RBP; break;
-                            case REGISTER_RSP:
-                                arg = ARGUMENT_RSP; break;
-                            case REGISTER_RSI:
-                                arg = ARGUMENT_RSI; break;
-                            case REGISTER_RDI:
-                                arg = ARGUMENT_RDI; break;
-                            case REGISTER_R8:
-                                arg = ARGUMENT_R8; break;
-                            case REGISTER_R9:
-                                arg = ARGUMENT_R9; break;
-                            case REGISTER_R10:
-                                arg = ARGUMENT_R10; break;
-                            case REGISTER_R11:
-                                arg = ARGUMENT_R11; break;
-                            case REGISTER_R12:
-                                arg = ARGUMENT_R12; break;
-                            case REGISTER_R13:
-                                arg = ARGUMENT_R13; break;
-                            case REGISTER_R14:
-                                arg = ARGUMENT_R14; break;
-                            case REGISTER_R15:
-                                arg = ARGUMENT_R15; break;
-
-                            case REGISTER_EFLAGS:
-                                arg = ARGUMENT_RFLAGS; break;
-                            case REGISTER_RIP:
-                                arg = ARGUMENT_RIP; break;
- 
-                            default:
-                                parser.unexpectedToken();
-                        }
+                        value = parser.i;
+                        arg = ARGUMENT_REGISTER;
                         break;
-                    
                     case TOKEN_INTEGER:
                         value = parser.i;
                         arg = ARGUMENT_INTEGER;
@@ -1239,32 +1089,9 @@ static Action *parseAction(const char *str, const MatchExpr *expr)
                         }
                         break;
 
-                    case ARGUMENT_AL: case ARGUMENT_AH: case ARGUMENT_BL:
-                    case ARGUMENT_BH: case ARGUMENT_CL: case ARGUMENT_CH:
-                    case ARGUMENT_DL: case ARGUMENT_DH: case ARGUMENT_BPL:
-                    case ARGUMENT_DIL: case ARGUMENT_SIL: case ARGUMENT_R8B:
-                    case ARGUMENT_R9B: case ARGUMENT_R10B: case ARGUMENT_R11B:
-                    case ARGUMENT_R12B: case ARGUMENT_R13B: case ARGUMENT_R14B:
-                    case ARGUMENT_R15B:
-
-                    case ARGUMENT_AX: case ARGUMENT_BX: case ARGUMENT_CX:
-                    case ARGUMENT_DX: case ARGUMENT_BP: case ARGUMENT_DI:
-                    case ARGUMENT_SI: case ARGUMENT_R8W: case ARGUMENT_R9W:
-                    case ARGUMENT_R10W: case ARGUMENT_R11W: case ARGUMENT_R12W:
-                    case ARGUMENT_R13W: case ARGUMENT_R14W: case ARGUMENT_R15W:
-
-                    case ARGUMENT_EAX: case ARGUMENT_EBX: case ARGUMENT_ECX:
-                    case ARGUMENT_EDX: case ARGUMENT_EBP: case ARGUMENT_EDI:
-                    case ARGUMENT_ESI: case ARGUMENT_R8D: case ARGUMENT_R9D:
-                    case ARGUMENT_R10D: case ARGUMENT_R11D: case ARGUMENT_R12D:
-                    case ARGUMENT_R13D: case ARGUMENT_R14D: case ARGUMENT_R15D:
-
-                    case ARGUMENT_RAX: case ARGUMENT_RBX: case ARGUMENT_RCX:
-                    case ARGUMENT_RDX: case ARGUMENT_RBP: case ARGUMENT_RSP:
-                    case ARGUMENT_RSI: case ARGUMENT_RDI: case ARGUMENT_R8:
-                    case ARGUMENT_R9: case ARGUMENT_R10: case ARGUMENT_R11:
-                    case ARGUMENT_R12: case ARGUMENT_R13: case ARGUMENT_R14:
-                    case ARGUMENT_R15: case ARGUMENT_RFLAGS:
+                    case ARGUMENT_REGISTER:
+                        if ((Register)value == REGISTER_RIP)
+                            goto not_a_ptr;
                         break;
 
                     case ARGUMENT_USER:
@@ -1272,6 +1099,7 @@ static Action *parseAction(const char *str, const MatchExpr *expr)
                         // Fallthrough:
 
                     default:
+                    not_a_ptr:
                         if (ptr)
                             error("failed to parse call action; cannot "
                                 "pass argument `%s' by pointer",

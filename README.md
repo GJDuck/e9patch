@@ -12,7 +12,7 @@ E9Patch is:
 * *Low Overheads*: Both performance and memory.
 * *Programmable*: E9Patch is designed so that it can be easily integrated
   into other projects.
-  See the [E9Patch Programmer's Guide](https://github.com/GJDuck/e9patch/blob/master/doc/e9patch-programming-guide.md)
+  See the [E9Tool User's Guide](https://github.com/GJDuck/e9patch/blob/master/doc/e9tool-user-guide.md) and the [E9Patch Programmer's Guide](https://github.com/GJDuck/e9patch/blob/master/doc/e9patch-programming-guide.md)
   for more information.
 
 ## Background
