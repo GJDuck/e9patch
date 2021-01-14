@@ -2117,7 +2117,8 @@ static int stdio_parse_mode(const char *mode)
             flags = (plus != '+'? O_RDONLY: O_RDWR);
             break;
         case 'w':
-            flags = (plus != '+'? O_WRONLY | O_CREAT: O_RDWR | O_CREAT);
+            flags = (plus != '+'? O_WRONLY | O_CREAT | O_TRUNC:
+                                  O_RDWR | O_CREAT | O_TRUNC);
             break;
         case 'a':
             flags = (plus != '+'? O_WRONLY | O_CREAT | O_APPEND:
