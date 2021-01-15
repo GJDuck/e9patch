@@ -1856,7 +1856,8 @@ unsigned e9frontend::sendTrapTrampolineMessage(FILE *out)
     sendSeparator(out);
     sendParamHeader(out, "template");
     putc('[', out);
-    fprintf(out, "%u]", 0xcc);
+    fprintf(out, "%u,\"$instruction\",\"$continue\"", 0xcc);
+    putc(']', out);
     sendSeparator(out, /*last=*/true);
     return sendMessageFooter(out, /*sync=*/true);
 }
