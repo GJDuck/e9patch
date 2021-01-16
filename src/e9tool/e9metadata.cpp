@@ -223,78 +223,165 @@ static bool sendSaveRegToStack(FILE *out, CallInfo &info, x86_reg reg)
 }
 
 /*
- * Send a load (mov/lea) from a converted memory operand to a register.
+ * Send a load (mov/lea) from a memory operand to a register.
  */
-static bool sendLoadFromConvertedMemToR64(FILE *out, const cs_insn *I,
-    const cs_x86_op *op, CallInfo &info, uint8_t opcode0, uint8_t opcode,
-    int regno)
+static bool sendLoadFromMemOpToR64(FILE *out, const cs_insn *I,
+    CallInfo &info, uint8_t size, x86_reg seg_reg, int32_t disp,
+    x86_reg base_reg, x86_reg index_reg, uint8_t scale, bool lea, int regno)
 {
-    const cs_detail *detail = I->detail;
-    const cs_x86 *x86       = &detail->x86;
-    assert(op->type == X86_OP_MEM);
-
-    const uint8_t REX[] =
-        {0x48, 0x48, 0x48, 0x48, 0x4c, 0x4c, 0x00,
-         0x48, 0x4c, 0x4c, 0x48, 0x48, 0x4c, 0x4c, 0x4c, 0x4c, 0x48};
-    uint8_t rex = REX[regno] | (x86->rex & 0x03);
-
-    if (x86->encoding.modrm_offset == 0)
-    {
-        // This is an implicit memory operand without a ModR/M byte.  Such
-        // cases cannot be handled yet.
-        warning(CONTEXT_FORMAT "failed to load converted memory operand "
-            "into register %s; implicit memory operands are not yet "
-            "implemented", CONTEXT(I), getRegName(getReg(regno)));
-        sendSExtFromI32ToR64(out, 0, regno);
-        return false;
-    }
-
-    if ((op->mem.segment == X86_REG_FS || op->mem.segment == X86_REG_GS) &&
-            opcode0 == 0x00 && opcode == /*LEA=*/0x8d)
+    if (lea && (seg_reg == X86_REG_FS || seg_reg == X86_REG_GS))
     {
         // LEA assumes all segment registers are zero.  Since %fs/%gs may
         // be non-zero, these segment registers cannot be handled.
         warning(CONTEXT_FORMAT "failed to load converted memory operand "
             "into register %s; cannot load the effective address of a memory "
             "operand using segment register %s", CONTEXT(I),
-            getRegName(getReg(regno)), getRegName(op->mem.segment));
+            getRegName(getReg(regno)), getRegName(seg_reg));
         sendSExtFromI32ToR64(out, 0, regno);
         return false;
     }
 
-    uint8_t modrm = x86->modrm;
+    uint8_t seg_prefix = 0x00;
+    switch (seg_reg)
+    {
+        case X86_REG_FS:
+            seg_prefix = 0x64; break;
+        case X86_REG_GS:
+            seg_prefix = 0x65; break;
+        default:
+            break;
+    }
+
+    uint8_t size_prefix = 0x00;
+    switch (base_reg)
+    {
+        case X86_REG_EAX: case X86_REG_ECX: case X86_REG_EDX:
+        case X86_REG_EBX: case X86_REG_ESP: case X86_REG_EBP:
+        case X86_REG_ESI: case X86_REG_EDI: case X86_REG_R8D:
+        case X86_REG_R9D: case X86_REG_R10D: case X86_REG_R11D:
+        case X86_REG_R12D: case X86_REG_R13D: case X86_REG_R14D:
+        case X86_REG_R15D: case X86_REG_EIP:
+            size_prefix = 0x67; break;
+        default:
+            break;
+    }
+    switch (index_reg)
+    {
+        case X86_REG_EAX: case X86_REG_ECX: case X86_REG_EDX:
+        case X86_REG_EBX: case X86_REG_ESP: case X86_REG_EBP:
+        case X86_REG_ESI: case X86_REG_EDI: case X86_REG_R8D:
+        case X86_REG_R9D: case X86_REG_R10D: case X86_REG_R11D:
+        case X86_REG_R12D: case X86_REG_R13D: case X86_REG_R14D:
+        case X86_REG_R15D:
+            size_prefix = 0x67; break;
+        default:
+            break;
+    }
+
+    const uint8_t B[] =
+        {0x00, 0x00, 0x00, 0x00, 0x01, 0x01, 0x00,
+         0x00, 0x01, 0x01, 0x00, 0x00, 0x01, 0x01, 0x01, 0x01, 0x00};
+    uint8_t b = (base_reg == X86_REG_INVALID || base_reg == X86_REG_RIP ||
+                 base_reg == X86_REG_EIP? 0x00: B[getRegIdx(base_reg)]);
+    
+    const uint8_t X[] =
+        {0x00, 0x00, 0x00, 0x00, 0x02, 0x02, 0x00,
+         0x00, 0x02, 0x02, 0x00, 0x00, 0x02, 0x02, 0x02, 0x02, 0x00};
+    uint8_t x = (index_reg == X86_REG_INVALID? 0x00: X[getRegIdx(index_reg)]);
+    
+    const uint8_t R[] =
+        {0x00, 0x00, 0x00, 0x00, 0x04, 0x04, 0x00,
+         0x00, 0x04, 0x04, 0x00, 0x00, 0x04, 0x04, 0x04, 0x04, 0x00};
+    uint8_t r = R[regno];
+
     const uint8_t REG[] =
         {0x07, 0x06, 0x02, 0x01, 0x00, 0x01, 0x00,
          0x00, 0x02, 0x03, 0x03, 0x05, 0x04, 0x05, 0x06, 0x07, 0x04};
-    modrm = (modrm & 0xc7) | (REG[regno] << 3);
 
-    uint8_t mod   = (modrm >> 6) & 0x3;
-    uint8_t rm    = modrm & 0x7;
-    uint8_t i     = x86->encoding.modrm_offset + 1;
-    uint8_t base  = 0;
-    uint8_t sib   = x86->sib;
-    bool have_sib = false;
-    if (mod != 0x3 && rm == 0x4)        // have SIB?
+    uint8_t rex       = 0x48 | r | x | b;
+    uint8_t mod       = 0x00;
+    uint8_t rm        = 0x00;
+    uint8_t reg       = REG[regno];
+    uint8_t disp_size = 0;
+    uint8_t sib       = 0x00;
+    bool have_sib     = false;
+    bool have_rel32   = false;
+    if (base_reg == X86_REG_RSP || base_reg == X86_REG_ESP)
+        disp += info.rsp_offset;
+    if (base_reg == X86_REG_RIP || base_reg == X86_REG_EIP)
     {
-        have_sib = true;
-        base = sib & 0x7;
-        i++;
+        mod         = 0x00;
+        rm          = 0x05;
+        disp       += I->address + I->size;
+        disp_size   = sizeof(int32_t);
+        have_rel32  = true;
+    }
+    else
+    {
+        if (index_reg != X86_REG_INVALID ||
+                (base_reg == X86_REG_RSP || base_reg == X86_REG_ESP) ||
+                (base_reg == X86_REG_R12 || base_reg == X86_REG_R12D) ||
+                (base_reg == X86_REG_INVALID))
+        {
+            // Need SIB:
+            assert(index_reg != X86_REG_RSP && index_reg != X86_REG_ESP);
+            uint8_t ss = 0x00;
+            switch (scale)
+            {
+                case 2:
+                    ss = 0x01;
+                    break;
+                case 4:
+                    ss = 0x02;
+                    break;
+                case 8:
+                    ss = 0x03;
+                    break;
+            }
+            uint8_t base = (base_reg == X86_REG_INVALID? 0x05:
+                REG[getRegIdx(base_reg)]);
+            uint8_t index = (index_reg == X86_REG_INVALID? 0x04:
+                REG[getRegIdx(index_reg)]);
+            sib = (ss << 6) | (index << 3) | base;
+            rm  = 0x04;
+            have_sib = true;
+        }
+        else
+            rm = REG[getRegIdx(base_reg)];
+
+        if (base_reg == X86_REG_INVALID)
+        {
+            disp_size = sizeof(int32_t);
+            mod = 0x00;
+        }
+        else if (disp == 0x0 &&
+                base_reg != X86_REG_RBP && base_reg != X86_REG_EBP &&
+                base_reg != X86_REG_R13 && base_reg != X86_REG_R13D)
+        {
+            disp_size = 0;
+            mod = 0x00;
+        }
+        else if (disp >= INT8_MIN && disp <= INT8_MAX)
+        {
+            disp_size = sizeof(int8_t);
+            mod = 0x01;
+        }
+        else
+        {
+            disp_size = sizeof(int32_t);
+            mod = 0x02;
+        }
+    }
+    if (disp < INT32_MIN || disp > INT32_MAX)
+    {
+        warning(CONTEXT_FORMAT "failed to load converted memory operand "
+            "into register %s; the adjusted displacement is out-of-bounds",
+            CONTEXT(I), getRegName(getReg(regno)));
+        sendSExtFromI32ToR64(out, 0, regno);
+        return false;
     }
 
-    bool have_pc_rel = false;
-    intptr_t disp    = 0;
-    if (mod == 0x1 || mod == 0x2 || (mod == 0x0 && rm == 0x4 && base == 0x5))
-    {
-        disp = (intptr_t)x86->disp;
-    }
-    else if (mod == 0x0 && rm == 0x5)
-    {
-        have_pc_rel = true;
-        disp        = I->address + I->size + (intptr_t)x86->disp;
-    }
-
-    x86_reg base_reg = op->mem.base;
-    x86_reg index_reg = op->mem.index;
+    uint8_t modrm = (mod << 6) | (reg << 3) | rm;
 
     x86_reg exclude[4] = {getReg(regno)};
     int j = 1;
@@ -305,66 +392,50 @@ static bool sendLoadFromConvertedMemToR64(FILE *out, const cs_insn *I,
     int slot = 0;
     int scratch_1 = sendTemporaryRestoreReg(out, info, base_reg, exclude,
         &slot);
-    int scratch_2 = sendTemporaryRestoreReg(out, info, index_reg, exclude,
-        &slot);
+    int scratch_2 = INT32_MAX;
+    if (index_reg != base_reg)
+        scratch_2 = sendTemporaryRestoreReg(out, info, index_reg, exclude,
+            &slot);
 
-    intptr_t disp0 = disp;
-    if (base_reg == X86_REG_RSP || base_reg == X86_REG_ESP)
-        disp += info.rsp_offset;
-    if (index_reg == X86_REG_RSP || index_reg == X86_REG_ESP)
-        disp += info.rsp_offset;
-    if (disp < INT32_MIN || disp > INT32_MAX)
+    if (seg_prefix != 0)
+        fprintf(out, "%u,", seg_prefix);
+    if (size_prefix != 0)
+        fprintf(out, "%u,", size_prefix);
+    fprintf(out, "%u,", rex);
+    if (lea)
+        fprintf(out, "%u,", /*lea=*/0x8d);
+    else switch (size)
     {
-        // This is a corner case for nonsensical operands using %rsp
-        warning(CONTEXT_FORMAT "failed to load converted memory operand "
-            "into register %s; the adjusted displacement is out-of-bounds",
-            CONTEXT(I), getRegName(getReg(regno)));
-        sendSExtFromI32ToR64(out, 0, regno);
-        return false;
+        case sizeof(int64_t):
+            fprintf(out, "%u,", /*mov=*/0x8b); break;
+        case sizeof(int32_t):
+            fprintf(out, "%u,", /*movslq=*/0x63); break;
+        case sizeof(int16_t):
+            fprintf(out, "%u,%u,", 0x0f, /*movswq=*/0xbf); break;
+        case sizeof(int8_t):
+            fprintf(out, "%u,%u,", 0x0f, /*movsbq=*/0xbe); break;
+        default:
+            warning(CONTEXT_FORMAT "failed to load memory "
+                "operand contents into register %s; operand "
+                "size (%zu) is too big", CONTEXT(I),
+                getRegName(getReg(regno)), size);
+            sendSExtFromI32ToR64(out, 0, regno);
+            return false;
     }
-    if (disp != disp0)
-    {
-        switch (mod)
-        {
-            case 0x00:
-                if (base == 0x5)
-                    break;
-                if (disp >= INT8_MIN && disp <= INT8_MAX)
-                    modrm = (modrm & 0x3f) | (0x01 << 6);
-                else
-                    modrm = (modrm & 0x3f) | (0x02 << 6);
-                break;
-            case 0x01:
-                if (disp < INT8_MIN || disp > INT8_MAX)
-                    modrm = (modrm & 0x3f) | (0x02 << 6);
-                break;
-            default:
-                break;
-        }
-    }
-
-    bool have_prefix = (x86->prefix[1] != 0);
-    mod = (modrm >> 6) & 0x3;
-    for (unsigned i = 1; i < 4; i++)
-    {
-        if (x86->prefix[i] == 0x0)
-            continue;
-        fprintf(out, "%u,", x86->prefix[i]);
-    }
-    if (opcode0 != 0)
-        fprintf(out, "%u,%u,%u,%u,", rex, opcode0, opcode, modrm);
-    else
-        fprintf(out, "%u,%u,%u,", rex, opcode, modrm);
+    fprintf(out, "%u,", modrm);
     if (have_sib)
         fprintf(out, "%u,", sib);
-    if (have_pc_rel)
+    if (have_rel32)
         fprintf(out, "{\"rel32\":%d},", (int32_t)disp);
-    else if (have_prefix)
-        fprintf(out, "{\"int32\":%d},", (int32_t)disp);
-    else if (mod == 0x1)
-        fprintf(out, "{\"int8\":%d},", (int32_t)disp);
-    else if (mod == 0x2 || (mod == 0x0 && base == 0x5))
-        fprintf(out, "{\"int32\":%d},", (int32_t)disp);
+    else switch (disp_size)
+    {
+        case sizeof(int8_t):
+            fprintf(out, "{\"int8\":%d},", (int32_t)disp);
+            break;
+        case sizeof(int32_t):
+            fprintf(out, "{\"int32\":%d},", (int32_t)disp);
+            break;
+    }
 
     sendUndoTemporaryMovReg(out, base_reg, scratch_1);
     sendUndoTemporaryMovReg(out, index_reg, scratch_2);
@@ -535,37 +606,9 @@ static bool sendLoadOperandMetadata(FILE *out, const cs_insn *I,
             return sendLoadRegToArg(out, I, op->reg, ptr, info, argno);
 
         case X86_OP_MEM:
-            if (!ptr)
-            {
-                switch (op->size)
-                {
-                    case sizeof(int64_t):
-                        return sendLoadFromConvertedMemToR64(out, I, op, info,
-                            0x00, /*mov=*/0x8b, argno);
-                    case sizeof(int32_t):
-                        return sendLoadFromConvertedMemToR64(out, I, op, info,
-                            0x00, /*movslq=*/0x63, argno);
-                    case sizeof(int16_t):
-                        return sendLoadFromConvertedMemToR64(out, I, op, info,
-                            0x0f, /*movswq=*/0xbf, argno);
-                    case sizeof(int8_t):
-                        return sendLoadFromConvertedMemToR64(out, I, op, info,
-                            0x0f, /*movsbq=*/0xbe, argno);
-                    case 0:
-                        sendSExtFromI32ToR64(out, 0, argno);
-                        return true;
-                    default:
-                        warning(CONTEXT_FORMAT "failed to load memory "
-                            "operand contents into register %s; operand "
-                            "size (%zu) is too big", CONTEXT(I),
-                            getRegName(getReg(argno)), op->size);
-                        sendSExtFromI32ToR64(out, 0, argno);
-                        return false;
-                }
-            }
-            else
-                return sendLoadFromConvertedMemToR64(out, I, op, info,
-                    0x00, /*lea=*/0x8d, argno);
+            return sendLoadFromMemOpToR64(out, I, info, op->size,
+                op->mem.segment, op->mem.disp, op->mem.base, op->mem.index,
+                op->mem.scale, ptr, argno);
 
         case X86_OP_IMM:
             if (!ptr)
@@ -672,8 +715,9 @@ static void sendLoadTargetMetadata(FILE *out, const cs_insn *I, CallInfo &info,
         case X86_OP_MEM:
             // This is an indirect jump/call.  Convert the instruction into a
             // mov instruction that loads the target in the correct register
-            sendLoadFromConvertedMemToR64(out, I, op, info, 0x00, /*mov=*/0x8b,
-                argno);
+            (void)sendLoadFromMemOpToR64(out, I, info, op->size,
+                op->mem.segment, op->mem.disp, op->mem.base, op->mem.index,
+                op->mem.scale, /*lea=*/true, argno);
             return;
         
         case X86_OP_IMM:
@@ -1093,6 +1137,27 @@ static Type sendLoadArgumentMetadata(FILE *out, CallInfo &info,
             t |= TYPE_PTR;
             break;
         }
+        case ARGUMENT_MEMOP:
+            switch (arg.memop.size)
+            {
+                case sizeof(int64_t):
+                    t = TYPE_INT64; break;
+                case sizeof(int32_t):
+                    t = TYPE_INT32; break;
+                case sizeof(int16_t):
+                    t = TYPE_INT16; break;
+                default:
+                    t = TYPE_INT8; break;
+            }
+            if (arg.ptr)
+                t |= TYPE_PTR;
+
+            if (!sendLoadFromMemOpToR64(out, I, info, arg.memop.size,
+                    getReg(arg.memop.seg), arg.memop.disp,
+                    getReg(arg.memop.base), getReg(arg.memop.index),
+                    arg.memop.scale, /*lea=*/arg.ptr, regno))
+                t = TYPE_NULL_PTR;
+            break;
         case ARGUMENT_OP: case ARGUMENT_SRC: case ARGUMENT_DST:
         case ARGUMENT_IMM: case ARGUMENT_REG: case ARGUMENT_MEM:
         {

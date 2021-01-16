@@ -22,7 +22,8 @@ to be used directly.
         * [2.2.1 Call Action Arguments](#s221)
             - [2.2.1.1 Pass-by-pointer](#s2211)
             - [2.2.1.2 Polymorphic Arguments](#s2212)
-            - [2.2.1.3 Undefined Arguments](#s2213)
+            - [2.2.1.4 Explicit Memory Operand Arguments](#s2213)
+            - [2.2.1.4 Undefined Arguments](#s2214)
         * [2.2.2 Call Action Options](#s222)
         * [2.2.3 Call Action Standard Library](#s223)
         * [2.2.4 Call Action Initialization](#s224)
@@ -596,6 +597,22 @@ The following arguments are supported:
 <tr><td><b><tt>mem[i].scale</tt></b></td><td><tt>int8_t</tt></td>
     <td>The matching instruction's <i>i</i><sup>th</sup> memory operand
     scale</td></tr>
+<tr><td><b><tt>mem8&lt;MEMOP&gt;</tt></b></td><td><tt>int8_t</tt></td>
+    <td>An explicit 8-bit <tt>MEMOP</tt></td></tr>
+<tr><td><b><tt>mem16&lt;MEMOP&gt;</tt></b></td><td><tt>int16_t</tt></td>
+    <td>An explicit 16-bit <tt>MEMOP</tt></td></tr>
+<tr><td><b><tt>mem32&lt;MEMOP&gt;</tt></b></td><td><tt>int32_t</tt></td>
+    <td>An explicit 32-bit <tt>MEMOP</tt></td></tr>
+<tr><td><b><tt>mem64&lt;MEMOP&gt;</tt></b></td><td><tt>int64_t</tt></td>
+    <td>An explicit 64-bit <tt>MEMOP</tt></td></tr>
+<tr><td><b><tt>&amp;mem8&lt;MEMOP&gt;</tt></b></td><td><tt>int8_t &#42;</tt></td>
+    <td>An explicit 8-bit <tt>MEMOP</tt> (passed-by-pointer)</td></tr>
+<tr><td><b><tt>&amp;mem16&lt;MEMOP&gt;</tt></b></td><td><tt>int16_t &#42;</tt></td>
+    <td>An explicit 16-bit <tt>MEMOP</tt> (passed-by-pointer)</td></tr>
+<tr><td><b><tt>&amp;mem32&lt;MEMOP&gt;</tt></b></td><td><tt>int32_t &#42;</tt></td>
+    <td>An explicit 32-bit <tt>MEMOP</tt> (passed-by-pointer)</td></tr>
+<tr><td><b><tt>&amp;mem64&lt;MEMOP&gt;</tt></b></td><td><tt>int64_t &#42;</tt></td>
+    <td>An explicit 64-bit <tt>MEMOP</tt> (passed-by-pointer)</td></tr>
 </table>
 
 ---
@@ -679,7 +696,27 @@ matches the argument types, or generate an error if no appropriate
 match can be found.
 
 ---
-##### <a id="s2213">2.2.1.3 Undefined Arguments</a>
+##### <a id="s2213">2.2.1.3 Explicit Memory Operand Arguments</a>
+
+It is possible to pass explicit memory operands as arguments.
+This is useful for reading/writing to known memory locations, such as
+stack memory.
+The syntax is:
+<pre>
+    ( <b>mem8</b> | <b>mem16</b> | <b>mem32</b> | <b>mem64</b> ) <b>&lt;</b> MEMOP <b>&gt;</b>
+</pre>
+Here, the <tt>mem8</tt>...<tt>mem64</tt> token specifies the size of
+the memory operand, and <tt>MEMOP</tt> is the memory operand itself
+specified in AT&amp;T syntax.
+For example, the following explcit memory operands access stack memory:
+
+        mem64<(%rsp)>
+        mem64<0x100(%rsp)>
+        mem64<0x200(%rsp,%rax,8)>
+        ...
+
+---
+##### <a id="s2214">2.2.1.4 Undefined Arguments</a>
 
 Some arguments may be undefined, e.g., `op[3]` for a 2-operand instruction.
 In this case, the `NULL` pointer will be passed and the type will

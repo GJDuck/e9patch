@@ -340,7 +340,20 @@ enum FieldKind
 };
 
 /*
- * Arguments.
+ * Memory operand seg:disp(base,index,scale)
+ */
+struct MemOp
+{
+    Register seg;
+    int32_t disp;
+    Register base;
+    Register index;
+    int8_t scale;
+    int8_t size;
+};
+
+/*
+ * Argument kinds.
  */
 enum ArgumentKind
 {
@@ -361,6 +374,7 @@ enum ArgumentKind
     ARGUMENT_TRAMPOLINE,            // Trampoline
     ARGUMENT_RANDOM,                // Random number
     ARGUMENT_REGISTER,              // Register
+    ARGUMENT_MEMOP,                 // Memory operand
 
     ARGUMENT_OP,                    // Operand[i]
     ARGUMENT_SRC,                   // Source operand[i]
@@ -372,6 +386,9 @@ enum ArgumentKind
     ARGUMENT_MAX                    // Maximum argument value
 };
 
+/*
+ * Argument.
+ */
 struct Argument
 {
     ArgumentKind kind;              // Argument kind.
@@ -379,6 +396,7 @@ struct Argument
     bool ptr;                       // Argument is passed by pointer?
     bool duplicate;                 // Argument is a duplicate?
     intptr_t value;                 // Argument value.
+    MemOp memop;                    // Argument memop value.
     const char *name;               // Argument name (ARGUMENT_USER).
 };
 

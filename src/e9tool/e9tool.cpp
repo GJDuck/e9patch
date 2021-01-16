@@ -873,6 +873,173 @@ static MatchExpr *parseMatch(const char *str)
 }
 
 /*
+ * Parse a memory operand.
+ */
+static void parseMemOp(Parser &parser, int t, MemOp &memop)
+{
+    switch (t)
+    {
+        case TOKEN_MEM8:
+            memop.size = sizeof(int8_t); break;
+        case TOKEN_MEM16:
+            memop.size = sizeof(int8_t); break;
+        case TOKEN_MEM32:
+            memop.size = sizeof(int8_t); break;
+        case TOKEN_MEM64:
+            memop.size = sizeof(int8_t); break;
+        default:
+            parser.unexpectedToken();
+    }
+
+    intptr_t disp64 = 0x0;
+    intptr_t scale64 = 1;
+    memop.seg   = REGISTER_NONE;
+    memop.disp  = 0x0;
+    memop.base  = REGISTER_NONE;
+    memop.index = REGISTER_NONE;
+    memop.scale = 1;
+
+    parser.expectToken('<');
+    if (parser.peekToken() == TOKEN_REGISTER)
+    {
+        parser.getToken();
+        memop.seg = (Register)parser.i;
+        parser.expectToken(':');
+    }
+    if (parser.peekToken() == TOKEN_INTEGER)
+    {
+        parser.getToken();
+        disp64 = parser.i;
+    }
+
+    if (parser.peekToken() != '(')
+        goto memop_validate;
+    parser.getToken();
+
+    switch (parser.getToken())
+    {
+        case ',':
+            break;
+        case TOKEN_NIL: case TOKEN_REGISTER:
+            memop.base = (Register)parser.i;
+            switch (parser.getToken())
+            {
+                case ')':
+                    goto memop_validate;
+                case ',':
+                    break;
+                default:
+                    parser.unexpectedToken();
+            }
+            break;
+        case ')':
+            goto memop_validate;
+        default:
+            parser.unexpectedToken();
+    }
+
+    switch (parser.getToken())
+    {
+        case ',':
+            break;
+        case TOKEN_NIL: case TOKEN_REGISTER:
+            memop.index = (Register)parser.i;
+            switch (parser.getToken())
+            {
+                case ')':
+                    goto memop_validate;
+                case ',':
+                    break;
+                default:
+                    parser.unexpectedToken();
+            }
+            break;
+        case ')':
+            goto memop_validate;
+        default:
+            parser.unexpectedToken();
+    }
+
+    parser.expectToken(TOKEN_INTEGER);
+    scale64 = parser.i;
+    parser.expectToken(')');
+
+memop_validate:
+    parser.expectToken('>');
+
+    if (disp64 < INT32_MIN || disp64 > INT32_MAX)
+        error("failed to parse %s; expected displacement within the range "
+            "%ld..%ld, found %ld", parser.mode, INT32_MIN, INT32_MAX, disp64);
+    switch (memop.seg)
+    {
+        case REGISTER_NONE:
+        case REGISTER_ES: case REGISTER_CS: case REGISTER_SS:
+        case REGISTER_DS: case REGISTER_FS: case REGISTER_GS:
+            break;
+        default:
+            error("failed to parse %s; invalid memory operand "
+                "segment register %s ", parser.mode,
+                getRegName(getReg(memop.seg)));
+    }
+    switch (memop.base)
+    {
+        case REGISTER_NONE:
+        case REGISTER_RAX: case REGISTER_RCX: case REGISTER_RDX:
+        case REGISTER_RBX: case REGISTER_RSP: case REGISTER_RBP:
+        case REGISTER_RSI: case REGISTER_RDI: case REGISTER_R8:
+        case REGISTER_R9: case REGISTER_R10: case REGISTER_R11:
+        case REGISTER_R12: case REGISTER_R13: case REGISTER_R14:
+        case REGISTER_R15: case REGISTER_RIP:
+        case REGISTER_EAX: case REGISTER_ECX: case REGISTER_EDX:
+        case REGISTER_EBX: case REGISTER_ESP: case REGISTER_EBP:
+        case REGISTER_ESI: case REGISTER_EDI: case REGISTER_R8D:
+        case REGISTER_R9D: case REGISTER_R10D: case REGISTER_R11D:
+        case REGISTER_R12D: case REGISTER_R13D: case REGISTER_R14D:
+        case REGISTER_R15D:
+            break;
+        default:
+            error("failed to parse %s; invalid memory operand "
+                "base register %s ", parser.mode,
+                getRegName(getReg(memop.base)));
+    }
+    switch (memop.index)
+    {
+        case REGISTER_NONE:
+        case REGISTER_RAX: case REGISTER_RCX: case REGISTER_RDX:
+        case REGISTER_RBX: case REGISTER_RBP:
+        case REGISTER_RSI: case REGISTER_RDI: case REGISTER_R8:
+        case REGISTER_R9: case REGISTER_R10: case REGISTER_R11:
+        case REGISTER_R12: case REGISTER_R13: case REGISTER_R14:
+        case REGISTER_R15:
+        case REGISTER_EAX: case REGISTER_ECX: case REGISTER_EDX:
+        case REGISTER_EBX: case REGISTER_EBP:
+        case REGISTER_ESI: case REGISTER_EDI: case REGISTER_R8D:
+        case REGISTER_R9D: case REGISTER_R10D: case REGISTER_R11D:
+        case REGISTER_R12D: case REGISTER_R13D: case REGISTER_R14D:
+        case REGISTER_R15D:
+            break;
+        default:
+            error("failed to parse %s; invalid memory operand "
+                "index register %s ", parser.mode,
+                getRegName(getReg(memop.index)));
+    }
+    switch (scale64)
+    {
+        case 1: case 2: case 4: case 8:
+            break;
+        default:
+            error("failed to parse %s; expected scale with value "
+                "{1,2,4,8}, found %ld", parser.mode, scale64);
+    }
+    if (memop.base == REGISTER_RIP && memop.index != REGISTER_NONE &&
+            memop.scale != 1)
+        error("failed to parse %s; invalid memory operand with "
+            "%rip base register and non-empty index/scale", parser.mode);
+    memop.disp  = (int32_t)disp64;
+    memop.scale = (uint8_t)scale64;
+}
+
+/*
  * Parse an action.
  */
 static Action *parseAction(const char *str, const MatchExpr *expr)
@@ -983,6 +1150,8 @@ static Action *parseAction(const char *str, const MatchExpr *expr)
                 }
                 ArgumentKind arg = ARGUMENT_INVALID;
                 FieldKind field  = FIELD_NONE;
+                MemOp memop = {REGISTER_NONE, 0, REGISTER_NONE, REGISTER_NONE,
+                    1, 0};
                 intptr_t value = 0x0;
                 int arg_token = t;
                 const char *basename = nullptr;
@@ -1015,6 +1184,11 @@ static Action *parseAction(const char *str, const MatchExpr *expr)
                         arg = ARGUMENT_BYTES; break;
                     case TOKEN_MEM:
                         arg = ARGUMENT_MEM; break;
+                    case TOKEN_MEM8: case TOKEN_MEM16: case TOKEN_MEM32:
+                    case TOKEN_MEM64:
+                        arg = ARGUMENT_MEMOP;
+                        parseMemOp(parser, t, memop);
+                        break;
                     case TOKEN_NEXT:
                         option_detail = true;
                         arg = ARGUMENT_NEXT;
@@ -1089,6 +1263,9 @@ static Action *parseAction(const char *str, const MatchExpr *expr)
                         }
                         break;
 
+                    case ARGUMENT_MEMOP:
+                        break;
+
                     case ARGUMENT_REGISTER:
                         if ((Register)value == REGISTER_RIP)
                             goto not_a_ptr;
@@ -1114,7 +1291,8 @@ static Action *parseAction(const char *str, const MatchExpr *expr)
                         break;
                     }
                 }
-                args.push_back({arg, field, ptr, duplicate, value, basename});
+                args.push_back({arg, field, ptr, duplicate, value, memop,
+                    basename});
                 t = parser.getToken();
                 if (t == ')')
                     break;

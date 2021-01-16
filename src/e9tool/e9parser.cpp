@@ -333,6 +333,10 @@ enum Token
     TOKEN_LEQ,
     TOKEN_MATCH,
     TOKEN_MEM,
+    TOKEN_MEM16,
+    TOKEN_MEM32,
+    TOKEN_MEM64,
+    TOKEN_MEM8,
     TOKEN_MNEMONIC,
     TOKEN_NAKED,
     TOKEN_NEQ,
@@ -395,6 +399,7 @@ static const TokenInfo tokens[] =
     {"--",              TOKEN_NONE,             (Access)0x0},
     {"-w",              TOKEN_WRITE,            ACCESS_WRITE},
     {".",               (Token)'.',             0},
+    {":",               (Token)':',             0},
     {"<",               (Token)'<',             0},
     {"<=",              TOKEN_LEQ,              0},
     {"=",               (Token)'=',             0},
@@ -461,6 +466,10 @@ static const TokenInfo tokens[] =
     {"length",          TOKEN_LENGTH,           0},
     {"match",           TOKEN_MATCH,            0},
     {"mem",             TOKEN_MEM,              OP_TYPE_MEM},
+    {"mem16",           TOKEN_MEM16,            0},
+    {"mem32",           TOKEN_MEM32,            0},
+    {"mem64",           TOKEN_MEM64,            0},
+    {"mem8",            TOKEN_MEM8,             0},
     {"mnemonic",        TOKEN_MNEMONIC,         0},
     {"naked",           TOKEN_NAKED,            0},
     {"next",            TOKEN_NEXT,             0},
@@ -729,8 +738,13 @@ struct Parser
 
     Token getTokenFromName(const char *name)
     {
+        bool reg = (name[0] == '%');
+        if (reg)
+            name++;
         const TokenInfo *info = getTokenInfo(name);
         if (info == nullptr)
+            return TOKEN_ERROR;
+        if (reg && info->token != TOKEN_REGISTER)
             return TOKEN_ERROR;
         i = info->value;
         return info->token;
@@ -756,7 +770,7 @@ struct Parser
                 strcpy(s, "<end-of-input>");
                 return TOKEN_END;
             case '[': case ']': case '@': case ',': case '(': case ')':
-            case '&': case '.':
+            case '&': case '.': case ':':
                 s[0] = c; s[1] = '\0';
                 pos++;
                 if (c == '&' && buf[pos] == '&')
@@ -864,7 +878,7 @@ struct Parser
         }
 
         // Names:
-        if (isalpha(c) || c == '_' || c == '-')
+        if (isalpha(c) || c == '_' || c == '-' || c == '%')
         {
             s[j++] = c;
             pos++;
