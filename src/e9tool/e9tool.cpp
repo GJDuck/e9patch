@@ -2082,7 +2082,8 @@ static void usage(FILE *stream, const char *progname)
     fputs("\t\t\t           | 'trap' \n", stream);
     fputs("\t\t\t           | 'exit' '(' CODE ')'\n", stream);
     fputs("\t\t\t           | CALL \n", stream);
-    fputs("\t\t\t           | 'plugin' '[' NAME ']'\n", stream);
+    fputs("\t\t\t           | 'plugin' '(' NAME ')' '.' 'patch' '(' ')'\n",
+        stream);
     fputc('\n', stream);
     fputs("\t\tWhere:\n", stream);
     fputc('\n', stream);
