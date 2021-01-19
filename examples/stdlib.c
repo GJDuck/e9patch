@@ -1424,7 +1424,7 @@ static int sigaction(int signum, const struct sigaction *act,
     struct ksigaction kact, koldact;
     if (act != NULL)
     {
-        kact.sa_handler_2 = act->sa_handler;
+        kact.sa_handler_2 = (void *)act->sa_handler;
         memcpy(&kact.sa_mask, &act->sa_mask, sizeof(kact.sa_mask));
         kact.sa_flags = act->sa_flags | SA_RESTORER;
         kact.sa_restorer = signal_restorer;
@@ -1435,7 +1435,7 @@ static int sigaction(int signum, const struct sigaction *act,
         return result;
     if (oldact != NULL)
     {
-        oldact->sa_handler = koldact.sa_handler_2;
+        oldact->sa_handler = (void (*)(int))koldact.sa_handler_2;
         memcpy(&oldact->sa_mask, &koldact.sa_mask, sizeof(oldact->sa_mask));
         oldact->sa_flags = (koldact.sa_flags & ~SA_RESTORER);
         oldact->sa_restorer = NULL;
