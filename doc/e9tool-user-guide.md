@@ -471,7 +471,8 @@ The following arguments are supported:
 <tr><td><b><tt>rax</tt></b>,...,<b><tt>r15</tt></b></td><td><tt>int64_t</tt></td>
     <td>The corresponding 64bit register</td></tr>
 <tr><td><b><tt>rflags</tt></b></td><td><tt>int16_t</tt></td>
-    <td>The <tt>%rflags</tt> register</td></tr>
+    <td>The <tt>%rflags</tt> register with format
+    <tt>SF:ZF:0:AF:0:PF:1:CF:0:0:0:0:0:0:0:OF</tt></td></tr>
 <tr><td><b><tt>rip</tt></b></td><td><tt>const void &#42;</tt></td>
     <td>The <tt>%rip</tt> register</td></tr>
 <tr><td><b><tt>&amp;ah</tt></b>,...,<b><tt>&amp;dh</tt></b>, <b><tt>&amp;al</tt></b>,...,<b><tt>&amp;r15b</tt></b></td><td><tt>int8_t &#42;</tt></td>
@@ -483,7 +484,7 @@ The following arguments are supported:
 <tr><td><b><tt>&amp;rax</tt></b>,...,<b><tt>&amp;r15</tt></b></td><td><tt>int64_t &#42;</tt></td>
     <td>The corresponding 64bit register (passed-by-pointer)</td></tr>
 <tr><td><b><tt>&amp;rflags</tt></b></td><td><tt>int16_t &#42;</tt></td>
-    <td>The <tt>rflags</tt> register (passed-by-pointer)</td></tr>
+    <td>The <tt>%rflags</tt> register (passed-by-pointer)</td></tr>
 <tr><td><b><tt>op[i]</tt></b></td><td><tt>int8/16/32/64_t</tt></td>
     <td>The matching instruction's <i>i</i><sup>th</sup> operand</td></tr>
 <tr><td><b><tt>src[i]</tt></b></td><td><tt>int8/16/32/64_t</tt></td>
@@ -614,6 +615,15 @@ The following arguments are supported:
 <tr><td><b><tt>&amp;mem64&lt;MEMOP&gt;</tt></b></td><td><tt>int64_t &#42;</tt></td>
     <td>An explicit 64-bit <tt>MEMOP</tt> (passed-by-pointer)</td></tr>
 </table>
+
+Notes:
+
+* The `rflags` argument differs from the native
+  `x86_64` layout in terms of the number of flags as well as the flag ordering.
+  The modified layout is used for efficiency reasons since preserving the
+  native layout is a relatively slow operation.
+* For technical reasons, the `%rip` register is considered constant and cannot
+  be modified.
 
 ---
 ##### <a id="s2211">2.2.1.1 Pass-by-pointer</a>
