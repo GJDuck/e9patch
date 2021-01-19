@@ -1121,7 +1121,7 @@ static Type sendLoadArgumentMetadata(FILE *out, CallInfo &info,
             break;
         ARGUMENT_REG_PTR:
         {
-            x86_reg reg = getReg(arg.kind);
+            x86_reg reg = getReg((Register)arg.value);
             sendSaveRegToStack(out, info, reg);
             sendLeaFromStackToR64(out, info.getOffset(reg), regno);
             switch (getRegSize(reg))
