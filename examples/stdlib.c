@@ -1766,6 +1766,9 @@ static __int128 atoi_convert(const char * __restrict__ nptr,
             *endptr = (char *)nptr;
             errno = EINVAL;
             return 0;
+        default:
+            base = (base == 0? 10: base);
+            break;
     }
         
     __int128 x = 0;
