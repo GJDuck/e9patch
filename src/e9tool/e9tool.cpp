@@ -1178,6 +1178,8 @@ static Action *parseAction(const char *str, const MatchExpr *expr)
                         arg = ARGUMENT_BASE; break;
                     case TOKEN_DST:
                         arg = ARGUMENT_DST; break;
+                    case TOKEN_ID:
+                        arg = ARGUMENT_ID; break;
                     case TOKEN_IMM:
                         arg = ARGUMENT_IMM; break;
                     case TOKEN_INSTR:
@@ -2139,6 +2141,8 @@ static void usage(FILE *stream, const char *progname)
     fputs("\t\t\t  * \"base\" is the PIC base address.\n", stream);
     fputs("\t\t\t  * \"addr\" is the address of the instruction.\n",
         stream);
+    fputs("\t\t\t  * \"id\" is a unique identifier (one per patch).\n",
+        stream);
     fputs("\t\t\t  * \"instr\" is the bytes of the instruction.\n",
         stream);
     fputs("\t\t\t  * \"next\" is the address of the next instruction.\n",
@@ -2752,6 +2756,7 @@ int main(int argc, char **argv)
      * Send instructions & patches.  Note: this MUST be done in reverse!
      */
     size_t count = locs.size();
+    intptr_t id = -1;
     for (ssize_t i = (ssize_t)count - 1; i >= 0; i--)
     {
         Location &loc = locs[i];
@@ -2780,6 +2785,7 @@ int main(int argc, char **argv)
                 elf.text_addr, elf.text_offset);
 
         const Action *action = option_actions[loc.action];
+        id++;
         if (action->kind == ACTION_PLUGIN)
         {
             // Special handling for plugins:
@@ -2795,8 +2801,8 @@ int main(int argc, char **argv)
             char buf[4096];
             Metadata metadata_buf[MAX_ARGNO+1];
             Metadata *metadata = buildMetadata(handle, action, I, offset,
-                metadata_buf, buf, sizeof(buf)-1);
-            sendPatchMessage(backend.out, action->name, offset, metadata);
+                id, metadata_buf, buf, sizeof(buf)-1);
+            sendPatchMessage(backend.out, action->name, offset,  metadata);
         }
     }
     cs_free(I, 1);

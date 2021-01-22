@@ -959,7 +959,7 @@ static intptr_t lookupValue(csh handle, const Action *action,
  */
 static Type sendLoadArgumentMetadata(FILE *out, CallInfo &info,
     csh handle, const Action *action, const Argument &arg, const cs_insn *I,
-    off_t offset, int argno)
+    off_t offset, intptr_t id, int argno)
 {
     int regno = getArgRegIdx(argno);
     if (regno < 0)
@@ -986,6 +986,9 @@ static Type sendLoadArgumentMetadata(FILE *out, CallInfo &info,
         case ARGUMENT_ADDR:
             sendLeaFromPCRelToR64(out, "{\"rel32\":\".Linstruction\"}", regno);
             t = TYPE_CONST_VOID_PTR;
+            break;
+        case ARGUMENT_ID:
+            sendLoadValueMetadata(out, id, regno);
             break;
         case ARGUMENT_NEXT:
             switch (action->call)
@@ -1283,8 +1286,8 @@ static void sendArgumentDataMetadata(FILE *out, const Argument &arg,
  * Build metadata.
  */
 static Metadata *buildMetadata(csh handle, const Action *action,
-    const cs_insn *I, off_t offset, Metadata *metadata, char *buf,
-    size_t size)
+    const cs_insn *I, off_t offset, intptr_t id, Metadata *metadata,
+    char *buf, size_t size)
 {
     if (action == nullptr)
         return nullptr;
@@ -1336,7 +1339,7 @@ static Metadata *buildMetadata(csh handle, const Action *action,
             for (const auto &arg: action->args)
             {
                 Type t = sendLoadArgumentMetadata(out, info, handle, action,
-                    arg, I, offset, argno);
+                    arg, I, offset, id, argno);
                 sig = setType(sig, t, argno);
                 argno++;
             }

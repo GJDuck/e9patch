@@ -446,6 +446,8 @@ The following arguments are supported:
     <td>The runtime base address of the binary</td></tr>
 <tr><td><b><tt>addr</tt></b></td><td><tt>const void &#42;</tt></td>
     <td>The runtime address of the matching instruction</td></tr>
+<tr><td><b><tt>id</tt></b></td><td><tt>intptr_t</tt></td>
+    <td>A unique identifier (one per patch)</td></tr>
 <tr><td><b><tt>instr</tt></b></td><td><tt>const uint8_t &#42;</tt></td>
     <td>The machine-code bytes of the matching instruction</td></tr>
 <tr><td><b><tt>next</tt></b></td><td><tt>const void &#42;</tt></td>
