@@ -1518,7 +1518,7 @@ static void *memset(void *s, int c, size_t n)
 
 static void *memcpy(void *dst, const void *src, size_t n)
 {
-    int8_t *dst1 = (int8_t *)dst1;
+    int8_t *dst1 = (int8_t *)dst;
     const int8_t *src1 = (const int8_t *)src;
     for (size_t i = 0; i < n; i++)
         dst1[i] = src1[i];
