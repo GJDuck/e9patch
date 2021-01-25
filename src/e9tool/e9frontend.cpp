@@ -532,7 +532,7 @@ static int32_t getRegSize(x86_reg reg)
         case X86_REG_R10D: case X86_REG_R11D: case X86_REG_R12D:
         case X86_REG_R13D: case X86_REG_R14D: case X86_REG_R15D:
             return sizeof(int32_t);
- 
+
         case X86_REG_RAX: case X86_REG_RBP: case X86_REG_RBX:
         case X86_REG_RCX: case X86_REG_RDI: case X86_REG_RDX:
         case X86_REG_RIP: case X86_REG_RIZ: case X86_REG_RSI:
@@ -540,7 +540,7 @@ static int32_t getRegSize(x86_reg reg)
         case X86_REG_R10: case X86_REG_R11: case X86_REG_R12:
         case X86_REG_R13: case X86_REG_R14: case X86_REG_R15:
             return sizeof(int64_t);
-        
+
         case X86_REG_XMM0: case X86_REG_XMM1: case X86_REG_XMM2:
         case X86_REG_XMM3: case X86_REG_XMM4: case X86_REG_XMM5:
         case X86_REG_XMM6: case X86_REG_XMM7: case X86_REG_XMM8:
@@ -553,7 +553,7 @@ static int32_t getRegSize(x86_reg reg)
         case X86_REG_XMM27: case X86_REG_XMM28: case X86_REG_XMM29:
         case X86_REG_XMM30: case X86_REG_XMM31:
             return 2 * sizeof(int64_t);
-        
+
         case X86_REG_YMM0: case X86_REG_YMM1: case X86_REG_YMM2:
         case X86_REG_YMM3: case X86_REG_YMM4: case X86_REG_YMM5:
         case X86_REG_YMM6: case X86_REG_YMM7: case X86_REG_YMM8:
@@ -565,9 +565,8 @@ static int32_t getRegSize(x86_reg reg)
         case X86_REG_YMM24: case X86_REG_YMM25: case X86_REG_YMM26:
         case X86_REG_YMM27: case X86_REG_YMM28: case X86_REG_YMM29:
         case X86_REG_YMM30: case X86_REG_YMM31:
-            // return 4 * sizeof(int64_t);
-            return 0;
-        
+            return 4 * sizeof(int64_t);
+
         case X86_REG_ZMM0: case X86_REG_ZMM1: case X86_REG_ZMM2:
         case X86_REG_ZMM3: case X86_REG_ZMM4: case X86_REG_ZMM5:
         case X86_REG_ZMM6: case X86_REG_ZMM7: case X86_REG_ZMM8:
@@ -579,9 +578,8 @@ static int32_t getRegSize(x86_reg reg)
         case X86_REG_ZMM24: case X86_REG_ZMM25: case X86_REG_ZMM26:
         case X86_REG_ZMM27: case X86_REG_ZMM28: case X86_REG_ZMM29:
         case X86_REG_ZMM30: case X86_REG_ZMM31:
-            // return 8 * sizeof(int64_t);
-            return 0;
-        
+            return 8 * sizeof(int64_t);
+
         case X86_REG_ES: case X86_REG_CS: case X86_REG_DS:
         case X86_REG_FPSW: case X86_REG_FS: case X86_REG_GS:
         case X86_REG_SS: case X86_REG_CR0: case X86_REG_CR1:
@@ -2294,27 +2292,59 @@ static bool sendMovBetweenRegAndStack(FILE *out, x86_reg reg, bool to_stack)
     {
         case X86_REG_XMM0: case X86_REG_XMM8:
         case X86_REG_XMM16: case X86_REG_XMM24:
+        case X86_REG_YMM0: case X86_REG_YMM8:
+        case X86_REG_YMM16: case X86_REG_YMM24:
+        case X86_REG_ZMM0: case X86_REG_ZMM8:
+        case X86_REG_ZMM16: case X86_REG_ZMM24:
             modrm = 0x04; break;
         case X86_REG_XMM1: case X86_REG_XMM9:
         case X86_REG_XMM17: case X86_REG_XMM25:
+        case X86_REG_YMM1: case X86_REG_YMM9:
+        case X86_REG_YMM17: case X86_REG_YMM25:
+        case X86_REG_ZMM1: case X86_REG_ZMM9:
+        case X86_REG_ZMM17: case X86_REG_ZMM25:
             modrm = 0x0c; break;
         case X86_REG_XMM2: case X86_REG_XMM10:
         case X86_REG_XMM18: case X86_REG_XMM26:
+        case X86_REG_YMM2: case X86_REG_YMM10:
+        case X86_REG_YMM18: case X86_REG_YMM26:
+        case X86_REG_ZMM2: case X86_REG_ZMM10:
+        case X86_REG_ZMM18: case X86_REG_ZMM26:
             modrm = 0x14; break;
         case X86_REG_XMM3: case X86_REG_XMM11:
         case X86_REG_XMM19: case X86_REG_XMM27:
+        case X86_REG_YMM3: case X86_REG_YMM11:
+        case X86_REG_YMM19: case X86_REG_YMM27:
+        case X86_REG_ZMM3: case X86_REG_ZMM11:
+        case X86_REG_ZMM19: case X86_REG_ZMM27:
             modrm = 0x1c; break;
         case X86_REG_XMM4: case X86_REG_XMM12:
         case X86_REG_XMM20: case X86_REG_XMM28:
+        case X86_REG_YMM4: case X86_REG_YMM12:
+        case X86_REG_YMM20: case X86_REG_YMM28:
+        case X86_REG_ZMM4: case X86_REG_ZMM12:
+        case X86_REG_ZMM20: case X86_REG_ZMM28:
             modrm = 0x24; break;
         case X86_REG_XMM5: case X86_REG_XMM13:
         case X86_REG_XMM21: case X86_REG_XMM29:
+        case X86_REG_YMM5: case X86_REG_YMM13:
+        case X86_REG_YMM21: case X86_REG_YMM29:
+        case X86_REG_ZMM5: case X86_REG_ZMM13:
+        case X86_REG_ZMM21: case X86_REG_ZMM29:
             modrm = 0x2c; break;
         case X86_REG_XMM6: case X86_REG_XMM14:
         case X86_REG_XMM22: case X86_REG_XMM30:
+        case X86_REG_YMM6: case X86_REG_YMM14:
+        case X86_REG_YMM22: case X86_REG_YMM30:
+        case X86_REG_ZMM6: case X86_REG_ZMM14:
+        case X86_REG_ZMM22: case X86_REG_ZMM30:
             modrm = 0x34; break;
         case X86_REG_XMM7: case X86_REG_XMM15:
         case X86_REG_XMM23: case X86_REG_XMM31:
+        case X86_REG_YMM7: case X86_REG_YMM15:
+        case X86_REG_YMM23: case X86_REG_YMM31:
+        case X86_REG_ZMM7: case X86_REG_ZMM15:
+        case X86_REG_ZMM23: case X86_REG_ZMM31:
             modrm = 0x3c; break;
         default:
             return false;
@@ -2329,12 +2359,43 @@ static bool sendMovBetweenRegAndStack(FILE *out, x86_reg reg, bool to_stack)
             fprintf(out, "%u,%u,%u,%u,%u,", 0xf3, 0x0f, opcode, modrm, 0x24);
             return true;
 
+        case X86_REG_YMM0: case X86_REG_YMM1: case X86_REG_YMM2:
+        case X86_REG_YMM3: case X86_REG_YMM4: case X86_REG_YMM5:
+        case X86_REG_YMM6: case X86_REG_YMM7:
+            // vmovdqu %ymm,(%rsp)
+            fprintf(out, "%u,%u,%u,%u,%u,", 0xc5, 0xfe, opcode, modrm, 0x24);
+            return true;
+
+        case X86_REG_ZMM0: case X86_REG_ZMM1: case X86_REG_ZMM2:
+        case X86_REG_ZMM3: case X86_REG_ZMM4: case X86_REG_ZMM5:
+        case X86_REG_ZMM6: case X86_REG_ZMM7:
+            // vmovdqu64 %zmm,(%rsp)
+            fprintf(out, "%u,%u,%u,%u,%u,%u,%u,", 0x62, 0xf1, 0xfe, 0x48,
+                opcode, modrm, 0x24);
+            return true;
+
         case X86_REG_XMM8: case X86_REG_XMM9: case X86_REG_XMM10:
         case X86_REG_XMM11: case X86_REG_XMM12: case X86_REG_XMM13:
         case X86_REG_XMM14: case X86_REG_XMM15:
             // movdqu %xmm,(%rsp)
             fprintf(out, "%u,%u,%u,%u,%u,%u,",
                 0xf3, 0x44, 0x0f, opcode, modrm, 0x24);
+            return true;
+
+        case X86_REG_YMM8: case X86_REG_YMM9: case X86_REG_YMM10:
+        case X86_REG_YMM11: case X86_REG_YMM12: case X86_REG_YMM13:
+        case X86_REG_YMM14: case X86_REG_YMM15:
+            // vmovdqu %ymm,(%rsp)
+            fprintf(out, "%u,%u,%u,%u,%u,",
+                0xc5, 0x7e, opcode, modrm, 0x24);
+            return true;
+
+        case X86_REG_ZMM8: case X86_REG_ZMM9: case X86_REG_ZMM10:
+        case X86_REG_ZMM11: case X86_REG_ZMM12: case X86_REG_ZMM13:
+        case X86_REG_ZMM14: case X86_REG_ZMM15:
+            // vmovdqu64 %zmm,(%rsp)
+            fprintf(out, "%u,%u,%u,%u,%u,%u,%u,", 0x62, 0x71, 0xfe, 0x48,
+                opcode, modrm, 0x24);
             return true;
 
         case X86_REG_XMM16: case X86_REG_XMM17: case X86_REG_XMM18:
@@ -2345,12 +2406,44 @@ static bool sendMovBetweenRegAndStack(FILE *out, x86_reg reg, bool to_stack)
                 0x62, 0xe1, 0xfe, 0x08, opcode, modrm, 0x24);
             return true;
 
+        case X86_REG_YMM16: case X86_REG_YMM17: case X86_REG_YMM18:
+        case X86_REG_YMM19: case X86_REG_YMM20: case X86_REG_YMM21:
+        case X86_REG_YMM22: case X86_REG_YMM23:
+            // vmovdqu64 %ymm,(%rsp)
+            fprintf(out, "%u,%u,%u,%u,%u,%u,%u,",
+                0x62, 0xe1, 0xfe, 0x28, opcode, modrm, 0x24);
+            return true;
+
+        case X86_REG_ZMM16: case X86_REG_ZMM17: case X86_REG_ZMM18:
+        case X86_REG_ZMM19: case X86_REG_ZMM20: case X86_REG_ZMM21:
+        case X86_REG_ZMM22: case X86_REG_ZMM23:
+            // vmovdqu64 %zmm,(%rsp)
+            fprintf(out, "%u,%u,%u,%u,%u,%u,%u,", 0x62, 0xe1, 0xfe, 0x48,
+                opcode, modrm, 0x24);
+            return true;
+
         case X86_REG_XMM24: case X86_REG_XMM25: case X86_REG_XMM26:
         case X86_REG_XMM27: case X86_REG_XMM28: case X86_REG_XMM29:
         case X86_REG_XMM30: case X86_REG_XMM31:
             // vmovdqu64 %xmm,(%rsp)
             fprintf(out, "%u,%u,%u,%u,%u,%u,%u,",
                 0x62, 0x61, 0xfe, 0x08, opcode, modrm, 0x24);
+            return true;
+
+        case X86_REG_YMM24: case X86_REG_YMM25: case X86_REG_YMM26:
+        case X86_REG_YMM27: case X86_REG_YMM28: case X86_REG_YMM29:
+        case X86_REG_YMM30: case X86_REG_YMM31:
+            // vmovdqu64 %xmm,(%rsp)
+            fprintf(out, "%u,%u,%u,%u,%u,%u,%u,",
+                0x62, 0x61, 0xfe, 0x28, opcode, modrm, 0x24);
+            return true;
+
+        case X86_REG_ZMM24: case X86_REG_ZMM25: case X86_REG_ZMM26:
+        case X86_REG_ZMM27: case X86_REG_ZMM28: case X86_REG_ZMM29:
+        case X86_REG_ZMM30: case X86_REG_ZMM31:
+            // vmovdqu64 %zmm,(%rsp)
+            fprintf(out, "%u,%u,%u,%u,%u,%u,%u,", 0x62, 0x61, 0xfe, 0x48,
+                opcode, modrm, 0x24);
             return true;
 
         default:
