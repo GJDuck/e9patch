@@ -1926,415 +1926,124 @@ static intptr_t positionToAddr(const ELF &elf, const char *option,
  */
 static void usage(FILE *stream, const char *progname)
 {
-    fputs("        ___  _              _\n", stream);
-    fputs("   ___ / _ \\| |_ ___   ___ | |\n", stream);
-    fputs("  / _ \\ (_) | __/ _ \\ / _ \\| |\n", stream);
-    fputs(" |  __/\\__, | || (_) | (_) | |\n", stream);
-    fputs("  \\___|  /_/ \\__\\___/ \\___/|_|\n", stream);
-    fputc('\n', stream);
-    fprintf(stream, "usage: %s [OPTIONS] --match MATCH --action ACTION ... "
-        "input-file\n\n", progname);
-    
-    fputs("MATCH\n", stream);
-    fputs("=====\n", stream);
-    fputc('\n', stream);
-    fputs("Matchings determine which instructions should be rewritten.  "
-        "Matchings are\n", stream);
-    fputs("specified using the `--match'/`-M' option:\n", stream);
-    fputc('\n', stream);
-    fputs("\t--match MATCH, -M MATCH\n", stream);
-    fputs("\t\tSpecifies an instruction matching MATCH in the following "
-        "form:\n", stream);
-    fputc('\n', stream);
-    fputs("\t\t\tMATCH     ::=   TEST\n", stream);
-    fputs("\t\t\t              | '(' MATCH ')'\n", stream);
-    fputs("\t\t\t              | 'not' MATCH\n", stream);
-    fputs("\t\t\t              | MATCH 'and' MATCH\n", stream);
-    fputs("\t\t\t              | MATCH 'or' MATCH\n", stream);
-    fputs("\t\t\tTEST      ::=   'defined' '(' ATTRIBUTE ')'\n", stream);
-    fputs("\t\t\t              | VALUES 'in' ATTRIBUTE\n", stream);
-    fputs("\t\t\t              | ATTRIBUTE [ CMP VALUES ]\n", stream);
-    fputs("\t\t\tCMP       ::=   '='\n", stream);
-    fputs("\t\t\t              | '=='\n", stream);
-    fputs("\t\t\t              | '!='\n", stream);
-    fputs("\t\t\t              | '>'\n", stream);
-    fputs("\t\t\t              | '>='\n", stream);
-    fputs("\t\t\t              | '<'\n", stream);
-    fputs("\t\t\t              | '<='\n", stream);
-    fputc('\n', stream);
-    fputs("\t\tHere ATTRIBUTE is an instruction attribute, such as assembly\n",
-        stream);
-    fputs("\t\tor address (see below), CMP is a comparison operator "
-        "(equal,\n", stream);
-    fputs("\t\tless-than, etc.) and VALUES is either a regular expression\n",
-        stream);
-    fputs("\t\t(for string attributes), comma separated list of integers "
-        "(for\n", stream);
-    fputs("\t\tinteger attributes), or values read from a Comma Separated\n",
-        stream);
-    fputs("\t\tValue (CSV) file (for integer attributes):\n", stream);
-    fputc('\n', stream);
-    fputs("\t\t\tVALUES ::=   REGULAR-EXPRESSION\n", stream);
-    fputs("\t\t\t           | VALUE [ ',' VALUE ] *\n", stream);
-    fputs("\t\t\t           | BASENAME '[' INTEGER ']'\n", stream);
-    fputc('\n', stream);
-    fputs("\t\tHere, BASENAME is the basename of a CSV file, and the "
-        "integer\n", stream);
-    fputs("\t\tis the column index.\n", stream);
-    fputc('\n', stream);
-    fputs("\t\tIf the CMP and VALUES are omitted, it is treated the same as\n",
-        stream);
-    fputs("\t\tATTRIBUTE != 0.\n", stream);
-    fputc('\n', stream);
-    fputs("\t\tPossible ATTRIBUTEs and attribute TYPEs are:\n", stream);
-    fputc('\n', stream);
-    fputs("\t\t\t- \"true\" is the integer 1.\n", stream);
-    fputs("\t\t\t- \"false\" is the integer 0.\n", stream);
-    fputs("\t\t\t- \"asm\" is the instruction assembly string, e.g.:\n",
-        stream);
-    fputs("\t\t\t    \"cmpb %r11b, 0x436fe0(%rdi)\".  [TYPE=string]\n", stream);
-    fputs("\t\t\t- \"addr\" is the instruction address, e.g.: 0x4234a7.\n",
-        stream);
-    fputs("\t\t\t    [TYPE=integer]\n", stream);
-    fputs("\t\t\t- \"call\" is 1 for call instructions, else 0.\n", stream);
-    fputs("\t\t\t- \"jump\" is 1 for jump instructions, else 0.\n", stream);
-    fputs("\t\t\t- \"mnemonic\" is the instruction mnemomic, e.g.:\n",
-        stream);
-    fputs("\t\t\t    \"cmpb\".  [TYPE=string]\n", stream);
-    fputs("\t\t\t- \"offset\" is the instruction file offset, e.g.:\n",
-        stream);
-    fputs("\t\t\t    +49521.  [TYPE=integer]\n", stream);
-    fprintf(stream, "\t\t\t- \"random\" is a random integer [0..%lu].\n",
-        (uintptr_t)RAND_MAX);
-    fputs("\t\t\t- \"return\" is 1 for return instructions, else 0.\n",
-        stream);
-    fputs("\t\t\t- \"size\" is the instruction size in bytes.\n", stream);
-    fputs("\t\t\t    [TYPE=integer]\n", stream);
-    fputs("\t\t\t- \"op.size\", \"src.size\", \"dst.size\",\n", stream);
-    fputs("\t\t\t  \"imm.size\", \"reg.size\", \"mem.size\"\n", stream);
-    fputs("\t\t\t    are the number of operands, source operands,\n",
-        stream);
-    fputs("\t\t\t    destination operands, immediate operands,\n",
-        stream);
-    fputs("\t\t\t    register operands, and memory operands\n", stream);
-    fputs("\t\t\t    respectively.  [TYPE=integer]\n", stream);
-    fputs("\t\t\t- \"op[i]\", \"src[i]\", \"dst[i]\",\n", stream);
-    fputs("\t\t\t  \"imm[i]\", \"reg[i]\", \"mem[i]\"\n", stream);
-    fputs("\t\t\t    is the ith operand, source operand,\n",
-        stream);
-    fputs("\t\t\t    destination operand, immediate operand,\n",
-        stream);
-    fputs("\t\t\t    register operand, and memory operand\n", stream);
-    fputs("\t\t\t    respectively.  The TYPE is an integer for\n", stream);
-    fputs("\t\t\t    immediate operands, and a register name for\n",
-        stream);
-    fputs("\t\t\t    register operands.\n", stream);
-    fputs("\t\t\t- \"op[i].FIELD\", \"src[i].FIELD\", \"dst[i].FIELD\",\n",
-        stream);
-    fputs("\t\t\t  \"imm[i].FIELD\", \"reg[i].FIELD\", \"mem[i].FIELD\"\n",
-        stream);
-    fputs("\t\t\t    where FIELD is:\n", stream);
-    fputs("\t\t\t      - \"access\" is the operand access mode.\n",
-        stream);
-    fputs("\t\t\t          [TYPE={-,r,w,rw}]\n", stream);
-    fputs("\t\t\t      - \"base\" is the memory operand base register.\n",
-        stream);
-    fputs("\t\t\t          [TYPE=register]\n", stream);
-    fputs("\t\t\t      - \"disp\" is the memory operand displacement.\n",
-        stream);
-    fputs("\t\t\t          [TYPE=integer]\n", stream);
-    fputs("\t\t\t      - \"index\" is the memory operand index register.\n",
-        stream);
-    fputs("\t\t\t          [TYPE=register]\n", stream);
-    fputs("\t\t\t      - \"scale\" is the memory operand scale.\n",
-        stream);
-    fputs("\t\t\t          [TYPE=integer]\n", stream);
-    fputs("\t\t\t      - \"seg\" is the memory operand segment register.\n",
-        stream);
-    fputs("\t\t\t          [TYPE=register]\n", stream);
-    fputs("\t\t\t      - \"size\" is the operand size.  [TYPE=integer]\n",
-        stream);
-    fputs("\t\t\t      - \"type\" is the operand type.\n", stream);
-    fputs("\t\t\t          [TYPE={imm,reg,mem}]\n", stream);
-    fputs("\t\t\t- \"regs\", \"reads\", \"writes\" is respectively the "
-        "set of\n", stream);
-    fputs("\t\t\t    all registers, set of all read-from registers, and\n",
-        stream);
-    fputs("\t\t\t    the set of all written-to registers, used by the\n",
-        stream);
-    fputs("\t\t\t    instruction.  [TYPE=set of register]\n", stream);
-    fputs("\t\t\t- \"plugin(NAME).match()\" is the value returned by\n",
-        stream);
-    fputs("\t\t\t    NAME.so's e9_plugin_match_v1() function.\n", stream);
-    fputs("\t\t\t    [TYPE=integer]\n", stream);
-    fputc('\n', stream);
-    fputs("\t\tMultiple `--match'/`-M' options can be combined, which will\n",
-        stream);
-    fputs("\t\tbe interpreted as the logical AND of the matching conditions.\n",
-        stream);
-    fputs("\t\tThe sequence of `--match'/`-M' options must also be "
-        "terminated\n", stream);
-    fputs("\t\tby an `--action'/`-A' option, as described below.\n", stream);
-
-    fputc('\n', stream);
-    fputs("ACTION\n", stream);
-    fputs("======\n", stream);
-    fputc('\n', stream);
-    fputs("Actions determine how matching instructions should be rewritten.  "
-        "Actions are\n", stream);
-    fputs("specified using the `--action'/`-A' option:\n", stream);
-    fputc('\n', stream);
-    fputs("\t--action ACTION, -A ACTION\n", stream);
-    fputs("\t\tThe ACTION specifies how instructions matching the preceding\n",
-        stream);
-    fputs("\t\t`--match'/`-M' options are to be rewritten.  Possible ACTIONs\n",
-        stream);
-    fputs("\t\tinclude:\n", stream);
-    fputc('\n', stream);
-    fputs("\t\t\tACTION ::=   'passthru'\n", stream);
-    fputs("\t\t\t           | 'print' \n", stream);
-    fputs("\t\t\t           | 'trap' \n", stream);
-    fputs("\t\t\t           | 'exit' '(' CODE ')'\n", stream);
-    fputs("\t\t\t           | CALL \n", stream);
-    fputs("\t\t\t           | 'plugin' '(' NAME ')' '.' 'patch' '(' ')'\n",
-        stream);
-    fputc('\n', stream);
-    fputs("\t\tWhere:\n", stream);
-    fputc('\n', stream);
-    fputs("\t\t\t- \"passthru\"   : empty (NOP) instrumentation;\n", stream);
-    fputs("\t\t\t- \"print\"      : instruction printing instrumentation.\n",
-        stream);
-    fputs("\t\t\t- \"trap\"       : SIGTRAP instrumentation.\n", stream);
-    fputs("\t\t\t- \"exit(CODE)\" : exit with CODE instrumentation.\n",
-        stream);
-    fputs("\t\t\t- CALL         : call user instrumentation (see below).\n",
-        stream);
-    fputs("\t\t\t- \"plugin(NAME).patch()\"\n", stream);
-    fputs("\t\t\t               : plugin instrumentation (see below).\n",
-        stream);
-    fputc('\n', stream);
-    fputs("\t\tThe CALL INSTRUMENTATION makes it possible to invoke a\n",
-        stream);
-    fputs("\t\tuser-function defined in an ELF file.  The ELF file can be\n",
-        stream);
-    fputs("\t\timplemented in C and compiled using the special "
-        "\"e9compile.sh\"\n", stream);
-    fputs("\t\tshell script.  This will generate a compatible ELF binary\n",
-        stream);
-    fputs("\t\tfile (BINARY).  The syntax for CALL is:\n", stream);
-    fputc('\n', stream);
-    fputs("\t\t\tCALL ::= 'call' [OPTIONS] FUNCTION [ARGS] '@' BINARY\n",
-        stream);
-    fputs("\t\t\tOPTIONS ::= '[' OPTION ',' ... ']'\n", stream);
-    fputs("\t\t\tARGS    ::= '(' ARG ',' ... ')'\n", stream);
-    fputs("\t\t\tARG     ::=   INTEGER\n", stream);
-    fputs("\t\t\t            | NAME\n", stream);
-    fputs("\t\t\t            | BASENAME '[' INTEGER ']'\n", stream);
-    fputc('\n', stream);
-    fputs("\t\tWhere:\n", stream);
-    fputc('\n', stream);
-    fputs("\t\t\t- OPTION is one of:\n", stream);
-    fputs("\t\t\t  * \"clean\"/\"naked\" for clean/naked calls.\n", stream);
-    fputs("\t\t\t  * \"before\"/\"after\"/\"replace\"/\"conditional\" for\n",
-        stream);
-    fputs("\t\t\t    inserting the call before/after the instruction, or\n",
-        stream);
-    fputs("\t\t\t    (conditionally) replacing the instruction by the\n",
-        stream);
-    fputs("\t\t\t    call.\n", stream);
-    fputs("\t\t\t- ARG is one of:\n", stream);
-    fputs("\t\t\t  * \"asm\" is a pointer to a string representation\n",
-        stream);
-    fputs("\t\t\t    of the instruction.\n", stream);
-    fputs("\t\t\t  * \"asm.size\" is the number of bytes in \"asm\".\n",
-        stream);
-    fputs("\t\t\t  * \"asm.len\" is the string length of \"asm\".\n",
-        stream);
-    fputs("\t\t\t  * \"base\" is the PIC base address.\n", stream);
-    fputs("\t\t\t  * \"addr\" is the address of the instruction.\n",
-        stream);
-    fputs("\t\t\t  * \"id\" is a unique identifier (one per patch).\n",
-        stream);
-    fputs("\t\t\t  * \"instr\" is the bytes of the instruction.\n",
-        stream);
-    fputs("\t\t\t  * \"next\" is the address of the next instruction.\n",
-        stream);
-    fputs("\t\t\t  * \"offset\" is the file offset of the instruction.\n",
-        stream);
-    fputs("\t\t\t  * \"target\" is the jump/call/return target, else -1.\n",
-        stream);
-    fputs("\t\t\t  * \"trampoline\" is the address of the trampoline.\n",
-        stream);
-    fprintf(stream, "\t\t\t  * \"random\" is a random value [0..%lu].\n",
-        (uintptr_t)RAND_MAX);
-    fputs("\t\t\t  * \"size\" is the number of bytes in \"instr\".\n",
-        stream);
-    fputs("\t\t\t  * \"staticAddr\" is the (static) address of the\n",
-        stream);
-    fputs("\t\t\t    instruction.\n", stream);
-    fputs("\t\t\t  * \"ah\"...\"dh\", \"al\"...\"r15b\",\n", stream);
-    fputs("\t\t\t    \"ax\"...\"r15w\", \"eax\"...\"r15d\",\n", stream);
-    fputs("\t\t\t    \"rax\"...\"r15\", \"rip\", \"rflags\" is the\n",
-        stream);
-    fputs("\t\t\t    corresponding register value.\n", stream);
-    fputs("\t\t\t  * \"&ah\"...\"&dh\", \"&al\"...\"&r15b\",\n", stream);
-    fputs("\t\t\t    \"&ax\"...\"&r15w\", \"&eax\"...\"&r15d\",\n", stream);
-    fputs("\t\t\t    \"&rax\"...\"&r15\", \"&rflags\" is the corresponding\n",
-        stream);
-    fputs("\t\t\t    register value but passed-by-pointer.\n", stream);
-    fputs("\t\t\t  * \"op[i]\", \"src[i]\", \"dst[i]\", \"imm[i]\", "
-        "\"reg[i]\",\n", stream);
-    fputs("\t\t\t    \"mem[i]\" is the ith operand, source operand,\n",
-        stream);
-    fputs("\t\t\t    destination operand, immediate operand, register\n",
-        stream);
-    fputs("\t\t\t    operand, memory operand respectively.\n", stream);
-    fputs("\t\t\t  * \"&op[i]\", \"&src[i]\", \"&dst[i]\", \"&imm[i]\",\n",
-        stream);
-    fputs("\t\t\t    \"&reg[i]\", \"&mem[i]\" is the same as above\n",
-        stream);
-    fputs("\t\t\t    but passed-by-pointer.\n", stream);
-    fputs("\t\t\t  * An integer constant.\n", stream);
-    fputs("\t\t\t  * A file lookup of the form \"basename[index]\" where\n",
-        stream);
-    fputs("\t\t\t    \"basename\" is the basename of a CSV file used in\n",
-        stream);
-    fputs("\t\t\t    the matching, and \"index\" is a column index.\n",
-        stream);
-    fputs("\t\t\t    Note that the matching must select a unique row.\n",
-        stream);
-    fprintf(stream, "\t\t\t  NOTE: a maximum of %d arguments are supported.\n",
-        MAX_ARGNO);
-    fputs("\t\t\t- FUNCTION is the name of the function to call from\n",
-        stream);
-    fputs("\t\t\t  the binary.\n", stream);
-    fputs("\t\t\t- BINARY is a suitable ELF binary file.  You can use\n",
-        stream);
-    fputs("\t\t\t  the `e9compile.sh' script to compile C programs into\n",
-        stream);
-    fputs("\t\t\t  the correct binary format.\n", stream);
-    fputc('\n', stream);
-    fputs("\t\tPLUGIN instrumentation lets a shared object plugin "
-        "drive the\n", stream);
-    fputs("\t\tbinary instrumentation/rewriting.  See the plugin API\n",
-        stream);
-    fputs("\t\tdocumentation for more information.\n", stream);
-    fputc('\n', stream);
-    fputs("\t\tIt is possible to specify multiple actions that will be\n",
-        stream);
-    fputs("\t\tapplied in the command-line order.\n", stream);
-
-    fputc('\n', stream);
-    fputs("OTHER OPTIONS\n", stream);
-    fputs("=============\n", stream);
-    fputc('\n', stream);
-    fputs("\t--backend PROG\n", stream);
-    fputs("\t\tUse PROG as the backend.  The default is \"e9patch\".\n",
-        stream);
-    fputc('\n', stream);
-    fputs("\t--compression N, -c N\n", stream);
-    fputs("\t\tSet the compression level to be N, where N is a number within\n",
-        stream);
-    fputs("\t\tthe range 0..9.  The default is 9 for maximum compression.\n",
-        stream);
-    fputs("\t\tHigher compression makes the output binary smaller, but also\n",
-        stream);
-    fputs("\t\tincreases the number of mappings (mmap() calls) required.\n",
-        stream);
-    fputc('\n', stream);
-    fputs("\t--debug\n", stream);
-    fputs("\t\tEnable debug output.\n", stream);
-    fputc('\n', stream);
-    fputs("\t--end END\n", stream);
-    fputs("\t\tOnly patch the (.text) section up to the address or symbol\n",
-        stream);
-    fputs("\t\tEND.  By default, the whole (.text) section is patched.\n",
-        stream);
-    fputc('\n', stream);
-    fputs("\t--executable\n", stream);
-    fputs("\t\tTreat the input file as an executable, even if it appears "
-        "to\n", stream);
-    fputs("\t\tbe a shared library.  See the `--shared' option for more\n",
-        stream);
-    fputs("\t\tinformation.\n", stream);
-    fputc('\n', stream);
-    fputs("\t--format FORMAT\n", stream);
-    fputs("\t\tSet the output format to FORMAT which is one of {binary,\n",
-        stream);
-    fputs("\t\tjson, patch, patch.gz, patch,bz2, patch.xz}.  Here:\n", stream);
-    fputc('\n', stream);
-    fputs("\t\t\t- \"binary\" is a modified ELF executable file;\n", stream);
-    fputs("\t\t\t- \"json\" is the raw JSON RPC stream for the e9patch\n",
-        stream);
-    fputs("\t\t\t  backend; or\n", stream);
-    fputs("\t\t\t- \"patch\", \"patch.gz\", \"patch.bz2\" and \"patch.xz\"\n",
-        stream);
-    fputs("\t\t\t  are (compressed) binary diffs in xxd format.\n", stream);
-    fputc('\n', stream);
-    fputs("\t\tThe default format is \"binary\".\n", stream);
-    fputc('\n', stream);
-    fputs("\t--help, -h\n", stream);
-    fputs("\t\tPrint this message and exit.\n", stream);
-    fputc('\n', stream);
-    fputs("\t--no-warnings\n", stream);
-    fputs("\t\tDo not print warning messages.\n", stream);
-    fputc('\n', stream);
-    fputs("\t--option OPTION\n", stream);
-    fputs("\t\tPass OPTION to the e9patch backend.\n", stream);
-    fputc('\n', stream);
-    fputs("\t--output FILE, -o FILE\n", stream);
-    fputs("\t\tSpecifies the path to the output file.  The default filename "
-        "is\n", stream);
-    fputs("\t\t\"a.out\".\n", stream);
-    fputc('\n', stream);
-    fputs("\t--shared\n", stream);
-    fputs("\t\tTreat the input file as a shared library, even if it appears "
-        "to\n", stream);
-    fputs("\t\tbe an executable.  By default, the input file will only be\n",
-        stream);
-    fputs("\t\ttreated as a shared library if (1) it is a dynamic "
-        "executable\n", stream);
-    fputs("\t\t(ET_DYN) and (2) has a filename of the form:\n",
-        stream);
-    fputc('\n', stream);
-    fputs("\t\t\t[PATH/]lib*.so[.VERSION]\n", stream);
-    fputc('\n', stream);
-    fputs("\t--start START\n", stream);
-    fputs("\t\tOnly patch the (.text) section beginning from address or "
-        "symbol\n", stream);
-    fputs("\t\tSTART.  By default, the whole (.text) section is patched\n",
-        stream);
-    fputc('\n', stream);
-    fputs("\t--static-loader, -s\n", stream);
-    fputs("\t\tReplace patched pages statically.  By default, patched "
-        "pages\n", stream);
-    fputs("\t\tare loaded during program initialization as this is more\n",
-        stream);
-    fputs("\t\treliable for large/complex binaries.  However, this may "
-        "bloat\n", stream);
-    fputs("\t\tthe size of the output patched binary.\n", stream);
-    fputc('\n', stream);
-    fputs("\t--sync N\n", stream);
-    fputs("\t\tSkip N instructions after the disassembler desyncs.  This\n",
-        stream);
-    fputs("\t\tcan be a useful hack if the disassembler (capstone) fails, "
-        "or\n", stream);
-    fputs("\t\tif the .text section contains data.\n", stream);
-    fputc('\n', stream);
-    fputs("\t--syntax SYNTAX\n", stream);
-    fputs("\t\tSelects the assembly syntax to be SYNTAX.  Possible values "
-        "are:\n", stream);
-    fputc('\n', stream);
-    fputs("\t\t\t- \"ATT\"  : X86_64 ATT asm syntax; or\n", stream);
-    fputs("\t\t\t- \"intel\": X86_64 Intel asm syntax.\n", stream);
-    fputc('\n', stream);
-    fputs("\t\tThe default syntax is \"ATT\".\n", stream);
-    fputc('\n', stream);
-    fputs("\t--trap-all\n", stream);
-    fputs("\t\tInsert a trap (int3) instruction at each trampoline entry.\n",
-        stream);
-    fputs("\t\tThis can be used for debugging with gdb.\n", stream);
-    fputc('\n', stream);
+    fprintf(stream,
+        "        ___  _              _\n"
+        "   ___ / _ \\| |_ ___   ___ | |\n"
+        "  / _ \\ (_) | __/ _ \\ / _ \\| |\n"
+        " |  __/\\__, | || (_) | (_) | |\n"
+        "  \\___|  /_/ \\__\\___/ \\___/|_|\n"
+        "\n"
+        "usage: %s [OPTIONS] --match MATCH --action ACTION ... input-file\n"
+        "\n"
+        "MATCH\n"
+        "=====\n"
+        "\n"
+        "Matchings determine which instructions should be rewritten.  "
+            "Matchings are\n"
+        "specified using the `--match'/`-M' option:\n"
+        "\n"
+        "\t--match MATCH, -M MATCH\n"
+        "\t\tSpecifies an instruction matching MATCH.\n"
+        "\n"
+        "Please see the e9tool-user-guide for more information.\n"
+        "\n"
+        "ACTION\n"
+        "======\n"
+        "\n"
+        "Actions determine how matching instructions should be rewritten.  "
+            "Actions are\n"
+        "specified using the `--action'/`-A' option:\n"
+        "\n"
+        "\t--action ACTION, -A ACTION\n"
+        "\t\tThe ACTION specifies how instructions matching the preceding\n"
+        "\t\t`--match'/`-M' options are to be rewritten.\n"
+        "\n"
+        "Please see the e9tool-user-guide for more information.\n"
+        "\n"
+        "OTHER OPTIONS\n"
+        "=============\n"
+        "\n"
+        "\t--backend PROG\n"
+        "\t\tUse PROG as the backend.  The default is \"e9patch\".\n"
+        "\n"
+        "\t--compression N, -c N\n"
+        "\t\tSet the compression level to be N, where N is a number within\n"
+        "\t\tthe range 0..9.  The default is 9 for maximum compression.\n"
+        "\t\tHigher compression makes the output binary smaller, but also\n"
+        "\t\tincreases the number of mappings (mmap() calls) required.\n"
+        "\n"
+        "\t--debug\n"
+        "\t\tEnable debug output.\n"
+        "\n"
+        "\t--end END\n"
+        "\t\tOnly patch the (.text) section up to the address or symbol\n"
+        "\t\tEND.  By default, the whole (.text) section is patched.\n"
+        "\n"
+        "\t--executable\n"
+        "\t\tTreat the input file as an executable, even if it appears to\n"
+        "\t\tbe a shared library.  See the `--shared' option for more\n"
+        "\t\tinformation.\n"
+        "\n"
+        "\t--format FORMAT\n"
+        "\t\tSet the output format to FORMAT which is one of {binary,\n"
+        "\t\tjson, patch, patch.gz, patch,bz2, patch.xz}.  Here:\n"
+        "\n"
+        "\t\t\t- \"binary\" is a modified ELF executable file;\n"
+        "\t\t\t- \"json\" is the raw JSON RPC stream for the e9patch\n"
+        "\t\t\t  backend; or\n"
+        "\t\t\t- \"patch\" \"patch.gz\" \"patch.bz2\" and \"patch.xz\"\n"
+        "\t\t\t  are (compressed) binary diffs in xxd format.\n"
+        "\n"
+        "\t\tThe default format is \"binary\".\n"
+        "\n"
+        "\t--help, -h\n"
+        "\t\tPrint this message and exit.\n"
+        "\n"
+        "\t--no-warnings\n"
+        "\t\tDo not print warning messages.\n"
+        "\n"
+        "\t--option OPTION\n"
+        "\t\tPass OPTION to the e9patch backend.\n"
+        "\n"
+        "\t--output FILE, -o FILE\n"
+        "\t\tSpecifies the path to the output file.  The default filename is\n"
+        "\t\t\"a.out\".\n"
+        "\n"
+        "\t--shared\n"
+        "\t\tTreat the input file as a shared library, even if it appears to\n"
+        "\t\tbe an executable.  By default, the input file will only be\n"
+        "\t\ttreated as a shared library if (1) it is a dynamic executable\n"
+        "\t\t(ET_DYN) and (2) has a filename of the form:\n"
+        "\n"
+        "\t\t\t[PATH/]lib*.so[.VERSION]\n"
+        "\n"
+        "\t--start START\n"
+        "\t\tOnly patch the (.text) section beginning from address or symbol\n"
+        "\t\tSTART.  By default, the whole (.text) section is patched\n"
+        "\n"
+        "\t--static-loader, -s\n"
+        "\t\tReplace patched pages statically.  By default, patched pages\n"
+        "\t\tare loaded during program initialization as this is more\n"
+        "\t\treliable for large/complex binaries.  However, this may bloat\n"
+        "\t\tthe size of the output patched binary.\n"
+        "\n"
+        "\t--sync N\n"
+        "\t\tSkip N instructions after the disassembler desyncs.  This\n"
+        "\t\tcan be a useful hack if the disassembler (capstone) fails, or\n"
+        "\t\tif the .text section contains data.\n"
+        "\n"
+        "\t--syntax SYNTAX\n"
+        "\t\tSelects the assembly syntax to be SYNTAX.  Possible values are:\n"
+        "\n"
+        "\t\t\t- \"ATT\"  : X86_64 ATT asm syntax; or\n"
+        "\t\t\t- \"intel\": X86_64 Intel asm syntax.\n"
+        "\n"
+        "\t\tThe default syntax is \"ATT\".\n"
+        "\n"
+        "\t--trap-all\n"
+        "\t\tInsert a trap (int3) instruction at each trampoline entry.\n"
+        "\t\tThis can be used for debugging with gdb.\n"
+        "\n", progname);
 }
 
 /*
