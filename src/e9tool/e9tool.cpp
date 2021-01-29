@@ -1071,7 +1071,7 @@ static Action *parseAction(const char *str, const MatchExpr *expr)
     // Parse the rest of the action (if necessary):
     CallKind call = CALL_BEFORE;
     bool clean = false, naked = false, before = false, after = false,
-         replace = false, conditional = false;
+         replace = false, conditional = false, jump = false;
     const char *symbol   = nullptr;
     const char *filename = nullptr;
     Plugin *plugin = nullptr;
@@ -1118,7 +1118,15 @@ static Action *parseAction(const char *str, const MatchExpr *expr)
                     case TOKEN_CLEAN:
                         clean = true; break;
                     case TOKEN_CONDITIONAL:
-                        conditional = true; break;
+                        if (parser.peekToken() == '.')
+                        {
+                            parser.getToken();
+                            parser.expectToken(TOKEN_JUMP);
+                            jump = true;
+                        }
+                        else
+                            conditional = true;
+                        break;
                     case TOKEN_NAKED:
                         naked = true; break;
                     case TOKEN_REPLACE:
@@ -1308,14 +1316,16 @@ static Action *parseAction(const char *str, const MatchExpr *expr)
         if (clean && naked)
             error("failed to parse call action; `clean' and `naked' "
                 "attributes cannot be used together");
-        if ((int)before + (int)after + (int)replace + (int)conditional> 1)
+        if ((int)before + (int)after + (int)replace + (int)conditional +
+                (int)jump > 1)
             error("failed to parse call action; only one of the `before', "
-                "`after', `replace' and `conditional' attributes can be used "
-                "together");
+                "`after', `replace', `conditional' and `conditional.jump' "
+                "attributes can be used together");
         clean = (clean? true: !naked);
         call = (after? CALL_AFTER:
                (replace? CALL_REPLACE:
-               (conditional? CALL_CONDITIONAL: CALL_BEFORE)));
+               (conditional? CALL_CONDITIONAL:
+               (jump? CALL_CONDITIONAL_JUMP: CALL_BEFORE))));
     }
     parser.expectToken(TOKEN_END);
 
@@ -1346,6 +1356,8 @@ static Action *parseAction(const char *str, const MatchExpr *expr)
                     call_name += "replace_"; break;
                 case CALL_CONDITIONAL:
                     call_name += "conditional_"; break;
+                case CALL_CONDITIONAL_JUMP:
+                    call_name += "jump_"; break;
             }
             call_name += symbol;
             call_name += '_';

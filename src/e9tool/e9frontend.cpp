@@ -3084,7 +3084,8 @@ unsigned e9frontend::sendCallTrampolineMessage(FILE *out, const char *name,
         0x48, 0x8d, 0xa4, 0x24, -0x4000);
 
     // Push all caller-save registers:
-    bool conditional = (call == CALL_CONDITIONAL);
+    bool conditional = (call == CALL_CONDITIONAL ||
+                        call == CALL_CONDITIONAL_JUMP);
     const int *rsave = getCallerSaveRegs(clean, conditional, args.size());
     int num_rsave = 0;
     x86_reg rscratch = (clean? X86_REG_RAX: X86_REG_INVALID);
@@ -3116,56 +3117,82 @@ unsigned e9frontend::sendCallTrampolineMessage(FILE *out, const char *name,
     for (int i = num_rsave-1; i >= rmin; i--)
         sendPop(out, preserve_rax, getReg(rsave[i]));
 
-    // If conditional, jump away from $instruction if %rax is zero:
+    // If conditional, jump to $instruction if %rax is zero:
     if (conditional)
     {
-        // xchg %rax,%rcx
-        // jrcxz .Lskip
-        // xchg %rax,%rcx
-        // pop %rax
-        //
-        if (result_rax)
-            fprintf(out, "%u,%u,", 0x48, 0x91);
-        fprintf(out, "%u,{\"rel8\":\".Lskip\"},", 0xe3);
         if (result_rax)
         {
+            // xchg %rax,%rcx
+            // jrcxz .Lskip
+            // xchg %rax,%rcx
+            //
             fprintf(out, "%u,%u,", 0x48, 0x91);
-            fprintf(out, "%u,", 0x58);
+            fprintf(out, "%u,{\"rel8\":\".Lskip\"},", 0xe3);
+            fprintf(out, "%u,%u,", 0x48, 0x91);
         }
         else
-            fprintf(out, "%u,", 0x59);
+        {
+            // jrcxz .Lskip
+            fprintf(out, "%u,{\"rel8\":\".Lskip\"},", 0xe3);
+        }
+
+        // The result is non-zero
+        if (call == CALL_CONDITIONAL_JUMP)
+        {
+            // The register state, including %rsp, must be fully restored
+            // before implementing the jump.  This means (1) the jump target
+            // must be stored in memory, and (2) must be thread-local.  We
+            // therefore use thread-local address %fs:0x40 (same as stdlib.c
+            // errno).  However, this assumes the binary has set %fs to be the
+            // TLS base address (any binary using glibc should do this).
+
+            // mov %rax/rcx, %fs:0x40
+            // pop %rax/rcx
+            //
+            int tls_offset = 0x40; 
+            fprintf(out, "%u,%u,%u,%u,%u,{\"int32\":%d},",
+                0x64, 0x48, 0x89, (result_rax? 0x04: 0x0c), 0x25, tls_offset);
+            fprintf(out, "%u,", (result_rax? 0x58: 0x59));
+            fputs("\"$restoreRSP\",",out);
+
+            // jmpq *%fs:0x40
+            fprintf(out, "%u,%u,%u,%u,{\"int32\":%d},",
+                0x64, 0xff, 0x24, 0x25, tls_offset);
+        }
+        else
+        {
+            fprintf(out, "%u,", (result_rax? 0x58: 0x59));
+            fputs("\"$restoreRSP\",",out);
+            fputs("\"$continue\",", out);
+        }
+ 
+        // The result is zero...
+        fputs("\".Lskip\",", out);
+        if (result_rax)
+        {
+            // xchg %rax,%rcx
+            fprintf(out, "%u,%u,", 0x48, 0x91);
+        }
+        fprintf(out, "%u,", (result_rax? 0x58: 0x59));
     }
 
     // Restore the stack pointer.
     fputs("\"$restoreRSP\",",out);
     
     // Put instruction here for "before" instrumentation:
-    if (call == CALL_BEFORE || call == CALL_CONDITIONAL)
-        fputs("\"$instruction\",", out);
+    switch (call)
+    {
+        case CALL_BEFORE: case CALL_CONDITIONAL:
+        case CALL_CONDITIONAL_JUMP:
+            fputs("\"$instruction\",", out);
+            break;
+        default:
+            break;
+    }
 
     // Return from trampoline:
     fputs("\"$continue\"", out);
 
-    // If conditional, but the .Lskip block here:
-    if (conditional)
-    {
-        // .Lskip:
-        // xchg %rax,%rcx
-        // pop %rax
-        //
-        fputs(",\".Lskip\",", out);
-        if (result_rax)
-        {
-            fprintf(out, "%u,%u,", 0x48, 0x91);
-            fprintf(out, "%u,", 0x58);
-        }
-        else
-            fprintf(out, "%u,", 0x59);
-
-        fputs("\"$restoreRSP\",",out);
-        fputs("\"$continue\"", out);
-    }
-    
     // Any additional data:
     if (args.size() > 0)
         fputs(",\"$data\"]", out);

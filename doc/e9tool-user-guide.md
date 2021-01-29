@@ -377,7 +377,7 @@ The syntax for a call action is as follows:
 
     OPTIONS ::=   <b>[</b> OPTION <b>,</b> ... <b>]</b>
     OPTION  ::=   <b>clean</b> | <b>naked</b>
-                | <b>before</b> | <b>after</b> | <b>replace</b> | <b>conditional</b>
+                | <b>before</b> | <b>after</b> | <b>replace</b> | <b>conditional</b> [ <b>.</b> <b>jump</b> ]
 
     ARGS ::=   <b>(</b> ARG <b>,</b> ... <b>)</b>
 </pre>
@@ -742,9 +742,9 @@ This can also be used for function overloading:
 
 Call actions support different *options*.
 
-The `before`/`after`/`replace`/`conditional` options specify where
-the instrumentation should be placed in relation to the matching
-instruction.
+The `before`/`after`/`replace`/`conditional`/`conditional.jump` options
+specify where the instrumentation should be placed in relation to the
+matching instruction.
 Here:
 
 * `before` specifies that the function should be called *before* the
@@ -754,9 +754,26 @@ Here:
 * `replace` specifies that the function should *replace* the matching
    instruction (which will not be executed); and
 * `conditional` inspects the return value of the function.
-   If the return value is zero, the matching instruction is not executed
-   (like `replace`), else if non-zero, the matching instruction
-   is executed (like `before`).
+   If the returned value is non-zero, the matching instruction will *not*
+   be executed (like `replace`).
+   Otherwise if zero, the matching instruction will be executed as normal
+   (like `before`).
+   Essentially, `conditional` implements the following pseudocode:
+   <pre>
+       result = func(...);
+       if (result) { nop } else { instruction }
+   </pre>
+* `conditional.jump` inspects the return value of the function.
+   If the returned value is non-zero, then control-flow will jump to the
+   returned value interpreted as an address, and without executing the
+   matching instruction.
+   Otherwise if zero, the matching instruction will be executed as normal
+   (like `before`).
+   Essentially, `conditional.jump` implements the following pseudocode:
+   <pre>
+        result = func(...);
+        if (result) { goto result } else { instruction }
+   </pre>
 
 Only one of these options is valid at the same time.
 Note that for the `after` option, the function will **not** be called

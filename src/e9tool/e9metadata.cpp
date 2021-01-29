@@ -993,14 +993,14 @@ static Type sendLoadArgumentMetadata(FILE *out, CallInfo &info,
         case ARGUMENT_NEXT:
             switch (action->call)
             {
-                case CALL_BEFORE: case CALL_REPLACE: case CALL_CONDITIONAL:
-                    sendLoadNextMetadata(out, I, info, regno);
-                    break;
                 case CALL_AFTER:
                     // If we reach here after the instruction, it means the
                     // branch was NOT taken, so (next=.Lcontinue).
                     sendLeaFromPCRelToR64(out, "{\"rel32\":\".Lcontinue\"}",
                         regno);
+                    break;
+                default:
+                    sendLoadNextMetadata(out, I, info, regno);
                     break;
             }
             t = TYPE_CONST_VOID_PTR;
@@ -1052,14 +1052,13 @@ static Type sendLoadArgumentMetadata(FILE *out, CallInfo &info,
                 case REGISTER_RIP:
                     switch (action->call)
                     {
-                        case CALL_BEFORE: case CALL_REPLACE:
-                        case CALL_CONDITIONAL:
-                            sendLeaFromPCRelToR64(out,
-                                "{\"rel32\":\".Linstruction\"}", regno);
-                            break;
                         case CALL_AFTER:
                             sendLeaFromPCRelToR64(out,
                                 "{\"rel32\":\".Lcontinue\"}", regno);
+                        default:
+                            sendLeaFromPCRelToR64(out,
+                                "{\"rel32\":\".Linstruction\"}", regno);
+                            break;
                         break;
                     }
                     t = TYPE_CONST_VOID_PTR;
@@ -1332,7 +1331,8 @@ static Metadata *buildMetadata(csh handle, const Action *action,
             // Load arguments.
             int argno = 0;
             bool before = (action->call != CALL_AFTER);
-            bool conditional = (action->call == CALL_CONDITIONAL);
+            bool conditional = (action->call == CALL_CONDITIONAL ||
+                                action->call == CALL_CONDITIONAL_JUMP);
             CallInfo info(action->clean, conditional, action->args.size(),
                 before);
             TypeSig sig = TYPESIG_EMPTY;
