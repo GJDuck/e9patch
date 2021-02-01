@@ -183,6 +183,7 @@ struct Instr
     const size_t pcrel32_idx:4;         // 32bit PC-relative imm idx (or 0)
     const size_t pcrel8_idx:4;          // 8bit PC-relative imm idx (or 0)
     const size_t pic:1;                 // PIC? (stored here for convenience)
+    size_t       evicted:1;             // The instruction evicted?
     const intptr_t addr;                // The address of the instruction
     intptr_t trampoline = INTPTR_MIN;   // The address of any trampoline
 
@@ -217,7 +218,7 @@ struct Instr
             size_t pcrel8_idx, bool pic) :
         offset((size_t)offset), addr(addr), size(size), original(original),
         patched(bytes, state), pcrel32_idx(pcrel32_idx),
-        pcrel8_idx(pcrel8_idx), pic(pic)
+        pcrel8_idx(pcrel8_idx), pic(pic), evicted(false)
     {
         ;
     }
@@ -365,6 +366,9 @@ extern bool option_disable_B2;
 extern bool option_disable_T1;
 extern bool option_disable_T2;
 extern bool option_disable_T3;
+extern unsigned option_Ojump_delay;
+extern unsigned option_Ojump_delay_size;
+extern bool option_Ojump_peephole;
 extern bool option_experimental;
 extern bool option_static_loader;
 extern bool option_same_page;

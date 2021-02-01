@@ -190,7 +190,7 @@ static int decodeOpcode(const uint8_t *bytes, unsigned size, int i,
 /*
  * Push the return address for a call onto the stack.
  */
-static void pushReturnAddress(intptr_t addr, intptr_t offset, unsigned size,
+static int pushReturnAddress(intptr_t addr, intptr_t offset, unsigned size,
     bool pic, Buffer &buf)
 {
     intptr_t target = addr + size;
@@ -214,7 +214,8 @@ static void pushReturnAddress(intptr_t addr, intptr_t offset, unsigned size,
         // lea diff32(%rip),%rax
         intptr_t diff   = target -
             (addr + offset + buf.size() + /*sizeof(leaq)=*/7);
-        assert(diff >= INT32_MIN && diff <= INT32_MAX);
+        if (diff < INT32_MIN || diff > INT32_MAX)
+            return -1;
         int32_t diff32  = (int32_t)diff;
         buf.push(0x48); buf.push(0x8d); buf.push(0x05);
         buf.push((const uint8_t *)&diff32, sizeof(diff32));
@@ -240,7 +241,8 @@ static void pushReturnAddress(intptr_t addr, intptr_t offset, unsigned size,
         // lea diff32(%rip),%rax
         intptr_t diff   = target -
             (addr + offset + buf.size() + /*sizeof(leaq)=*/7);
-        assert(diff >= INT32_MIN && diff <= INT32_MAX);
+        if (diff < INT32_MIN || diff > INT32_MAX)
+            return -1;
         int32_t diff32  = (int32_t)diff;
         buf.push(0x48); buf.push(0x8d); buf.push(0x05);
         buf.push((const uint8_t *)&diff32, sizeof(diff32));
@@ -253,6 +255,8 @@ static void pushReturnAddress(intptr_t addr, intptr_t offset, unsigned size,
         buf.push(0x24); buf.push(0x08); buf.push(0xc0);
         buf.push(0xff); buf.push(0xff);
     }
+
+    return 0;
 }
 
 /*
@@ -260,7 +264,7 @@ static void pushReturnAddress(intptr_t addr, intptr_t offset, unsigned size,
  * Returns (-1) if the instruction cannot be relocated.
  */
 int relocateInstr(intptr_t addr, int32_t offset32, const uint8_t *bytes,
-    unsigned size, bool pic, uint8_t *new_bytes)
+    unsigned size, bool pic, uint8_t *new_bytes, bool relax)
 {
     Buffer buf(new_bytes);
     intptr_t offset = (intptr_t)offset32;
@@ -296,7 +300,7 @@ no_modification_necessary:
             switch (op)
             {
                 case 0x02:              // CALLQ r/m32/m64
-                {    
+                {
                     // Check for calls that use %rsp
                     // TODO: These can be implmented by adjusting the
                     //       displacement.
@@ -319,7 +323,9 @@ no_modification_necessary:
                             break;
                     }
 
-                    pushReturnAddress(addr, offset, size, pic, buf);
+                    if (pushReturnAddress(addr, offset, size, pic, buf) < 0 &&
+                            !relax)
+                        return -1;
 
                     // Convert the call into a jmp:
                     size_t buf_size = buf.size();
@@ -334,7 +340,8 @@ no_modification_necessary:
                         intptr_t target = addr + size + (intptr_t)pcrel32;
                         intptr_t diff   = target -
                             (addr + offset + buf_size + size);
-                        assert(diff >= INT32_MIN && diff <= INT32_MAX);
+                        if (!relax && (diff < INT32_MIN || diff > INT32_MAX))
+                            return -1;
                         int32_t diff32  = (int32_t)diff;
                         buf.push((const uint8_t *)&diff32, sizeof(diff32));
                         buf.push(bytes + i + 1 + sizeof(diff32),
@@ -369,7 +376,8 @@ no_modification_necessary:
                         intptr_t target = addr + size + (intptr_t)pcrel8;
                         intptr_t diff   = target -
                             (addr + offset + buf.size() + /*sizeof(jmp)=*/5);
-                        assert(diff >= INT32_MIN && diff <= INT32_MAX);
+                        if (!relax && (diff < INT32_MIN || diff > INT32_MAX))
+                            return -1;
                         int32_t diff32  = (int32_t)diff;
                         buf.push(0xE9);
                         buf.push((const uint8_t *)&diff32, sizeof(diff32));
@@ -389,7 +397,8 @@ no_modification_necessary:
                         intptr_t diff   = target -
                             (addr + offset + buf.size() +
                                 /*sizeof(jmp)=*/(opcode == 0xEB? 5: 6));
-                        assert(diff >= INT32_MIN && diff <= INT32_MAX);
+                        if (!relax && (diff < INT32_MIN || diff > INT32_MAX))
+                            return -1;
                         int32_t diff32  = (int32_t)diff;
                         
                         // Promote jump to rel32 version:
@@ -415,14 +424,17 @@ no_modification_necessary:
                 {
                     case 0xE8:          // CALLQ pcrel32
                     {
-                        pushReturnAddress(addr, offset, size, pic, buf);
+                        if (pushReturnAddress(addr, offset, size, pic, buf)
+                                < 0)
+                            return -1;
 
                         // jmpq diff32
                         int32_t pcrel32 = *(uint32_t *)(bytes + i);
                         intptr_t target = addr + size + (intptr_t)pcrel32;
                         intptr_t diff   = target -
                             (addr + offset + buf.size() + /*sizeof(jmpq)=*/5);
-                        assert(diff >= INT32_MIN && diff <= INT32_MAX);
+                        if (!relax && (diff < INT32_MIN || diff > INT32_MAX))
+                            return -1;
                         int32_t diff32  = (int32_t)diff;
                         buf.push(0xE9);
                         buf.push((const uint8_t *)&diff32, sizeof(diff32));
@@ -436,7 +448,8 @@ no_modification_necessary:
                         intptr_t target = addr + size + (intptr_t)pcrel32;
                         intptr_t diff   = target -
                             (addr + offset + buf.size() + /*sizeof(jmpq)=*/5);
-                        assert(diff >= INT32_MIN && diff <= INT32_MAX);
+                        if (!relax && (diff < INT32_MIN || diff > INT32_MAX))
+                            return -1;
                         int32_t diff32  = (int32_t)diff;
                         buf.push(0xE9); 
                         buf.push((const uint8_t *)&diff32, sizeof(diff32));
@@ -467,7 +480,8 @@ no_modification_necessary:
                         intptr_t target = addr + size + (intptr_t)pcrel32;
                         intptr_t diff   = target -
                             (addr + offset + buf.size() + /*sizeof(jcc)=*/6);
-                        assert(diff >= INT32_MIN && diff <= INT32_MAX);
+                        if (!relax && (diff < INT32_MIN || diff > INT32_MAX))
+                            return -1;
                         int32_t diff32  = (int32_t)diff;
                         buf.push(0x0F); buf.push(opcode); 
                         buf.push((const uint8_t *)&diff32, sizeof(diff32));
@@ -519,7 +533,8 @@ no_modification_necessary:
         int32_t pcrel32 = *(uint32_t *)(bytes + i);
         intptr_t target = addr + size + (intptr_t)pcrel32;
         intptr_t diff   = target - (addr + offset + buf.size() + size);
-        assert(diff >= INT32_MIN && diff <= INT32_MAX);
+        if (diff < INT32_MIN || diff > INT32_MAX)
+            return -1;
         int32_t diff32  = (int32_t)diff;
         buf.push(bytes, i);
         buf.push((const uint8_t *)&diff32, sizeof(diff32));
@@ -718,5 +733,72 @@ intptr_t getJccTarget(intptr_t addr, const uint8_t *bytes, unsigned size)
     bool conditional = false;
     intptr_t target = getJumpTarget(addr, bytes, size, conditional);
     return (conditional? target: INTPTR_MIN);
+}
+
+/*
+ * Returns true if the instruction is an unconditional control-flow transfer.
+ * Can be an under-approximation.
+ */
+bool isUnconditionalControlFlowTransfer(const uint8_t *bytes, unsigned size)
+{
+    uint8_t rex = 0;
+    bool addr32 = false;
+    int i = decodePrefix(bytes, size, rex, addr32);
+    if (i < 0)
+        return false;
+    Encoding encoding = ENCODING_SINGLE_BYTE;
+    uint8_t opcode;
+    i = decodeOpcode(bytes, size, i, encoding, opcode);
+    if (i < 0)
+        return false;
+    switch (encoding)
+    {
+        case ENCODING_SINGLE_BYTE:
+        {
+            switch (opcode)
+            {
+                case 0xC3:  // RET
+                    return (size - i == 0);
+                case 0xE8:  // CALL rel32
+                    return (size - i == sizeof(int32_t));
+                case 0xE9:  // JMP rel32
+                    return (size - i == sizeof(int32_t));
+                case 0xEB:  // JMP rel8
+                    return (size - i == sizeof(int8_t));
+                case 0xFF:
+                {
+                    if (size - i < 1)
+                        return false;
+                    uint8_t modRM = bytes[i];
+                    uint8_t op  = (modRM & 0x38) >> 3;
+                    switch (op)
+                    {
+                        case 0x02:      // CALL r/m32/m64
+                            return true;
+                        case 0x04:      // JMP r/m32/m64
+                            return true;
+                        default:
+                            return false;
+                    }
+                }
+                default:
+                    return false;
+            }
+            break;
+        }
+        case ENCODING_TWO_BYTES_0F:
+        {
+            switch (opcode)
+            {
+                case 0x0B:  // UNDEF
+                    return (size - i == 0);
+                default:
+                    return false;
+            }
+        }
+        default:
+            break;
+    }
+    return false;
 }
 

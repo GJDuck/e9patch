@@ -22,9 +22,10 @@
 #include <cstdint>
 
 int relocateInstr(intptr_t addr, int32_t offset32, const uint8_t *bytes,
-    unsigned size, bool pic, uint8_t *new_bytes);
+    unsigned size, bool pic, uint8_t *new_bytes, bool relax = false);
 unsigned getInstrPCRelativeIndex(const uint8_t *bytes, unsigned size);
 intptr_t getJumpTarget(intptr_t addr, const uint8_t *bytes, unsigned size);
 intptr_t getJccTarget(intptr_t addr, const uint8_t *bytes, unsigned size);
+bool isUnconditionalControlFlowTransfer(const uint8_t *bytes, unsigned size);
 
 #endif

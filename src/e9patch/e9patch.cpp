@@ -29,20 +29,23 @@
 /*
  * Global options.
  */
-bool option_is_tty        = false;
-bool option_debug         = false;
-bool option_disable_B1    = false;
-bool option_disable_B2    = false;
-bool option_disable_T1    = false;
-bool option_disable_T2    = false;
-bool option_disable_T3    = false;
-bool option_experimental  = false;
-bool option_static_loader = false;
-bool option_same_page     = false;
-bool option_trap_all      = false;
-bool option_use_stack     = false;
-intptr_t option_lb        = INTPTR_MIN;
-intptr_t option_ub        = INTPTR_MAX;
+bool option_is_tty               = false;
+bool option_debug                = false;
+bool option_disable_B1           = false;
+bool option_disable_B2           = false;
+bool option_disable_T1           = false;
+bool option_disable_T2           = false;
+bool option_disable_T3           = false;
+bool option_experimental         = false;
+unsigned option_Ojump_delay      = 0;
+unsigned option_Ojump_delay_size = 64;
+bool option_Ojump_peephole       = true;
+bool option_static_loader        = false;
+bool option_same_page            = false;
+bool option_trap_all             = false;
+bool option_use_stack            = false;
+intptr_t option_lb               = INTPTR_MIN;
+intptr_t option_ub               = INTPTR_MAX;
 
 /*
  * Global statistics.
@@ -130,6 +133,9 @@ enum Option
     OPTION_HELP,
     OPTION_INPUT,
     OPTION_LB,
+    OPTION_OJUMP_DELAY,
+    OPTION_OJUMP_DELAY_SIZE,
+    OPTION_OJUMP_PEEPHOLE,
     OPTION_OUTPUT,
     OPTION_SAME_PAGE,
     OPTION_STATIC_LOADER,
@@ -157,10 +163,24 @@ static intptr_t parseIntOptArg(const char *option, const char *optarg,
     r = (neg? -r: r);
     if (errno != 0 || end == optarg ||
             (end != nullptr && *end != '\0') || r < lb || r > ub)
-        error("failed to parse argument \"%s\" to option "
-            "`%s'; expected a number %zd..%zd",
-            option, optarg_0, lb, ub);
+        error("failed to parse argument \"%s\" for option `%s'; expected a "
+            "number %zd..%zd", option, optarg_0, lb, ub);
     return r;
+}
+
+/*
+ * Parse a Boolean from an optarg.
+ */
+static bool parseBoolOptArg(const char *option, const char *optarg)
+{
+    if (optarg == nullptr)
+        return true;
+    if (strcmp(optarg, "true") == 0 || strcmp(optarg, "1") == 0)
+        return true;
+    else if (strcmp(optarg, "false") == 0 || strcmp(optarg, "0") == 0)
+        return false;
+    error("failed to parse argument \"%s\" for option `%s'; expected a "
+        "Boolean [true, false]", option, optarg);
 }
 
 /*
@@ -168,58 +188,62 @@ static intptr_t parseIntOptArg(const char *option, const char *optarg,
  */
 static void usage(FILE *stream, const char *progname)
 {
-    fprintf(stream, "usage: %s [OPTIONS]\n\n", progname);
-    fputs("OPTIONS:\n", stream);
-    fputs("\t--debug\n", stream);
-    fputs("\t\tEnable debug log messages.\n", stream);
-    fputc('\n', stream);
-    fputs("\t--disable-B1, --disable-B2, --disable-T1, --disable-T2 "
-        "--disable-T3\n", stream);
-    fputs("\t\tDisable the corresponding tactic (B1/B2/T1/T2/T3).\n", stream);
-    fputc('\n', stream);
-    fputs("\t--experimental\n", stream);
-    fputs("\t\tEnable experimental optimizations and extensions.\n", stream);
-    fputc('\n', stream);
-    fputs("\t--help, -h\n", stream);
-    fputs("\t\tPrint this help message.\n", stream);
-    fputc('\n', stream);
-    fputs("\t--input FILE, -i FILE\n", stream);
-    fputs("\t\tRead input from FILE instead of stdin.\n", stream);
-    fputc('\n', stream);
-    fputs("\t--lb LB\n", stream);
-    fputs("\t\tSet LB to be the minimum allowable trampoline address.\n",
-        stream);
-    fputc('\n', stream);
-    fputs("\t--output FILE, -o FILE\n", stream);
-    fputs("\t\tWrite output to FILE instead of stdout.\n", stream);
-    fputc('\n', stream);
-    fputs("\t--same-page\n", stream);
-    fputs("\t\tDisallow trampolines from crossing page boundaries.\n", stream);
-    fputc('\n', stream);
-    fputs("\t--static-loader\n", stream);
-    fputs("\t\tReplace patched pages statically.  By default, patched "
-        "pages\n", stream);
-    fputs("\t\tare loaded during program initialization as this is more\n",
-        stream);
-    fputs("\t\treliable for large/complex binaries.  However, this may "
-        "bloat\n", stream);
-    fputs("\t\tthe size of the output patched binary.\n", stream);
-    fputc('\n', stream);
-    fputs("\t--trap-all\n", stream);
-    fputs("\t\tInsert a trap (int3) instruction at each trampoline entry.\n",
-        stream);
-    fputs("\t\tThis can be used for debugging with gdb.\n", stream);
-    fputc('\n', stream);
-    fputs("\t--ub UB\n", stream);
-    fputs("\t\tSet UB to be the maximum allowable trampoline address.\n",
-        stream);
-    fputc('\n', stream);
-    fputs("\t--use-stack\n", stream);
-    fputs("\t\tAllow the stack to be used as scratch space.  This allows\n",
-        stream);
-    fputs("\t\tfaster code to be emitted, but may break transparency.\n",
-        stream);
-    fputc('\n', stream);
+    fprintf(stream, "usage: %s [OPTIONS]\n\n"
+        "OPTIONS:\n"
+        "\t-Ojump-delay=N\n"
+        "\t\tDelay jump-from-trampolines by up to N instructions.  Higher N\n"
+        "\t\tmeans more aggressive optimization.  N=0 effectively disables\n"
+        "\t\tthe optimization.\n"
+        "\n"
+        "\t-Ojump-delay-size=N\n"
+        "\t\tDelay jump-from-trampolines by up to N instruction bytes.\n"
+        "\t\tUsed as an additional constraint for -Ojump-delay.\n"
+        "\n"
+        "\t-Ojump-peephole[=false]\n"
+        "\t\tEnables [disables] jump-from-trampoline peephole optimization.\n"
+        "\n"
+        "\t--debug\n"
+        "\t\tEnable debug log messages.\n"
+        "\n"
+        "\t--disable-B1, --disable-B2, --disable-T1, --disable-T2 "
+            "--disable-T3\n"
+        "\t\tDisable the corresponding tactic (B1/B2/T1/T2/T3).\n"
+        "\n"
+        "\t--experimental\n"
+        "\t\tEnable experimental optimizations and extensions.\n"
+        "\n"
+        "\t--help, -h\n"
+        "\t\tPrint this help message.\n"
+        "\n"
+        "\t--input FILE, -i FILE\n"
+        "\t\tRead input from FILE instead of stdin.\n"
+        "\n"
+        "\t--lb LB\n"
+        "\t\tSet LB to be the minimum allowable trampoline address.\n"
+        "\n"
+        "\t--output FILE, -o FILE\n"
+        "\t\tWrite output to FILE instead of stdout.\n"
+        "\n"
+        "\t--same-page\n"
+        "\t\tDisallow trampolines from crossing page boundaries.\n"
+        "\n"
+        "\t--static-loader\n"
+        "\t\tReplace patched pages statically.  By default, patched pages\n"
+        "\t\tare loaded during program initialization as this is more\n"
+        "\t\treliable for large/complex binaries.  However, this may bloat\n"
+        "\t\tthe size of the output patched binary.\n"
+        "\n"
+        "\t--trap-all\n"
+        "\t\tInsert a trap (int3) instruction at each trampoline entry.\n"
+        "\t\tThis can be used for debugging with gdb.\n"
+        "\n"
+        "\t--ub UB\n"
+        "\t\tSet UB to be the maximum allowable trampoline address.\n"
+        "\n"
+        "\t--use-stack\n"
+        "\t\tAllow the stack to be used as scratch space.  This allows\n"
+        "\t\tfaster code to be emitted, but may break transparency.\n"
+        "\n", progname);
 }
 
 /*
@@ -239,32 +263,37 @@ int realMain(int argc, char **argv)
     if (getenv("E9PATCH_DEBUG") != nullptr)
         option_debug = true;
 
+    const int req_arg = required_argument, opt_arg = optional_argument,
+              no_arg  = no_argument;
     static const struct option long_options[] =
     {
-        {"debug",         false, nullptr, OPTION_DEBUG},
-        {"disable-B1",    false, nullptr, OPTION_DISABLE_B1},
-        {"disable-B2",    false, nullptr, OPTION_DISABLE_B2},
-        {"disable-T1",    false, nullptr, OPTION_DISABLE_T1},
-        {"disable-T2",    false, nullptr, OPTION_DISABLE_T2},
-        {"disable-T3",    false, nullptr, OPTION_DISABLE_T3},
-        {"experimental",  false, nullptr, OPTION_EXPERIMENTAL},
-        {"help",          false, nullptr, OPTION_HELP},
-        {"input",         true,  nullptr, OPTION_INPUT},
-        {"lb",            true,  nullptr, OPTION_LB},
-        {"output",        true,  nullptr, OPTION_OUTPUT},
-        {"same-page",     false, nullptr, OPTION_SAME_PAGE},
-        {"static-loader", false, nullptr, OPTION_STATIC_LOADER},
-        {"trap-all",      false, nullptr, OPTION_TRAP_ALL},
-        {"ub",            true,  nullptr, OPTION_UB},
-        {"use-stack",     false, nullptr, OPTION_USE_STACK},
-        {nullptr,         false, nullptr, 0}
+        {"Ojump-delay",      req_arg, nullptr, OPTION_OJUMP_DELAY},
+        {"Ojump-delay-size", req_arg, nullptr, OPTION_OJUMP_DELAY_SIZE},
+        {"Ojump-peephole",   opt_arg, nullptr, OPTION_OJUMP_PEEPHOLE},
+        {"debug",            no_arg,  nullptr, OPTION_DEBUG},
+        {"disable-B1",       no_arg,  nullptr, OPTION_DISABLE_B1},
+        {"disable-B2",       no_arg,  nullptr, OPTION_DISABLE_B2},
+        {"disable-T1",       no_arg,  nullptr, OPTION_DISABLE_T1},
+        {"disable-T2",       no_arg,  nullptr, OPTION_DISABLE_T2},
+        {"disable-T3",       no_arg,  nullptr, OPTION_DISABLE_T3},
+        {"experimental",     no_arg,  nullptr, OPTION_EXPERIMENTAL},
+        {"help",             no_arg,  nullptr, OPTION_HELP},
+        {"input",            req_arg, nullptr, OPTION_INPUT},
+        {"lb",               req_arg, nullptr, OPTION_LB},
+        {"output",           req_arg, nullptr, OPTION_OUTPUT},
+        {"same-page",        no_arg,  nullptr, OPTION_SAME_PAGE},
+        {"static-loader",    no_arg,  nullptr, OPTION_STATIC_LOADER},
+        {"trap-all",         no_arg,  nullptr, OPTION_TRAP_ALL},
+        {"ub",               req_arg, nullptr, OPTION_UB},
+        {"use-stack",        no_arg,  nullptr, OPTION_USE_STACK},
+        {nullptr,            no_arg,  nullptr, 0}
     };
 
     std::string option_input("-"), option_output("-");
     while (true)
     {
         int idx;
-        int opt = getopt_long(argc, argv, "hi:o:", long_options, &idx);
+        int opt = getopt_long_only(argc, argv, "hi:o:", long_options, &idx);
         if (opt < 0)
             break;
         switch (opt)
@@ -298,6 +327,19 @@ int realMain(int argc, char **argv)
             case OPTION_INPUT:
                 option_input = optarg;
                 break;
+            case OPTION_OJUMP_DELAY:
+                option_Ojump_delay =
+                    (unsigned)parseIntOptArg("-Ojump-delay", optarg, 0, 64);
+                break;
+            case OPTION_OJUMP_DELAY_SIZE:
+                option_Ojump_delay_size =
+                    (unsigned)parseIntOptArg("-Ojump-delay-size", optarg, 0,
+                        512);
+                break;
+            case OPTION_OJUMP_PEEPHOLE:
+                option_Ojump_peephole =
+                    parseBoolOptArg("-Ojump-peephole", optarg);
+                break;
             case 'o':
             case OPTION_OUTPUT:
                 option_output = optarg;
@@ -328,6 +370,13 @@ int realMain(int argc, char **argv)
         }
     }
 
+    if (option_Ojump_delay > 0 && option_Ojump_delay_size > 0 &&
+            option_experimental)
+    {
+        warning("the mixing of `-Ojump-delay' and `--experimental' is "
+            "not-yet-implemented; ignoring `--experimental'");
+        option_experimental = false;
+    }
     if (option_input != "-")
     {
         FILE *input = freopen(option_input.c_str(), "r", stdin);

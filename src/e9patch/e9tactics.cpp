@@ -81,7 +81,8 @@ struct Patch
         A(A), I(I), tactic(t),
         original(I->patched.state, I->patched.bytes, I->trampoline)
     {
-        ;
+        if (A != nullptr && A->T == evicteeTrampoline)
+            I->evicted = true;
     }
 };
 
@@ -158,6 +159,7 @@ static void undo(Binary &B, Patch *P)
 {
     while (P != nullptr)
     {
+        P->I->evicted    = false;
         P->I->trampoline = P->original.trampoline;
         for (unsigned i = 0; i < PATCH_MAX; i++)
         {
@@ -551,6 +553,8 @@ static Patch *tactic_T3b(Binary &B, Instr *I, const Trampoline *T)
         default:
             return nullptr;
     }
+    if (P == nullptr)
+        return nullptr;
 
     assert(A != nullptr);
     Patch *Q = new Patch(I, TACTIC_T3);
