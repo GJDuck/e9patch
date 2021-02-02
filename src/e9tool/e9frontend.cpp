@@ -2223,6 +2223,11 @@ void e9frontend::sendELFFileMessage(FILE *out, const ELF *ptr, bool absolute)
     }
     sig = getMMapSig();
     intptr_t mmap = ::lookupSymbol(&elf, "mmap", sig);
+    if (mmap == INTPTR_MIN)
+    {
+        // Alternative name to avoid conflict with stdlib mmap()
+        mmap = ::lookupSymbol(&elf, "_mmap", sig);
+    }
 
     /*
      * Send segments.
