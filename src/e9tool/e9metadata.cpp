@@ -1139,6 +1139,14 @@ static Type sendLoadArgumentMetadata(FILE *out, CallInfo &info,
             t |= TYPE_PTR;
             break;
         }
+        case ARGUMENT_STATE:
+        {
+            // State is saved starting from %rflags
+            x86_reg reg = X86_REG_EFLAGS;
+            sendLeaFromStackToR64(out, info.getOffset(reg), regno);
+            t = TYPE_VOID | TYPE_PTR;
+            break;
+        }
         case ARGUMENT_MEMOP:
             switch (arg.memop.size)
             {
@@ -1329,12 +1337,21 @@ static Metadata *buildMetadata(csh handle, const Action *action,
         case ACTION_CALL:
         {
             // Load arguments.
+            bool state = false;
+            for (const auto &arg: action->args)
+            {
+                if (arg.kind == ARGUMENT_STATE)
+                {
+                    state = true;
+                    break;
+                }
+            }
             int argno = 0;
             bool before = (action->call != CALL_AFTER);
             bool conditional = (action->call == CALL_CONDITIONAL ||
                                 action->call == CALL_CONDITIONAL_JUMP);
-            CallInfo info(action->clean, conditional, action->args.size(),
-                before);
+            CallInfo info(action->clean, state, conditional,
+                action->args.size(), before);
             TypeSig sig = TYPESIG_EMPTY;
             for (const auto &arg: action->args)
             {

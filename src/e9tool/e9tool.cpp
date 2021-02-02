@@ -1213,6 +1213,8 @@ static Action *parseAction(const char *str, const MatchExpr *expr)
                         arg = ARGUMENT_REG; break;
                     case TOKEN_SIZE: case TOKEN_LENGTH:
                         arg = ARGUMENT_BYTES_SIZE; break;
+                    case TOKEN_STATE:
+                        arg = ARGUMENT_STATE; break;
                     case TOKEN_STATIC_ADDR:
                         arg = ARGUMENT_STATIC_ADDR; break;
                     case TOKEN_SRC:

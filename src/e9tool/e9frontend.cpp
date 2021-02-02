@@ -1000,9 +1000,15 @@ static const char *getRegName(x86_reg reg)
 /*
  * Get all callee-save registers.
  */
-static const int *getCallerSaveRegs(bool clean, bool conditional,
+static const int *getCallerSaveRegs(bool clean, bool state, bool conditional,
     size_t num_args)
 {
+    static const int state_save[] =
+    {
+        RAX_IDX, RCX_IDX, RDX_IDX, RBX_IDX, RBP_IDX, RSI_IDX, RDI_IDX, R8_IDX,
+        R9_IDX, R10_IDX, R11_IDX, R12_IDX, R13_IDX, R14_IDX, R15_IDX,
+        RFLAGS_IDX, -1
+    };
     static const int clean_save[] =
     {
         RCX_IDX, RAX_IDX, RFLAGS_IDX, R11_IDX, R10_IDX, R9_IDX, R8_IDX,
@@ -1013,7 +1019,9 @@ static const int *getCallerSaveRegs(bool clean, bool conditional,
         R11_IDX, R10_IDX, R9_IDX, R8_IDX, RCX_IDX, RDX_IDX, RSI_IDX, RDI_IDX,
         -1
     };
-    if (clean)
+    if (state)
+        return state_save;
+    else if (clean)
         return clean_save;
     else if (!conditional)
         return naked_save + (8 - num_args);
@@ -1339,8 +1347,10 @@ struct CallInfo
     /*
      * Constructor.
      */
-    CallInfo(bool clean, bool conditional, size_t num_args, bool before) :
-        rsave(getCallerSaveRegs(clean, conditional, num_args)), before(before)
+    CallInfo(bool clean, bool state,  bool conditional, size_t num_args,
+             bool before) :
+        rsave(getCallerSaveRegs(clean, state, conditional, num_args)),
+        before(before)
     {
         for (unsigned i = 0; rsave[i] >= 0; i++)
             push(getReg(rsave[i]), /*caller_save=*/true);
@@ -3070,6 +3080,16 @@ static void sendLeaFromStackToR64(FILE *out, int32_t offset, int regno)
 unsigned e9frontend::sendCallTrampolineMessage(FILE *out, const char *name,
     const std::vector<Argument> &args, bool clean, CallKind call)
 {
+    bool state = false;
+    for (const auto &arg: args)
+    {
+        if (arg.kind == ARGUMENT_STATE)
+        {
+            state = true;
+            break;
+        }
+    }
+
     sendMessageHeader(out, "trampoline");
     sendParamHeader(out, "name");
     sendString(out, name);
@@ -3091,9 +3111,9 @@ unsigned e9frontend::sendCallTrampolineMessage(FILE *out, const char *name,
     // Push all caller-save registers:
     bool conditional = (call == CALL_CONDITIONAL ||
                         call == CALL_CONDITIONAL_JUMP);
-    const int *rsave = getCallerSaveRegs(clean, conditional, args.size());
+    const int *rsave = getCallerSaveRegs(clean, state, conditional, args.size());
     int num_rsave = 0;
-    x86_reg rscratch = (clean? X86_REG_RAX: X86_REG_INVALID);
+    x86_reg rscratch = (clean || state? X86_REG_RAX: X86_REG_INVALID);
     for (int i = 0; rsave[i] >= 0; i++, num_rsave++)
         sendPush(out, 0, (call != CALL_AFTER), getReg(rsave[i]), rscratch);
 
@@ -3106,10 +3126,10 @@ unsigned e9frontend::sendCallTrampolineMessage(FILE *out, const char *name,
     // Restore the state:
     fputs("\"$restoreState\",", out);
     
-    // If clean & conditional, store result in %rcx, else it stays in %rax
+    // If clean & conditional & !state, store result in %rcx, else in %rax
     bool preserve_rax = (conditional || !clean);
     bool result_rax   = true;
-    if (conditional && clean)
+    if (conditional && clean && !state)
     {
         // mov %rax,%rcx
         fprintf(out, "%u,%u,%u,", 0x48, 0x89, 0xc1);

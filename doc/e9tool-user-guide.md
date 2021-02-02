@@ -462,6 +462,8 @@ The following arguments are supported:
     <td>A (statically generated) random integer [0..<tt>RAND_MAX</tt>]</td></tr>
 <tr><td><b><tt>size</tt></b></td><td><tt>size_t</tt></td>
     <td>The size of <tt>instr</tt> in bytes</td></tr>
+<tr><td><b><tt>state</tt></b></td><td><tt>void &#42;</tt></td>
+    <td>A pointer to a structure containing all general purpose registers</td></tr>
 <tr><td><b><tt>staticAddr</tt></b></td><td><tt>size_t</tt></td>
     <td>The ELF virtual address of the matching instruction</td></tr>
 <tr><td><b><tt>ah</tt></b>,...,<b><tt>dh</tt></b>, <b><tt>al</tt></b>,...,<b><tt>r15b</tt></b></td><td><tt>int8_t</tt></td>
@@ -626,6 +628,13 @@ Notes:
   native layout is a relatively slow operation.
 * For technical reasons, the `%rip` register is considered constant and cannot
   be modified.
+* The `state` argument is a pointer to a structure containing all
+  general-purpose and flag registers.
+  See the `examples/state.c` example for the structure layout.
+  The values in the structure can be modified, in which case the corresponding
+  register will be updated accordingly.
+  The structure does not include the stack register (`%rsp`) which must be
+  passed separately.
 
 ---
 ##### <a id="s2211">2.2.1.1 Pass-by-pointer</a>
@@ -759,10 +768,10 @@ Here:
    Otherwise if zero, the matching instruction will be executed as normal
    (like `before`).
    Essentially, `conditional` implements the following pseudocode:
-   <pre>
+<pre>
        result = func(...);
        if (result) { nop } else { instruction }
-   </pre>
+</pre>
 * `conditional.jump` inspects the return value of the function.
    If the returned value is non-zero, then control-flow will jump to the
    returned value interpreted as an address, and without executing the
@@ -770,10 +779,10 @@ Here:
    Otherwise if zero, the matching instruction will be executed as normal
    (like `before`).
    Essentially, `conditional.jump` implements the following pseudocode:
-   <pre>
+<pre>
         result = func(...);
         if (result) { goto result } else { instruction }
-   </pre>
+</pre>
 
 Only one of these options is valid at the same time.
 Note that for the `after` option, the function will **not** be called

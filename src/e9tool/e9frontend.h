@@ -377,6 +377,7 @@ enum ArgumentKind
     ARGUMENT_RANDOM,                // Random number
     ARGUMENT_REGISTER,              // Register
     ARGUMENT_MEMOP,                 // Memory operand
+    ARGUMENT_STATE,                 // The complete GPR state
 
     ARGUMENT_OP,                    // Operand[i]
     ARGUMENT_SRC,                   // Source operand[i]
