@@ -22,6 +22,10 @@ then
 fi
 
 case "$1" in
+    *.s)
+        CC=gcc
+        EXTENSION=s
+        ;;
     *.c)
         CC=gcc
         EXTENSION=c
@@ -32,7 +36,7 @@ case "$1" in
         ;;
     *)
         echo >&2
-        echo "${RED}error${OFF}: file $1 must have a .c or .cpp extension" >&2
+        echo "${RED}error${OFF}: file $1 must have a .c/.cpp/.s extension" >&2
         echo >&2
         exit 1
         ;;
