@@ -29,23 +29,23 @@
 /*
  * Global options.
  */
-bool option_is_tty               = false;
-bool option_debug                = false;
-bool option_disable_B1           = false;
-bool option_disable_B2           = false;
-bool option_disable_T1           = false;
-bool option_disable_T2           = false;
-bool option_disable_T3           = false;
-bool option_experimental         = false;
-unsigned option_Ojump_delay      = 0;
-unsigned option_Ojump_delay_size = 64;
-bool option_Ojump_peephole       = true;
-bool option_static_loader        = false;
-bool option_same_page            = false;
-bool option_trap_all             = false;
-bool option_use_stack            = false;
-intptr_t option_lb               = INTPTR_MIN;
-intptr_t option_ub               = INTPTR_MAX;
+bool option_is_tty              = false;
+bool option_debug               = false;
+bool option_tactic_B1           = true;
+bool option_tactic_B2           = true;
+bool option_tactic_T1           = true;
+bool option_tactic_T2           = true;
+bool option_tactic_T3           = true;
+bool option_tactic_backward_T3  = true;
+unsigned option_Ojump_elim      = 0;
+unsigned option_Ojump_elim_size = 64;
+bool option_Ojump_peephole      = true;
+bool option_Oscratch_stack      = false;
+bool option_static_loader       = false;
+bool option_same_page           = false;
+bool option_trap_all            = false;
+intptr_t option_lb              = INTPTR_MIN;
+intptr_t option_ub              = INTPTR_MAX;
 
 /*
  * Global statistics.
@@ -123,25 +123,24 @@ void debugImpl(const char *msg, ...)
 enum Option
 {
     OPTION_DEBUG,
-    OPTION_DISABLE_SHRINK,
-    OPTION_DISABLE_B1,
-    OPTION_DISABLE_B2,
-    OPTION_DISABLE_T1,
-    OPTION_DISABLE_T2,
-    OPTION_DISABLE_T3,
-    OPTION_EXPERIMENTAL,
     OPTION_HELP,
     OPTION_INPUT,
     OPTION_LB,
-    OPTION_OJUMP_DELAY,
-    OPTION_OJUMP_DELAY_SIZE,
+    OPTION_OJUMP_ELIM,
+    OPTION_OJUMP_ELIM_SIZE,
     OPTION_OJUMP_PEEPHOLE,
+    OPTION_OSCRATCH_STACK,
     OPTION_OUTPUT,
     OPTION_SAME_PAGE,
     OPTION_STATIC_LOADER,
+    OPTION_TACTIC_B1,
+    OPTION_TACTIC_B2,
+    OPTION_TACTIC_T1,
+    OPTION_TACTIC_T2,
+    OPTION_TACTIC_T3,
+    OPTION_TACTIC_BACKWARD_T3,
     OPTION_TRAP_ALL,
     OPTION_UB,
-    OPTION_USE_STACK,
 };
 
 /*
@@ -190,27 +189,40 @@ static void usage(FILE *stream, const char *progname)
 {
     fprintf(stream, "usage: %s [OPTIONS]\n\n"
         "OPTIONS:\n"
-        "\t-Ojump-delay=N\n"
-        "\t\tDelay jump-from-trampolines by up to N instructions.  Higher N\n"
-        "\t\tmeans more aggressive optimization.  N=0 effectively disables\n"
-        "\t\tthe optimization.\n"
         "\n"
-        "\t-Ojump-delay-size=N\n"
-        "\t\tDelay jump-from-trampolines by up to N instruction bytes.\n"
-        "\t\tUsed as an additional constraint for -Ojump-delay.\n"
+        "\t-Ojump-elim=N\n"
+        "\t\tAttempt to eliminate jump-from-trampolines by cloning up to N\n"
+        "\t\tinstructions.  A higher N means a more aggressive optimization.\n"
+        "\t\tN=0 effectively disables the optimization.\n"
+        "\t\tDefault: 0 (disabled)\n"
+        "\n"
+        "\t-Ojump-elim-size=N\n"
+        "\t\tAdditionally limits -Ojump-elim to N instruction bytes.\n"
+        "\t\tDefault: 64\n"
         "\n"
         "\t-Ojump-peephole[=false]\n"
         "\t\tEnables [disables] jump-from-trampoline peephole optimization.\n"
+        "\t\tDefault: true (enabled)\n"
+        "\n"
+        "\t-Oscratch-stack[=false]\n"
+        "\t\tAllow the stack to be used as scratch space.  This allows\n"
+        "\t\tfaster code to be emitted, but may break transparency.\n"
+        "\t\tDefault: false (disabled)\n"
         "\n"
         "\t--debug\n"
         "\t\tEnable debug log messages.\n"
         "\n"
-        "\t--disable-B1, --disable-B2, --disable-T1, --disable-T2 "
-            "--disable-T3\n"
-        "\t\tDisable the corresponding tactic (B1/B2/T1/T2/T3).\n"
+        "\t--tactic-B1[=false]\n"
+        "\t--tactic-B2[=false]\n"
+        "\t--tactic-T1[=false]\n"
+        "\t--tactic-T2[=false]\n"
+        "\t--tactic-T3[=false]\n"
+        "\t\tEnables [disables] the corresponding tactic (B1/B2/T1/T2/T3).\n"
+        "\t\tDefault: true (enabled)\n"
         "\n"
-        "\t--experimental\n"
-        "\t\tEnable experimental optimizations and extensions.\n"
+        "\t--tactic-backward-T3[=false]\n"
+        "\t\tEnable [disables] backward jumps for tactic T3.\n"
+        "\t\tDefault: true (enabled)\n"
         "\n"
         "\t--help, -h\n"
         "\t\tPrint this help message.\n"
@@ -239,10 +251,6 @@ static void usage(FILE *stream, const char *progname)
         "\n"
         "\t--ub UB\n"
         "\t\tSet UB to be the maximum allowable trampoline address.\n"
-        "\n"
-        "\t--use-stack\n"
-        "\t\tAllow the stack to be used as scratch space.  This allows\n"
-        "\t\tfaster code to be emitted, but may break transparency.\n"
         "\n", progname);
 }
 
@@ -267,26 +275,26 @@ int realMain(int argc, char **argv)
               no_arg  = no_argument;
     static const struct option long_options[] =
     {
-        {"Ojump-delay",      req_arg, nullptr, OPTION_OJUMP_DELAY},
-        {"Ojump-delay-size", req_arg, nullptr, OPTION_OJUMP_DELAY_SIZE},
-        {"Ojump-peephole",   opt_arg, nullptr, OPTION_OJUMP_PEEPHOLE},
-        {"debug",            no_arg,  nullptr, OPTION_DEBUG},
-        {"disable-B1",       no_arg,  nullptr, OPTION_DISABLE_B1},
-        {"disable-B2",       no_arg,  nullptr, OPTION_DISABLE_B2},
-        {"disable-T1",       no_arg,  nullptr, OPTION_DISABLE_T1},
-        {"disable-T2",       no_arg,  nullptr, OPTION_DISABLE_T2},
-        {"disable-T3",       no_arg,  nullptr, OPTION_DISABLE_T3},
-        {"experimental",     no_arg,  nullptr, OPTION_EXPERIMENTAL},
-        {"help",             no_arg,  nullptr, OPTION_HELP},
-        {"input",            req_arg, nullptr, OPTION_INPUT},
-        {"lb",               req_arg, nullptr, OPTION_LB},
-        {"output",           req_arg, nullptr, OPTION_OUTPUT},
-        {"same-page",        no_arg,  nullptr, OPTION_SAME_PAGE},
-        {"static-loader",    no_arg,  nullptr, OPTION_STATIC_LOADER},
-        {"trap-all",         no_arg,  nullptr, OPTION_TRAP_ALL},
-        {"ub",               req_arg, nullptr, OPTION_UB},
-        {"use-stack",        no_arg,  nullptr, OPTION_USE_STACK},
-        {nullptr,            no_arg,  nullptr, 0}
+        {"Ojump-elim",         req_arg, nullptr, OPTION_OJUMP_ELIM},
+        {"Ojump-elim-size",    req_arg, nullptr, OPTION_OJUMP_ELIM_SIZE},
+        {"Ojump-peephole",     opt_arg, nullptr, OPTION_OJUMP_PEEPHOLE},
+        {"Oscratch-stack",     opt_arg, nullptr, OPTION_OSCRATCH_STACK},
+        {"debug",              no_arg,  nullptr, OPTION_DEBUG},
+        {"help",               no_arg,  nullptr, OPTION_HELP},
+        {"input",              req_arg, nullptr, OPTION_INPUT},
+        {"lb",                 req_arg, nullptr, OPTION_LB},
+        {"output",             req_arg, nullptr, OPTION_OUTPUT},
+        {"same-page",          no_arg,  nullptr, OPTION_SAME_PAGE},
+        {"static-loader",      no_arg,  nullptr, OPTION_STATIC_LOADER},
+        {"tactic-B1",          opt_arg, nullptr, OPTION_TACTIC_B1},
+        {"tactic-B2",          opt_arg, nullptr, OPTION_TACTIC_B2},
+        {"tactic-T1",          opt_arg, nullptr, OPTION_TACTIC_T1},
+        {"tactic-T2",          opt_arg, nullptr, OPTION_TACTIC_T2},
+        {"tactic-T3",          opt_arg, nullptr, OPTION_TACTIC_T3},
+        {"tactic-backward-T3", no_arg,  nullptr, OPTION_TACTIC_BACKWARD_T3},
+        {"trap-all",           no_arg,  nullptr, OPTION_TRAP_ALL},
+        {"ub",                 req_arg, nullptr, OPTION_UB},
+        {nullptr,              no_arg,  nullptr, 0}
     };
 
     std::string option_input("-"), option_output("-");
@@ -301,24 +309,6 @@ int realMain(int argc, char **argv)
             case OPTION_DEBUG:
                 option_debug = true;
                 break;
-            case OPTION_DISABLE_B1:
-                option_disable_B1 = true;
-                break;
-            case OPTION_DISABLE_B2:
-                option_disable_B2 = true;
-                break;
-            case OPTION_DISABLE_T1:
-                option_disable_T1 = true;
-                break;
-            case OPTION_DISABLE_T2:
-                option_disable_T2 = true;
-                break;
-            case OPTION_DISABLE_T3:
-                option_disable_T3 = true;
-                break;
-            case OPTION_EXPERIMENTAL:
-                option_experimental = true;
-                break;
             case 'h':
             case OPTION_HELP:
                 usage(stdout, argv[0]);
@@ -327,22 +317,50 @@ int realMain(int argc, char **argv)
             case OPTION_INPUT:
                 option_input = optarg;
                 break;
-            case OPTION_OJUMP_DELAY:
-                option_Ojump_delay =
-                    (unsigned)parseIntOptArg("-Ojump-delay", optarg, 0, 64);
+            case OPTION_OJUMP_ELIM:
+                option_Ojump_elim =
+                    (unsigned)parseIntOptArg("-Ojump-elim", optarg, 0, 64);
                 break;
-            case OPTION_OJUMP_DELAY_SIZE:
-                option_Ojump_delay_size =
-                    (unsigned)parseIntOptArg("-Ojump-delay-size", optarg, 0,
+            case OPTION_OJUMP_ELIM_SIZE:
+                option_Ojump_elim_size =
+                    (unsigned)parseIntOptArg("-Ojump-elim-size", optarg, 0,
                         512);
                 break;
             case OPTION_OJUMP_PEEPHOLE:
                 option_Ojump_peephole =
                     parseBoolOptArg("-Ojump-peephole", optarg);
                 break;
+            case OPTION_OSCRATCH_STACK:
+                option_Oscratch_stack =
+                    parseBoolOptArg("-Oscratch-stack", optarg);
+                break;
             case 'o':
             case OPTION_OUTPUT:
                 option_output = optarg;
+                break;
+            case OPTION_TACTIC_B1:
+                option_tactic_B1 =
+                    parseBoolOptArg("--tactic-B1", optarg);
+                break;
+            case OPTION_TACTIC_B2:
+                option_tactic_B2 =
+                    parseBoolOptArg("--tactic-B2", optarg);
+                break;
+            case OPTION_TACTIC_T1:
+                option_tactic_T1 =
+                    parseBoolOptArg("--tactic-T1", optarg);
+                break;
+            case OPTION_TACTIC_T2:
+                option_tactic_T2 =
+                    parseBoolOptArg("--tactic-T2", optarg);
+                break;
+            case OPTION_TACTIC_T3:
+                option_tactic_T3 =
+                    parseBoolOptArg("--tactic-T3", optarg);
+                break;
+            case OPTION_TACTIC_BACKWARD_T3:
+                option_tactic_backward_T3 =
+                    parseBoolOptArg("--tactic-backward-T3", optarg);
                 break;
             case OPTION_TRAP_ALL:
                 option_trap_all = true;
@@ -361,22 +379,12 @@ int realMain(int argc, char **argv)
                 option_ub = parseIntOptArg("--ub", optarg, INTPTR_MIN,
                     INTPTR_MAX);
                 break;
-            case OPTION_USE_STACK:
-                option_use_stack = true;
-                break;
             default:
                 error("failed to parse command-line options; try `--help' "
                     "for more information");
         }
     }
 
-    if (option_Ojump_delay > 0 && option_Ojump_delay_size > 0 &&
-            option_experimental)
-    {
-        warning("the mixing of `-Ojump-delay' and `--experimental' is "
-            "not-yet-implemented; ignoring `--experimental'");
-        option_experimental = false;
-    }
     if (option_input != "-")
     {
         FILE *input = freopen(option_input.c_str(), "r", stdin);

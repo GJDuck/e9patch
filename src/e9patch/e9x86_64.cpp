@@ -203,7 +203,7 @@ static int pushReturnAddress(intptr_t addr, intptr_t offset, unsigned size,
         buf.push(0x68);
         buf.push((const uint8_t *)&target32, sizeof(target32));
     }
-    else if (!option_use_stack)
+    else if (!option_Oscratch_stack)
     {
         // For PIC we must calculate the return address.
         // (wihout using memory or affecting the flags).

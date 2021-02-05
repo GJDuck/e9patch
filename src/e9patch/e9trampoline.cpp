@@ -153,7 +153,8 @@ static int buildContinue(const Instr *I, int32_t offset32, Buffer *buf)
     unsigned i = 0;
     bool cft = false;
     unsigned size = 0;
-    while (!cft && i < option_Ojump_delay && size < option_Ojump_delay_size)
+    while (!cft && !I->no_optimize && i < option_Ojump_elim &&
+        size < option_Ojump_elim_size)
     {
         const Instr *K = J->next;
         if (K == nullptr || J->addr + J->size != K->addr)

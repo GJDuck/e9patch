@@ -384,7 +384,7 @@ static bool canInstrument(const Instr *I)
 static Patch *tactic_B1(Binary &B, Instr *I, const Trampoline *T,
     Tactic tactic = TACTIC_B1)
 {
-    if (I->size < JMP_SIZE || option_disable_B1 || !canInstrument(I))
+    if (I->size < JMP_SIZE || !option_tactic_B1 || !canInstrument(I))
         return nullptr;
     const Alloc *A = allocateJump(B, I, T);
     if (A == nullptr)
@@ -402,7 +402,7 @@ static Patch *tactic_B1(Binary &B, Instr *I, const Trampoline *T,
 static Patch *tactic_B2(Binary &B, Instr *I, const Trampoline *T,
     Tactic tactic = TACTIC_B2)
 {
-    if (I->size >= JMP_SIZE || option_disable_B2 || !canInstrument(I))
+    if (I->size >= JMP_SIZE || !option_tactic_B2 || !canInstrument(I))
         return nullptr;
     const Alloc *A = allocatePunnedJump(B, I, /*offset=*/0, I, T);
     if (A == nullptr)
@@ -419,7 +419,7 @@ static Patch *tactic_B2(Binary &B, Instr *I, const Trampoline *T,
 static Patch *tactic_T1(Binary &B, Instr *I, const Trampoline *T,
     Tactic tactic = TACTIC_T1)
 {
-    if (I->size >= JMP_SIZE || option_disable_T1 || !canInstrument(I))
+    if (I->size >= JMP_SIZE || !option_tactic_T1 || !canInstrument(I))
         return nullptr;
     for (unsigned prefix = 1;
             prefix < I->size && prefix < JMP_REL32_SIZE && 
@@ -445,7 +445,7 @@ static Patch *tactic_T1(Binary &B, Instr *I, const Trampoline *T,
  */
 static Patch *tactic_T2(Binary &B, Instr *I, const Trampoline *T)
 {
-    if (I->size >= JMP_SIZE || option_disable_T2 || !canInstrument(I))
+    if (I->size >= JMP_SIZE || !option_tactic_T2 || !canInstrument(I))
         return nullptr;
 
     // Step (1): Evict the successor instruction:
@@ -484,7 +484,7 @@ static Patch *tactic_T3b(Binary &B, Instr *I, const Trampoline *T)
     // byte interpreted as a short jmp rel8 happens to land in a suitable
     // location.
 
-    if (I->size != 1 || option_disable_T3 || !canInstrument(I))
+    if (I->size != 1 || !option_tactic_T3 || !canInstrument(I))
         return nullptr;
     Instr *J = I->next;
     if (J == nullptr)
@@ -497,7 +497,7 @@ static Patch *tactic_T3b(Binary &B, Instr *I, const Trampoline *T)
             return nullptr;
     }
     int8_t rel8 = (int8_t)J->patched.bytes[0];
-    if (!option_experimental && rel8 < 1)
+    if (!option_tactic_backward_T3 && rel8 < 1)
         return nullptr;
     intptr_t target = I->addr + /*sizeof(short jmp)=*/2 + (intptr_t)rel8;
     if (target >= I->addr)
@@ -517,6 +517,9 @@ static Patch *tactic_T3b(Binary &B, Instr *I, const Trampoline *T)
     uint8_t state = J->patched.state[i];
     Patch *P = nullptr;
     const Alloc *A = nullptr;
+    bool save = (bool)J->no_optimize;
+    if (target < I->addr)
+        J->no_optimize = true;
     switch (state)
     {
         case STATE_INSTRUCTION:
@@ -525,7 +528,10 @@ static Patch *tactic_T3b(Binary &B, Instr *I, const Trampoline *T)
             // TODO: factor this code out...
             A = allocatePunnedJump(B, J, i, I, T);
             if (A == nullptr)
+            {
+                J->no_optimize = save;
                 return nullptr;
+            }
             P = new Patch(J, TACTIC_T3, A);
             patchJump(P, i);
             if (state == STATE_FREE)
@@ -544,6 +550,7 @@ static Patch *tactic_T3b(Binary &B, Instr *I, const Trampoline *T)
             {
                 // Eviction failed...
                 undo(B, P);
+                J->no_optimize = save;
                 return nullptr;
             }
             Q->next = P;
@@ -554,7 +561,10 @@ static Patch *tactic_T3b(Binary &B, Instr *I, const Trampoline *T)
             return nullptr;
     }
     if (P == nullptr)
+    {
+        J->no_optimize = save;
         return nullptr;
+    }
 
     assert(A != nullptr);
     Patch *Q = new Patch(I, TACTIC_T3);
@@ -574,7 +584,7 @@ static Patch *tactic_T3(Binary &B, Instr *I, const Trampoline *T)
 {
     if (I->size == 1)
         return tactic_T3b(B, I, T);
-    if (I->size >= JMP_SIZE || option_disable_T3 || !canInstrument(I))
+    if (I->size >= JMP_SIZE || !option_tactic_T3 || !canInstrument(I))
         return nullptr;
 
     // Step (1): find nearest instruction at +SHORT_JMP_MAX (or
@@ -594,14 +604,17 @@ static Patch *tactic_T3(Binary &B, Instr *I, const Trampoline *T)
     Patch *P = nullptr;
     const Alloc *A = nullptr;
     intptr_t addr = 0;
+    bool save = (bool)J->no_optimize;
     for (; P == nullptr; J = J->prev)
     {
         if (J == I)
             continue;
         if (J == nullptr)
             break;
-        if (!option_experimental && J->addr < I->addr)
+        if (!option_tactic_backward_T3 && J->addr < I->addr)
             break;
+        if (J->addr < I->addr)
+            J->no_optimize = true;
         if ((I->addr + /*sizeof(short jmp)=*/2) - (J->addr + J->size -1) >
                 -SHORT_JMP_MIN)
         {
@@ -689,7 +702,10 @@ static Patch *tactic_T3(Binary &B, Instr *I, const Trampoline *T)
         }
     }
     if (P == nullptr)
+    {
+        J->no_optimize = save;
         return nullptr;             // T3 failed
+    }
 
     // Step (3): Insert a short jump to the trampoline jump:
     assert(A != nullptr);

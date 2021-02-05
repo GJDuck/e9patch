@@ -2255,7 +2255,6 @@ int main(int argc, char **argv)
         option_options.push_back(strDup("--static-loader"));
     if (option_trap_all)
         option_options.push_back(strDup("--trap-all"));
-    option_options.push_back(strDup("--experimental"));
     if (option_format == "json")
     {
         // Pseudo-backend:

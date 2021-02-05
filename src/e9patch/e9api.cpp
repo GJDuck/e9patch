@@ -140,9 +140,8 @@ static void queueFlush(Binary *B, intptr_t cursor)
  */
 static void queuePatch(Binary *B, Instr *I, const Trampoline *T)
 {
-    if (!option_experimental)
+    if (!option_tactic_backward_T3)
     {
-        // Patch queues are experimental...
         if (patch(*B, I, T))
             stat_num_patched++;
         else
@@ -679,15 +678,15 @@ static void parseOptions(const Message &msg)
         error("failed to parse \"option\" message (id=%u); duplicate "
             "parameters detected", msg.id);
     if (have_disable_B1)
-        option_disable_B1 = disable_B1;
+        option_tactic_B1 = !disable_B1;
     if (have_disable_B2)
-        option_disable_B2 = disable_B2;
+        option_tactic_B2 = !disable_B2;
     if (have_disable_T1)
-        option_disable_T1 = disable_T1;
+        option_tactic_T1 = !disable_T1;
     if (have_disable_T2)
-        option_disable_T2 = disable_T2;
+        option_tactic_T2 = !disable_T2;
     if (have_disable_T3)
-        option_disable_T3 = disable_T3;
+        option_tactic_T3 = !disable_T3;
 }
 
 /*
