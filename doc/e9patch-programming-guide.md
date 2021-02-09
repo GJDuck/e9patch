@@ -481,11 +481,6 @@ The `"emit"` message instructs E9Patch to emit the patched binary file.
     Supported values include `"binary"` (an ELF binary)
     `"patch"` (a binary diff) and
     `"patch.gz"`/`"patch.bz2"`/`"patch.xz"` (a compressed binary diff).
-* `"mapping_size"`: Determines how big each file mapping should be.
-    This controls the aggressiveness of the *Physical Page Grouping*
-    optimization.
-    Valid values must be a power-of-two times the page size (4096),
-    where smaller values corresponding to more aggressive space optimization.
 
 #### Example:
 
@@ -495,8 +490,7 @@ The `"emit"` message instructs E9Patch to emit the patched binary file.
             "params":
             {
                 "filename": "a.out",
-                "format": "binary",
-                "mapping_size": 4096
+                "format": "binary"
             },
             "id": 82535
         }

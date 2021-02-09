@@ -1399,6 +1399,7 @@ namespace e9frontend
  */
 static bool option_is_tty      = false;
 static bool option_no_warnings = false;
+static bool option_debug       = false;
 
 /*
  * Backend info.
@@ -1445,6 +1446,26 @@ void e9frontend::warning(const char *msg, ...)
 
     fprintf(stderr, "%swarning%s: ",
         (option_is_tty? "\33[33m": ""),
+        (option_is_tty? "\33[0m" : ""));
+
+    va_list ap;
+    va_start(ap, msg);
+    vfprintf(stderr, msg, ap);
+    va_end(ap);
+
+    putc('\n', stderr);
+}
+
+/*
+ * Print a debug message.
+ */
+void e9frontend::debug(const char *msg, ...)
+{
+    if (!option_debug)
+        return;
+
+    fprintf(stderr, "%sdebug%s: ",
+        (option_is_tty? "\33[35m": ""),
         (option_is_tty? "\33[0m" : ""));
 
     va_list ap;
@@ -1618,6 +1639,27 @@ static unsigned sendBinaryMessage(FILE *out, const char *mode,
 }
 
 /*
+ * Send a "option" message.
+ */
+unsigned e9frontend::sendOptionMessage(FILE *out, std::vector<char *> &argv)
+{
+    sendMessageHeader(out, "option");
+    sendParamHeader(out, "argv");
+    fputc('[', out);
+    bool prev = false;
+    for (const char *arg: argv)
+    {
+        if (prev)
+            fputc(',', out);
+        prev = true;
+        sendString(out, arg);
+    }
+    fputc(']', out);
+    sendSeparator(out, /*last=*/true);
+    return sendMessageFooter(out, /*sync=*/true);
+}
+
+/*
  * Send an "instruction" message.
  */
 static unsigned sendInstructionMessage(FILE *out, intptr_t addr,
@@ -1669,7 +1711,7 @@ unsigned e9frontend::sendPatchMessage(FILE *out, const char *trampoline,
  * Send an "emit" message.
  */
 static unsigned sendEmitMessage(FILE *out, const char *filename,
-    const char *format, size_t mapping_size)
+    const char *format)
 {
     sendMessageHeader(out, "emit");
     sendParamHeader(out, "filename");
@@ -1677,9 +1719,6 @@ static unsigned sendEmitMessage(FILE *out, const char *filename,
     sendSeparator(out);
     sendParamHeader(out, "format");
     sendString(out, format);
-    sendSeparator(out);
-    sendParamHeader(out, "mapping_size");
-    sendInteger(out, mapping_size);
     sendSeparator(out, /*last=*/true);
     return sendMessageFooter(out, /*sync=*/true);
 }

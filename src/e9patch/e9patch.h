@@ -373,10 +373,11 @@ extern bool option_tactic_T2;
 extern bool option_tactic_T3;
 extern bool option_tactic_backward_T3;
 extern bool option_static_loader;
-extern bool option_same_page;
 extern bool option_trap_all;
-extern intptr_t option_lb;
-extern intptr_t option_ub;
+extern size_t option_mem_mapping_size;
+extern bool option_mem_multi_page;
+extern intptr_t option_mem_lb;
+extern intptr_t option_mem_ub;
 
 /*
  * Global statistics.
@@ -395,6 +396,7 @@ extern size_t stat_num_physical_bytes;
 extern size_t stat_input_file_size;
 extern size_t stat_output_file_size;
 
+extern void parseOptions(int argc, char **argv, bool api = false);
 extern void NO_RETURN error(const char *msg, ...);
 extern void warning(const char *msg, ...);
 extern void debugImpl(const char *msg, ...);

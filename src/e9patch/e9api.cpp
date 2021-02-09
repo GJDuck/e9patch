@@ -389,10 +389,9 @@ static void parsePatch(Binary *B, const Message &msg)
  */
 static void parseEmit(Binary *B, const Message &msg)
 {
-    size_t mapping_size = PAGE_SIZE;
     const char *filename = nullptr;
     Format format = FORMAT_BINARY;
-    bool have_format = false, have_mapping_size = false, dup = false;
+    bool have_format = false, dup = false;
     for (unsigned i = 0; i < msg.num_params; i++)
     {
         switch (msg.params[i].name)
@@ -406,11 +405,6 @@ static void parseEmit(Binary *B, const Message &msg)
                 format = (Format)msg.params[i].value.integer;
                 have_format = true;
                 break;
-            case PARAM_MAPPING_SIZE:
-                dup = dup || have_mapping_size;
-                mapping_size = (size_t)msg.params[i].value.integer;
-                have_mapping_size = true;
-                break;
             default:
                 break;
         }
@@ -418,13 +412,6 @@ static void parseEmit(Binary *B, const Message &msg)
     if (filename == nullptr)
         error("failed to parse \"emit\" message (id=%u); missing "
             "\"filename\" parameter", msg.id);
-    if (mapping_size % PAGE_SIZE != 0)
-        error("failed to parse \"emit\" message (id=%u); mapping size "
-            "must be a multiple of the page size (%u), found %zu", msg.id,
-            PAGE_SIZE, mapping_size);
-    if ((mapping_size & (mapping_size - 1)) != 0)
-        error("failed to parse \"emit\" message (id=%u); mapping size "
-            "must be a power-of-two, found %zu", msg.id, mapping_size);
     if (dup)
         error("failed to parse \"emit\" message (id=%u); duplicate "
             "parameters detected");
@@ -436,12 +423,12 @@ static void parseEmit(Binary *B, const Message &msg)
 
     // Create and optimize the mappings:
     MappingSet mappings;
-    buildMappings(B->allocator, mapping_size, mappings);
+    buildMappings(B->allocator, option_mem_mapping_size, mappings);
     optimizeMappings(mappings);
     putchar('\n');
 
     // Create the patched binary:
-    B->patched.size = emitElf(B, mappings, mapping_size);
+    B->patched.size = emitElf(B, mappings, option_mem_mapping_size);
 
     // Emit the result:
     switch (format)
@@ -634,41 +621,15 @@ static void parseTrampoline(Binary *B, const Message &msg)
  */
 static void parseOptions(const Message &msg)
 {
-    bool disable_B1 = false, disable_B2 = false,
-         disable_T1 = false, disable_T2 = false,
-         disable_T3 = false;
-    bool have_disable_B1 = false, have_disable_B2 = false,
-         have_disable_T1 = false, have_disable_T2 = false,
-         have_disable_T3 = false;
+    char **argv = nullptr;
     bool dup = false;
     for (unsigned i = 0; i < msg.num_params; i++)
     {
         switch (msg.params[i].name)
         {
-            case PARAM_OPTION_DISABLE_B1:
-                dup = dup || have_disable_B1;
-                disable_B1 = msg.params[i].value.boolean;
-                have_disable_B1 = true;
-                break;
-            case PARAM_OPTION_DISABLE_B2:
-                dup = dup || have_disable_B2;
-                disable_B2 = msg.params[i].value.boolean;
-                have_disable_B2 = true;
-                break;
-            case PARAM_OPTION_DISABLE_T1:
-                dup = dup || have_disable_T1;
-                disable_T1 = msg.params[i].value.boolean;
-                have_disable_T1 = true;
-                break;
-            case PARAM_OPTION_DISABLE_T2:
-                dup = dup || have_disable_T2;
-                disable_T2 = msg.params[i].value.boolean;
-                have_disable_T2 = true;
-                break;
-            case PARAM_OPTION_DISABLE_T3:
-                dup = dup || have_disable_T3;
-                disable_T3 = msg.params[i].value.boolean;
-                have_disable_T3 = true;
+            case PARAM_ARGV:
+                dup = dup || (argv != nullptr);
+                argv = msg.params[i].value.strings;
                 break;
             default:
                 break;
@@ -677,16 +638,11 @@ static void parseOptions(const Message &msg)
     if (dup)
         error("failed to parse \"option\" message (id=%u); duplicate "
             "parameters detected", msg.id);
-    if (have_disable_B1)
-        option_tactic_B1 = !disable_B1;
-    if (have_disable_B2)
-        option_tactic_B2 = !disable_B2;
-    if (have_disable_T1)
-        option_tactic_T1 = !disable_T1;
-    if (have_disable_T2)
-        option_tactic_T2 = !disable_T2;
-    if (have_disable_T3)
-        option_tactic_T3 = !disable_T3;
+    int argc;
+    for (argc = 0; argv[argc] != nullptr; argc++)
+        ;
+    parseOptions(argc, argv, /*api=*/true);
+    delete[] argv;
 }
 
 /*

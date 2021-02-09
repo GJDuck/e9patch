@@ -41,11 +41,14 @@ unsigned option_Ojump_elim      = 0;
 unsigned option_Ojump_elim_size = 64;
 bool option_Ojump_peephole      = true;
 bool option_Oscratch_stack      = false;
+intptr_t option_mem_lb          = INTPTR_MIN;
+intptr_t option_mem_ub          = INTPTR_MAX;
+size_t option_mem_mapping_size  = PAGE_SIZE;
+bool option_mem_multi_page      = true;
 bool option_static_loader       = false;
-bool option_same_page           = false;
 bool option_trap_all            = false;
-intptr_t option_lb              = INTPTR_MIN;
-intptr_t option_ub              = INTPTR_MAX;
+static std::string option_input("-");
+static std::string option_output("-");
 
 /*
  * Global statistics.
@@ -125,13 +128,15 @@ enum Option
     OPTION_DEBUG,
     OPTION_HELP,
     OPTION_INPUT,
-    OPTION_LB,
+    OPTION_MEM_LB,
+    OPTION_MEM_MAPPING_SIZE,
+    OPTION_MEM_MULTI_PAGE,
+    OPTION_MEM_UB,
     OPTION_OJUMP_ELIM,
     OPTION_OJUMP_ELIM_SIZE,
     OPTION_OJUMP_PEEPHOLE,
     OPTION_OSCRATCH_STACK,
     OPTION_OUTPUT,
-    OPTION_SAME_PAGE,
     OPTION_STATIC_LOADER,
     OPTION_TACTIC_B1,
     OPTION_TACTIC_B2,
@@ -140,7 +145,6 @@ enum Option
     OPTION_TACTIC_T3,
     OPTION_TACTIC_BACKWARD_T3,
     OPTION_TRAP_ALL,
-    OPTION_UB,
 };
 
 /*
@@ -162,8 +166,8 @@ static intptr_t parseIntOptArg(const char *option, const char *optarg,
     r = (neg? -r: r);
     if (errno != 0 || end == optarg ||
             (end != nullptr && *end != '\0') || r < lb || r > ub)
-        error("failed to parse argument \"%s\" for option `%s'; expected a "
-            "number %zd..%zd", option, optarg_0, lb, ub);
+        error("failed to parse argument \"%s\" for the `%s' option; "
+            "expected a number %zd..%zd", option, optarg_0, lb, ub);
     return r;
 }
 
@@ -178,8 +182,8 @@ static bool parseBoolOptArg(const char *option, const char *optarg)
         return true;
     else if (strcmp(optarg, "false") == 0 || strcmp(optarg, "0") == 0)
         return false;
-    error("failed to parse argument \"%s\" for option `%s'; expected a "
-        "Boolean [true, false]", option, optarg);
+    error("failed to parse argument \"%s\" for the `%s' option; "
+        "expected a Boolean [true, false]", option, optarg);
 }
 
 /*
@@ -212,6 +216,41 @@ static void usage(FILE *stream, const char *progname)
         "\t--debug\n"
         "\t\tEnable debug log messages.\n"
         "\n"
+        "\t--help, -h\n"
+        "\t\tPrint this help message.\n"
+        "\n"
+        "\t--input FILE, -i FILE\n"
+        "\t\tRead input from FILE instead of stdin.\n"
+        "\n"
+        "\t--output FILE, -o FILE\n"
+        "\t\tWrite output to FILE instead of stdout.\n"
+        "\n"
+        "\t--mem-lb=LB\n"
+        "\t\tSet LB to be the minimum allowable trampoline address.\n"
+        "\t\tDefault: -0x8000000000000000\n"
+        "\n"
+        "\t--mem-ub=UB\n"
+        "\t\tSet UB to be the maximum allowable trampoline address.\n"
+        "\t\tDefault: 0x7fffffffffffffff\n"
+        "\n"
+        "\t--mem-mapping-size=SIZE\n"
+        "\t\tSet the mapping size to SIZE which must be a power-of-two\n"
+        "\t\tmultiple of the page size (%zu).  Larger values result in\n"
+        "\t\tless virtual mappings being used, but larger output binary\n"
+        "\t\tfiles (i.e., worse compression).\n"
+        "\t\tDefault: %zu\n"
+        "\n"
+        "\t--mem-multi-page[=false]\n"
+        "\t\tEnable [disable] trampolines that cross page boundaries.\n"
+        "\t\tDefault: true (enabled)\n"
+        "\n"
+        "\t--static-loader[=false]\n"
+        "\t\tEnable [disable] the static loading of patched pages.  By\n"
+        "\t\tdefault, patched pages are loaded dynamically during program\n"
+        "\t\tinitialization (this is more reliable for complex binaries).\n"
+        "\t\tHowever, this can also bloat patched binary size.\n"
+        "\t\tDefault: false (disabled)\n"
+        "\n"
         "\t--tactic-B1[=false]\n"
         "\t--tactic-B2[=false]\n"
         "\t--tactic-T1[=false]\n"
@@ -224,53 +263,19 @@ static void usage(FILE *stream, const char *progname)
         "\t\tEnable [disables] backward jumps for tactic T3.\n"
         "\t\tDefault: true (enabled)\n"
         "\n"
-        "\t--help, -h\n"
-        "\t\tPrint this help message.\n"
-        "\n"
-        "\t--input FILE, -i FILE\n"
-        "\t\tRead input from FILE instead of stdin.\n"
-        "\n"
-        "\t--lb LB\n"
-        "\t\tSet LB to be the minimum allowable trampoline address.\n"
-        "\n"
-        "\t--output FILE, -o FILE\n"
-        "\t\tWrite output to FILE instead of stdout.\n"
-        "\n"
-        "\t--same-page\n"
-        "\t\tDisallow trampolines from crossing page boundaries.\n"
-        "\n"
-        "\t--static-loader\n"
-        "\t\tReplace patched pages statically.  By default, patched pages\n"
-        "\t\tare loaded during program initialization as this is more\n"
-        "\t\treliable for large/complex binaries.  However, this may bloat\n"
-        "\t\tthe size of the output patched binary.\n"
-        "\n"
-        "\t--trap-all\n"
-        "\t\tInsert a trap (int3) instruction at each trampoline entry.\n"
-        "\t\tThis can be used for debugging with gdb.\n"
-        "\n"
-        "\t--ub UB\n"
-        "\t\tSet UB to be the maximum allowable trampoline address.\n"
-        "\n", progname);
+        "\t--trap-all[=false]\n"
+        "\t\tEnable [disable] the insertion of a trap (int3) instruction at\n"
+        "\t\teach trampoline entry.  This can be used to debug trampoline\n"
+        "\t\tusing gdb.\n"
+        "\t\tDefault: false (disabled)\n"
+        "\n", progname, PAGE_SIZE, PAGE_SIZE);
 }
 
 /*
- * The real entry point.
+ * Parse options.
  */
-extern "C"
+void parseOptions(int argc, char **argv, bool api)
 {
-    int realMain(int argc, char **argv);
-};
-int realMain(int argc, char **argv)
-{
-    clock_t c0 = clock();
-
-    option_is_tty = (isatty(STDERR_FILENO) != 0);
-    if (getenv("E9PATCH_TTY") != nullptr)
-        option_is_tty = true;
-    if (getenv("E9PATCH_DEBUG") != nullptr)
-        option_debug = true;
-
     const int req_arg = required_argument, opt_arg = optional_argument,
               no_arg  = no_argument;
     static const struct option long_options[] =
@@ -282,9 +287,11 @@ int realMain(int argc, char **argv)
         {"debug",              no_arg,  nullptr, OPTION_DEBUG},
         {"help",               no_arg,  nullptr, OPTION_HELP},
         {"input",              req_arg, nullptr, OPTION_INPUT},
-        {"lb",                 req_arg, nullptr, OPTION_LB},
+        {"mem-lb",             req_arg, nullptr, OPTION_MEM_LB},
+        {"mem-mapping-size",   req_arg, nullptr, OPTION_MEM_MAPPING_SIZE},
+        {"mem-multi-page",     opt_arg, nullptr, OPTION_MEM_MULTI_PAGE},
+        {"mem-ub",             req_arg, nullptr, OPTION_MEM_UB},
         {"output",             req_arg, nullptr, OPTION_OUTPUT},
-        {"same-page",          no_arg,  nullptr, OPTION_SAME_PAGE},
         {"static-loader",      no_arg,  nullptr, OPTION_STATIC_LOADER},
         {"tactic-B1",          opt_arg, nullptr, OPTION_TACTIC_B1},
         {"tactic-B2",          opt_arg, nullptr, OPTION_TACTIC_B2},
@@ -293,11 +300,9 @@ int realMain(int argc, char **argv)
         {"tactic-T3",          opt_arg, nullptr, OPTION_TACTIC_T3},
         {"tactic-backward-T3", no_arg,  nullptr, OPTION_TACTIC_BACKWARD_T3},
         {"trap-all",           no_arg,  nullptr, OPTION_TRAP_ALL},
-        {"ub",                 req_arg, nullptr, OPTION_UB},
         {nullptr,              no_arg,  nullptr, 0}
     };
 
-    std::string option_input("-"), option_output("-");
     while (true)
     {
         int idx;
@@ -306,13 +311,25 @@ int realMain(int argc, char **argv)
             break;
         switch (opt)
         {
+            case OPTION_DEBUG: case OPTION_HELP: case OPTION_INPUT:
+            case OPTION_OUTPUT:
+            case 'h': case 'i': case 'o':
+                if (api)
+                    error("option `%s' cannot be invoked via the JSON-RPC API",
+                        argv[optind]);
+                break;
+            default:
+                break;
+        }
+        switch (opt)
+        {
             case OPTION_DEBUG:
                 option_debug = true;
                 break;
             case 'h':
             case OPTION_HELP:
                 usage(stdout, argv[0]);
-                return EXIT_SUCCESS;
+                exit(EXIT_SUCCESS);
             case 'i':
             case OPTION_INPUT:
                 option_input = optarg;
@@ -363,27 +380,63 @@ int realMain(int argc, char **argv)
                     parseBoolOptArg("--tactic-backward-T3", optarg);
                 break;
             case OPTION_TRAP_ALL:
-                option_trap_all = true;
-                break;
-            case OPTION_SAME_PAGE:
-                option_same_page = true;
+                option_trap_all = parseBoolOptArg("--trap-all", optarg);
                 break;
             case OPTION_STATIC_LOADER:
-                option_static_loader = true;
+                option_static_loader =
+                    parseBoolOptArg("--static-loader", optarg);
                 break;
-            case OPTION_LB:
-                option_lb = parseIntOptArg("--lb", optarg, INTPTR_MIN,
+            case OPTION_MEM_LB:
+                option_mem_lb = parseIntOptArg("--mem-lb", optarg, INTPTR_MIN,
                     INTPTR_MAX);
                 break;
-            case OPTION_UB:
-                option_ub = parseIntOptArg("--ub", optarg, INTPTR_MIN,
+            case OPTION_MEM_UB:
+                option_mem_ub = parseIntOptArg("--mem-ub", optarg, INTPTR_MIN,
                     INTPTR_MAX);
+                break;
+            case OPTION_MEM_MAPPING_SIZE:
+                option_mem_mapping_size = parseIntOptArg("--mem-mapping-size",
+                    optarg, INTPTR_MIN, INTPTR_MAX);
+                if (option_mem_mapping_size % PAGE_SIZE != 0)
+                    error("failed to parse argument \"%s\" for the "
+                        "`--mem-mapping-size' option; mapping size must be "
+                        "a multiple of the page size (%d)", optarg,
+                        PAGE_SIZE);
+                if ((option_mem_mapping_size & (option_mem_mapping_size - 1))
+                        != 0)
+                    error("failed to parse argument \"%s\" for the "
+                        "`--mem-mapping-size' option; mapping size must be "
+                        "a power-of-two", optarg);
+                break;
+            case OPTION_MEM_MULTI_PAGE:
+                option_mem_multi_page =
+                    parseBoolOptArg("--mem-multi-page", optarg);
                 break;
             default:
                 error("failed to parse command-line options; try `--help' "
                     "for more information");
         }
     }
+}
+
+/*
+ * The real entry point.
+ */
+extern "C"
+{
+    int realMain(int argc, char **argv);
+};
+int realMain(int argc, char **argv)
+{
+    clock_t c0 = clock();
+
+    option_is_tty = (isatty(STDERR_FILENO) != 0);
+    if (getenv("E9PATCH_TTY") != nullptr)
+        option_is_tty = true;
+    if (getenv("E9PATCH_DEBUG") != nullptr)
+        option_debug = true;
+
+    parseOptions(argc, argv);
 
     if (option_input != "-")
     {
@@ -419,7 +472,15 @@ int realMain(int argc, char **argv)
     size_t stat_num_total = stat_num_patched + stat_num_failed;
     clock_t stat_time = c1 - c0;
 
-    const size_t MAX_MAPPINGS = 65000;
+    ssize_t MAX_MAPPINGS = 65530;
+    const ssize_t MAX_MAPPINGS_DELTA = 128;
+    FILE *stream = fopen("/proc/sys/vm/max_map_count", "r");
+    if (stream != nullptr)
+    {
+        if (fscanf(stream, "%zd", &MAX_MAPPINGS) != 1)
+            ;
+        fclose(stream);
+    }
 
     char percent[16];
     snprintf(percent, sizeof(percent)-1, "%.2f",
@@ -449,14 +510,16 @@ int realMain(int argc, char **argv)
     printf("num_patched_T3        = %zu / %zu (%.2f%%)\n",
         stat_num_T3, stat_num_total,
         (double)stat_num_T3 / (double)stat_num_total * 100.0);
-    printf("num_virtual_mappings  = %s%zu%s%s\n",
-        (option_is_tty && stat_num_virtual_mappings >= MAX_MAPPINGS? "\33[33m":
-            ""),
+    printf("num_virtual_mappings  = %s%zu%s\n",
+        (option_is_tty &&
+            (ssize_t)stat_num_virtual_mappings >=
+                MAX_MAPPINGS - MAX_MAPPINGS_DELTA?
+            "\33[33m": ""),
         stat_num_virtual_mappings,
-        (option_is_tty && stat_num_virtual_mappings >= MAX_MAPPINGS? "\33[0m":
-            ""),
-        (stat_num_virtual_mappings >= MAX_MAPPINGS?
-            " (warning: may exceed default system limit)": ""));
+        (option_is_tty &&
+            (ssize_t)stat_num_virtual_mappings >=
+                MAX_MAPPINGS - MAX_MAPPINGS_DELTA?
+            "\33[0m": ""));
     printf("num_physical_mappings = %zu (%.2f%%)\n",
         stat_num_physical_mappings,
         (double)stat_num_physical_mappings /
@@ -472,6 +535,19 @@ int realMain(int argc, char **argv)
     printf("time_elapsed          = %zdms\n",
         stat_time * 1000 / CLOCKS_PER_SEC);
     printf("-----------------------------------------------\n");
+
+    if ((ssize_t)stat_num_virtual_mappings >= MAX_MAPPINGS - MAX_MAPPINGS_DELTA)
+        warning("the number of virtual mappings (%zu) %s the default "
+            "system limit (%zd); this can be fixed by either:\n"
+            "\t(1) raising the limit, e.g.:\n"
+            "\t    sudo sysctl -w vm.max_map_count=%zu\n"
+            "\t(2) rewriting the binary with a larger mapping size\n"
+            "\t    (see the `--mem-mapping-size' option).",
+                stat_num_virtual_mappings,
+                ((ssize_t)stat_num_virtual_mappings >= MAX_MAPPINGS?
+                    "exceeds": "may exceed"),
+                MAX_MAPPINGS, stat_num_virtual_mappings + 1000,
+                option_mem_mapping_size);
 
     exit(EXIT_SUCCESS);
 }

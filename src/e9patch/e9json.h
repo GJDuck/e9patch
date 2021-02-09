@@ -47,12 +47,12 @@ enum ParamName
     PARAM_UNKNOWN,
     PARAM_ABSOLUTE,
     PARAM_ADDRESS,
+    PARAM_ARGV,
     PARAM_BYTES,
     PARAM_FILENAME,
     PARAM_FORMAT,
     PARAM_INIT,
     PARAM_LENGTH,
-    PARAM_MAPPING_SIZE,
     PARAM_METADATA,
     PARAM_MMAP,
     PARAM_MODE,
@@ -61,13 +61,6 @@ enum ParamName
     PARAM_PROTECTION,
     PARAM_TEMPLATE,
     PARAM_TRAMPOLINE,
-
-    // Special option names:
-    PARAM_OPTION_DISABLE_B1,
-    PARAM_OPTION_DISABLE_B2,
-    PARAM_OPTION_DISABLE_T1,
-    PARAM_OPTION_DISABLE_T2,
-    PARAM_OPTION_DISABLE_T3,
 };
 
 /*
@@ -90,6 +83,7 @@ union ParamValue
     bool boolean;                       // Boolean
     int64_t integer;                    // Integer
     const char *string;                 // String
+    char **strings;                     // Strings
     Trampoline *trampoline;             // Trampoline template
     Metadata *metadata;                 // Instruction metadata
 };

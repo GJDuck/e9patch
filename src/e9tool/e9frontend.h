@@ -420,6 +420,7 @@ extern void sendCode(FILE *out, const char *code);
 /*
  * High-level functions that send complete E9PATCH JSONRPC messages:
  */
+extern unsigned sendOptionMessage(FILE *out, std::vector<char *> &argv);
 extern unsigned sendPatchMessage(FILE *out, const char *trampoline,
     off_t offset, const Metadata *metadata = nullptr);
 extern unsigned sendReserveMessage(FILE *out, intptr_t addr, size_t len,
@@ -452,6 +453,7 @@ extern off_t getTextOffset(const ELF *elf);
 extern size_t getTextSize(const ELF *elf);
 extern void NO_RETURN error(const char *msg, ...);
 extern void warning(const char *msg, ...);
+extern void debug(const char *msg, ...);
 
 }   // namespace e9frontend
 

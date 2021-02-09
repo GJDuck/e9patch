@@ -452,7 +452,6 @@ static bool validateParam(Method method, ParamName paramName)
             {
                 case PARAM_FILENAME:
                 case PARAM_FORMAT:
-                case PARAM_MAPPING_SIZE:
                     return true;
                 default:
                     return false;
@@ -483,11 +482,7 @@ static bool validateParam(Method method, ParamName paramName)
         case METHOD_OPTION:
             switch (paramName)
             {
-                case PARAM_OPTION_DISABLE_B1:
-                case PARAM_OPTION_DISABLE_B2:
-                case PARAM_OPTION_DISABLE_T1:
-                case PARAM_OPTION_DISABLE_T2:
-                case PARAM_OPTION_DISABLE_T3:
+                case PARAM_ARGV:
                     return true;
                 default:
                     return false;
@@ -877,6 +872,33 @@ static Metadata *parseMetadata(Parser &parser)
 }
 
 /*
+ * Parse strings.
+ */
+static char **parseStrings(Parser &parser)
+{
+    std::vector<char *> strings;
+
+    expectToken(parser, '[');
+    char token = expectToken2(parser, ']', TOKEN_STRING);
+    while (token != ']')
+    {
+        if (token != TOKEN_STRING)
+            unexpectedToken(parser, "strings entry", token);
+        strings.push_back((char *)dupString(parser.s));
+        token = expectToken2(parser, ',', ']');
+        if (token == ',')
+            token = getToken(parser);
+    }
+
+    char **ss = new char *[strings.size()+1];
+    size_t i;
+    for (i = 0; i < strings.size(); i++)
+        ss[i] = strings[i];
+    ss[i] = nullptr;
+    return ss;
+}
+
+/*
  * Parse a protection.
  */
 static int parseProtection(const Parser &parser, unsigned i, char c, int prot)
@@ -911,22 +933,12 @@ static void parseParams(Parser &parser, Message &msg)
                     name = PARAM_ADDRESS;
                 else if (strcmp(parser.s, "absolute") == 0)
                     name = PARAM_ABSOLUTE;
+                else if (strcmp(parser.s, "argv") == 0)
+                    name = PARAM_ARGV;
                 break;
             case 'b':
                 if (strcmp(parser.s, "bytes") == 0)
                     name = PARAM_BYTES;
-                break;
-            case 'd':
-                if (strcmp(parser.s, "disable-B1") == 0)
-                    name = PARAM_OPTION_DISABLE_B1;
-                else if (strcmp(parser.s, "disable-B2") == 0)
-                    name = PARAM_OPTION_DISABLE_B2;
-                else if (strcmp(parser.s, "disable-T1") == 0)
-                    name = PARAM_OPTION_DISABLE_T1;
-                else if (strcmp(parser.s, "disable-T2") == 0)
-                    name = PARAM_OPTION_DISABLE_T2;
-                else if (strcmp(parser.s, "disable-T3") == 0)
-                    name = PARAM_OPTION_DISABLE_T3;
                 break;
             case 'f':
                 if (strcmp(parser.s, "filename") == 0)
@@ -953,8 +965,6 @@ static void parseParams(Parser &parser, Message &msg)
             case 'm':
                 if (strcmp(parser.s, "metadata") == 0)
                     name = PARAM_METADATA;
-                else if (strcmp(parser.s, "mapping_size") == 0)
-                    name = PARAM_MAPPING_SIZE;
                 else if (strcmp(parser.s, "mode") == 0)
                     name = PARAM_MODE;
                 else if (strcmp(parser.s, "mmap") == 0)
@@ -985,7 +995,6 @@ static void parseParams(Parser &parser, Message &msg)
                 case PARAM_LENGTH:
                 case PARAM_INIT:
                 case PARAM_MMAP:
-                case PARAM_MAPPING_SIZE:
                     token = expectToken2(parser, TOKEN_NUMBER, TOKEN_STRING);
                     if (token == TOKEN_NUMBER)
                         value.integer = (intptr_t)parser.i;
@@ -993,13 +1002,11 @@ static void parseParams(Parser &parser, Message &msg)
                         value.integer = stringToNumber(parser);
                     break;
                 case PARAM_ABSOLUTE:
-                case PARAM_OPTION_DISABLE_B1:
-                case PARAM_OPTION_DISABLE_B2:
-                case PARAM_OPTION_DISABLE_T1:
-                case PARAM_OPTION_DISABLE_T2:
-                case PARAM_OPTION_DISABLE_T3:
                     expectToken(parser, TOKEN_BOOL);
                     value.boolean = parser.b;
+                    break;
+                case PARAM_ARGV:
+                    value.strings = parseStrings(parser);
                     break;
                 case PARAM_FILENAME:
                 case PARAM_NAME:

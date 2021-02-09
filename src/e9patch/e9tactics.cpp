@@ -250,8 +250,8 @@ static Bounds makeBounds(const Trampoline *T, const Instr *I, const Instr *J,
     }
 
     // Step (7): Apply the user-specified bounds (if any).
-    lo = std::max(lo, option_lb);
-    hi = std::min(hi, option_ub);
+    lo = std::max(lo, option_mem_lb);
+    hi = std::min(hi, option_mem_ub);
  
     return {lo, hi};
 }
@@ -266,7 +266,7 @@ static const Alloc *allocatePunnedJump(Binary &B, const Instr *I,
         if (I->patched.state[prefix + i] == STATE_QUEUED)
             return nullptr;
     auto b = makeBounds(T, I, J, prefix);
-    return allocate(B.allocator, b.lb, b.ub, T, J, option_same_page);
+    return allocate(B.allocator, b.lb, b.ub, T, J, !option_mem_multi_page);
 }
 
 /*

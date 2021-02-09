@@ -53,7 +53,6 @@
  */
 static bool option_trap_all = false;
 static bool option_detail   = false;
-static bool option_debug    = false;
 static bool option_notify   = false;
 static std::string option_format("binary");
 static std::string option_output("a.out");
@@ -2251,10 +2250,7 @@ int main(int argc, char **argv)
      * The ELF file seems OK, spawn and initialize the e9patch backend.
      */
     Backend backend;
-    if (option_static_loader)
-        option_options.push_back(strDup("--static-loader"));
-    if (option_trap_all)
-        option_options.push_back(strDup("--trap-all"));
+    std::vector<char *> options;
     if (option_format == "json")
     {
         // Pseudo-backend:
@@ -2273,12 +2269,34 @@ int main(int argc, char **argv)
         }
     }
     else
-        spawnBackend(option_backend.c_str(), option_options, backend);
+        spawnBackend(option_backend.c_str(), options, backend);
+
+    /*
+     * Send binary message.
+     */
     const char *mode = 
         (option_executable? "exe":
         (option_shared?     "dso":
         (elf.dso? "dso": "exe")));
     sendBinaryMessage(backend.out, mode, filename);
+ 
+    /*
+     * Send options message.
+     */
+    size_t mapping_size = PAGE_SIZE * (1 << (9 - option_compression_level));
+    if (mapping_size != PAGE_SIZE)
+    {
+        options.push_back(strDup("--mem-mapping-size"));
+        options.push_back(strDup(std::to_string(mapping_size).c_str()));
+    }
+    if (option_static_loader)
+        options.push_back(strDup("--static-loader"));
+    if (option_trap_all)
+        options.push_back(strDup("--trap-all"));
+    for (char *option: option_options)
+        options.push_back(option);
+    if (options.size() > 0)
+        sendOptionMessage(backend.out, options);
 
     /*
      * Initialize all plugins:
@@ -2554,9 +2572,7 @@ int main(int argc, char **argv)
         option_output = "a.out";
         option_format = "binary";
     }
-    size_t mapping_size = PAGE_SIZE * (1 << (9 - option_compression_level));
-    sendEmitMessage(backend.out, option_output.c_str(),
-        option_format.c_str(), mapping_size);
+    sendEmitMessage(backend.out, option_output.c_str(), option_format.c_str());
 
     /*
      * Wait for the e9patch to complete.
