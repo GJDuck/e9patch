@@ -703,7 +703,8 @@ static Patch *tactic_T3(Binary &B, Instr *I, const Trampoline *T)
     }
     if (P == nullptr)
     {
-        J->no_optimize = save;
+        if (J != nullptr)
+            J->no_optimize = save;
         return nullptr;             // T3 failed
     }
 

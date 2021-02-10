@@ -874,9 +874,11 @@ static Metadata *parseMetadata(Parser &parser)
 /*
  * Parse strings.
  */
-static char **parseStrings(Parser &parser)
+static char **parseStrings(Parser &parser, const char *first = nullptr)
 {
     std::vector<char *> strings;
+    if (first != nullptr)
+        strings.push_back((char *)dupString(first));
 
     expectToken(parser, '[');
     char token = expectToken2(parser, ']', TOKEN_STRING);
@@ -1006,7 +1008,7 @@ static void parseParams(Parser &parser, Message &msg)
                     value.boolean = parser.b;
                     break;
                 case PARAM_ARGV:
-                    value.strings = parseStrings(parser);
+                    value.strings = parseStrings(parser, "<option>");
                     break;
                 case PARAM_FILENAME:
                 case PARAM_NAME:

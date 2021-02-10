@@ -51,9 +51,10 @@
 /*
  * Options.
  */
-static bool option_trap_all = false;
-static bool option_detail   = false;
-static bool option_notify   = false;
+static bool option_trap_all     = false;
+static bool option_detail       = false;
+static bool option_notify       = false;
+static int  option_optimization = 1;
 static std::string option_format("binary");
 static std::string option_output("a.out");
 static std::string option_syntax("ATT");
@@ -2003,6 +2004,16 @@ static void usage(FILE *stream, const char *progname)
         "\t--no-warnings\n"
         "\t\tDo not print warning messages.\n"
         "\n"
+        "\t-O0, -O1, -O2, -O3\n"
+        "\t\tSet the optimization level.  Here:\n"
+        "\n"
+        "\t\t\t-O0 disables all optimizations,\n"
+        "\t\t\t-O1 enables only conservative optimizations,\n"
+        "\t\t\t-O2 enables all reasonable optimizations, and\n"
+        "\t\t\t-O3 enables all aggressive optimizations. \n"
+        "\n"
+        "\t\tThe default is -O1.\n"
+        "\n"
         "\t--option OPTION\n"
         "\t\tPass OPTION to the e9patch backend.\n"
         "\n"
@@ -2080,27 +2091,29 @@ int main(int argc, char **argv)
     /*
      * Parse options.
      */
+    const int req_arg = required_argument, /*opt_arg = optional_argument,*/
+              no_arg  = no_argument;
     static const struct option long_options[] =
     {
-        {"action",         true,  nullptr, OPTION_ACTION},
-        {"backend",        true,  nullptr, OPTION_BACKEND},
-        {"compression",    true,  nullptr, OPTION_COMPRESSION},
-        {"debug",          false, nullptr, OPTION_DEBUG},
-        {"end",            true,  nullptr, OPTION_END},
-        {"executable",     false, nullptr, OPTION_EXECUTABLE},
-        {"format",         true,  nullptr, OPTION_FORMAT},
-        {"help",           false, nullptr, OPTION_HELP},
-        {"match",          true,  nullptr, OPTION_MATCH},
-        {"no-warnings",    false, nullptr, OPTION_NO_WARNINGS},
-        {"option",         true,  nullptr, OPTION_OPTION},
-        {"output",         true,  nullptr, OPTION_OUTPUT},
-        {"shared",         false, nullptr, OPTION_SHARED},
-        {"start",          true,  nullptr, OPTION_START},
-        {"static-loader",  false, nullptr, OPTION_STATIC_LOADER},
-        {"sync",           true,  nullptr, OPTION_SYNC},
-        {"syntax",         true,  nullptr, OPTION_SYNTAX},
-        {"trap-all",       false, nullptr, OPTION_TRAP_ALL},
-        {nullptr,          false, nullptr, 0}
+        {"action",        req_arg, nullptr, OPTION_ACTION},
+        {"backend",       req_arg, nullptr, OPTION_BACKEND},
+        {"compression",   req_arg, nullptr, OPTION_COMPRESSION},
+        {"debug",         no_arg,  nullptr, OPTION_DEBUG},
+        {"end",           req_arg, nullptr, OPTION_END},
+        {"executable",    no_arg,  nullptr, OPTION_EXECUTABLE},
+        {"format",        req_arg, nullptr, OPTION_FORMAT},
+        {"help",          no_arg,  nullptr, OPTION_HELP},
+        {"match",         req_arg, nullptr, OPTION_MATCH},
+        {"no-warnings",   no_arg,  nullptr, OPTION_NO_WARNINGS},
+        {"option",        req_arg, nullptr, OPTION_OPTION},
+        {"output",        req_arg, nullptr, OPTION_OUTPUT},
+        {"shared",        no_arg,  nullptr, OPTION_SHARED},
+        {"start",         req_arg, nullptr, OPTION_START},
+        {"static-loader", no_arg,  nullptr, OPTION_STATIC_LOADER},
+        {"sync",          req_arg, nullptr, OPTION_SYNC},
+        {"syntax",        req_arg, nullptr, OPTION_SYNTAX},
+        {"trap-all",      no_arg,  nullptr, OPTION_TRAP_ALL},
+        {nullptr,         no_arg,  nullptr, 0}
     }; 
     option_is_tty = isatty(STDERR_FILENO);
     std::vector<Action *> option_actions;
@@ -2114,7 +2127,8 @@ int main(int argc, char **argv)
     while (true)
     {
         int idx;
-        int opt = getopt_long(argc, argv, "A:c:hM:o:s", long_options, &idx);
+        int opt = getopt_long_only(argc, argv, "A:c:hM:o:O:s", long_options,
+            &idx);
         if (opt < 0)
             break;
         switch (opt)
@@ -2178,6 +2192,25 @@ int main(int argc, char **argv)
             case OPTION_OUTPUT:
             case 'o':
                 option_output = optarg;
+                break;
+            case 'O':
+                if (optarg[0] >= '0' && optarg[0] <= '3' && optarg[1] == '\0')
+                {
+                    switch (optarg[0])
+                    {
+                        case '0':
+                            option_optimization = 0; break;
+                        case '1':
+                            option_optimization = 1; break;
+                        case '2':
+                            option_optimization = 2; break;
+                        case '3':
+                            option_optimization = 3; break;
+                    }
+                }
+                else
+                    error("bad value \"%s\" for `-O' option; "
+                        "expected one of 0,1,2,3", optarg);
                 break;
             case OPTION_NO_WARNINGS:
                 option_no_warnings = true;
@@ -2293,6 +2326,34 @@ int main(int argc, char **argv)
         options.push_back(strDup("--static-loader"));
     if (option_trap_all)
         options.push_back(strDup("--trap-all"));
+    switch (option_optimization)
+    {
+        case 0:
+            options.push_back(strDup("-Ojump-elim=0"));
+            options.push_back(strDup("-Ojump-elim-size=0"));
+            options.push_back(strDup("-Ojump-peephole=false"));
+            options.push_back(strDup("-Oscratch-stack=false"));
+            break;
+        default:
+        case 1:
+            options.push_back(strDup("-Ojump-elim=0"));
+            options.push_back(strDup("-Ojump-elim-size=0"));
+            options.push_back(strDup("-Ojump-peephole=true"));
+            options.push_back(strDup("-Oscratch-stack=true"));
+            break;
+        case 2:
+            options.push_back(strDup("-Ojump-elim=32"));
+            options.push_back(strDup("-Ojump-elim-size=64"));
+            options.push_back(strDup("-Ojump-peephole=true"));
+            options.push_back(strDup("-Oscratch-stack=true"));
+            break;
+        case 3:
+            options.push_back(strDup("-Ojump-elim=64"));
+            options.push_back(strDup("-Ojump-elim-size=512"));
+            options.push_back(strDup("-Ojump-peephole=true"));
+            options.push_back(strDup("-Oscratch-stack=true"));
+            break;
+    }
     for (char *option: option_options)
         options.push_back(option);
     if (options.size() > 0)
