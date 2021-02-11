@@ -1641,7 +1641,8 @@ static unsigned sendBinaryMessage(FILE *out, const char *mode,
 /*
  * Send a "option" message.
  */
-unsigned e9frontend::sendOptionMessage(FILE *out, std::vector<char *> &argv)
+unsigned e9frontend::sendOptionMessage(FILE *out,
+    std::vector<const char *> &argv)
 {
     sendMessageHeader(out, "option");
     sendParamHeader(out, "argv");
@@ -3326,8 +3327,8 @@ static const char *findBinary(const char *filename, bool exe = true,
 /*
  * Spawn e9patch backend instance.
  */
-static void spawnBackend(const char *prog, const std::vector<char *> &options,
-    Backend &backend)
+static void spawnBackend(const char *prog,
+    const std::vector<const char *> &options, Backend &backend)
 {
     int fds[2];
     if (pipe(fds) != 0)
@@ -3341,14 +3342,14 @@ static void spawnBackend(const char *prog, const std::vector<char *> &options,
             error("failed to dup backend process pipe file descriptor "
                 "(%d): %s", fds[0], strerror(errno));
         close(fds[0]);
-        char *argv[options.size() + 2];
+        const char *argv[options.size() + 2];
         prog = findBinary(prog, /*exe=*/true, /*dot=*/true);
-        argv[0] = strDup("e9patch");
+        argv[0] = "e9patch";
         unsigned i = 1;
-        for (auto option: options)
+        for (const char *option: options)
             argv[i++] = option;
         argv[i] = nullptr;
-        execvp(prog, argv);
+        execvp(prog, (char * const *)argv);
         error("failed to execute backend process \"%s\": %s", argv[0],
             strerror(errno));
     }

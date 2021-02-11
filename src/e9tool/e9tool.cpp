@@ -2117,7 +2117,7 @@ int main(int argc, char **argv)
     }; 
     option_is_tty = isatty(STDERR_FILENO);
     std::vector<Action *> option_actions;
-    std::vector<char *> option_options;
+    std::vector<const char *> option_options;
     unsigned option_compression_level = 9;
     ssize_t option_sync = -1;
     bool option_executable = false, option_shared = false,
@@ -2179,7 +2179,7 @@ int main(int argc, char **argv)
                 return EXIT_SUCCESS;
 
             case OPTION_OPTION:
-                option_options.push_back(strDup(optarg));
+                option_options.push_back(optarg);
                 break;
             case OPTION_MATCH:
             case 'M':
@@ -2283,7 +2283,7 @@ int main(int argc, char **argv)
      * The ELF file seems OK, spawn and initialize the e9patch backend.
      */
     Backend backend;
-    std::vector<char *> options;
+    std::vector<const char *> options;
     if (option_format == "json")
     {
         // Pseudo-backend:
@@ -2316,45 +2316,45 @@ int main(int argc, char **argv)
     /*
      * Send options message.
      */
-    size_t mapping_size = PAGE_SIZE * (1 << (9 - option_compression_level));
-    if (mapping_size != PAGE_SIZE)
+    const char *mapping_size[10] = {"2097152", "1048576", "524288", "262144",
+        "131072", "65536", "32768", "16384", "8192", "4096"};
+    if (option_compression_level != 9)
     {
-        options.push_back(strDup("--mem-mapping-size"));
-        options.push_back(strDup(std::to_string(mapping_size).c_str()));
+        options.push_back("--mem-mapping-size");
+        options.push_back(mapping_size[option_compression_level]);
     }
     if (option_static_loader)
-        options.push_back(strDup("--static-loader"));
+        options.push_back("--static-loader");
     if (option_trap_all)
-        options.push_back(strDup("--trap-all"));
+        options.push_back("--trap-all");
     switch (option_optimization)
     {
         case 0:
-            options.push_back(strDup("-Ojump-elim=0"));
-            options.push_back(strDup("-Ojump-elim-size=0"));
-            options.push_back(strDup("-Ojump-peephole=false"));
-            options.push_back(strDup("-Oscratch-stack=false"));
+            options.push_back("-Ojump-elim=0");
+            options.push_back("-Ojump-elim-size=0");
+            options.push_back("-Ojump-peephole=false");
+            options.push_back("-Oscratch-stack=false");
             break;
-        default:
-        case 1:
-            options.push_back(strDup("-Ojump-elim=0"));
-            options.push_back(strDup("-Ojump-elim-size=0"));
-            options.push_back(strDup("-Ojump-peephole=true"));
-            options.push_back(strDup("-Oscratch-stack=true"));
+        default: case 1:
+            options.push_back("-Ojump-elim=0");
+            options.push_back("-Ojump-elim-size=0");
+            options.push_back("-Ojump-peephole=true");
+            options.push_back("-Oscratch-stack=true");
             break;
         case 2:
-            options.push_back(strDup("-Ojump-elim=32"));
-            options.push_back(strDup("-Ojump-elim-size=64"));
-            options.push_back(strDup("-Ojump-peephole=true"));
-            options.push_back(strDup("-Oscratch-stack=true"));
+            options.push_back("-Ojump-elim=32");
+            options.push_back("-Ojump-elim-size=64");
+            options.push_back("-Ojump-peephole=true");
+            options.push_back("-Oscratch-stack=true");
             break;
         case 3:
-            options.push_back(strDup("-Ojump-elim=64"));
-            options.push_back(strDup("-Ojump-elim-size=512"));
-            options.push_back(strDup("-Ojump-peephole=true"));
-            options.push_back(strDup("-Oscratch-stack=true"));
+            options.push_back("-Ojump-elim=64");
+            options.push_back("-Ojump-elim-size=512");
+            options.push_back("-Ojump-peephole=true");
+            options.push_back("-Oscratch-stack=true");
             break;
     }
-    for (char *option: option_options)
+    for (const char *option: option_options)
         options.push_back(option);
     if (options.size() > 0)
         sendOptionMessage(backend.out, options);

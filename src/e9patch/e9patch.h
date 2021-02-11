@@ -396,7 +396,7 @@ extern size_t stat_num_physical_bytes;
 extern size_t stat_input_file_size;
 extern size_t stat_output_file_size;
 
-extern void parseOptions(int argc, char **argv, bool api = false);
+extern void parseOptions(int argc, char * const argv[], bool api = false);
 extern void NO_RETURN error(const char *msg, ...);
 extern void warning(const char *msg, ...);
 extern void debugImpl(const char *msg, ...);

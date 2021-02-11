@@ -874,11 +874,11 @@ static Metadata *parseMetadata(Parser &parser)
 /*
  * Parse strings.
  */
-static char **parseStrings(Parser &parser, const char *first = nullptr)
+static char * const *parseStrings(Parser &parser, const char *first = nullptr)
 {
-    std::vector<char *> strings;
+    std::vector<const char *> strings;
     if (first != nullptr)
-        strings.push_back((char *)dupString(first));
+        strings.push_back(dupString(first));
 
     expectToken(parser, '[');
     char token = expectToken2(parser, ']', TOKEN_STRING);
@@ -886,7 +886,7 @@ static char **parseStrings(Parser &parser, const char *first = nullptr)
     {
         if (token != TOKEN_STRING)
             unexpectedToken(parser, "strings entry", token);
-        strings.push_back((char *)dupString(parser.s));
+        strings.push_back(dupString(parser.s));
         token = expectToken2(parser, ',', ']');
         if (token == ',')
             token = getToken(parser);
@@ -895,9 +895,9 @@ static char **parseStrings(Parser &parser, const char *first = nullptr)
     char **ss = new char *[strings.size()+1];
     size_t i;
     for (i = 0; i < strings.size(); i++)
-        ss[i] = strings[i];
+        ss[i] = (char *)strings[i];
     ss[i] = nullptr;
-    return ss;
+    return (char * const *)ss;
 }
 
 /*

@@ -274,7 +274,7 @@ static void usage(FILE *stream, const char *progname)
 /*
  * Parse options.
  */
-void parseOptions(int argc, char **argv, bool api)
+void parseOptions(int argc, char * const argv[], bool api)
 {
     const int req_arg = required_argument, opt_arg = optional_argument,
               no_arg  = no_argument;
@@ -417,6 +417,10 @@ void parseOptions(int argc, char **argv, bool api)
                     "for more information");
         }
     }
+    if (optind != argc)
+        error("failed to parse command-line options; extraneous non-option "
+            "argument \"%s\", try `--help' for more information",
+            argv[optind]);
 }
 
 /*

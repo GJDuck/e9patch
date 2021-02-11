@@ -83,7 +83,7 @@ union ParamValue
     bool boolean;                       // Boolean
     int64_t integer;                    // Integer
     const char *string;                 // String
-    char **strings;                     // Strings
+    char * const *strings;              // Strings
     Trampoline *trampoline;             // Trampoline template
     Metadata *metadata;                 // Instruction metadata
 };

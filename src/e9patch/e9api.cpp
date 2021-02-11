@@ -621,7 +621,7 @@ static void parseTrampoline(Binary *B, const Message &msg)
  */
 static void parseOptions(const Message &msg)
 {
-    char **argv = nullptr;
+    char * const *argv = nullptr;
     bool dup = false;
     for (unsigned i = 0; i < msg.num_params; i++)
     {
