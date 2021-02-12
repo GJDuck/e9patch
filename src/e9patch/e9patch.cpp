@@ -312,6 +312,7 @@ void parseOptions(int argc, char * const argv[], bool api)
         {nullptr,              no_arg,  nullptr, 0}
     };
 
+    optind = 1;
     while (true)
     {
         int idx;
