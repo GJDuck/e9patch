@@ -40,6 +40,7 @@ bool option_tactic_backward_T3  = true;
 unsigned option_Ojump_elim      = 0;
 unsigned option_Ojump_elim_size = 64;
 bool option_Ojump_peephole      = true;
+bool option_Oorder_trampolines  = false;
 bool option_Oscratch_stack      = false;
 intptr_t option_mem_lb          = INTPTR_MIN;
 intptr_t option_mem_ub          = INTPTR_MAX;
@@ -121,33 +122,6 @@ void debugImpl(const char *msg, ...)
 }
 
 /*
- * Options.
- */
-enum Option
-{
-    OPTION_DEBUG,
-    OPTION_HELP,
-    OPTION_INPUT,
-    OPTION_MEM_LB,
-    OPTION_MEM_MAPPING_SIZE,
-    OPTION_MEM_MULTI_PAGE,
-    OPTION_MEM_UB,
-    OPTION_OJUMP_ELIM,
-    OPTION_OJUMP_ELIM_SIZE,
-    OPTION_OJUMP_PEEPHOLE,
-    OPTION_OSCRATCH_STACK,
-    OPTION_OUTPUT,
-    OPTION_STATIC_LOADER,
-    OPTION_TACTIC_B1,
-    OPTION_TACTIC_B2,
-    OPTION_TACTIC_T1,
-    OPTION_TACTIC_T2,
-    OPTION_TACTIC_T3,
-    OPTION_TACTIC_BACKWARD_T3,
-    OPTION_TRAP_ALL,
-};
-
-/*
  * Parse an integer from an optarg.
  */
 static intptr_t parseIntOptArg(const char *option, const char *optarg,
@@ -207,6 +181,12 @@ static void usage(FILE *stream, const char *progname)
         "\t-Ojump-peephole[=false]\n"
         "\t\tEnables [disables] jump-from-trampoline peephole optimization.\n"
         "\t\tDefault: true (enabled)\n"
+        "\n"
+        "\t-Oorder-trampolines[=false]\n"
+        "\t\tEnables [disables] the ordering of trampolines with respect\n"
+        "\t\tto the original instruction ordering (as much as is possible).\n"
+        "\t\tThis can boost -Ojump-peephole.\n"
+        "\t\tDefault: false (disabled)\n"
         "\n"
         "\t-Oscratch-stack[=false]\n"
         "\t\tAllow the stack to be used as scratch space.  This allows\n"
@@ -272,6 +252,34 @@ static void usage(FILE *stream, const char *progname)
 }
 
 /*
+ * Options.
+ */
+enum Option
+{
+    OPTION_DEBUG,
+    OPTION_HELP,
+    OPTION_INPUT,
+    OPTION_MEM_LB,
+    OPTION_MEM_MAPPING_SIZE,
+    OPTION_MEM_MULTI_PAGE,
+    OPTION_MEM_UB,
+    OPTION_OJUMP_ELIM,
+    OPTION_OJUMP_ELIM_SIZE,
+    OPTION_OJUMP_PEEPHOLE,
+    OPTION_OORDER_TRAMPOLINES,
+    OPTION_OSCRATCH_STACK,
+    OPTION_OUTPUT,
+    OPTION_STATIC_LOADER,
+    OPTION_TACTIC_B1,
+    OPTION_TACTIC_B2,
+    OPTION_TACTIC_T1,
+    OPTION_TACTIC_T2,
+    OPTION_TACTIC_T3,
+    OPTION_TACTIC_BACKWARD_T3,
+    OPTION_TRAP_ALL,
+};
+
+/*
  * Parse options.
  */
 void parseOptions(int argc, char * const argv[], bool api)
@@ -283,6 +291,7 @@ void parseOptions(int argc, char * const argv[], bool api)
         {"Ojump-elim",         req_arg, nullptr, OPTION_OJUMP_ELIM},
         {"Ojump-elim-size",    req_arg, nullptr, OPTION_OJUMP_ELIM_SIZE},
         {"Ojump-peephole",     opt_arg, nullptr, OPTION_OJUMP_PEEPHOLE},
+        {"Oorder-trampolines", opt_arg, nullptr, OPTION_OORDER_TRAMPOLINES},
         {"Oscratch-stack",     opt_arg, nullptr, OPTION_OSCRATCH_STACK},
         {"debug",              no_arg,  nullptr, OPTION_DEBUG},
         {"help",               no_arg,  nullptr, OPTION_HELP},
@@ -346,6 +355,10 @@ void parseOptions(int argc, char * const argv[], bool api)
             case OPTION_OJUMP_PEEPHOLE:
                 option_Ojump_peephole =
                     parseBoolOptArg("-Ojump-peephole", optarg);
+                break;
+            case OPTION_OORDER_TRAMPOLINES:
+                option_Oorder_trampolines =
+                    parseBoolOptArg("-Oorder-trampolines", optarg);
                 break;
             case OPTION_OSCRATCH_STACK:
                 option_Oscratch_stack =

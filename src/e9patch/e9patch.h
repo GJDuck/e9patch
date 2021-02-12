@@ -365,6 +365,7 @@ extern bool option_debug;
 extern unsigned option_Ojump_elim;
 extern unsigned option_Ojump_elim_size;
 extern bool option_Ojump_peephole;
+extern bool option_Oorder_trampolines;
 extern bool option_Oscratch_stack;
 extern bool option_tactic_B1;
 extern bool option_tactic_B2;

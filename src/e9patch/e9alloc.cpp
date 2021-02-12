@@ -90,7 +90,8 @@ RB_GENERATE_STATIC(Tree, Node, entry, compare);
 
 #define FLAG_LB                     0x1
 #define FLAG_UB                     0x2
-#define FLAG_SAME_PAGE              0x4
+#define FLAG_RIGHT                  0x4
+#define FLAG_SAME_PAGE              0x8
 
 #define flag_set(flags, flag, val)  \
     ((val)? (flags) | (flag): (flags) & ~(flag))
@@ -118,7 +119,8 @@ static Node *alloc()
 static Node *node(Node *parent, intptr_t lb, intptr_t ub, size_t size,
     uint32_t flags)
 {
-    bool alloc_left = ((flags & FLAG_LB) != 0 || (flags & FLAG_UB) == 0);
+    bool alloc_left = ((flags & FLAG_RIGHT) != 0? false:
+        ((flags & FLAG_LB) != 0 || (flags & FLAG_UB) == 0));
     intptr_t LB, UB;
     if (alloc_left)
     {
@@ -260,7 +262,12 @@ const Alloc *allocate(Allocator &allocator, intptr_t lb, intptr_t ub,
     size_t size = (size_t)r;
     ub += size;
     uint32_t flags = (same_page? FLAG_SAME_PAGE: 0);
-    Node *n = insert(allocator.tree.root, lb, ub, size, flags);
+    Node *n = nullptr;
+    const intptr_t target = 0x70000000;
+    if (option_Oorder_trampolines && ub > target)
+        n = insert(allocator.tree.root, lb, target, size, flags | FLAG_RIGHT);
+    if (n == nullptr)
+        n = insert(allocator.tree.root, lb, ub, size, flags);
     if (n == nullptr)
         return nullptr;
     if (allocator.tree.root == nullptr)

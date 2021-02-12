@@ -2333,23 +2333,27 @@ int main(int argc, char **argv)
             options.push_back("-Ojump-elim=0");
             options.push_back("-Ojump-elim-size=0");
             options.push_back("-Ojump-peephole=false");
+            options.push_back("-Oorder-trampolines=false");
             options.push_back("-Oscratch-stack=false");
             break;
         default: case 1:
             options.push_back("-Ojump-elim=0");
             options.push_back("-Ojump-elim-size=0");
+            options.push_back("-Oorder-trampolines=false");
             options.push_back("-Ojump-peephole=true");
             options.push_back("-Oscratch-stack=true");
             break;
         case 2:
             options.push_back("-Ojump-elim=32");
             options.push_back("-Ojump-elim-size=64");
+            options.push_back("-Oorder-trampolines=true");
             options.push_back("-Ojump-peephole=true");
             options.push_back("-Oscratch-stack=true");
             break;
         case 3:
             options.push_back("-Ojump-elim=64");
             options.push_back("-Ojump-elim-size=512");
+            options.push_back("-Oorder-trampolines=true");
             options.push_back("-Ojump-peephole=true");
             options.push_back("-Oscratch-stack=true");
             break;
