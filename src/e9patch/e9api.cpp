@@ -635,6 +635,9 @@ static void parseOptions(const Message &msg)
                 break;
         }
     }
+    if (argv == nullptr)
+        error("failed to parse \"option\" message (id=%u); missing "
+            "\"argv\" parameter", msg.id);
     if (dup)
         error("failed to parse \"option\" message (id=%u); duplicate "
             "parameters detected", msg.id);
