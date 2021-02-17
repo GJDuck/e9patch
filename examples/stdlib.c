@@ -1713,7 +1713,7 @@ static int atoi_digit(char c, int base)
     else if (c >= 'a' && c <= 'z')
         d = 10 + (c - 'a');
     else if (c >= 'A' && c <= 'Z')
-        d = 10 + (c - 'Z');
+        d = 10 + (c - 'A');
     if (d < 0)
         return d;
     if (d >= base)
