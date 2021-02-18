@@ -1279,6 +1279,13 @@ static Action *parseAction(const char *str, const MatchExpr *expr)
                     case ARGUMENT_MEMOP:
                         break;
 
+                    case ARGUMENT_SYMBOL:
+                        if (!ptr)
+                            error("failed to parse call action; symbol "
+                                "argument `%s' must be passed-by-pointer",
+                                name);
+                        break;
+
                     case ARGUMENT_REGISTER:
                         if ((Register)value == REGISTER_RIP)
                             goto not_a_ptr;

@@ -1153,6 +1153,7 @@ static Type sendLoadArgumentMetadata(FILE *out, CallInfo &info,
             intptr_t val = getELFPLTEntry(elf, arg.name);
             if (val >= INT32_MIN && val <= INT32_MAX)
             {
+                t |= TYPE_CONST;
                 sendLeaFromPCRelToR64(out, val, regno);
                 break;
             }
@@ -1166,6 +1167,8 @@ static Type sendLoadArgumentMetadata(FILE *out, CallInfo &info,
             if (sym != nullptr && sym->st_shndx != SHN_UNDEF &&
                     sym->st_value <= (unsigned)INT32_MIN)
             {
+                if (ELF64_ST_TYPE(sym->st_info) != STT_FUNC)
+                    t |= TYPE_CONST;
                 sendLeaFromPCRelToR64(out, sym->st_value, regno);
                 break;
             }

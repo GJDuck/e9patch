@@ -201,7 +201,7 @@ static void getSymbolString(const char *name, TypeSig sig, std::string &str)
 static bool insertSymbol(Symbols &symbols, const char *name, TypeSig sig,
     intptr_t addr)
 {
-    Symbol key(name, sig);
+    Symbol key(strDup(name), sig);
     return symbols.insert({key, addr}).second;
 }
 
@@ -331,7 +331,8 @@ static bool parseSymbol(Symbols &symbols, const char *name, intptr_t addr)
  */
 static intptr_t lookupSymbol(const ELF *elf, const char *name, TypeSig sig)
 {
-    if (elf->symbols.size() == 0)
+    Symbols &symbols = elf->symbols;
+    if (symbols.size() == 0)
     {
         // Build symbol cache:
         for (const auto &entry: elf->dynsyms)
@@ -340,13 +341,11 @@ static intptr_t lookupSymbol(const ELF *elf, const char *name, TypeSig sig)
             if (ELF64_ST_TYPE(sym->st_info) != STT_FUNC)
                 continue;
             intptr_t addr = elf->base + (intptr_t)sym->st_value;
-            parseSymbol(elf->symbols, entry.first, addr);
+            parseSymbol(symbols, entry.first, addr);
         }
     }
 
-    Symbols &symbols = elf->symbols;
     Symbol key(name, sig);
-
     auto i = symbols.find(key);
     if (i != symbols.end())
     {

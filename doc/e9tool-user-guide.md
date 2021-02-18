@@ -436,6 +436,8 @@ The following arguments are supported:
 <tr><th>Argument</th><th>Type</th><th>Description</th></tr>
 <tr><td><i>Integer</i></td><td><tt>intptr_t</tt></td>
     <td>An integer constant</td></tr>
+<tr><td><tt>&amp;</tt><i>Symbol</i></td><td><tt>(const) void &#42;</tt></td>
+    <td>A symbol from the input ELF binary (passed-by-pointer)</td></tr>
 <tr><td><b><tt>asm</tt></b></td><td><tt>const char &#42;</tt></td>
     <td>Assembly representation of the matching instruction</td></tr>
 <tr><td><b><tt>asm.size</tt></b></td><td><tt>size_t</tt></td>
