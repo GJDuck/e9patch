@@ -1162,7 +1162,7 @@ static Action *parseAction(const char *str, const MatchExpr *expr)
                     1, 0};
                 intptr_t value = 0x0;
                 int arg_token = t;
-                const char *basename = nullptr;
+                const char *name = nullptr;
                 switch (t)
                 {
                     case TOKEN_ASM:
@@ -1234,8 +1234,9 @@ static Action *parseAction(const char *str, const MatchExpr *expr)
                         arg = ARGUMENT_INTEGER;
                         break;
                     case TOKEN_STRING:
-                        basename = strDup(parser.s);
-                        arg = ARGUMENT_USER;
+                        name = strDup(parser.s);
+                        arg = (parser.peekToken() == '['?
+                            ARGUMENT_USER: ARGUMENT_SYMBOL);
                         break;
                     default:
                         parser.unexpectedToken();
@@ -1304,7 +1305,7 @@ static Action *parseAction(const char *str, const MatchExpr *expr)
                     }
                 }
                 args.push_back({arg, field, ptr, duplicate, value, memop,
-                    basename});
+                    name});
                 t = parser.getToken();
                 if (t == ')')
                     break;
@@ -1902,25 +1903,12 @@ static intptr_t positionToAddr(const ELF &elf, const char *option,
     }
 
     // Case #2: symbolic address:
-    const Elf64_Sym *sym = elf.dynamic_symtab;
-    const Elf64_Sym *sym_end = sym + (elf.dynamic_symsz / sizeof(Elf64_Sym));
-    for (; sym < sym_end; sym++)
-    {
-        if (sym->st_name == 0 || sym->st_name >= elf.dynamic_strsz)
-            continue;
-        const char *name = elf.dynamic_strtab + sym->st_name;
-        if (strcmp(pos, name) == 0)
-        {
-            intptr_t sym_addr = (intptr_t)sym->st_value;
-            if (sym_addr < elf.text_addr ||
-                    sym_addr >= elf.text_addr + (ssize_t)elf.text_size)
-                error("bad value for `%s' option; dynamic symbol \"%s\" "
-                    "points outside of the (.text) section", option, name);
-            return sym_addr;
-        }
-    }
-    error("bad value for `%s' option; failed to find dynamic symbol "
-        "\"%s\"", option, pos);
+    auto i = elf.dynsyms.find(pos);
+    if (i == elf.dynsyms.end())
+        error("bad value for `%s' option; failed to find dynamic symbol "
+            "\"%s\"", option, pos);
+    const Elf64_Sym *sym = i->second;
+    return (intptr_t)sym->st_value;
 }
 
 /*
@@ -2375,7 +2363,7 @@ int main(int argc, char **argv)
     std::map<const char *, ELF *, CStrCmp> files;
     std::set<const char *, CStrCmp> have_call;
     std::set<int> have_exit;
-    intptr_t file_addr = elf.free_addr + 0x1000000;     // XXX
+    intptr_t file_addr = 0x70000000;
     for (const auto action: option_actions)
     {
         switch (action->kind)
@@ -2407,15 +2395,11 @@ int main(int argc, char **argv)
                 if (i == files.end())
                 {
                     // Load the called ELF file into the address space:
-                    intptr_t free_addr = file_addr + 8 * PAGE_SIZE;
-                    free_addr = (free_addr % PAGE_SIZE == 0? free_addr:
-                        (free_addr + PAGE_SIZE) - (free_addr % PAGE_SIZE));
-                    target = parseELF(action->filename, free_addr);
+                    target = parseELF(action->filename, file_addr);
                     sendELFFileMessage(backend.out, target);
                     files.insert({action->filename, target});
-                    size_t size = (size_t)target->free_addr;
-                    free_addr += size;
-                    file_addr = free_addr;
+                    file_addr  = target->end + 2 * PAGE_SIZE;
+                    file_addr -= file_addr % PAGE_SIZE;
                 }
                 else
                     target = i->second;
@@ -2445,20 +2429,31 @@ int main(int argc, char **argv)
     /*
      * Find the offset to disassemble from, if any.
      */
+    auto i = elf.sections.find(".text");
+    if (i == elf.sections.end())
+        error("failed to disassemble \".text\" section; section not found");
+    const Elf64_Shdr *text = i->second;
+    if (text->sh_type != SHT_PROGBITS)
+        error("failed to disassemble \".text\" section; section type is not "
+            "PROGBITS");
+    size_t   text_size   = (size_t)text->sh_size;
+    intptr_t text_addr   = (intptr_t)text->sh_addr;
+    off_t    text_offset = (off_t)text->sh_offset;
+    
     if (option_start != "")
     {
         intptr_t start_addr = positionToAddr(elf, "--start",
             option_start.c_str());
-        off_t offset = start_addr - elf.text_addr;
-        elf.text_offset += offset;
-        elf.text_addr   += offset;
-        elf.text_size   -= offset;
+        off_t offset = start_addr - text_addr;
+        text_offset += offset;
+        text_addr   += offset;
+        text_size   -= offset;
     }
     if (option_end != "")
     {
         intptr_t end_addr = positionToAddr(elf, "--end", option_end.c_str());
-        off_t offset = (elf.text_addr + elf.text_size) - end_addr;
-        elf.text_size -= offset;
+        off_t offset = (text_addr + text_size) - end_addr;
+        text_size -= offset;
     }
 
     /*
@@ -2475,10 +2470,10 @@ int main(int argc, char **argv)
     cs_option(handle, CS_OPT_SKIPDATA, CS_OPT_ON);
 
     std::vector<Location> locs;
-    const uint8_t *start = elf.data + elf.text_offset;
-    const uint8_t *code  = start, *end = start + elf.text_size;
-    size_t size = elf.text_size;
-    uint64_t address = elf.text_addr;
+    const uint8_t *start = elf.data + text_offset;
+    const uint8_t *code  = start, *end = start + text_size;
+    size_t size = text_size;
+    uint64_t address = text_addr;
     cs_insn *I = cs_malloc(handle);
     bool failed = false;
     unsigned sync = 0;
@@ -2500,7 +2495,7 @@ int main(int argc, char **argv)
         }
 
         int idx = -1;
-        off_t offset = ((intptr_t)I->address - elf.text_addr);
+        off_t offset = ((intptr_t)I->address - text_addr);
 
         if (option_notify)
             notifyPlugins(backend.out, &elf, handle, offset, I);
@@ -2514,10 +2509,10 @@ int main(int argc, char **argv)
         locs.push_back(loc);
     }
     if (code != end)
-        error("failed to disassemble the full (.text) section 0x%lx..0x%lx; "
+        error("failed to disassemble the \".text\" section 0x%lx..0x%lx; "
             "could only disassemble the range 0x%lx..0x%lx",
-            elf.text_addr, elf.text_addr + elf.text_size, elf.text_addr,
-                elf.text_addr + (code - start));
+            text_addr, text_addr + text_size, text_addr,
+                text_addr + (code - start));
     if (failed)
     {
         if (option_sync < 0)
@@ -2539,8 +2534,8 @@ int main(int argc, char **argv)
         {
             Location &loc = locs[i];
             off_t text_offset = (off_t)loc.offset;
-            uint64_t address = (uint64_t)elf.text_addr + text_offset;
-            off_t offset = elf.text_offset + text_offset;
+            uint64_t address = (uint64_t)text_addr + text_offset;
+            off_t offset = text_offset + text_offset;
             const uint8_t *code = elf.data + offset;
             size_t size = loc.size;
             bool ok = cs_disasm_iter(handle, &code, &size, &address, I);
@@ -2569,8 +2564,8 @@ int main(int argc, char **argv)
             continue;
 
         off_t offset = (off_t)loc.offset;
-        intptr_t addr = elf.text_addr + offset;
-        offset += elf.text_offset;
+        intptr_t addr = text_addr + offset;
+        offset += text_offset;
 
         // Disassmble the instruction again.
         const uint8_t *code = elf.data + offset;
@@ -2583,11 +2578,11 @@ int main(int argc, char **argv)
         bool done = false;
         for (ssize_t j = i; !done && j >= 0; j--)
             done = !sendInstructionMessage(backend.out, locs[j], addr,
-                elf.text_addr, elf.text_offset);
+                text_addr, text_offset);
         done = false;
         for (size_t j = i + 1; !done && j < count; j++)
             done = !sendInstructionMessage(backend.out, locs[j], addr,
-                elf.text_addr, elf.text_offset);
+                text_addr, text_offset);
 
         const Action *action = option_actions[loc.action];
         id++;
@@ -2605,7 +2600,7 @@ int main(int argc, char **argv)
             // Builtin actions:
             char buf[4096];
             Metadata metadata_buf[MAX_ARGNO+1];
-            Metadata *metadata = buildMetadata(handle, action, I, offset,
+            Metadata *metadata = buildMetadata(handle, &elf, action, I, offset,
                 id, metadata_buf, buf, sizeof(buf)-1);
             sendPatchMessage(backend.out, action->name, offset,  metadata);
         }

@@ -958,8 +958,8 @@ static intptr_t lookupValue(csh handle, const Action *action,
  * Send instructions to load an argument into a register.
  */
 static Type sendLoadArgumentMetadata(FILE *out, CallInfo &info,
-    csh handle, const Action *action, const Argument &arg, const cs_insn *I,
-    off_t offset, intptr_t id, int argno)
+    csh handle, const ELF *elf, const Action *action, const Argument &arg,
+    const cs_insn *I, off_t offset, intptr_t id, int argno)
 {
     int regno = getArgRegIdx(argno);
     if (regno < 0)
@@ -1147,6 +1147,35 @@ static Type sendLoadArgumentMetadata(FILE *out, CallInfo &info,
             t = TYPE_VOID | TYPE_PTR;
             break;
         }
+        case ARGUMENT_SYMBOL:
+        {
+            t = TYPE_VOID | TYPE_PTR;
+            intptr_t val = getELFPLTEntry(elf, arg.name);
+            if (val >= INT32_MIN && val <= INT32_MAX)
+            {
+                sendLeaFromPCRelToR64(out, val, regno);
+                break;
+            }
+            val = getELFGOTEntry(elf, arg.name);
+            if (val >= INT32_MIN && val <= INT32_MAX)
+            {
+                sendMovFromPCRelToR64(out, val, regno);
+                break;
+            }
+            const Elf64_Sym *sym = getELFDynSym(elf, arg.name);
+            if (sym != nullptr && sym->st_shndx != SHN_UNDEF &&
+                    sym->st_value <= (unsigned)INT32_MIN)
+            {
+                sendLeaFromPCRelToR64(out, sym->st_value, regno);
+                break;
+            }
+            warning(CONTEXT_FORMAT "failed to load symbol value into "
+                    "register %s; symbol \"%s\" not found",
+                    CONTEXT(I), getRegName(getReg(regno)), arg.name);
+            sendSExtFromI32ToR64(out, 0, regno);
+            t = TYPE_NULL_PTR;
+            break;
+        }
         case ARGUMENT_MEMOP:
             switch (arg.memop.size)
             {
@@ -1292,9 +1321,9 @@ static void sendArgumentDataMetadata(FILE *out, const Argument &arg,
 /*
  * Build metadata.
  */
-static Metadata *buildMetadata(csh handle, const Action *action,
-    const cs_insn *I, off_t offset, intptr_t id, Metadata *metadata,
-    char *buf, size_t size)
+static Metadata *buildMetadata(csh handle, const ELF *elf,
+    const Action *action, const cs_insn *I, off_t offset, intptr_t id,
+    Metadata *metadata, char *buf, size_t size)
 {
     if (action == nullptr)
         return nullptr;
@@ -1355,8 +1384,8 @@ static Metadata *buildMetadata(csh handle, const Action *action,
             TypeSig sig = TYPESIG_EMPTY;
             for (const auto &arg: action->args)
             {
-                Type t = sendLoadArgumentMetadata(out, info, handle, action,
-                    arg, I, offset, id, argno);
+                Type t = sendLoadArgumentMetadata(out, info, handle, elf,
+                    action, arg, I, offset, id, argno);
                 sig = setType(sig, t, argno);
                 argno++;
             }

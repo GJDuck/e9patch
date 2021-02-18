@@ -378,6 +378,7 @@ enum ArgumentKind
     ARGUMENT_REGISTER,              // Register
     ARGUMENT_MEMOP,                 // Memory operand
     ARGUMENT_STATE,                 // The complete GPR state
+    ARGUMENT_SYMBOL,                // Symbol value argument
 
     ARGUMENT_OP,                    // Operand[i]
     ARGUMENT_SRC,                   // Source operand[i]
@@ -400,7 +401,7 @@ struct Argument
     bool duplicate;                 // Argument is a duplicate?
     intptr_t value;                 // Argument value.
     MemOp memop;                    // Argument memop value.
-    const char *name;               // Argument name (ARGUMENT_USER).
+    const char *name;               // Argument name (ARGUMENT_USER/SYMBOL).
 };
 
 /*
@@ -447,10 +448,11 @@ extern ELF *parseELF(const char *filename, intptr_t base);
 extern void freeELF(ELF *elf);
 extern const uint8_t *getELFData(const ELF *elf);
 extern size_t getELFDataSize(const ELF *elf);
+extern intptr_t getELFBaseAddr(const ELF *elf);
+extern intptr_t getELFEndAddr(const ELF *elf);
+extern const Elf64_Shdr *getELFSection(const ELF *elf, const char *name);
+extern const Elf64_Sym *getEFLDynSym(const ELF *elf, const char *name);
 extern intptr_t getSymbol(const ELF *elf, const char *symbol);
-extern intptr_t getTextAddr(const ELF *elf);
-extern off_t getTextOffset(const ELF *elf);
-extern size_t getTextSize(const ELF *elf);
 extern void NO_RETURN error(const char *msg, ...);
 extern void warning(const char *msg, ...);
 extern void debug(const char *msg, ...);

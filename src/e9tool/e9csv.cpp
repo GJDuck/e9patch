@@ -22,17 +22,6 @@
  */
 
 /*
- * C-string comparator.
- */
-struct CStrCmp
-{
-    bool operator()(const char* a, const char* b) const
-    {
-        return (strcmp(a, b) < 0);
-    }
-};
-
-/*
  * CSV stream representation.
  */
 struct CSV

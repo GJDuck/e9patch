@@ -95,6 +95,17 @@ static void sendLeaFromPCRelToR64(FILE *out, int32_t offset, int regno);
 static void sendLeaFromStackToR64(FILE *out, int32_t offset, int regno);
 
 /*
+ * C-string comparator.
+ */
+struct CStrCmp
+{
+    bool operator()(const char* a, const char* b) const
+    {
+        return (strcmp(a, b) < 0);
+    }
+};
+
+/*
  * Symbols.
  */
 typedef uint8_t Type;
@@ -1370,26 +1381,39 @@ struct CallInfo
  */
 namespace e9frontend
 {
+    typedef std::map<const char *, const Elf64_Shdr *, CStrCmp> SectionInfo;
+    typedef std::map<const char *, const Elf64_Sym *, CStrCmp>  SymbolInfo;
+    typedef std::map<const char *, intptr_t, CStrCmp> GOTInfo;
+    typedef std::map<const char *, intptr_t, CStrCmp> PLTInfo;
     struct ELF
     {
+        // Data
         const char *filename;           // Filename.
         const uint8_t *data;            // File data.
         size_t size;                    // File size.
         intptr_t base;                  // Base address.
+        intptr_t end;                   // End address.
+
+        // Program headers
         const Elf64_Phdr *phdrs;        // Elf PHDRs.
         size_t phnum;                   // Number of PHDRs.
-        off_t    text_offset;           // (.text) section offset.
-        intptr_t text_addr;             // (.text) section address.
-        size_t   text_size;             // (.text) section size.
-        const char *dynamic_strtab;     // Dynamic string table.
-        size_t dynamic_strsz;           // Dynamic string table size.
-        const Elf64_Sym *dynamic_symtab;// Dynamic symbol table.
-        size_t dynamic_symsz;           // Dynamic symbol table size.
-        intptr_t free_addr;             // First unused address.
+
+        // Sections
+        SectionInfo sections;
+
+        // Dynsyms
+        SymbolInfo dynsyms;
+
+        // GOT
+        GOTInfo got;
+
+        // PLT
+        PLTInfo plt;
+
         bool pie;                       // PIE?
         bool dso;                       // Shared object?
         bool reloc;                     // Needs relocation?
-        mutable bool symbols_inited;    // Symbol cached inited?
+
         mutable Symbols symbols;        // Symbol cache.
     };
 };
@@ -1983,6 +2007,81 @@ static void getPath(bool exe, std::vector<std::string> &paths)
 }
 
 /*
+ * Parse the Global Offset Table (GOT).
+ */
+static void parseGOT(const uint8_t *data, const Elf64_Shdr *shdr_got,
+    const Elf64_Shdr *shdr_rela_got, const Elf64_Sym *dynsym_tab,
+    size_t dynsym_num, const char *dynstr_tab, GOTInfo &got)
+{
+    const Elf64_Rela *rela_tab =
+        (const Elf64_Rela *)(data + shdr_rela_got->sh_offset);
+    size_t rela_num = shdr_rela_got->sh_size / sizeof(Elf64_Rela);
+    for (size_t i = 1; i < rela_num; i++)
+    {
+        const Elf64_Rela *rela = rela_tab + i;
+        if (rela->r_offset < shdr_got->sh_addr ||
+                rela->r_offset >= shdr_got->sh_addr + shdr_got->sh_size)
+            continue;
+        size_t idx = (size_t)ELF64_R_SYM(rela->r_info);
+        if (idx >= dynsym_num)
+            continue;
+        const Elf64_Sym *sym = dynsym_tab + idx;
+        const char *name = dynstr_tab + sym->st_name;
+        if (name[0] == '\0')
+            continue;
+        if (sym->st_shndx != SHN_UNDEF)
+            continue;
+        got.insert({name, rela->r_offset});
+    }
+}
+
+/*
+ * Parse the Procedure Linkage Table (PLT).
+ */
+static void parsePLT(const uint8_t *data, const Elf64_Shdr *shdr_plt,
+    const Elf64_Shdr *shdr_rela_plt, const Elf64_Sym *dynsym_tab,
+    size_t dynsym_num, const char *dynstr_tab, size_t plt_entry_sz,
+    PLTInfo &plt)
+{
+    intptr_t plt_addr = (intptr_t)shdr_plt->sh_addr;
+    size_t   plt_size = (size_t)shdr_plt->sh_size;
+    const uint8_t *plt_data = data + shdr_plt->sh_offset;
+    plt_size -= plt_size % plt_entry_sz;
+    std::map<intptr_t, intptr_t> entries;
+    for (size_t i = 0; i < plt_size; i += plt_entry_sz)
+    {
+        const uint8_t *plt_entry = plt_data + i;
+        if (plt_entry[0] != 0xFF || plt_entry[1] != 0x25)   // jmpq *
+            continue;
+        intptr_t offset = *(const uint32_t *)(plt_entry + 2);
+        intptr_t addr   = plt_addr + i + /*sizeof(jmpq)=*/6 + offset;
+        entries.insert({addr, plt_addr + i});
+    }
+    
+    const Elf64_Rela *rela_tab =
+        (const Elf64_Rela *)(data + shdr_rela_plt->sh_offset);
+    size_t rela_num = shdr_rela_plt->sh_size / sizeof(Elf64_Rela);
+    for (size_t i = 1; i < rela_num; i++)
+    {
+        const Elf64_Rela *rela = rela_tab + i;
+        auto k = entries.find(rela->r_offset);
+        if (k == entries.end())
+            continue;
+        size_t idx = (size_t)ELF64_R_SYM(rela->r_info);
+        if (idx >= dynsym_num)
+            continue;
+        const Elf64_Sym *sym = dynsym_tab + idx;
+        const char *name = dynstr_tab + sym->st_name;
+        if (name[0] == '\0')
+            continue;
+        if (sym->st_shndx != SHN_UNDEF ||
+                ELF64_ST_TYPE(sym->st_info) != STT_FUNC)
+            continue;
+        plt.insert({name, k->second});
+    }
+}
+
+/*
  * Parse an ELF file.
  */
 ELF *e9frontend::parseELF(const char *filename, intptr_t base)
@@ -2079,96 +2178,119 @@ ELF *e9frontend::parseELF(const char *filename, intptr_t base)
         (const char *)(data + shdrs[ehdr->e_shstrndx].sh_offset);
 
     /*
-     * Find the (.text) and (.dynamic) sections.
+     * Find all sections.
      */
     size_t shnum = (size_t)ehdr->e_shnum;
-    const Elf64_Shdr *shdr_text = nullptr, *shdr_dynsym = nullptr,
-        *shdr_dynstr = nullptr;
     bool reloc = false;
+    SectionInfo sections;
     for (size_t i = 0; i < shnum; i++)
     {
         const Elf64_Shdr *shdr = shdrs + i;
         if (shdr->sh_name >= strtab_size)
             continue;
-        switch (shdr->sh_type)
-        {
-            case SHT_PROGBITS:
-                if (strcmp(strtab + shdr->sh_name, ".text") == 0)
-                    shdr_text = shdr;
-                break;
-            case SHT_DYNSYM:
-                if (strcmp(strtab + shdr->sh_name, ".dynsym") == 0)
-                    shdr_dynsym = shdr;
-                break;
-            case SHT_STRTAB:
-                if (strcmp(strtab + shdr->sh_name, ".dynstr") == 0)
-                    shdr_dynstr = shdr;
-                break;
-            case SHT_REL:
-            case SHT_RELA:
-                reloc = true;
-                break;
-            default:
-                break;
-        }
+        if (shdr->sh_offset + shdr->sh_size >= size)
+            continue;
+        if (shdr->sh_type == SHT_REL || shdr->sh_type == SHT_RELA)
+            reloc = true;
+        const char *name = strtab + shdr->sh_name;
+        if (name[0] == '\0')
+            continue;
+        sections.insert({name, shdr});
     }
-    if (shdr_text == nullptr)
-        error("failed to parse ELF file \"%s\"; missing \".text\" section",
-            filename);
-    intptr_t text_addr = (intptr_t)shdr_text->sh_addr;
-    size_t   text_size = (size_t)shdr_text->sh_size;
 
     /*
-     * Find the (.text) offset.
+     * Find all program headers.
      */
     const Elf64_Phdr *phdrs = (const Elf64_Phdr *)(data + ehdr->e_phoff);
     size_t phnum = (size_t)ehdr->e_phnum;
-    off_t text_offset = -1;
-    intptr_t free_addr = INTPTR_MIN;
+    intptr_t end = INTPTR_MIN;
     for (size_t i = 0; i < phnum; i++)
     {
         const Elf64_Phdr *phdr = phdrs + i;
         intptr_t phdr_base = (intptr_t)phdr->p_vaddr;
         intptr_t phdr_end  = phdr_base + phdr->p_memsz;
-        free_addr = std::max(free_addr, phdr_end);
-        switch (phdr->p_type)
-        {
-            case PT_LOAD:
-            {
-                if (text_addr >= phdr_base &&
-                        text_addr + (ssize_t)text_size <= phdr_end)
-                {
-                    off_t segment_offset =
-                        (off_t)text_addr - (off_t)phdr->p_vaddr;
-                    text_offset = (off_t)phdr->p_offset + segment_offset;
-                }
-                break;
-            }
-            case PT_INTERP:
-                if (!exe && !isLibraryFilename(filename))
-                    exe = true;
-                break;
-            default:
-                break;
-        }
+        end = std::max(end, phdr_end);
+        if (!exe && phdr->p_type == PT_INTERP && !isLibraryFilename(filename))
+            exe = true;
     }
-    if (text_offset < 0)
-        error("failed to parse ELF file \"%s\"; missing segment for "
-            "\".text\" section", filename);
+    end += base;
 
     /*
-     * Parse the dynamic section.
+     * Find all dynamic symbols.
      */
-    const char *dynamic_strtab = nullptr;
-    const Elf64_Sym *dynamic_symtab = nullptr;
-    size_t dynamic_strsz = 0, dynamic_symsz = 0;
-    if (shdr_dynstr != nullptr && shdr_dynsym != nullptr)
+    SymbolInfo dynsyms;
+    auto i = sections.find(".dynsym");
+    auto j = sections.find(".dynstr");
+    const Elf64_Sym *dynsym_tab = nullptr;
+    const char *dynstr_tab = nullptr;
+    size_t dynsym_num = 0;
+    size_t dynstr_len = 0;
+    if (i != sections.end() && j != sections.end() &&
+            i->second->sh_type == SHT_DYNSYM &&
+            j->second->sh_type == SHT_STRTAB)
     {
-        // TODO Check offsets within file bounds...
-        dynamic_strtab = (const char *)(data + shdr_dynstr->sh_offset);
-        dynamic_strsz  = shdr_dynstr->sh_size;
-        dynamic_symtab = (const Elf64_Sym *)(data + shdr_dynsym->sh_offset);
-        dynamic_symsz  = shdr_dynsym->sh_size;
+        const Elf64_Shdr *shdr_dynsym = i->second;
+        const Elf64_Shdr *shdr_dynstr = j->second;
+        dynsym_tab = (const Elf64_Sym *)(data + shdr_dynsym->sh_offset);
+        dynstr_tab = (const char *)(data + shdr_dynstr->sh_offset);
+        dynsym_num = shdr_dynsym->sh_size / sizeof(Elf64_Sym);
+        dynstr_len = shdr_dynstr->sh_size;
+        for (size_t i = 0; i < dynsym_num; i++)
+        {
+            const Elf64_Sym *sym = dynsym_tab + i;
+            if (sym->st_name >= dynstr_len)
+                continue;
+            const char *name = dynstr_tab + sym->st_name;
+            if (name[0] == '\0')
+                continue;
+            dynsyms.insert({name, sym});
+        }
+    }
+
+    /*
+     * Find all GOT entries.
+     */
+    GOTInfo got;
+    i = sections.find(".got");
+    j = sections.find(".rela.dyn");
+    if (dynsym_tab != nullptr && dynstr_tab != nullptr &&
+        i != sections.end() && j != sections.end() &&
+        i->second->sh_type == SHT_PROGBITS &&
+        j->second->sh_type == SHT_RELA)
+    {
+        const Elf64_Shdr *shdr_got      = i->second;
+        const Elf64_Shdr *shdr_rela_got = j->second;
+        parseGOT(data, shdr_got, shdr_rela_got, dynsym_tab, dynsym_num,
+            dynstr_tab, got);
+    }
+
+    /*
+     * Find all PLT entries.
+     */
+    PLTInfo plt;
+    i = sections.find(".plt");
+    j = sections.find(".rela.plt");
+    if (dynsym_tab != nullptr && dynstr_tab != nullptr &&
+        i != sections.end() && j != sections.end() &&
+        i->second->sh_type == SHT_PROGBITS &&
+        j->second->sh_type == SHT_RELA)
+    {
+        const Elf64_Shdr *shdr_plt      = i->second;
+        const Elf64_Shdr *shdr_rela_plt = j->second;
+        parsePLT(data, shdr_plt, shdr_rela_plt, dynsym_tab, dynsym_num,
+            dynstr_tab, /*entry_size=*/16, plt);
+    }
+    i = sections.find(".plt.got");
+    j = sections.find(".rela.dyn");
+    if (dynsym_tab != nullptr && dynstr_tab != nullptr &&
+        i != sections.end() && j != sections.end() &&
+        i->second->sh_type == SHT_PROGBITS &&
+        j->second->sh_type == SHT_RELA)
+    {
+        const Elf64_Shdr *shdr_plt      = i->second;
+        const Elf64_Shdr *shdr_rela_plt = j->second;
+        parsePLT(data, shdr_plt, shdr_rela_plt, dynsym_tab, dynsym_num,
+            dynstr_tab, /*entry_size=*/8, plt);
     }
 
     ELF *elf = new ELF;
@@ -2176,20 +2298,17 @@ ELF *e9frontend::parseELF(const char *filename, intptr_t base)
     elf->data           = data;
     elf->size           = size;
     elf->base           = base;
+    elf->end            = end;
     elf->phdrs          = phdrs;
     elf->phnum          = phnum;
-    elf->text_offset    = text_offset;
-    elf->text_addr      = text_addr;
-    elf->text_size      = text_size;
-    elf->dynamic_strtab = dynamic_strtab;
-    elf->dynamic_strsz  = dynamic_strsz;
-    elf->dynamic_symtab = dynamic_symtab;
-    elf->dynamic_symsz  = dynamic_symsz;
-    elf->free_addr      = free_addr;
     elf->pie            = (pic && exe);
     elf->dso            = (pic && !exe);
     elf->reloc          = reloc;
-    elf->symbols_inited = false;
+    elf->sections.swap(sections);
+    elf->dynsyms.swap(dynsyms);
+    elf->got.swap(got);
+    elf->plt.swap(plt);
+
     return elf;
 }
 
@@ -2198,6 +2317,7 @@ ELF *e9frontend::parseELF(const char *filename, intptr_t base)
  */
 void freeELF(ELF *elf)
 {
+    free((void *)elf->filename);
     munmap((void *)elf->data, elf->size);
     delete elf;
 }
@@ -2209,21 +2329,45 @@ const uint8_t *getELFData(const ELF *elf)
 {
     return elf->data;
 }
-const size_t getELFDataSize(const ELF *elf)
+size_t getELFDataSize(const ELF *elf)
 {
     return elf->size;
 }
-const intptr_t getTextAddr(const ELF *elf)
+intptr_t getELFBaseAddr(const ELF *elf)
 {
-    return elf->text_addr;
+    return elf->base;
 }
-const off_t getTextOffset(const ELF *elf)
+intptr_t getELFEndAddr(const ELF *elf)
 {
-    return elf->text_offset;
+    return elf->end;
 }
-const off_t getTextSize(const ELF *elf)
+const Elf64_Shdr *getELFSection(const ELF *elf, const char *name)
 {
-    return elf->text_offset;
+    auto i = elf->sections.find(name);
+    if (i == elf->sections.end())
+        return nullptr;
+    return i->second;
+}
+const Elf64_Sym *getELFDynSym(const ELF *elf, const char *name)
+{
+    auto i = elf->dynsyms.find(name);
+    if (i == elf->dynsyms.end())
+        return nullptr;
+    return i->second;
+}
+intptr_t getELFPLTEntry(const ELF *elf, const char *name)
+{
+    auto i = elf->plt.find(name);
+    if (i == elf->plt.end())
+        return INTPTR_MIN;
+    return i->second;
+}
+intptr_t getELFGOTEntry(const ELF *elf, const char *name)
+{
+    auto i = elf->got.find(name);
+    if (i == elf->got.end())
+        return INTPTR_MIN;
+    return i->second;
 }
 
 /*
@@ -3087,6 +3231,21 @@ static void sendLeaFromPCRelToR64(FILE *out, int32_t offset, int regno)
          0x05, 0x15, 0x1d, 0x1d, 0x2d, 0x25, 0x2d, 0x35, 0x3d, 0x25};
     fprintf(out, "%u,%u,%u,{\"rel32\":%d},",
         REX[regno], 0x8d, MODRM[regno], offset);
+}
+
+/*
+ * Send a `mov offset(%rip),%r64' instruction.
+ */
+static void sendMovFromPCRelToR64(FILE *out, int32_t offset, int regno)
+{
+    const uint8_t REX[] =
+        {0x48, 0x48, 0x48, 0x48, 0x4c, 0x4c, 0x00,
+         0x48, 0x4c, 0x4c, 0x48, 0x48, 0x4c, 0x4c, 0x4c, 0x4c, 0x48};
+    const uint8_t MODRM[] =
+        {0x3d, 0x35, 0x15, 0x0d, 0x05, 0x0d, 0x00, 
+         0x05, 0x15, 0x1d, 0x1d, 0x2d, 0x25, 0x2d, 0x35, 0x3d, 0x25};
+    fprintf(out, "%u,%u,%u,{\"rel32\":%d},",
+        REX[regno], 0x8b, MODRM[regno], offset);
 }
 
 /*

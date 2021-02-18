@@ -81,7 +81,10 @@ asm (
     ".globl _entry\n"
     ".type _entry,@function\n"
     "_entry:\n"
-    
+
+    // (0) debug point
+    "\tnop\n"
+
     // (1) save the state
     "\tpushq %r15\n"
     "\tpushq %r14\n"
