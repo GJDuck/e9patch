@@ -2328,6 +2328,9 @@ static FILE *stdio_stream[3] = {NULL};
 
 static __attribute__((__noinline__, __const__)) FILE *stdio_get_stream(int fd)
 {
+    if (fd != STDIN_FILENO && fd != STDOUT_FILENO && fd != STDERR_FILENO)
+        return NULL;
+
     if (stdio_stream[fd] != NULL)
         return stdio_stream[fd];
 

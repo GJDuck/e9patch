@@ -99,6 +99,8 @@ static Key calculateKey(const Allocator &allocator, const size_t MAPPING_SIZE,
             return KEY_ONES;
         size_t overlap = MAPPING_SIZE - (END - a->ub);
         overlap = (overlap + UNIT_SIZE - 1) / UNIT_SIZE;
+        if (overlap >= KEY_BITS)
+            return KEY_ONES;
         key = ~(KEY_ONES << overlap);
         ++i;
     }
@@ -117,6 +119,8 @@ static Key calculateKey(const Allocator &allocator, const size_t MAPPING_SIZE,
 
         preamble   = preamble / UNIT_SIZE;
         postscript = postscript / UNIT_SIZE;
+        assert(preamble < KEY_BITS);
+        assert(postscript < KEY_BITS);
 
         Key tmp = (KEY_ONES << preamble);
         tmp    &= (KEY_ONES >> postscript);

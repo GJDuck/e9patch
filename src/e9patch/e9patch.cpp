@@ -321,12 +321,11 @@ void parseOptions(int argc, char * const argv[], bool api)
             break;
         switch (opt)
         {
-            case OPTION_DEBUG: case OPTION_HELP: case OPTION_INPUT:
-            case OPTION_OUTPUT:
+            case OPTION_HELP: case OPTION_INPUT: case OPTION_OUTPUT:
             case 'h': case 'i': case 'o':
                 if (api)
                     error("option `%s' cannot be invoked via the JSON-RPC API",
-                        argv[optind]);
+                        argv[optind-1]);
                 break;
             default:
                 break;

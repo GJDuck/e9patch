@@ -566,12 +566,25 @@ static void parseReserve(Binary *B, const Message &msg)
         if (A == nullptr)
             error("failed to reserve address space at address "
                 ADDRESS_FORMAT, ADDRESS(address));
+        length = getTrampolineSize(bytes, nullptr);
+        debug("reserved address space [prot=%c%c%c, size=%zu, bytes="
+            ADDRESS_FORMAT ".." ADDRESS_FORMAT "]",
+            (protection & PROT_READ? 'r': '-'),
+            (protection & PROT_WRITE? 'w': '-'),
+            (protection & PROT_EXEC? 'x': '-'), length, ADDRESS(address),
+            ADDRESS(address + (intptr_t)length));
     }
     if (have_length)
     {
         if (!reserve(B->allocator, address, address + length))
             error("failed to reserve address space at address "
                 ADDRESS_FORMAT, ADDRESS(address));
+        debug("reserved address space [prot=%c%c%c, size=%zu, range="
+            ADDRESS_FORMAT ".." ADDRESS_FORMAT "]",
+            (protection & PROT_READ? 'r': '-'),
+            (protection & PROT_WRITE? 'w': '-'),
+            (protection & PROT_EXEC? 'x': '-'), length, ADDRESS(address),
+            ADDRESS(address + (intptr_t)length));
     }
 }
 
