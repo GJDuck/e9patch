@@ -649,11 +649,9 @@ size_t emitElf(const Binary *B, const MappingSet &mappings,
     {
         uint8_t *base = data + size;
         mapping->offset = (off_t)size;
-        printf("[\33[33m%.16lX\33[0m]", mapping->key);
         flattenMapping(base, mapping, /*int3=*/0xcc);
         size += mapping->size;
     }
-    putchar('\n');
 
     // Step (4): Modify the entry address.
     intptr_t old_entry = 0;

@@ -375,6 +375,7 @@ extern bool option_tactic_T3;
 extern bool option_tactic_backward_T3;
 extern bool option_static_loader;
 extern bool option_trap_all;
+extern size_t option_mem_granularity;
 extern size_t option_mem_mapping_size;
 extern bool option_mem_multi_page;
 extern intptr_t option_mem_lb;

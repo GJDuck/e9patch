@@ -42,6 +42,7 @@ unsigned option_Ojump_elim_size = 64;
 bool option_Ojump_peephole      = true;
 bool option_Oorder_trampolines  = false;
 bool option_Oscratch_stack      = false;
+size_t option_mem_granularity   = 64;
 intptr_t option_mem_lb          = INTPTR_MIN;
 intptr_t option_mem_ub          = INTPTR_MAX;
 size_t option_mem_mapping_size  = PAGE_SIZE;
@@ -205,6 +206,14 @@ static void usage(FILE *stream, const char *progname)
         "\t--output FILE, -o FILE\n"
         "\t\tWrite output to FILE instead of stdout.\n"
         "\n"
+        "\t--mem-granularity=SIZE\n"
+        "\t\tSet SIZE to be the granularity used for the physical page\n"
+        "\t\tgrouping memory optimization.  Higher values result in\n"
+        "\t\thigher CPU+memory usage during rewriting, but also smaller\n"
+        "\t\toutput binary files (i.e., better compression).  Here, SIZE\n"
+        "\t\tmust be one of {64,128,4096}.\n"
+        "\t\tDefault: 64\n"
+        "\n"
         "\t--mem-lb=LB\n"
         "\t\tSet LB to be the minimum allowable trampoline address.\n"
         "\t\tDefault: -0x8000000000000000\n"
@@ -259,6 +268,7 @@ enum Option
     OPTION_DEBUG,
     OPTION_HELP,
     OPTION_INPUT,
+    OPTION_MEM_GRANULARITY,
     OPTION_MEM_LB,
     OPTION_MEM_MAPPING_SIZE,
     OPTION_MEM_MULTI_PAGE,
@@ -296,6 +306,7 @@ void parseOptions(int argc, char * const argv[], bool api)
         {"debug",              no_arg,  nullptr, OPTION_DEBUG},
         {"help",               no_arg,  nullptr, OPTION_HELP},
         {"input",              req_arg, nullptr, OPTION_INPUT},
+        {"mem-granularity",    req_arg, nullptr, OPTION_MEM_GRANULARITY},
         {"mem-lb",             req_arg, nullptr, OPTION_MEM_LB},
         {"mem-mapping-size",   req_arg, nullptr, OPTION_MEM_MAPPING_SIZE},
         {"mem-multi-page",     opt_arg, nullptr, OPTION_MEM_MULTI_PAGE},
@@ -398,6 +409,19 @@ void parseOptions(int argc, char * const argv[], bool api)
             case OPTION_STATIC_LOADER:
                 option_static_loader =
                     parseBoolOptArg("--static-loader", optarg);
+                break;
+            case OPTION_MEM_GRANULARITY:
+                option_mem_granularity = parseIntOptArg("--mem-granularity",
+                    optarg, INTPTR_MIN, INTPTR_MAX);
+                switch (option_mem_granularity)
+                {
+                    case 64: case 128: case 4096:
+                        break;
+                    default:
+                        error("failed to parse argument \"%s\" for the "
+                            "`--mem-granularity' option; granularity size "
+                            "must be one of {64,128,4096}", optarg);
+                }
                 break;
             case OPTION_MEM_LB:
                 option_mem_lb = parseIntOptArg("--mem-lb", optarg, INTPTR_MIN,

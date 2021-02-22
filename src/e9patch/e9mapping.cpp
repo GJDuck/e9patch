@@ -39,56 +39,105 @@
 
 #define BRANCH_BITS                     2
 #define BRANCH_MAX                      (1 << BRANCH_BITS)
-#define BRANCH_MASK                     ((Key)(BRANCH_MAX - 1))
-#define KEY_BITS                        (sizeof(Key) * 8)
 
-#ifdef KEY128
 /*
- * 128-bit keys.
+ * Size.
  */
-typedef unsigned __int128 Key;
+template <typename Key>
+static size_t size(Key key)
+{
+    return key.size();
+}
+template <>
+size_t size<Key128>(Key128 key)
+{
+    return 8 * sizeof(key);
+}
+template <>
+size_t size<Key64>(Key64 key)
+{
+    return 8 * sizeof(key);
+}
 
 /*
  * Trailing zero count.
  */
+template <typename Key>
 static unsigned tzcount(Key key)
+{
+    if (key.none())
+        return key.size();
+    Key mask = 0xFFFFFFFFFFFFFFFFull;
+    for (unsigned count = 0; ; count += 64)
+    {
+        uint64_t key64 = (key & mask).to_ullong();
+        if (key64 != 0)
+            return count + __builtin_ctzll(key64);
+        key >>= 64;
+    }
+}
+template <>
+unsigned tzcount<Key128>(Key128 key)
 {
     uint64_t lo = (uint64_t)key;
     uint64_t hi = (uint64_t)(key >> 64);
     return (lo == 0? __builtin_ctzll(hi) + 64:
                      __builtin_ctzll(lo));
 }
-
-#define KEY_FORMAT_STRING           "%.16lX%.16lX"
-#define KEY_FORMAT(x)               (uint64_t)((x) >> 64), (uint64_t)(x)
-
-#else   /* KEY128 */
-
-/*
- * 64bit keys.
- */
-typedef uint64_t Key;
-
-static unsigned tzcount(Key key)
+template <>
+unsigned tzcount<Key64>(Key64 key)
 {
     return __builtin_ctzll(key);
 }
 
-#define KEY_FORMAT_STRING           "%.16lX"
-#define KEY_FORMAT(x)               (x)
-
-#endif  /* KEY128 */
+/*
+ * Bits to string.
+ */
+template <typename Key>
+static void bitstring(Key key, std::string &str)
+{
+    Key mask = 0xFFFFFFFFFFFFFFFFull;
+    for (unsigned i = 0; i < size(key); i += 64)
+    {
+        uint64_t key64 = (key & mask).to_ullong();
+        char buf[32];
+        snprintf(buf, sizeof(buf)-1, "%.16lX", key64);
+        str += buf;
+        key >>= 64;
+    }
+}
+template <>
+void bitstring<Key128>(Key128 key, std::string &str)
+{
+    for (unsigned i = 0; i < size(key); i += 64)
+    {
+        char buf[32];
+        snprintf(buf, sizeof(buf)-1, "%.16lX", (uint64_t)key);
+        str += buf;
+        key >>= 64;
+    }
+}
+template <>
+void bitstring<Key64>(Key64 key, std::string &str)
+{
+    char buf[32];
+    snprintf(buf, sizeof(buf)-1, "%.16lX", (uint64_t)key);
+    str += buf;
+}
 
 /*
  * Calculate the occupancy key of a mapping.
  */
+template <typename Key>
 static Key calculateKey(const Allocator &allocator, const size_t MAPPING_SIZE,
     const Mapping *mapping)
 {
+    const Key KEY_ZERO = 0;
+    const size_t KEY_BITS = size(KEY_ZERO);
     const size_t UNIT_SIZE = MAPPING_SIZE / KEY_BITS;
-    const Key KEY_ONES = (Key)-1;
     const intptr_t BASE = mapping->base;
     const intptr_t END  = BASE + (ssize_t)MAPPING_SIZE;
+    const Key KEY_ONES = ~KEY_ZERO;
 
     Key key = 0;
     auto i = mapping->i, iend = allocator.end();
@@ -205,7 +254,6 @@ static bool calculatePreload(const Mapping *mapping)
 static Mapping *allocMapping(Allocator::iterator i, size_t size, intptr_t base)
 {
     Mapping *mapping = new Mapping;
-    mapping->key     = 0;
     mapping->base    = base;
     mapping->size    = size;
     mapping->lb      = 0;
@@ -230,12 +278,10 @@ static void insertMapping(Mapping *mapping, MappingSet &mappings)
 /*
  * Save a mapping into the set.
  */
-static void saveMapping(const Allocator &allocator, const size_t MAPPING_SIZE,
-    Mapping *mapping, MappingSet &mappings)
+static void saveMapping(Mapping *mapping, MappingSet &mappings)
 {
     if (mapping == nullptr)
         return;
-    mapping->key = calculateKey(allocator, MAPPING_SIZE, mapping);
     Bounds b = calculateBounds(mapping);
     mapping->lb = b.lb;
     mapping->ub = b.ub;
@@ -264,17 +310,17 @@ void buildMappings(const Allocator &allocator, const size_t MAPPING_SIZE,
         if (a->lb >= base + (intptr_t)MAPPING_SIZE)
         {
             base = a->lb - a->lb % MAPPING_SIZE;
-            saveMapping(allocator, MAPPING_SIZE, mapping, mappings);
+            saveMapping(mapping, mappings);
             mapping = allocMapping(i, MAPPING_SIZE, base);
         }
         while (base + (ssize_t)MAPPING_SIZE < a->ub)
         {
             base += MAPPING_SIZE;
-            saveMapping(allocator, MAPPING_SIZE, mapping, mappings);
+            saveMapping(mapping, mappings);
             mapping = allocMapping(i, MAPPING_SIZE, base);
         }
     }
-    saveMapping(allocator, MAPPING_SIZE, mapping, mappings);
+    saveMapping(mapping, mappings);
 }
 
 /**************************************************************************/
@@ -305,6 +351,7 @@ struct Leaf
 /*
  * Radix-tree node.
  */
+template <typename Key>
 struct Node
 {
     Key key;                        // Node key
@@ -320,9 +367,25 @@ struct Node
 /*
  * Given a node and key, return the child index.
  */
-static unsigned index(Node *node, Key key)
+template <typename Key>
+static unsigned index(Radix::Node<Key> *node, Key key)
 {
     size_t shift = BRANCH_BITS * node->shift;
+    Key BRANCH_MASK = BRANCH_MAX - 1;
+    return ((key & (BRANCH_MASK << shift)) >> shift).to_ullong();
+}
+template <>
+unsigned index<Key128>(Radix::Node<Key128> *node, Key128 key)
+{
+    size_t shift = BRANCH_BITS * node->shift;
+    Key128 BRANCH_MASK = BRANCH_MAX - 1;
+    return (unsigned)((key & (BRANCH_MASK << shift)) >> shift);
+}
+template <>
+unsigned index<Key64>(Radix::Node<Key64> *node, Key64 key)
+{
+    size_t shift = BRANCH_BITS * node->shift;
+    Key64 BRANCH_MASK = BRANCH_MAX - 1;
     return (unsigned)((key & (BRANCH_MASK << shift)) >> shift);
 }
 
@@ -331,13 +394,14 @@ static unsigned index(Node *node, Key key)
 /*
  * Fix the tree invariant after insertion/deletion.
  */
-static void fix(Radix::Node *node)
+template <typename Key>
+static void fix(Radix::Node<Key> *node)
 {
     Key key = ~(Key)0;
 
     for (unsigned i = 0; i < BRANCH_MAX; i++)
     {
-        Radix::Node *child = node->child[i];
+        Radix::Node<Key> *child = node->child[i];
         if (child == nullptr)
             continue;
         key = (key & child->key);
@@ -349,7 +413,8 @@ static void fix(Radix::Node *node)
 /*
  * Find the leaf node for the given key.
  */
-static Radix::Node *find(Radix::Node *node, Key key)
+template <typename Key>
+static Radix::Node<Key> *find(Radix::Node<Key> *node, Key key)
 {
     while (true)
     {
@@ -365,7 +430,8 @@ static Radix::Node *find(Radix::Node *node, Key key)
 /*
  * Find any leaf node matching (key & leaf->key) == 0.
  */
-static Radix::Node *findAnyComplement(Radix::Node *node, Key key)
+template <typename Key>
+static Radix::Node<Key> *findAnyComplement(Radix::Node<Key> *node, Key key)
 {
     if (node == nullptr)
         return nullptr;
@@ -373,12 +439,12 @@ static Radix::Node *findAnyComplement(Radix::Node *node, Key key)
         return ((node->key & key) == 0? node: nullptr);
     for (unsigned i = 0; i < BRANCH_MAX; i++)
     {
-        Radix::Node *child = node->child[i];
+        Radix::Node<Key> *child = node->child[i];
         if (child == nullptr)
             continue;
         if ((key & child->key) != 0)
             continue;
-        Radix::Node *result = findAnyComplement(child, key);
+        Radix::Node<Key> *result = findAnyComplement(child, key);
         if (result != nullptr)
             return result;
     }
@@ -389,21 +455,23 @@ static Radix::Node *findAnyComplement(Radix::Node *node, Key key)
 /*
  * Insert a new mapping into the tree.
  */
-static Radix::Node *insert(Radix::Node *node, Mapping *mapping)
+template <typename Key>
+static Radix::Node<Key> *insert(Radix::Node<Key> *node, Key key,
+    Mapping *mapping)
 {
     if (node == nullptr)
     {
-        Radix::Node *leaf = new Radix::Node();
+        Radix::Node<Key> *leaf = new Radix::Node<Key>();
         leaf->inner         = false;
         leaf->shift         = 0;
-        leaf->key           = mapping->key;
+        leaf->key           = key;
         leaf->leaf.mappings = mapping;
         return leaf;
     }
 
     if (!node->inner)
     {
-        Key diff = node->key ^ mapping->key;
+        Key diff = node->key ^ key;
         if (diff == 0)
         {
             // Add to existing node:
@@ -414,17 +482,17 @@ static Radix::Node *insert(Radix::Node *node, Mapping *mapping)
 
         // Add new branch:
         unsigned shift = tzcount(diff) / BRANCH_BITS;
-        Radix::Node *inner  = new Radix::Node();
+        Radix::Node<Key> *inner  = new Radix::Node<Key>();
         inner->inner = true;
         inner->shift = shift;
         for (unsigned i = 0; i < BRANCH_MAX; i++)
             inner->child[i] = nullptr;
         inner->child[index(inner, node->key)] = node;
 
-        Radix::Node *leaf = new Radix::Node();
+        Radix::Node<Key> *leaf = new Radix::Node<Key>();
         leaf->inner         = false;
         leaf->shift         = 0;
-        leaf->key           = mapping->key;
+        leaf->key           = key;
         leaf->leaf.mappings = mapping;
         inner->child[index(inner, leaf->key)] = leaf;
 
@@ -432,8 +500,8 @@ static Radix::Node *insert(Radix::Node *node, Mapping *mapping)
         return inner;
     }
 
-    unsigned idx = index(node, mapping->key);
-    node->child[idx] = insert(node->child[idx], mapping);
+    unsigned idx = index(node, key);
+    node->child[idx] = insert(node->child[idx], key, mapping);
     fix(node);
 
     return node;
@@ -442,7 +510,8 @@ static Radix::Node *insert(Radix::Node *node, Mapping *mapping)
 /*
  * Remove the leaf node matching `key`.
  */
-static Radix::Node *remove(Radix::Node *node, Key key)
+template <typename Key>
+static Radix::Node<Key> *remove(Radix::Node<Key> *node, Key key)
 {
     if (node == nullptr)
         return nullptr;
@@ -456,7 +525,7 @@ static Radix::Node *remove(Radix::Node *node, Key key)
     }
 
     unsigned idx = index(node, key);
-    Radix::Node *child = remove(node->child[idx], key);
+    Radix::Node<Key> *child = remove(node->child[idx], key);
     node->child[idx] = child;
     if (child != nullptr)
     {
@@ -465,7 +534,7 @@ static Radix::Node *remove(Radix::Node *node, Key key)
     }
 
     // If the number of child is reduced to 1, then delete the inner node:
-    Radix::Node *seen = nullptr;
+    Radix::Node<Key> *seen = nullptr;
     for (int i = 0; i < BRANCH_MAX; i++)
     {
         if (node->child[i] == nullptr)
@@ -481,9 +550,11 @@ static Radix::Node *remove(Radix::Node *node, Key key)
 /*
  * Merge a mapping with an existing mapping (if possible).
  */
-static Radix::Node *merge(Radix::Node *tree, Mapping *mapping)
+template <typename Key>
+static Radix::Node<Key> *merge(Radix::Node<Key> *tree, Key key,
+    Mapping *mapping)
 {
-    Radix::Node *node = find(tree, mapping->key);
+    Radix::Node<Key> *node = find(tree, key);
     if (node != nullptr)
     {
         // Add to existing node for key:
@@ -493,15 +564,15 @@ static Radix::Node *merge(Radix::Node *tree, Mapping *mapping)
         return tree;
     }
 
-    node = findAnyComplement(tree, mapping->key);
+    node = findAnyComplement(tree, key);
     if (node != nullptr)
     {
         // Merge with negated node:
         Mapping *mappingCmp = node->leaf.mappings;
         node->leaf.mappings = mappingCmp->next;
         mappingCmp->next    = nullptr;
-        mapping->key        = mapping->key | mappingCmp->key;
         mapping->merged     = mappingCmp;
+        key                |= node->key;
         if (node->leaf.mappings == nullptr)
         {
             // Leaf node is now empty, so remove it.
@@ -510,17 +581,18 @@ static Radix::Node *merge(Radix::Node *tree, Mapping *mapping)
         printf("\33[32mM\33[0m");
     }
     else
-        printf("+");
+        putchar('+');
 
     // Insert a new node:
-    tree = insert(tree, mapping);
+    tree = insert(tree, key, mapping);
     return tree;
 }
 
 /*
  * Collect all (optimized) mappings and free the tree.
  */
-static void collectMappings(Radix::Node *node, MappingSet &mappings)
+template <typename Key>
+static void collectMappings(Radix::Node<Key> *node, MappingSet &mappings)
 {
     if (node == nullptr)
         return;
@@ -529,6 +601,9 @@ static void collectMappings(Radix::Node *node, MappingSet &mappings)
         for (auto mapping = node->leaf.mappings; mapping != nullptr;
             mapping = mapping->next)
         {
+            std::string str;
+            bitstring(node->key, str);
+            printf("[\33[33m%s\33[0m]", str.c_str());
             insertMapping(mapping, mappings);
             stat_num_physical_mappings++;
         }
@@ -580,18 +655,34 @@ static void shrinkMapping(Mapping *mapping0)
 /*
  * Optimize the given set of mappings.
  */
-void optimizeMappings(MappingSet &mappings)
+template <typename Key>
+void optimizeMappings(const Allocator &allocator, const size_t MAPPING_SIZE,
+    MappingSet &mappings)
 {
-    Radix::Node *tree = nullptr;
+    Radix::Node<Key> *tree = nullptr;
     for (auto mapping: mappings)
-        tree = merge(tree, mapping);
+    {
+        Key key = calculateKey<Key>(allocator, MAPPING_SIZE, mapping);
+        tree = merge(tree, key, mapping);
+    }
+    putchar('\n');
 
     mappings.clear();
     collectMappings(tree, mappings);
+    putchar('\n');
 
     for (auto mapping: mappings)
         shrinkMapping(mapping);
 }
+template
+void optimizeMappings<Key64>(const Allocator &allocator,
+    const size_t MAPPING_SIZE,MappingSet &mappings);
+template
+void optimizeMappings<Key128>(const Allocator &allocator,
+    const size_t MAPPING_SIZE,MappingSet &mappings);
+template
+void optimizeMappings<Key4096>(const Allocator &allocator,
+    const size_t MAPPING_SIZE,MappingSet &mappings);
 
 /**************************************************************************/
 /* FLATTEN MAPPINGS                                                       */

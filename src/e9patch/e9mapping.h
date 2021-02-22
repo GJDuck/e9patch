@@ -13,13 +13,22 @@
 
 #include "e9alloc.h"
 
+#include <bitset>
+
+typedef std::bitset<4096> Key4096;
+typedef std::bitset<2048> Key2048;
+typedef std::bitset<1024> Key1024;
+typedef std::bitset<512> Key512;
+typedef std::bitset<256> Key256;
+typedef unsigned __int128 Key128;
+typedef uint64_t Key64;
+
 /*
  * Representation of a mapping.
  */
 struct Mapping
 {
     // Occupancy:
-    uint64_t key;               // Occupancy bitmap key.
     intptr_t lb;                // Occupancy lower bound.
     intptr_t ub;                // Occupancy Upper bound.
 
@@ -42,8 +51,11 @@ typedef std::vector<Mapping *> MappingSet;
 
 void buildMappings(const Allocator &allocator, const size_t MAPPING_SIZE,
     MappingSet &mappings);
-void optimizeMappings(MappingSet &mappings);
 void flattenMapping(uint8_t *buf, const Mapping *mapping, uint8_t fill);
 void getVirtualBounds(const Mapping *mapping, std::vector<Bounds> &bounds);
+
+template <typename Key>
+void optimizeMappings(const Allocator &allocator, const size_t MAPPING_SIZE,
+    MappingSet &mappings);
 
 #endif

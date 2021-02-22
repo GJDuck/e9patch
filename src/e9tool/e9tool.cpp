@@ -54,7 +54,6 @@
 static bool option_trap_all     = false;
 static bool option_detail       = false;
 static bool option_notify       = false;
-static int  option_optimization = 1;
 static std::string option_format("binary");
 static std::string option_output("a.out");
 static std::string option_syntax("ATT");
@@ -1999,13 +1998,14 @@ static void usage(FILE *stream, const char *progname)
         "\t--no-warnings\n"
         "\t\tDo not print warning messages.\n"
         "\n"
-        "\t-O0, -O1, -O2, -O3\n"
+        "\t-O0, -O1, -O2, -O3, -Os\n"
         "\t\tSet the optimization level.  Here:\n"
         "\n"
-        "\t\t\t-O0 disables all optimizations,\n"
-        "\t\t\t-O1 enables only conservative optimizations,\n"
-        "\t\t\t-O2 enables all reasonable optimizations, and\n"
-        "\t\t\t-O3 enables all aggressive optimizations. \n"
+        "\t\t\t-O0 disables all optimization,\n"
+        "\t\t\t-O1 conservatively optimizes for performance,\n"
+        "\t\t\t-O2 optimizes for performance,\n"
+        "\t\t\t-O3 aggressively optimizes for performance, and \n"
+        "\t\t\t-Os optimizes for space.\n"
         "\n"
         "\t\tThe default is -O1.\n"
         "\n"
@@ -2114,6 +2114,7 @@ int main(int argc, char **argv)
     std::vector<Action *> option_actions;
     std::vector<const char *> option_options;
     unsigned option_compression_level = 9;
+    char option_optimization_level = '1';
     ssize_t option_sync = -1;
     bool option_executable = false, option_shared = false,
         option_static_loader = false;
@@ -2189,23 +2190,16 @@ int main(int argc, char **argv)
                 option_output = optarg;
                 break;
             case 'O':
-                if (optarg[0] >= '0' && optarg[0] <= '3' && optarg[1] == '\0')
+                option_optimization_level = -1;
+                switch (optarg[0])
                 {
-                    switch (optarg[0])
-                    {
-                        case '0':
-                            option_optimization = 0; break;
-                        case '1':
-                            option_optimization = 1; break;
-                        case '2':
-                            option_optimization = 2; break;
-                        case '3':
-                            option_optimization = 3; break;
-                    }
+                    case '0': case '1': case '2': case '3': case 's':
+                        option_optimization_level = optarg[0];
+                        break;
                 }
-                else
+                if (option_optimization_level < 0 || optarg[1] != '\0')
                     error("bad value \"%s\" for `-O' option; "
-                        "expected one of 0,1,2,3", optarg);
+                        "expected one of -O0,-O1,-O2,-O3,-Os", optarg);
                 break;
             case OPTION_NO_WARNINGS:
                 option_no_warnings = true;
@@ -2322,35 +2316,47 @@ int main(int argc, char **argv)
         options.push_back("--static-loader");
     if (option_trap_all)
         options.push_back("--trap-all");
-    switch (option_optimization)
+    switch (option_optimization_level)
     {
-        case 0:
+        case '0':
             options.push_back("-Ojump-elim=0");
             options.push_back("-Ojump-elim-size=0");
             options.push_back("-Ojump-peephole=false");
             options.push_back("-Oorder-trampolines=false");
             options.push_back("-Oscratch-stack=false");
+            options.push_back("--mem-granularity=64");
             break;
-        default: case 1:
+        case '1':
             options.push_back("-Ojump-elim=0");
             options.push_back("-Ojump-elim-size=0");
             options.push_back("-Oorder-trampolines=false");
             options.push_back("-Ojump-peephole=true");
             options.push_back("-Oscratch-stack=true");
+            options.push_back("--mem-granularity=128");
             break;
-        case 2:
+        case '2':
             options.push_back("-Ojump-elim=32");
             options.push_back("-Ojump-elim-size=64");
             options.push_back("-Oorder-trampolines=true");
             options.push_back("-Ojump-peephole=true");
             options.push_back("-Oscratch-stack=true");
+            options.push_back("--mem-granularity=128");
             break;
-        case 3:
+        case '3':
             options.push_back("-Ojump-elim=64");
             options.push_back("-Ojump-elim-size=512");
             options.push_back("-Oorder-trampolines=true");
             options.push_back("-Ojump-peephole=true");
             options.push_back("-Oscratch-stack=true");
+            options.push_back("--mem-granularity=4096");
+            break;
+        case 's':
+            options.push_back("-Ojump-elim=0");
+            options.push_back("-Ojump-elim-size=0");
+            options.push_back("-Ojump-peephole=true");
+            options.push_back("-Oorder-trampolines=true");
+            options.push_back("-Oscratch-stack=true");
+            options.push_back("--mem-granularity=4096");
             break;
     }
     for (const char *option: option_options)

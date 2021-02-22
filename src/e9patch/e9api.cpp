@@ -424,8 +424,23 @@ static void parseEmit(Binary *B, const Message &msg)
     // Create and optimize the mappings:
     MappingSet mappings;
     buildMappings(B->allocator, option_mem_mapping_size, mappings);
-    optimizeMappings(mappings);
-    putchar('\n');
+    switch (option_mem_granularity)
+    {
+        case 64:
+            optimizeMappings<Key64>(B->allocator, option_mem_mapping_size,
+                mappings);
+            break;
+        case 128:
+            optimizeMappings<Key128>(B->allocator, option_mem_mapping_size,
+                mappings);
+            break;
+        case 4096:
+            optimizeMappings<Key4096>(B->allocator, option_mem_mapping_size,
+                mappings);
+            break;
+        default:
+            error("unimplemented granularity (%zu)", option_mem_granularity);
+    }
 
     // Create the patched binary:
     B->patched.size = emitElf(B, mappings, option_mem_mapping_size);
