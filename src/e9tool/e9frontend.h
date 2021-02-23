@@ -338,6 +338,8 @@ enum FieldKind
     FIELD_INDEX,                    // Index register.
     FIELD_SCALE,                    // Scale.
     FIELD_SIZE,                     // Operand size.
+    FIELD_TYPE,                     // Type.
+    FIELD_ACCESS,                   // Access.
 };
 
 /*

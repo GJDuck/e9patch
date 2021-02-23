@@ -532,6 +532,42 @@ The following arguments are supported:
 <tr><td><b><tt>mem[i].size</tt></b></td><td><tt>size_t</tt></td>
     <td>The matching instruction's <i>i</i><sup>th</sup> memory operand
     size</td></tr>
+<tr><td><b><tt>op[i].type</tt></b></td><td><tt>int8_t</tt></td>
+    <td>The matching instruction's <i>i</i><sup>th</sup> operand type
+    (1=immediate, 2=register, 3=memory operand)</td></tr>
+<tr><td><b><tt>src[i].type</tt></b></td><td><tt>int8_t</tt></td>
+    <td>The matching instruction's <i>i</i><sup>th</sup> source operand
+    type</td></tr>
+<tr><td><b><tt>dst[i].type</tt></b></td><td><tt>int8_t</tt></td>
+    <td>The matching instruction's <i>i</i><sup>th</sup> destination
+    operand type</td></tr>
+<tr><td><b><tt>imm[i].type</tt></b></td><td><tt>int8_t</tt></td>
+    <td>The matching instruction's <i>i</i><sup>th</sup> immediate operand
+    type</td></tr>
+<tr><td><b><tt>reg[i].type</tt></b></td><td><tt>int8_t</tt></td>
+    <td>The matching instruction's <i>i</i><sup>th</sup> register operand
+    type</td></tr>
+<tr><td><b><tt>mem[i].type</tt></b></td><td><tt>int8_t</tt></td>
+    <td>The matching instruction's <i>i</i><sup>th</sup> memory operand
+    type</td></tr>
+<tr><td><b><tt>op[i].access</tt></b></td><td><tt>int8_t</tt></td>
+    <td>The matching instruction's <i>i</i><sup>th</sup> operand access
+    (<tt>0x80 | PROT_READ | PROT_WRITE</tt>)
+<tr><td><b><tt>src[i].access</tt></b></td><td><tt>int8_t</tt></td>
+    <td>The matching instruction's <i>i</i><sup>th</sup> source operand
+    access</td></tr>
+<tr><td><b><tt>dst[i].access</tt></b></td><td><tt>int8_t</tt></td>
+    <td>The matching instruction's <i>i</i><sup>th</sup> destination
+    operand access</td></tr>
+<tr><td><b><tt>imm[i].access</tt></b></td><td><tt>int8_t</tt></td>
+    <td>The matching instruction's <i>i</i><sup>th</sup> immediate operand
+    access</td></tr>
+<tr><td><b><tt>reg[i].access</tt></b></td><td><tt>int8_t</tt></td>
+    <td>The matching instruction's <i>i</i><sup>th</sup> register operand
+    access</td></tr>
+<tr><td><b><tt>mem[i].access</tt></b></td><td><tt>int8_t</tt></td>
+    <td>The matching instruction's <i>i</i><sup>th</sup> memory operand
+    access</td></tr>
 <tr><td><b><tt>op[i].disp</tt></b></td><td><tt>int32_t</tt></td>
     <td>The matching instruction's <i>i</i><sup>th</sup> operand 
     displacement</td></tr>

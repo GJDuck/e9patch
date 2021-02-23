@@ -1262,6 +1262,10 @@ static Action *parseAction(const char *str, const MatchExpr *expr)
                                     field = FIELD_SCALE; break;
                                 case TOKEN_SIZE: case TOKEN_LENGTH:
                                     field = FIELD_SIZE; break;
+                                case TOKEN_TYPE:
+                                    field = FIELD_TYPE; break;
+                                case TOKEN_ACCESS:
+                                    field = FIELD_ACCESS; break;
                                 default:
                                     parser.unexpectedToken();
                             }
