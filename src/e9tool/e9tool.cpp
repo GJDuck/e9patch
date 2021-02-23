@@ -2550,9 +2550,9 @@ int main(int argc, char **argv)
         for (size_t i = 0; i < count; i++)
         {
             Location &loc = locs[i];
-            off_t text_offset = (off_t)loc.offset;
-            uint64_t address = (uint64_t)text_addr + text_offset;
-            off_t offset = text_offset + text_offset;
+            off_t loc_offset = (off_t)loc.offset;
+            uint64_t address = (uint64_t)text_addr + loc_offset;
+            off_t offset = text_offset + loc_offset;
             const uint8_t *code = elf.data + offset;
             size_t size = loc.size;
             bool ok = cs_disasm_iter(handle, &code, &size, &address, I);
@@ -2563,7 +2563,7 @@ int main(int argc, char **argv)
             int idx = match(handle, option_actions, I, offset);
             if (idx >= 0)
             {
-                Location new_loc(text_offset, I->size, true, idx);
+                Location new_loc(loc_offset, I->size, true, idx);
                 locs[i] = new_loc;
             }
         }
