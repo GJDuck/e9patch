@@ -2051,9 +2051,9 @@ static void usage(FILE *stream, const char *progname)
         "\n"
         "\t\tThe default syntax is \"ATT\".\n"
         "\n"
-        "\t--trap-all\n"
-        "\t\tInsert a trap (int3) instruction at each trampoline entry.\n"
-        "\t\tThis can be used for debugging with gdb.\n"
+        "\t--trap=ADDR, --trap-all\n"
+        "\t\tInsert a trap (int3) instruction at the corresponding\n"
+        "\t\ttrampoline entry.  This can be used for debugging with gdb.\n"
         "\n", progname);
 }
 
@@ -2079,6 +2079,7 @@ enum Option
     OPTION_STATIC_LOADER,
     OPTION_SYNC,
     OPTION_SYNTAX,
+    OPTION_TRAP,
     OPTION_TRAP_ALL,
 };
 
@@ -2111,6 +2112,7 @@ int main(int argc, char **argv)
         {"static-loader", no_arg,  nullptr, OPTION_STATIC_LOADER},
         {"sync",          req_arg, nullptr, OPTION_SYNC},
         {"syntax",        req_arg, nullptr, OPTION_SYNTAX},
+        {"trap",          req_arg, nullptr, OPTION_TRAP},
         {"trap-all",      no_arg,  nullptr, OPTION_TRAP_ALL},
         {nullptr,         no_arg,  nullptr, 0}
     }; 
@@ -2123,6 +2125,7 @@ int main(int argc, char **argv)
     bool option_executable = false, option_shared = false,
         option_static_loader = false;
     std::string option_start(""), option_end(""), option_backend("./e9patch");
+    std::set<intptr_t> option_trap;
     MatchExpr *option_match = nullptr;
     while (true)
     {
@@ -2236,6 +2239,18 @@ int main(int argc, char **argv)
                     error("bad value \"%s\" for `--syntax' option; "
                         "expected \"ATT\" or \"intel\"", optarg);
                 break;
+            case OPTION_TRAP:
+            {
+                errno = 0;
+                char *end = nullptr;
+                unsigned long r = strtoul(optarg, &end, 0);
+                if (errno != 0 || end == optarg ||
+                        (end != nullptr && *end != '\0') || r > INTPTR_MAX)
+                    error("bad value for \"%s\" for `--trap' option; "
+                        "expected an address", optarg);
+                option_trap.insert(r);
+                break;
+            }
             case OPTION_TRAP_ALL:
                 option_trap_all = true;
                 break;
@@ -2367,6 +2382,15 @@ int main(int argc, char **argv)
         options.push_back(option);
     if (options.size() > 0)
         sendOptionMessage(backend.out, options);
+    for (auto addr: option_trap)
+    {
+        options.clear();
+        options.push_back("--trap");
+        std::string val;
+        val += std::to_string(addr);
+        options.push_back(val.c_str());
+        sendOptionMessage(backend.out, options);
+    }
 
     /*
      * Initialize all plugins:

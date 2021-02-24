@@ -323,9 +323,11 @@ static void parseInstruction(Binary *B, const Message &msg)
         else
             pcrel32_idx = pcrel_idx;    // Must be pcrel32
     }
+    bool debug = (option_trap_all ||
+        option_trap.find(address) != option_trap.end());
     Instr *I = new Instr(offset, address, length, B->original.bytes + offset,
         B->patched.bytes + offset, B->patched.state + offset, pcrel32_idx,
-        pcrel8_idx, B->elf.pic);
+        pcrel8_idx, B->elf.pic, debug);
     insertInstruction(B, I);
 }
 

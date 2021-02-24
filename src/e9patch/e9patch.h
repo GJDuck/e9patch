@@ -28,6 +28,7 @@
 
 #include <deque>
 #include <map>
+#include <set>
 #include <vector>
 
 #define NO_RETURN               __attribute__((__noreturn__))
@@ -107,6 +108,7 @@ struct Bounds
  */
 enum EntryKind
 {
+    ENTRY_DEBUG,
     ENTRY_BYTES,
     ENTRY_ZEROES,
     ENTRY_LABEL,
@@ -183,6 +185,7 @@ struct Instr
     const size_t pcrel32_idx:4;         // 32bit PC-relative imm idx (or 0)
     const size_t pcrel8_idx:4;          // 8bit PC-relative imm idx (or 0)
     const size_t pic:1;                 // PIC? (stored here for convenience)
+    const size_t debug:1;               // Debug trampoline?
     size_t       evicted:1;             // The instruction evicted?
     size_t       no_optimize:1;         // Disable -Ojump-elim?
     const intptr_t addr;                // The address of the instruction
@@ -216,10 +219,11 @@ struct Instr
 
     Instr(off_t offset, intptr_t addr, size_t size, const uint8_t *original,
             uint8_t *bytes, uint8_t *state,  size_t pcrel32_idx,
-            size_t pcrel8_idx, bool pic) :
+            size_t pcrel8_idx, bool pic, bool debug) :
         offset((size_t)offset), addr(addr), size(size), original(original),
         patched(bytes, state), pcrel32_idx(pcrel32_idx),
-        pcrel8_idx(pcrel8_idx), pic(pic), evicted(false), no_optimize(false)
+        pcrel8_idx(pcrel8_idx), pic(pic), debug(debug), evicted(false),
+        no_optimize(false)
     {
         ;
     }
@@ -374,6 +378,7 @@ extern bool option_tactic_T2;
 extern bool option_tactic_T3;
 extern bool option_tactic_backward_T3;
 extern bool option_static_loader;
+extern std::set<intptr_t> option_trap;
 extern bool option_trap_all;
 extern size_t option_mem_granularity;
 extern size_t option_mem_mapping_size;

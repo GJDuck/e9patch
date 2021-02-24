@@ -48,6 +48,7 @@ intptr_t option_mem_ub          = INTPTR_MAX;
 size_t option_mem_mapping_size  = PAGE_SIZE;
 bool option_mem_multi_page      = true;
 bool option_static_loader       = false;
+std::set<intptr_t> option_trap;
 bool option_trap_all            = false;
 static std::string option_input("-");
 static std::string option_output("-");
@@ -252,10 +253,14 @@ static void usage(FILE *stream, const char *progname)
         "\t\tEnable [disables] backward jumps for tactic T3.\n"
         "\t\tDefault: true (enabled)\n"
         "\n"
+        "\t--trap=ADDR\n"
+        "\t\tInsert a trap (int3) instruction at the trampoline entry for\n"
+        "\t\tthe instruction at address ADDR.  This can be used to debug\n"
+        "\t\tthe trampoline using GDB.\n"
+        "\n"
         "\t--trap-all[=false]\n"
         "\t\tEnable [disable] the insertion of a trap (int3) instruction at\n"
-        "\t\teach trampoline entry.  This can be used to debug trampoline\n"
-        "\t\tusing gdb.\n"
+        "\t\tall trampoline entries.\n"
         "\t\tDefault: false (disabled)\n"
         "\n", progname, PAGE_SIZE, PAGE_SIZE);
 }
@@ -286,6 +291,7 @@ enum Option
     OPTION_TACTIC_T2,
     OPTION_TACTIC_T3,
     OPTION_TACTIC_BACKWARD_T3,
+    OPTION_TRAP,
     OPTION_TRAP_ALL,
 };
 
@@ -319,7 +325,8 @@ void parseOptions(int argc, char * const argv[], bool api)
         {"tactic-T2",          opt_arg, nullptr, OPTION_TACTIC_T2},
         {"tactic-T3",          opt_arg, nullptr, OPTION_TACTIC_T3},
         {"tactic-backward-T3", no_arg,  nullptr, OPTION_TACTIC_BACKWARD_T3},
-        {"trap-all",           no_arg,  nullptr, OPTION_TRAP_ALL},
+        {"trap",               req_arg, nullptr, OPTION_TRAP},
+        {"trap-all",           opt_arg, nullptr, OPTION_TRAP_ALL},
         {nullptr,              no_arg,  nullptr, 0}
     };
 
@@ -402,6 +409,10 @@ void parseOptions(int argc, char * const argv[], bool api)
             case OPTION_TACTIC_BACKWARD_T3:
                 option_tactic_backward_T3 =
                     parseBoolOptArg("--tactic-backward-T3", optarg);
+                break;
+            case OPTION_TRAP:
+                option_trap.insert(parseIntOptArg("--trap", optarg, 0,
+                    INTPTR_MAX));
                 break;
             case OPTION_TRAP_ALL:
                 option_trap_all = parseBoolOptArg("--trap-all", optarg);

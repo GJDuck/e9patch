@@ -570,6 +570,18 @@ static Entry makeLabelEntry(const char *label)
 }
 
 /*
+ * Create a DEBUG template entry.
+ */
+static Entry makeDebugEntry(void)
+{
+    Entry entry;
+    entry.kind   = ENTRY_DEBUG;
+    entry.length = 0;
+    entry.macro  = nullptr;
+    return entry;
+}
+
+/*
  * Convert an integer.
  */
 static uintptr_t convertInteger(const Parser &parser, intptr_t x,
@@ -714,13 +726,13 @@ type_error:
 /*
  * Parse a template object.
  */
-static Trampoline *parseTrampoline(Parser &parser, bool int3 = false)
+static Trampoline *parseTrampoline(Parser &parser, bool debug = false)
 {
     std::vector<uint8_t> bytes;
     std::vector<Entry> entries;
 
-    if (int3)
-        bytes.push_back(0xCC);          // INT3 instruction
+    if (debug)
+        entries.push_back(makeDebugEntry());
 
     char token = getToken(parser);
     bool once  = true;
@@ -1017,8 +1029,7 @@ static void parseParams(Parser &parser, Message &msg)
                     value.string = dupString(parser.s);
                     break;
                 case PARAM_TEMPLATE:
-                    value.trampoline = parseTrampoline(parser,
-                        option_trap_all);
+                    value.trampoline = parseTrampoline(parser, /*debug=*/true);
                     break;
                 case PARAM_METADATA:
                     value.metadata = parseMetadata(parser);

@@ -234,6 +234,9 @@ static int getTrampolineSize(const Trampoline *T, const Instr *I,
         const Entry &entry = T->entries[i];
         switch (entry.kind)
         {
+            case ENTRY_DEBUG:
+                size += (I != nullptr && I->debug? /*sizeof(int3)=*/1: 0);
+                continue;
             case ENTRY_BYTES:
             case ENTRY_ZEROES:
                 size += entry.length;
@@ -321,6 +324,9 @@ static BoundsInfo getTrampolineBounds(const Trampoline *T, const Instr *I,
         const Entry &entry = T->entries[i];
         switch (entry.kind)
         {
+            case ENTRY_DEBUG:
+                b.size += (I != nullptr && I->debug? /*sizeof(int3)=*/1: 0);
+                continue;
             case ENTRY_BYTES:
             case ENTRY_ZEROES:
                 b.size += entry.length;
@@ -422,6 +428,8 @@ static off_t buildLabelSet(const Trampoline *T, const Instr *I, off_t offset,
         const Entry &entry = T->entries[i];
         switch (entry.kind)
         {
+            case ENTRY_DEBUG:
+                offset += (I != nullptr && I->debug? /*sizeof(int3)=*/1: 0);
             case ENTRY_BYTES:
             case ENTRY_ZEROES:
                 offset += entry.length;
@@ -528,14 +536,18 @@ static off_t lookupLabel(const char *label, const Instr *I, int32_t offset32,
 /*
  * Build the trampoline bytes.
  */
-static void buildBytes(const Trampoline *T, const Instr *I,
-    int32_t offset32, const LabelSet &labels, Buffer &buf)
+static void buildBytes(const Trampoline *T, const Instr *I, int32_t offset32,
+    const LabelSet &labels, Buffer &buf)
 {
     for (unsigned i = 0; i < T->num_entries; i++)
     {
         const Entry &entry = T->entries[i];
         switch (entry.kind)
         {
+            case ENTRY_DEBUG:
+                if (I != nullptr && I->debug)
+                    buf.push(/*int3=*/0xcc);
+                continue;
             case ENTRY_BYTES:
                 buf.push(entry.bytes, entry.length);
                 continue;
