@@ -68,6 +68,8 @@ static Type getOperandType(const cs_insn *I, const cs_x86_op *op, bool ptr,
     {
         case X86_OP_REG:
             t = getRegType(op->reg);
+            if (ptr && t == TYPE_INT32)
+                t = TYPE_INT64;
             break;
         case X86_OP_MEM:
             switch (op->size)
