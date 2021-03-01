@@ -503,16 +503,39 @@ static intptr_t parseIndex(Parser &parser, intptr_t lb, intptr_t ub)
 }
 
 /*
+ * Parse a symbolic value.
+ */
+static intptr_t parseSymbol(Parser &parser, const char *symbol)
+{
+    intptr_t val = getELFObject(parser.elf, symbol);
+    if (val == -1)
+    {
+        warning("symbol \"%s\" is undefined and therefore has value 0x0",
+            symbol);
+        return 0x0;
+    }
+    else if (val == INTPTR_MIN)
+        error("failed to parse %s; \"%s\" does not correspond to "
+            "any section or symbol name", parser.mode, symbol);
+    return val;
+}
+
+/*
  * Parse values.
  */
-static void parseValues(Parser &parser, MatchType type,
-    MatchCmp cmp, Index<MatchValue> &index)
+static void parseValues(Parser &parser, MatchType type, MatchCmp cmp,
+    Index<MatchValue> &index)
 {
     while (true)
     {
         MatchValue value = {0};
         switch (parser.getToken())
         {
+            case '&':
+                parser.expectToken(TOKEN_STRING);
+                value.type = MATCH_TYPE_INTEGER;
+                value.i = parseSymbol(parser, parser.s);
+                break;
             case TOKEN_NIL:
                 value.type = MATCH_TYPE_NIL;
                 break;
@@ -863,9 +886,9 @@ static MatchExpr *parseMatchExpr(Parser &parser, MatchOp op)
 /*
  * Parse a match expr.
  */
-static MatchExpr *parseMatch(const char *str)
+static MatchExpr *parseMatch(const ELF &elf, const char *str)
 {
-    Parser parser(str, "matching");
+    Parser parser(str, "matching", elf);
     MatchExpr *expr = parseMatchExpr(parser, MATCH_OP_OR);
     parser.expectToken(TOKEN_END);
     return expr;
@@ -1041,14 +1064,11 @@ memop_validate:
 /*
  * Parse an action.
  */
-static Action *parseAction(const char *str, const MatchExpr *expr)
+static Action *parseAction(const ELF &elf, const char *str,
+    const MatchExpr *expr)
 {
-    if (expr == nullptr)
-        error("failed to parse action; the `--action' or `-A' option must be "
-            "preceded by one or more `--match' or `-M' options");
-
     ActionKind kind = ACTION_INVALID;
-    Parser parser(str, "action");
+    Parser parser(str, "action", elf);
     switch (parser.getToken())
     {
         case TOKEN_CALL:
@@ -1913,12 +1933,9 @@ static intptr_t positionToAddr(const ELF &elf, const char *option,
     }
 
     // Case #2: symbolic address:
-    auto i = elf.dynsyms.find(pos);
-    if (i == elf.dynsyms.end())
-        error("bad value for `%s' option; failed to find dynamic symbol "
-            "\"%s\"", option, pos);
-    const Elf64_Sym *sym = i->second;
-    return (intptr_t)sym->st_value;
+    intptr_t val = getELFObject(&elf, pos);
+    val = (val < 0? INTPTR_MIN: val);
+    return val;
 }
 
 /*
@@ -2082,6 +2099,11 @@ enum Option
     OPTION_TRAP,
     OPTION_TRAP_ALL,
 };
+struct ActionEntry
+{
+    std::vector<std::string> match;
+    std::string action;
+};
 
 /*
  * Entry.
@@ -2117,7 +2139,6 @@ int main(int argc, char **argv)
         {nullptr,         no_arg,  nullptr, 0}
     }; 
     option_is_tty = isatty(STDERR_FILENO);
-    std::vector<Action *> option_actions;
     std::vector<const char *> option_options;
     unsigned option_compression_level = 9;
     char option_optimization_level = '1';
@@ -2126,7 +2147,8 @@ int main(int argc, char **argv)
         option_static_loader = false;
     std::string option_start(""), option_end(""), option_backend("./e9patch");
     std::set<intptr_t> option_trap;
-    MatchExpr *option_match = nullptr;
+    std::vector<std::string> option_match;
+    std::vector<ActionEntry> option_actions;
     while (true)
     {
         int idx;
@@ -2139,9 +2161,10 @@ int main(int argc, char **argv)
             case OPTION_ACTION:
             case 'A':
             {
-                Action *action = parseAction(optarg, option_match);
-                option_actions.push_back(action);
-                option_match = nullptr;
+                ActionEntry entry;
+                entry.match.swap(option_match);
+                entry.action = optarg;
+                option_actions.emplace_back(entry);
                 break;
             }
             case OPTION_BACKEND:
@@ -2187,9 +2210,8 @@ int main(int argc, char **argv)
             case OPTION_MATCH:
             case 'M':
             {
-                MatchExpr *expr = parseMatch(optarg);
-                option_match = (option_match == nullptr? expr:
-                    new MatchExpr(MATCH_OP_AND, option_match, expr));
+                std::string match(optarg);
+                option_match.emplace_back(match);
                 break;
             }
             case OPTION_OUTPUT:
@@ -2265,7 +2287,7 @@ int main(int argc, char **argv)
         error("missing input file; try `--help' for more information");
         return EXIT_FAILURE;
     }
-    if (option_match != nullptr)
+    if (option_match.size() != 0)
         error("failed to parse command-line arguments; detected extraneous "
             "matching option(s) (`--match' or `-M') that are not paired "
             "with a corresponding action (`--action' or `-A')"); 
@@ -2286,6 +2308,27 @@ int main(int argc, char **argv)
                (option_shared? false: !isLibraryFilename(filename)));
     filename = findBinary(filename, exe, /*dot=*/true);
     ELF &elf = *parseELF(filename, 0x0);
+
+    /*
+     * Patch the match/action pairs.
+     */
+    std::vector<Action *> actions;
+    for (const auto &entry: option_actions)
+    {
+        if (entry.match.size() == 0)
+            error("failed to parse action; the `--action' or `-A' option "
+                "must be preceded by one or more `--match' or `-M' options");
+        MatchExpr *match = nullptr;
+        for (const auto &match_str: entry.match)
+        {
+            MatchExpr *expr = parseMatch(elf, match_str.c_str());
+            match = (match == nullptr? expr:
+                new MatchExpr(MATCH_OP_AND, match, expr));
+        }
+        Action *action = parseAction(elf, entry.action.c_str(), match);
+        actions.push_back(action);
+    }
+    option_actions.clear();
 
     /*
      * The ELF file seems OK, spawn and initialize the e9patch backend.
@@ -2405,7 +2448,7 @@ int main(int argc, char **argv)
     std::set<const char *, CStrCmp> have_call;
     std::set<int> have_exit;
     intptr_t file_addr = 0x70000000;
-    for (const auto action: option_actions)
+    for (auto *action: actions)
     {
         switch (action->kind)
         {
@@ -2543,7 +2586,7 @@ int main(int argc, char **argv)
         else
         {
             matchPlugins(backend.out, &elf, handle, offset, I);
-            idx = match(handle, option_actions, I, offset);
+            idx = match(handle, actions, I, offset);
         }
 
         Location loc(offset, I->size, (idx >= 0), idx);
@@ -2584,7 +2627,7 @@ int main(int argc, char **argv)
                 error("failed to disassemble instruction at address 0x%lx",
                     address);
             matchPlugins(backend.out, &elf, handle, offset, I);
-            int idx = match(handle, option_actions, I, offset);
+            int idx = match(handle, actions, I, offset);
             if (idx >= 0)
             {
                 Location new_loc(loc_offset, I->size, true, idx);
@@ -2625,7 +2668,7 @@ int main(int argc, char **argv)
             done = !sendInstructionMessage(backend.out, locs[j], addr,
                 text_addr, text_offset);
 
-        const Action *action = option_actions[loc.action];
+        const Action *action = actions[loc.action];
         id++;
         if (action->kind == ACTION_PLUGIN)
         {

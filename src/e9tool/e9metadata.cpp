@@ -1200,31 +1200,34 @@ static Type sendLoadArgumentMetadata(FILE *out, CallInfo &info,
         }
         case ARGUMENT_SYMBOL:
         {
-            t = TYPE_VOID | TYPE_PTR;
-            intptr_t val = getELFPLTEntry(elf, arg.name);
+            t = TYPE_CONST | TYPE_VOID | TYPE_PTR;
+            intptr_t val = getELFObject(elf, arg.name);
+            if (val == -1)
+            {
+                warning(CONTEXT_FORMAT "failed to load ELF object into "
+                    "register %s; symbol \"%s\" is undefined",
+                    CONTEXT(I), getRegName(getReg(regno)), arg.name);
+                sendSExtFromI32ToR64(out, 0, regno);
+                t = TYPE_NULL_PTR;
+                break;
+            }
+            else if (val == INTPTR_MIN)
+            {
+                val = getELFGOTEntry(elf, arg.name);
+                if (val >= INT32_MIN && val <= INT32_MAX)
+                {
+                    // Dynamically load the pointer from the GOT
+                    sendMovFromPCRelToR64(out, val, regno);
+                    break;
+                }
+            }
             if (val >= INT32_MIN && val <= INT32_MAX)
             {
-                t |= TYPE_CONST;
                 sendLeaFromPCRelToR64(out, val, regno);
                 break;
             }
-            val = getELFGOTEntry(elf, arg.name);
-            if (val >= INT32_MIN && val <= INT32_MAX)
-            {
-                sendMovFromPCRelToR64(out, val, regno);
-                break;
-            }
-            const Elf64_Sym *sym = getELFDynSym(elf, arg.name);
-            if (sym != nullptr && sym->st_shndx != SHN_UNDEF &&
-                    sym->st_value <= (unsigned)INT32_MIN)
-            {
-                if (ELF64_ST_TYPE(sym->st_info) != STT_FUNC)
-                    t |= TYPE_CONST;
-                sendLeaFromPCRelToR64(out, sym->st_value, regno);
-                break;
-            }
-            warning(CONTEXT_FORMAT "failed to load symbol value into "
-                    "register %s; symbol \"%s\" not found",
+            warning(CONTEXT_FORMAT "failed to load ELF object into "
+                    "register %s; object \"%s\" not found",
                     CONTEXT(I), getRegName(getReg(regno)), arg.name);
             sendSExtFromI32ToR64(out, 0, regno);
             t = TYPE_NULL_PTR;

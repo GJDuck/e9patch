@@ -1401,8 +1401,9 @@ namespace e9frontend
         // Sections
         SectionInfo sections;
 
-        // Dynsyms
+        // Symbols
         SymbolInfo dynsyms;
+        SymbolInfo syms;                // Only if not stripped
 
         // GOT
         GOTInfo got;
@@ -2082,6 +2083,29 @@ static void parsePLT(const uint8_t *data, const Elf64_Shdr *shdr_plt,
 }
 
 /*
+ * Parse a symbol table.
+ */
+static void parseSymbols(const uint8_t *data, const Elf64_Shdr *shdr_syms,
+    const Elf64_Shdr *shdr_strs, SymbolInfo &syms)
+{
+    const Elf64_Sym *sym_tab =
+        (const Elf64_Sym *)(data + shdr_syms->sh_offset);
+    const char *str_tab = (const char *)(data + shdr_strs->sh_offset);
+    size_t sym_num = shdr_syms->sh_size / sizeof(Elf64_Sym);
+    size_t str_len = shdr_strs->sh_size;
+    for (size_t i = 0; i < sym_num; i++)
+    {
+        const Elf64_Sym *sym = sym_tab + i;
+        if (sym->st_name >= str_len)
+            continue;
+        const char *name = str_tab + sym->st_name;
+        if (name[0] == '\0')
+            continue;
+        syms.insert({name, sym});
+    }
+}
+
+/*
  * Parse an ELF file.
  */
 ELF *e9frontend::parseELF(const char *filename, intptr_t base)
@@ -2216,7 +2240,7 @@ ELF *e9frontend::parseELF(const char *filename, intptr_t base)
     end += base;
 
     /*
-     * Find all dynamic symbols.
+     * Find all symbols.
      */
     SymbolInfo dynsyms;
     auto i = sections.find(".dynsym");
@@ -2224,7 +2248,6 @@ ELF *e9frontend::parseELF(const char *filename, intptr_t base)
     const Elf64_Sym *dynsym_tab = nullptr;
     const char *dynstr_tab = nullptr;
     size_t dynsym_num = 0;
-    size_t dynstr_len = 0;
     if (i != sections.end() && j != sections.end() &&
             i->second->sh_type == SHT_DYNSYM &&
             j->second->sh_type == SHT_STRTAB)
@@ -2234,17 +2257,19 @@ ELF *e9frontend::parseELF(const char *filename, intptr_t base)
         dynsym_tab = (const Elf64_Sym *)(data + shdr_dynsym->sh_offset);
         dynstr_tab = (const char *)(data + shdr_dynstr->sh_offset);
         dynsym_num = shdr_dynsym->sh_size / sizeof(Elf64_Sym);
-        dynstr_len = shdr_dynstr->sh_size;
-        for (size_t i = 0; i < dynsym_num; i++)
-        {
-            const Elf64_Sym *sym = dynsym_tab + i;
-            if (sym->st_name >= dynstr_len)
-                continue;
-            const char *name = dynstr_tab + sym->st_name;
-            if (name[0] == '\0')
-                continue;
-            dynsyms.insert({name, sym});
-        }
+        parseSymbols(data, shdr_dynsym, shdr_dynstr, dynsyms);
+    }
+    SymbolInfo syms;
+    i = sections.find(".symtab");
+    j = sections.find(".strtab");
+    if (i != sections.end() && j != sections.end() &&
+            i->second->sh_type == SHT_SYMTAB &&
+            j->second->sh_type == SHT_STRTAB)
+    {
+        // Binary is not stripped, so may as well parse the symtab.
+        const Elf64_Shdr *shdr_syms = i->second;
+        const Elf64_Shdr *shdr_strs = j->second;
+        parseSymbols(data, shdr_syms, shdr_strs, syms);
     }
 
     /*
@@ -2306,6 +2331,7 @@ ELF *e9frontend::parseELF(const char *filename, intptr_t base)
     elf->reloc          = reloc;
     elf->sections.swap(sections);
     elf->dynsyms.swap(dynsyms);
+    elf->syms.swap(syms);
     elf->got.swap(got);
     elf->plt.swap(plt);
 
@@ -2325,49 +2351,85 @@ void freeELF(ELF *elf)
 /*
  * ELF getters.
  */
-const uint8_t *getELFData(const ELF *elf)
+const uint8_t *e9frontend::getELFData(const ELF *elf)
 {
     return elf->data;
 }
-size_t getELFDataSize(const ELF *elf)
+size_t e9frontend::getELFDataSize(const ELF *elf)
 {
     return elf->size;
 }
-intptr_t getELFBaseAddr(const ELF *elf)
+intptr_t e9frontend::getELFBaseAddr(const ELF *elf)
 {
     return elf->base;
 }
-intptr_t getELFEndAddr(const ELF *elf)
+intptr_t e9frontend::getELFEndAddr(const ELF *elf)
 {
     return elf->end;
 }
-const Elf64_Shdr *getELFSection(const ELF *elf, const char *name)
+const Elf64_Shdr *e9frontend::getELFSection(const ELF *elf, const char *name)
 {
     auto i = elf->sections.find(name);
     if (i == elf->sections.end())
         return nullptr;
     return i->second;
 }
-const Elf64_Sym *getELFDynSym(const ELF *elf, const char *name)
+const Elf64_Sym *e9frontend::getELFDynSym(const ELF *elf, const char *name)
 {
     auto i = elf->dynsyms.find(name);
     if (i == elf->dynsyms.end())
         return nullptr;
     return i->second;
 }
-intptr_t getELFPLTEntry(const ELF *elf, const char *name)
+const Elf64_Sym *e9frontend::getELFSym(const ELF *elf, const char *name)
+{
+    auto i = elf->syms.find(name);
+    if (i == elf->syms.end())
+        return nullptr;
+    return i->second;
+}
+intptr_t e9frontend::getELFPLTEntry(const ELF *elf, const char *name)
 {
     auto i = elf->plt.find(name);
     if (i == elf->plt.end())
         return INTPTR_MIN;
     return i->second;
 }
-intptr_t getELFGOTEntry(const ELF *elf, const char *name)
+intptr_t e9frontend::getELFGOTEntry(const ELF *elf, const char *name)
 {
     auto i = elf->got.find(name);
     if (i == elf->got.end())
         return INTPTR_MIN;
     return i->second;
+}
+
+/*
+ * Find the address associated with the given name.
+ */
+static intptr_t getELFObject(const ELF *elf, const char *name)
+{
+    // CASE #1: section
+    const Elf64_Shdr *shdr = getELFSection(elf, name);
+    if (shdr != nullptr)
+        return elf->base + (intptr_t)shdr->sh_addr;
+
+    // CASE #2: symbol
+    const Elf64_Sym *sym = getELFDynSym(elf, name);
+    if (sym == nullptr)
+        sym = getELFSym(elf, name);
+    if (sym != nullptr && sym->st_shndx != SHN_UNDEF)
+        return elf->base + (intptr_t)sym->st_value;
+
+    // CASE #3: PLT entry
+    intptr_t val = getELFPLTEntry(elf, name);
+    if (val != INTPTR_MIN)
+        return elf->base + val;
+
+    // CASE #4: undefined symbol
+    if (sym != nullptr)
+        return -1;
+
+    return INTPTR_MIN;
 }
 
 /*

@@ -91,8 +91,16 @@ The following comparison operators are supported:
 If the comparison operator and value are omitted, then the test is
 equivalent to (`ATTRIBUTE != 0`).
 
-A `VALUE` can be either an integer, string, or a special symbol
-such as a register name, etc.
+A `VALUE` can be either:
+
+* An *integer constant*, e.g., `123`, `0x123`, etc.
+* A *string constant*, e.g., `"abc"`, etc.
+* An *enumeration value* such as register names (`rax`, `eax`, etc.), operand types
+  (`imm`, `reg`, `mem`), etc.
+* A *symbolic address* of the form `NAME`, where `NAME` is any section
+  or symbol name from the input ELF file.
+  A symbolic address has type `Integer`.
+
 For string attributes, the value can be a regular expression.
 This means that the corresponding attribute value must either
 match (for `==`) or not match (for `!=`) the regular expression,
@@ -311,6 +319,8 @@ an attribute is defined or not.
   match all instructions that do not access the flags register.
 * `defined(mem[0])`:
   match all instructions that have at least one memory operand.
+* (`call and imm[0] == &malloc`):
+  match all direct calls to `malloc()`.
 
 ---
 ## <a id="s2">2. Action Language</a>
@@ -436,8 +446,8 @@ The following arguments are supported:
 <tr><th>Argument</th><th>Type</th><th>Description</th></tr>
 <tr><td><i>Integer</i></td><td><tt>intptr_t</tt></td>
     <td>An integer constant</td></tr>
-<tr><td><tt>&amp;</tt><i>Symbol</i></td><td><tt>(const) void &#42;</tt></td>
-    <td>A symbol from the input ELF binary (passed-by-pointer)</td></tr>
+<tr><td><tt>&amp;</tt><i>Name</i></td><td><tt>const void &#42;</tt></td>
+    <td>A section/symbol/PLT/GOT name from the input ELF binary (passed-by-pointer)</td></tr>
 <tr><td><b><tt>asm</tt></b></td><td><tt>const char &#42;</tt></td>
     <td>Assembly representation of the matching instruction</td></tr>
 <tr><td><b><tt>asm.size</tt></b></td><td><tt>size_t</tt></td>

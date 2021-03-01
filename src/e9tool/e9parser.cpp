@@ -727,6 +727,7 @@ struct Parser
 {
     static const unsigned TOKEN_MAXLEN = 2048;
 
+    const ELF * elf;
     const char * const mode;
     const char * const buf;
     size_t pos     = 0;
@@ -735,7 +736,8 @@ struct Parser
     intptr_t i     = 0;
     char s[TOKEN_MAXLEN+1];
 
-    Parser(const char *buf, const char *mode) : buf(buf), mode(mode)
+    Parser(const char *buf, const char *mode, const ELF &elf) :
+        buf(buf), mode(mode), elf(&elf)
     {
         ;
     }
