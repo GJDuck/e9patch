@@ -240,10 +240,17 @@ Bugs can be reported here:
 
 ## Versions
 
-The released version is an improved version of the original prototype
-evaluated in the paper.
-The implementation of the *Physical Page Grouping* space optimization
-has been improved.
+The current version of E9Patch is significantly improved compared to
+the original prototype evaluated in the PLDI'2020 paper.
+Specifically:
+
+* The current version implements several new optimizations and can generate
+  significantly faster binaries, sometimes by a factor of 2x.
+  To enable the new optimizations, pass the `-O2` option to E9Tool.
+* The implementation of the *Physical Page Grouping* space optimization
+  has also been improved.
+* The patching coverage has also been slightly improved.
+* Many new features have been implemented (see the documentation).
 
 ## License
 
