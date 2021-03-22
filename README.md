@@ -191,7 +191,7 @@ Patch all jump instructions in Google Chrome with empty instrumentation:
         $ mkdir -p chrome
         $ for FILE in /opt/google/chrome/*; do ln -sf $FILE chrome/; done
         $ rm chrome/chrome
-        $ ./e9tool --match 'asm=j.*' --action passthru /opt/google/chrome/chrome -c 4 --start=ChromeMain -o chrome/chrome
+        $ ./e9tool --match 'asm=j.*' --action passthru /opt/google/chrome/chrome -c 4 --exclude=.text..ChromeMain -o chrome/chrome
         $ cd chrome
         $ ./chrome
 
@@ -202,7 +202,7 @@ instrumentation:
         $ mkdir -p chrome
         $ for FILE in /opt/google/chrome/*; do ln -sf $FILE chrome/; done
         $ rm chrome/chrome
-        $ ./e9tool --match 'asm=j.*' --action 'call entry@counter' /opt/google/chrome/chrome -c 4 --start=ChromeMain -o chrome/chrome
+        $ ./e9tool --match 'asm=j.*' --action 'call entry@counter' /opt/google/chrome/chrome -c 4 --exclude=.text..ChromeMain -o chrome/chrome
         $ cd chrome
         $ FREQ=10000000 ./chrome
 

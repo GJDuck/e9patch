@@ -987,13 +987,15 @@ static const char *buildMetadataString(FILE *out, char *buf, long *pos)
  * Lookup a value from a CSV file based on the matching.
  */
 static bool matchEval(csh handle, const MatchExpr *expr, const cs_insn *I,
-    intptr_t offset, const char *basename = nullptr,
+    intptr_t offset, const char *section, const char *basename = nullptr,
     const Record **record = nullptr);
 static intptr_t lookupValue(csh handle, const Action *action,
-    const cs_insn *I, intptr_t offset, const char *basename, intptr_t idx)
+    const cs_insn *I, intptr_t offset, const char *section,
+    const char *basename, intptr_t idx)
 {
     const Record *record = nullptr;
-    bool pass = matchEval(handle, action->match, I, offset, basename, &record);
+    bool pass = matchEval(handle, action->match, I, offset, section, basename,
+        &record);
     if (!pass || record == nullptr)
         error("failed to lookup value from file \"%s.csv\"; matching is "
             "ambiguous", basename);
@@ -1010,7 +1012,8 @@ static intptr_t lookupValue(csh handle, const Action *action,
  */
 static Type sendLoadArgumentMetadata(FILE *out, CallInfo &info,
     csh handle, const ELF *elf, const Action *action, const Argument &arg,
-    const cs_insn *I, off_t offset, intptr_t id, int argno)
+    const cs_insn *I, off_t offset, const char *section, intptr_t id,
+    int argno)
 {
     int regno = getArgRegIdx(argno);
     if (regno < 0)
@@ -1023,8 +1026,8 @@ static Type sendLoadArgumentMetadata(FILE *out, CallInfo &info,
     {
         case ARGUMENT_USER:
         {
-            intptr_t value = lookupValue(handle, action, I, offset, arg.name,
-                arg.value);
+            intptr_t value = lookupValue(handle, action, I, offset, section,
+                arg.name, arg.value);
             sendLoadValueMetadata(out, value, regno);
             break;
         }
@@ -1379,8 +1382,9 @@ static void sendArgumentDataMetadata(FILE *out, const Argument &arg,
  * Build metadata.
  */
 static Metadata *buildMetadata(csh handle, const ELF *elf,
-    const Action *action, const cs_insn *I, off_t offset, intptr_t id,
-    Metadata *metadata, char *buf, size_t size)
+    const Action *action, const cs_insn *I, off_t offset,
+    const char *section, intptr_t id, Metadata *metadata, char *buf,
+    size_t size)
 {
     if (action == nullptr)
         return nullptr;
@@ -1442,7 +1446,7 @@ static Metadata *buildMetadata(csh handle, const ELF *elf,
             for (const auto &arg: action->args)
             {
                 Type t = sendLoadArgumentMetadata(out, info, handle, elf,
-                    action, arg, I, offset, id, argno);
+                    action, arg, I, offset, section, id, argno);
                 sig = setType(sig, t, argno);
                 argno++;
             }

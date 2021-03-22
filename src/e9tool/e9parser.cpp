@@ -302,7 +302,7 @@ static Register getRegister(x86_reg reg)
 enum Token
 {
     TOKEN_ERROR = -1,
-    TOKEN_END = '\0',
+    TOKEN_EOF = '\0',
     TOKEN_INTEGER = 2000,
     TOKEN_REGISTER,
     TOKEN_STRING,
@@ -320,7 +320,9 @@ enum Token
     TOKEN_CONDITIONAL,
     TOKEN_DEFINED,
     TOKEN_DISPLACEMENT,
+    TOKEN_DOTDOT,
     TOKEN_DST,
+    TOKEN_END,
     TOKEN_EXIT,
     TOKEN_FALSE,
     TOKEN_GEQ,
@@ -361,9 +363,11 @@ enum Token
     TOKEN_RETURN,
     TOKEN_RW,
     TOKEN_SCALE,
+    TOKEN_SECTION,
     TOKEN_SEGMENT,
     TOKEN_SIZE,
     TOKEN_SRC,
+    TOKEN_START,
     TOKEN_STATE,
     TOKEN_STATIC_ADDR,
     TOKEN_TARGET,
@@ -401,6 +405,7 @@ static const TokenInfo tokens[] =
     {"--",              TOKEN_NONE,             (Access)0x0},
     {"-w",              TOKEN_WRITE,            ACCESS_WRITE},
     {".",               (Token)'.',             0},
+    {"..",              TOKEN_DOTDOT,           0},
     {":",               (Token)':',             0},
     {"<",               (Token)'<',             0},
     {"<=",              TOKEN_LEQ,              0},
@@ -452,6 +457,7 @@ static const TokenInfo tokens[] =
     {"ecx",             TOKEN_REGISTER,         REGISTER_ECX},
     {"edi",             TOKEN_REGISTER,         REGISTER_EDI},
     {"edx",             TOKEN_REGISTER,         REGISTER_EDX},
+    {"end",             TOKEN_END,              0},
     {"es",              TOKEN_REGISTER,         REGISTER_ES},
     {"esi",             TOKEN_REGISTER,         REGISTER_ESI},
     {"esp",             TOKEN_REGISTER,         REGISTER_ESP},
@@ -538,6 +544,7 @@ static const TokenInfo tokens[] =
     {"rsp",             TOKEN_REGISTER,         REGISTER_RSP},
     {"rw",              TOKEN_RW,               (ACCESS_READ | ACCESS_WRITE)},
     {"scale",           TOKEN_SCALE,            0},
+    {"section",         TOKEN_SECTION,          0},
     {"seg",             TOKEN_SEGMENT,          0},
     {"segment",         TOKEN_SEGMENT,          0},
     {"si",              TOKEN_REGISTER,         REGISTER_SI},
@@ -547,6 +554,7 @@ static const TokenInfo tokens[] =
     {"spl",             TOKEN_REGISTER,         REGISTER_SPL},
     {"src",             TOKEN_SRC,              0},
     {"ss",              TOKEN_REGISTER,         REGISTER_SS},
+    {"start",           TOKEN_START,            0},
     {"state",           TOKEN_STATE,            0},
     {"staticAddr",      TOKEN_STATIC_ADDR,      0},
     {"target",          TOKEN_TARGET,           0},
@@ -693,7 +701,7 @@ static const char *getNameFromToken(Token token)
             return "or";
         case TOKEN_ERROR:
             return "<bad-token>";
-        case TOKEN_END:
+        case TOKEN_EOF:
             return "<end-of-input>";
         case TOKEN_INTEGER:
             return "<integer>";
@@ -774,14 +782,14 @@ struct Parser
         {
             case '\0':
                 strcpy(s, "<end-of-input>");
-                return TOKEN_END;
+                return TOKEN_EOF;
             case '[': case ']': case '@': case ',': case '(': case ')':
             case '&': case '.': case ':':
                 s[0] = c; s[1] = '\0';
                 pos++;
-                if (c == '&' && buf[pos] == '&')
+                if ((c == '&' || c == '.') && buf[pos] == c)
                 {
-                    s[1] = '&'; s[2] = '\0';
+                    s[1] = c; s[2] = '\0';
                     pos++;
                 }
                 return getTokenFromName(s);
@@ -932,7 +940,7 @@ struct Parser
         }
     }
 
-    void unexpectedToken()
+    NO_RETURN void unexpectedToken()
     {
         std::string str;
         getPositionStr(str);

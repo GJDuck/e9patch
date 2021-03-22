@@ -16,6 +16,7 @@ to be used directly.
     - [1.1 Attributes](#s11)
     - [1.2 Definedness](#s12)
     - [1.3 Examples](#s13)
+    - [1.4 Exclusions](#s14)
 * [2. Action Language](#s2)
     - [2.1 Builtin Actions](#s21)
     - [2.2 Call Actions](#s22)
@@ -126,6 +127,8 @@ supported:
     <td>The assembly string representation</td></tr>
 <tr><td><b><tt>mnemonic</tt></b></td><td><tt>String</tt></td>
     <td>The mnemonic</td></tr>
+<tr><td><b><tt>section</tt></b></td><td><tt>String</tt></td>
+    <td>The section name</td></tr>
 <tr><td><b><tt>addr</tt></b></td><td><tt>Integer</tt></td>
     <td>The ELF virtual address</td></tr>
 <tr><td><b><tt>offset</tt></b></td><td><tt>Integer</tt></td>
@@ -321,6 +324,44 @@ an attribute is defined or not.
   match all instructions that have at least one memory operand.
 * (`call and imm[0] == &malloc`):
   match all direct calls to `malloc()`.
+
+---
+### <a id="s14">1.4 Exclusions</a>
+
+*Exclusions* are an additional method for controlling which instructions are
+patched.
+An exclusion is specified by the (`--exclude RANGE`) or (or `-E RANGE`)
+command line option, where `RANGE` specifies a range of addresses that
+should not be disassembled or rewritten.
+Exclusions are more low-level than the matching language since the `RANGE`
+will not even be disassembled.
+This can help solve some problems, such as the binary storing data
+inside the `.text` section.
+
+The general syntax for `RANGE` is:
+<pre>
+    RANGE ::=   ADDR [ <b>..</b> ADDR ]
+    ADDR  ::=   INTEGER
+                SYMBOL
+                SECTION [ <b>.</b> ( <b>start</b> | <b>end</b> ) ]
+</pre>
+For example:
+
+* `0x12345...0x45689`: exclude a specific address range
+* `.text..ChromeMain`: exclude the `.text` section up to the symbol `ChromeMain`
+* `.plt .. .text`: exclude a range of sections
+* `.plt.start .. .text.end`: equivalent to the above
+* `.plt .. .text.start`: exclude all sections between `.plt` and the starting
+  address of `.text`.  The `.text` section itself will not be excluded.
+* `.text`: exclude the entire `.text` section.
+
+Note that a `RANGE` may include a lower and upper bound, i.e., `LB .. UB`.
+If the `UB` is omitted, then `UB=LB` is implied.
+The instruction at the address `UB` is *not* excluded, and disassembly will
+resume from this address.
+In other words, the syntax `LB .. UB` represents the address range `[LB..UB)`,
+and E9Tool assumes that `UB` points to a valid instruction from which
+disassembly can resume.
 
 ---
 ## <a id="s2">2. Action Language</a>

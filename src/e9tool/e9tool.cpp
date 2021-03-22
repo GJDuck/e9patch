@@ -43,7 +43,8 @@
 
 #define PAGE_SIZE       4096
 
-#define MAX_ACTIONS     (1 << 10)
+#define MAX_ACTIONS     (1 << 16)
+#define MAX_SECTIONS    (1 << 10)
 
 #include "e9plugin.h"
 #include "e9frontend.cpp"
@@ -67,13 +68,26 @@ struct Location
     uint64_t size:4;
     uint64_t emitted:1;
     uint64_t patch:1;
-    uint64_t action:10;
+    uint64_t section:10;
+    uint64_t address:48;
+    uint64_t action:16;
 
-    Location(off_t offset, size_t size, bool patch, unsigned action) :
-        offset(offset), size(size), emitted(0), patch(patch), action(action)
+    Location(size_t section, intptr_t addr, off_t offset, size_t size,
+        bool patch, unsigned action) :
+        address(addr), offset(offset), size(size), emitted(0), patch(patch),
+        section(section), action(action)
     {
         ;
     }
+};
+
+/*
+ * Excluded locations.
+ */
+struct Exclude
+{
+    intptr_t lo;
+    intptr_t hi;
 };
 
 /*
@@ -109,6 +123,7 @@ enum MatchKind
     MATCH_OFFSET,
     MATCH_RANDOM,
     MATCH_RETURN,
+    MATCH_SECTION,
     MATCH_SIZE,
 
     MATCH_OP,
@@ -617,6 +632,9 @@ static MatchTest *parseTest(Parser &parser)
             match = MATCH_REG; break;
         case TOKEN_RETURN:
             match = MATCH_RETURN; break;
+        case TOKEN_SECTION:
+            type = MATCH_TYPE_STRING;
+            match = MATCH_SECTION; break;
         case TOKEN_SIZE: case TOKEN_LENGTH:
             match = MATCH_SIZE; break;
         case TOKEN_SRC:
@@ -758,7 +776,7 @@ static MatchTest *parseTest(Parser &parser)
     }
     switch (match)
     {
-        case MATCH_ASSEMBLY: case MATCH_MNEMONIC:
+        case MATCH_ASSEMBLY: case MATCH_MNEMONIC: case MATCH_SECTION:
             if (cmp != MATCH_CMP_EQ && cmp != MATCH_CMP_NEQ &&
                     cmp != MATCH_CMP_DEFINED)
                 error("failed to parse matching; invalid match "
@@ -890,7 +908,7 @@ static MatchExpr *parseMatch(const ELF &elf, const char *str)
 {
     Parser parser(str, "matching", elf);
     MatchExpr *expr = parseMatchExpr(parser, MATCH_OP_OR);
-    parser.expectToken(TOKEN_END);
+    parser.expectToken(TOKEN_EOF);
     return expr;
 }
 
@@ -1360,7 +1378,7 @@ static Action *parseAction(const ELF &elf, const char *str,
                (conditional? CALL_CONDITIONAL:
                (jump? CALL_CONDITIONAL_JUMP: CALL_BEFORE))));
     }
-    parser.expectToken(TOKEN_END);
+    parser.expectToken(TOKEN_EOF);
 
     // Build the action:
     const char *name = nullptr;
@@ -1422,10 +1440,98 @@ static Action *parseAction(const ELF &elf, const char *str,
 }
 
 /*
+ * Parse an exclusion.
+ */
+static Exclude parseExcludeBound(Parser &parser, const char *str,
+    const ELF &elf)
+{
+    Exclude bound = {INTPTR_MAX, INTPTR_MIN};
+    int t = parser.getToken();
+    switch (t)
+    {
+        case TOKEN_INTEGER:
+            return {parser.i, parser.i};
+        case '&':
+            t = parser.getToken();
+            // Fallthrough:
+        default:
+        {
+            std::string name;
+            if (t == '.')
+            {
+                t = parser.getToken();
+                name += '.';
+            }
+            if (t != TOKEN_STRING)
+                parser.unexpectedToken();
+            name += parser.s;
+            const Elf64_Shdr *shdr = getELFSection(&elf, name.c_str());
+            if (shdr != nullptr)
+            {
+                bound = {elf.base + (intptr_t)shdr->sh_addr,
+                         elf.base + (intptr_t)shdr->sh_addr +
+                            (intptr_t)shdr->sh_size};
+                break;
+            }
+            const Elf64_Sym *sym = getELFDynSym(&elf, name.c_str());
+            if (sym == nullptr)
+                sym = getELFSym(&elf, name.c_str());
+            if (sym != nullptr && sym->st_shndx != SHN_UNDEF)
+            {
+                bound = {elf.base + (intptr_t)sym->st_value,
+                         elf.base + (intptr_t)sym->st_value};
+                break;
+            }
+
+            intptr_t val = getELFPLTEntry(&elf, name.c_str());
+            if (val != INTPTR_MIN)
+            {
+                bound = {val, val};
+                break;
+            }
+            error("failed to parse exclusion \"%s\"; no such symbol or "
+                "section \"%s\" in \"%s", str, name.c_str(), elf.filename);
+        }
+    }
+    if (parser.peekToken() != '.')
+        return bound;
+    parser.getToken();
+    switch (parser.getToken())
+    {
+        case TOKEN_START:
+            return {bound.lo, bound.lo};
+        case TOKEN_END:
+            return {bound.hi, bound.hi};
+        default:
+            parser.unexpectedToken();
+    }
+}
+static Exclude parseExclude(const ELF &elf, const char *str)
+{
+    Parser parser(str, "exclusion", elf);
+
+    Exclude lb = parseExcludeBound(parser, str, elf);
+    Exclude ub = lb;
+    if (parser.peekToken() == TOKEN_DOTDOT)
+    {
+        parser.getToken();
+        ub = parseExcludeBound(parser, str, elf);
+    }
+    parser.expectToken(TOKEN_EOF);
+    Exclude exclude = {std::min(lb.lo, ub.hi), std::max(lb.lo, ub.hi)};
+    if (exclude.lo == exclude.hi)
+        warning("ignoring empty exclusion \"%s\" (0x%lx..0x%lx)",
+            str, exclude.lo, exclude.hi);
+    else
+        debug("excluding \"%s\" (0x%lx..0x%lx)", str, exclude.lo, exclude.hi);
+    return exclude;
+}
+
+/*
  * Create match string.
  */
 static const char *makeMatchString(MatchKind match, const cs_insn *I,
-    char *buf, size_t buf_size)
+    const char *section, char *buf, size_t buf_size)
 {
     switch (match)
     {
@@ -1443,6 +1549,8 @@ static const char *makeMatchString(MatchKind match, const cs_insn *I,
             }
         case MATCH_MNEMONIC:
             return I->mnemonic;
+        case MATCH_SECTION:
+            return section;
         default:
             return "";
     }
@@ -1682,7 +1790,8 @@ static MatchValue makeMatchValue(MatchKind match, int idx, MatchField field,
  * Evaluate a matching.
  */
 static bool matchEval(csh handle, const MatchExpr *expr, const cs_insn *I,
-    intptr_t offset, const char *basename, const Record **record)
+    intptr_t offset, const char *section, const char *basename,
+    const Record **record)
 {
     if (expr == nullptr)
         return true;
@@ -1691,18 +1800,23 @@ static bool matchEval(csh handle, const MatchExpr *expr, const cs_insn *I,
     switch (expr->op)
     {
         case MATCH_OP_NOT:
-            pass = matchEval(handle, expr->arg1, I, offset, nullptr, nullptr);
+            pass = matchEval(handle, expr->arg1, I, offset, section, nullptr,
+                nullptr);
             return !pass;
         case MATCH_OP_AND:
-            pass = matchEval(handle, expr->arg1, I, offset, basename, record);
+            pass = matchEval(handle, expr->arg1, I, offset, section, basename,
+                record);
             if (!pass)
                 return false;
-            return matchEval(handle, expr->arg2, I, offset, basename, record);
+            return matchEval(handle, expr->arg2, I, offset, section, basename,
+                record);
         case MATCH_OP_OR:
-            pass = matchEval(handle, expr->arg1, I, offset, basename, record);
+            pass = matchEval(handle, expr->arg1, I, offset, section, basename,
+                record);
             if (pass)
                 return true;
-            return matchEval(handle, expr->arg2, I, offset, basename, record);
+            return matchEval(handle, expr->arg2, I, offset, section, basename,
+                record);
         case MATCH_OP_TEST:
             test = expr->test;
             break;
@@ -1712,7 +1826,7 @@ static bool matchEval(csh handle, const MatchExpr *expr, const cs_insn *I,
 
     switch (test->match)
     {
-        case MATCH_ASSEMBLY: case MATCH_MNEMONIC:
+        case MATCH_ASSEMBLY: case MATCH_MNEMONIC: case MATCH_SECTION:
         {
             if (test->cmp == MATCH_CMP_DEFINED)
             {
@@ -1720,7 +1834,7 @@ static bool matchEval(csh handle, const MatchExpr *expr, const cs_insn *I,
                 break;
             }
             char buf[BUFSIZ];
-            const char *str = makeMatchString(test->match, I, buf,
+            const char *str = makeMatchString(test->match, I, section, buf,
                 sizeof(buf)-1);
             std::cmatch cmatch;
             pass = std::regex_match(str, cmatch, *test->regex);
@@ -1832,7 +1946,7 @@ static bool matchEval(csh handle, const MatchExpr *expr, const cs_insn *I,
  * Matching.
  */
 static bool matchAction(csh handle, const Action *action, const cs_insn *I,
-    intptr_t offset)
+    intptr_t offset, const char *section)
 {
 #if 0
     // TODO: fix option_debug
@@ -1847,7 +1961,7 @@ static bool matchAction(csh handle, const Action *action, const cs_insn *I,
             I->op_str);
     }
 #endif
-    bool pass = matchEval(handle, action->match, I, offset);
+    bool pass = matchEval(handle, action->match, I, offset, section);
 #if 0
         if (option_debug)
         {
@@ -1879,12 +1993,12 @@ static bool matchAction(csh handle, const Action *action, const cs_insn *I,
  * Matching.
  */
 static int match(csh handle, const std::vector<Action *> &actions,
-    const cs_insn *I, off_t offset)
+    const cs_insn *I, off_t offset, const char *section)
 {
     int idx = 0;
     for (const auto action: actions)
     {
-        if (matchAction(handle, action, I, offset))
+        if (matchAction(handle, action, I, offset, section))
             return idx;
         idx++;
     }
@@ -1892,12 +2006,33 @@ static int match(csh handle, const std::vector<Action *> &actions,
 }
 
 /*
+ * Exclusion.
+ */
+static size_t exclude(const std::vector<Exclude> &excludes, intptr_t addr)
+{
+    if (excludes.size() == 0)
+        return 0;
+    ssize_t lo = 0, hi = (ssize_t)excludes.size()-1;
+    while (lo <= hi)
+    {
+        ssize_t mid = (lo + hi) / 2;
+        const Exclude &exclude = excludes[mid];
+        if (addr < exclude.lo)
+            hi = mid-1;
+        else if (addr > exclude.hi)
+            lo = mid+1;
+        else
+            return exclude.hi - addr;
+    }
+    return 0;
+}
+
+/*
  * Send an instruction message (if necessary).
  */
-static bool sendInstructionMessage(FILE *out, Location &loc, intptr_t addr,
-    intptr_t text_addr, off_t text_offset)
+static bool sendInstructionMessage(FILE *out, Location &loc, intptr_t addr)
 {
-    if (std::abs((intptr_t)(text_addr + loc.offset) - addr) >
+    if (std::abs((intptr_t)loc.address - addr) >
             INT8_MAX + /*sizeof(short jmp)=*/2 + /*max instruction size=*/15)
         return false;
 
@@ -1905,37 +2040,8 @@ static bool sendInstructionMessage(FILE *out, Location &loc, intptr_t addr,
         return true;
     loc.emitted = true;
 
-    addr = text_addr + loc.offset;
-    off_t offset = text_offset + loc.offset;
-    size_t size = loc.size;
-
-    sendInstructionMessage(out, addr, size, offset);
+    sendInstructionMessage(out, loc.address, loc.size, loc.offset);
     return true;
-}
-
-/*
- * Convert a positon into an address.
- */
-static intptr_t positionToAddr(const ELF &elf, const char *option,
-    const char *pos)
-{
-    // Case #1: absolute address:
-    if (pos[0] == '0' && pos[1] == 'x')
-    {
-        const char *str = pos + 2;
-        errno = 0;
-        char *end = nullptr;
-        intptr_t abs_addr = strtoull(str, &end, 16);
-        if (end != nullptr && *end != '\0')
-            error("bad value for `%s' option; invalid absolute position "
-                "string \"%s\"", option, pos);
-        return abs_addr;
-    }
-
-    // Case #2: symbolic address:
-    intptr_t val = getELFObject(&elf, pos);
-    val = (val < 0? INTPTR_MIN: val);
-    return val;
 }
 
 /*
@@ -1992,9 +2098,12 @@ static void usage(FILE *stream, const char *progname)
         "\t--debug\n"
         "\t\tEnable debug output.\n"
         "\n"
-        "\t--end END\n"
-        "\t\tOnly patch the (.text) section up to the address or symbol\n"
-        "\t\tEND.  By default, the whole (.text) section is patched.\n"
+        "\t--exclude RANGE\n"
+        "\t\tExclude the address RANGE from disassembly and rewriting.\n"
+        "\t\tHere, RANGE has the format `LB .. UB', where LB/UB are\n"
+        "\t\tinteger addresses, section names or symbols.  The address\n"
+        "\t\trange [LB..UB) will be excluded, and UB must point to the\n"
+        "\t\tfirst instruction where disassembly should resume.\n"
         "\n"
         "\t--executable\n"
         "\t\tTreat the input file as an executable, even if it appears to\n"
@@ -2045,10 +2154,6 @@ static void usage(FILE *stream, const char *progname)
         "\n"
         "\t\t\t[PATH/]lib*.so[.VERSION]\n"
         "\n"
-        "\t--start START\n"
-        "\t\tOnly patch the (.text) section beginning from address or symbol\n"
-        "\t\tSTART.  By default, the whole (.text) section is patched\n"
-        "\n"
         "\t--static-loader, -s\n"
         "\t\tReplace patched pages statically.  By default, patched pages\n"
         "\t\tare loaded during program initialization as this is more\n"
@@ -2083,7 +2188,7 @@ enum Option
     OPTION_BACKEND,
     OPTION_COMPRESSION,
     OPTION_DEBUG,
-    OPTION_END,
+    OPTION_EXCLUDE,
     OPTION_EXECUTABLE,
     OPTION_FORMAT,
     OPTION_HELP,
@@ -2092,7 +2197,6 @@ enum Option
     OPTION_OPTION,
     OPTION_OUTPUT,
     OPTION_SHARED,
-    OPTION_START,
     OPTION_STATIC_LOADER,
     OPTION_SYNC,
     OPTION_SYNTAX,
@@ -2121,7 +2225,7 @@ int main(int argc, char **argv)
         {"backend",       req_arg, nullptr, OPTION_BACKEND},
         {"compression",   req_arg, nullptr, OPTION_COMPRESSION},
         {"debug",         no_arg,  nullptr, OPTION_DEBUG},
-        {"end",           req_arg, nullptr, OPTION_END},
+        {"exclude",       req_arg, nullptr, OPTION_EXCLUDE},
         {"executable",    no_arg,  nullptr, OPTION_EXECUTABLE},
         {"format",        req_arg, nullptr, OPTION_FORMAT},
         {"help",          no_arg,  nullptr, OPTION_HELP},
@@ -2130,7 +2234,6 @@ int main(int argc, char **argv)
         {"option",        req_arg, nullptr, OPTION_OPTION},
         {"output",        req_arg, nullptr, OPTION_OUTPUT},
         {"shared",        no_arg,  nullptr, OPTION_SHARED},
-        {"start",         req_arg, nullptr, OPTION_START},
         {"static-loader", no_arg,  nullptr, OPTION_STATIC_LOADER},
         {"sync",          req_arg, nullptr, OPTION_SYNC},
         {"syntax",        req_arg, nullptr, OPTION_SYNTAX},
@@ -2145,14 +2248,15 @@ int main(int argc, char **argv)
     ssize_t option_sync = -1;
     bool option_executable = false, option_shared = false,
         option_static_loader = false;
-    std::string option_start(""), option_end(""), option_backend("./e9patch");
+    std::string option_backend("./e9patch");
     std::set<intptr_t> option_trap;
     std::vector<std::string> option_match;
     std::vector<ActionEntry> option_actions;
+    std::vector<std::string> option_exclude;
     while (true)
     {
         int idx;
-        int opt = getopt_long_only(argc, argv, "A:c:hM:o:O:s", long_options,
+        int opt = getopt_long_only(argc, argv, "A:c:E:hM:o:O:s", long_options,
             &idx);
         if (opt < 0)
             break;
@@ -2180,8 +2284,9 @@ int main(int argc, char **argv)
             case OPTION_DEBUG:
                 option_debug = true;
                 break;
-            case OPTION_END:
-                option_end = optarg;
+            case OPTION_EXCLUDE:
+            case 'E':
+                option_exclude.push_back(optarg);
                 break;
             case OPTION_EXECUTABLE:
                 option_executable = true;
@@ -2239,9 +2344,6 @@ int main(int argc, char **argv)
             case OPTION_STATIC_LOADER:
             case 's':
                 option_static_loader = true;
-                break;
-            case OPTION_START:
-                option_start = optarg;
                 break;
             case OPTION_SYNC:
             {
@@ -2329,6 +2431,45 @@ int main(int argc, char **argv)
         actions.push_back(action);
     }
     option_actions.clear();
+
+    /*
+     * Parse exclusions.
+     */
+    std::vector<Exclude> excludes;
+    for (const auto &str: option_exclude)
+    {
+        Exclude exclude = parseExclude(elf, str.c_str());
+        if (exclude.lo < exclude.hi)
+            excludes.push_back(exclude);
+    }
+    std::map<intptr_t, Exclude> eidx;
+    for (auto exclude: excludes)
+    {
+        auto i = eidx.lower_bound(exclude.lo);
+        while (i != eidx.end())
+        {
+            auto &entry = i->second;
+            if (entry.hi >= exclude.lo && entry.lo <= exclude.hi)
+            {
+                // Overlaps, so absorb it
+                exclude.lo = std::min(exclude.lo, entry.lo);
+                exclude.hi = std::max(exclude.hi, entry.hi);
+                eidx.erase(i++);
+            }
+            else if (entry.lo > exclude.hi)
+                break;
+            else
+                ++i;
+        }
+        eidx.insert({exclude.hi, exclude});
+    }
+    excludes.clear();
+    for (const auto &entry: eidx)
+        excludes.push_back(entry.second);
+    eidx.clear();
+    for (const auto &exclude: excludes)
+        fprintf(stderr, "0x%lx..0x%lx ", exclude.lo, exclude.hi);
+    putc('\n', stderr);
 
     /*
      * The ELF file seems OK, spawn and initialize the e9patch backend.
@@ -2511,36 +2652,6 @@ int main(int argc, char **argv)
         sendTrapTrampolineMessage(backend.out);
 
     /*
-     * Find the offset to disassemble from, if any.
-     */
-    auto i = elf.sections.find(".text");
-    if (i == elf.sections.end())
-        error("failed to disassemble \".text\" section; section not found");
-    const Elf64_Shdr *text = i->second;
-    if (text->sh_type != SHT_PROGBITS)
-        error("failed to disassemble \".text\" section; section type is not "
-            "PROGBITS");
-    size_t   text_size   = (size_t)text->sh_size;
-    intptr_t text_addr   = (intptr_t)text->sh_addr;
-    off_t    text_offset = (off_t)text->sh_offset;
-    
-    if (option_start != "")
-    {
-        intptr_t start_addr = positionToAddr(elf, "--start",
-            option_start.c_str());
-        off_t offset = start_addr - text_addr;
-        text_offset += offset;
-        text_addr   += offset;
-        text_size   -= offset;
-    }
-    if (option_end != "")
-    {
-        intptr_t end_addr = positionToAddr(elf, "--end", option_end.c_str());
-        off_t offset = (text_addr + text_size) - end_addr;
-        text_size -= offset;
-    }
-
-    /*
      * Disassemble the ELF file.
      */
     csh handle;
@@ -2553,59 +2664,106 @@ int main(int argc, char **argv)
         cs_option(handle, CS_OPT_SYNTAX, CS_OPT_SYNTAX_ATT);
     cs_option(handle, CS_OPT_SKIPDATA, CS_OPT_ON);
 
-    std::vector<Location> locs;
-    const uint8_t *start = elf.data + text_offset;
-    const uint8_t *code  = start, *end = start + text_size;
-    size_t size = text_size;
-    uint64_t address = text_addr;
-    cs_insn *I = cs_malloc(handle);
-    bool failed = false;
-    unsigned sync = 0;
-    while (cs_disasm_iter(handle, &code, &size, &address, I))
+    std::map<off_t, const char *> sections;
+    for (const auto entry: elf.sections)
     {
-        if (sync > 0)
-        {
-            sync--;
-            continue;
-        }
-        if (I->mnemonic[0] == '.')
-        {
-            warning("failed to disassemble (%s%s%s) at address 0x%lx",
-                I->mnemonic, (I->op_str[0] == '\0'? "": " "), I->op_str,
-                I->address);
-            failed = true;
-            sync = option_sync;
-            continue;
-        }
-
-        int idx = -1;
-        off_t offset = ((intptr_t)I->address - text_addr);
-
-        if (option_notify)
-            notifyPlugins(backend.out, &elf, handle, offset, I);
-        else
-        {
-            matchPlugins(backend.out, &elf, handle, offset, I);
-            idx = match(handle, actions, I, offset);
-        }
-
-        Location loc(offset, I->size, (idx >= 0), idx);
-        locs.push_back(loc);
+        const Elf64_Shdr *shdr = entry.second;
+        if (shdr->sh_size == 0 ||
+                shdr->sh_type != SHT_PROGBITS ||
+                (shdr->sh_flags & SHF_WRITE) != 0 ||
+                (shdr->sh_flags & SHF_ALLOC) == 0 ||
+                (shdr->sh_flags & SHF_EXECINSTR) == 0)
+            continue;   // Not executable instructions.
+        sections.insert({(off_t)shdr->sh_offset, entry.first});
     }
-    if (code != end)
-        error("failed to disassemble the \".text\" section 0x%lx..0x%lx; "
-            "could only disassemble the range 0x%lx..0x%lx",
-            text_addr, text_addr + text_size, text_addr,
-                text_addr + (code - start));
-    if (failed)
+
+    std::vector<Location> locs;
+    std::vector<const char *> sidx;
+    cs_insn *I = cs_malloc(handle);
+    intptr_t prev = INTPTR_MIN;
+    for (const auto entry: sections)
     {
-        if (option_sync < 0)
-            error("failed to disassemble the .text section of \"%s\"; "
-                "this may be caused by (1) data in the .text section, or (2) "
-                "a bug in the third party disassembler (capstone)", filename);
-        else
-            warning("failed to disassemble the .text section of \"%s\"; "
-                "the rewritten binary may be corrupt", filename);
+        const char *section = entry.second;
+        sidx.push_back(section);
+        if (sidx.size() >= MAX_SECTIONS)
+            error("failed to disassemble the \"%s\" section of \"%s\"; "
+                "maximum number of sections (%u) exceeded", section,
+                MAX_SECTIONS, filename);
+        auto i = elf.sections.find(section);
+        assert(i != elf.sections.end());
+        const Elf64_Shdr *shdr = i->second;
+        size_t section_size   = (size_t)shdr->sh_size;
+        off_t section_offset  = (off_t)shdr->sh_offset;
+        intptr_t section_addr = (intptr_t)shdr->sh_addr;
+        size_t section_idx    = sidx.size()-1;
+        if (prev > section_addr)
+            error("failed to disassemble the \"%s\" section of \"%s\"; "
+                "overlapping sections detected", section, filename);
+
+        const uint8_t *start = elf.data + section_offset;
+        const uint8_t *code  = start, *end = start + section_size;
+        uint64_t address = section_addr;
+        size_t size     = section_size;
+        bool failed = false;
+        unsigned sync = 0;
+        while (true)
+        {
+            size_t skip = exclude(excludes, address);
+            if (skip > 0)
+            {
+                address += skip;
+                size     = (skip > size? 0: size - skip);
+                code    += skip;
+                sync     = 0;
+            }
+            if (!cs_disasm_iter(handle, &code, &size, &address, I))
+                break;
+            if (sync > 0)
+            {
+                sync--;
+                continue;
+            }
+            if (I->mnemonic[0] == '.')
+            {
+                warning("failed to disassemble (%s%s%s) at address 0x%lx in "
+                    "the \"%s\" section", I->mnemonic,
+                    (I->op_str[0] == '\0'? "": " "), I->op_str,
+                    I->address, section);
+                failed = true;
+                sync = option_sync;
+                continue;
+            }
+
+            int idx = -1;
+            off_t offset = section_offset + ((intptr_t)I->address - section_addr);
+            if (option_notify)
+                notifyPlugins(backend.out, &elf, handle, offset, I);
+            else
+            {
+                matchPlugins(backend.out, &elf, handle, offset, I);
+                idx = match(handle, actions, I, offset, section);
+            }
+            Location loc(section_idx, I->address, offset, I->size, (idx >= 0),
+                idx);
+            locs.push_back(loc);
+        }
+        if (code < end)
+            error("failed to disassemble the \"%s\" section 0x%lx..0x%lx; "
+                "could only disassemble the range 0x%lx..0x%lx",
+                section, section_addr, section_addr + section_size,
+                section_addr, section_addr + (code - start));
+        if (failed)
+        {
+            if (option_sync < 0)
+                error("failed to disassemble the \"%s\" section of \"%s\"; "
+                    "this may be caused by (1) data in the \"%s\" section, or (2) "
+                    "a bug in the third party disassembler (capstone)",
+                    section, filename, section);
+            else
+                warning("failed to disassemble the \"%s\" section of \"%s\"; "
+                    "the rewritten binary may be corrupt", section, filename);
+        }
+        prev = section_offset + section_size;
     }
     locs.shrink_to_fit();
     if (option_notify)
@@ -2617,9 +2775,9 @@ int main(int argc, char **argv)
         for (size_t i = 0; i < count; i++)
         {
             Location &loc = locs[i];
-            off_t loc_offset = (off_t)loc.offset;
-            uint64_t address = (uint64_t)text_addr + loc_offset;
-            off_t offset = text_offset + loc_offset;
+            const char *section = sidx[loc.section];
+            off_t offset = (off_t)loc.offset;
+            uint64_t address = (uint64_t)loc.address;
             const uint8_t *code = elf.data + offset;
             size_t size = loc.size;
             bool ok = cs_disasm_iter(handle, &code, &size, &address, I);
@@ -2627,10 +2785,11 @@ int main(int argc, char **argv)
                 error("failed to disassemble instruction at address 0x%lx",
                     address);
             matchPlugins(backend.out, &elf, handle, offset, I);
-            int idx = match(handle, actions, I, offset);
+            int idx = match(handle, actions, I, offset, section);
             if (idx >= 0)
             {
-                Location new_loc(loc_offset, I->size, true, idx);
+                Location new_loc(loc.section, I->address, offset, I->size,
+                    true, idx);
                 locs[i] = new_loc;
             }
         }
@@ -2647,9 +2806,9 @@ int main(int argc, char **argv)
         if (!loc.patch)
             continue;
 
+        const char *section = sidx[loc.section];
         off_t offset = (off_t)loc.offset;
-        intptr_t addr = text_addr + offset;
-        offset += text_offset;
+        intptr_t addr = (intptr_t)loc.address;
 
         // Disassmble the instruction again.
         const uint8_t *code = elf.data + offset;
@@ -2661,12 +2820,10 @@ int main(int argc, char **argv)
 
         bool done = false;
         for (ssize_t j = i; !done && j >= 0; j--)
-            done = !sendInstructionMessage(backend.out, locs[j], addr,
-                text_addr, text_offset);
+            done = !sendInstructionMessage(backend.out, locs[j], addr);
         done = false;
         for (size_t j = i + 1; !done && j < count; j++)
-            done = !sendInstructionMessage(backend.out, locs[j], addr,
-                text_addr, text_offset);
+            done = !sendInstructionMessage(backend.out, locs[j], addr);
 
         const Action *action = actions[loc.action];
         id++;
@@ -2685,7 +2842,7 @@ int main(int argc, char **argv)
             char buf[4096];
             Metadata metadata_buf[MAX_ARGNO+1];
             Metadata *metadata = buildMetadata(handle, &elf, action, I, offset,
-                id, metadata_buf, buf, sizeof(buf)-1);
+                section, id, metadata_buf, buf, sizeof(buf)-1);
             sendPatchMessage(backend.out, action->name, offset,  metadata);
         }
     }
