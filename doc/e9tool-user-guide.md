@@ -342,8 +342,8 @@ The general syntax for `RANGE` is:
 <pre>
     RANGE ::=   ADDR [ <b>..</b> ADDR ]
     ADDR  ::=   INTEGER
-                SYMBOL
-                SECTION [ <b>.</b> ( <b>start</b> | <b>end</b> ) ]
+              | SYMBOL
+              | SECTION [ <b>.</b> ( <b>start</b> | <b>end</b> ) ]
 </pre>
 For example:
 

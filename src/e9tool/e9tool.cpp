@@ -2467,9 +2467,6 @@ int main(int argc, char **argv)
     for (const auto &entry: eidx)
         excludes.push_back(entry.second);
     eidx.clear();
-    for (const auto &exclude: excludes)
-        fprintf(stderr, "0x%lx..0x%lx ", exclude.lo, exclude.hi);
-    putc('\n', stderr);
 
     /*
      * The ELF file seems OK, spawn and initialize the e9patch backend.
