@@ -32,16 +32,6 @@
 #define MACRO_DEPTH_MAX             128
 
 /*
- * Bounds information.
- */
-struct BoundsInfo
-{
-    size_t size;
-    intptr_t lb;
-    intptr_t ub;
-};
-
-/*
  * Evictee trampoline template.
  */
 const Trampoline *evicteeTrampoline = nullptr;
@@ -226,7 +216,7 @@ static int getTrampolineSize(const Trampoline *T, const Instr *I,
     unsigned depth)
 {
     if (depth > MACRO_DEPTH_MAX)
-        error("failed to get trampoline size ; maximum macro expansion depth "
+        error("failed to get trampoline size; maximum macro expansion depth "
             "(%u) exceeded", MACRO_DEPTH_MAX);
     unsigned size = 0;
     for (unsigned i = 0; i < T->num_entries; i++)
@@ -307,41 +297,35 @@ int getTrampolineSize(const Trampoline *T, const Instr *I)
 /*
  * Calculate trampoline bounds.
  */
-static BoundsInfo getTrampolineBounds(const Trampoline *T, const Instr *I,
-    unsigned depth)
+static size_t getTrampolineBounds(const Trampoline *T, const Instr *I,
+    unsigned depth, size_t size, Bounds &b)
 {
     if (depth > MACRO_DEPTH_MAX)
-        error("failed to get trampoline bounds ; maximum macro expansion "
+        error("failed to get trampoline bounds; maximum macro expansion "
             "depth (%u) exceeded", MACRO_DEPTH_MAX);
-    BoundsInfo b =
-    {
-        .size = 0,
-        .lb   = INTPTR_MIN,
-        .ub   = INTPTR_MAX
-    };
     for (unsigned i = 0; i < T->num_entries; i++)
     {
         const Entry &entry = T->entries[i];
         switch (entry.kind)
         {
             case ENTRY_DEBUG:
-                b.size += (I != nullptr && I->debug? /*sizeof(int3)=*/1: 0);
+                size += (I != nullptr && I->debug? /*sizeof(int3)=*/1: 0);
                 continue;
             case ENTRY_BYTES:
             case ENTRY_ZEROES:
-                b.size += entry.length;
+                size += entry.length;
                 continue;
             case ENTRY_INT8:
-                b.size += sizeof(uint8_t);
+                size += sizeof(uint8_t);
                 continue;
             case ENTRY_INT16:
-                b.size += sizeof(uint16_t);
+                size += sizeof(uint16_t);
                 continue;
             case ENTRY_INT32:
-                b.size += sizeof(uint32_t);
+                size += sizeof(uint32_t);
                 continue;
             case ENTRY_INT64:
-                b.size += sizeof(uint64_t);
+                size += sizeof(uint64_t);
                 continue;
             case ENTRY_LABEL:
                 continue;
@@ -351,59 +335,56 @@ static BoundsInfo getTrampolineBounds(const Trampoline *T, const Instr *I,
                 if (U == nullptr)
                     error("failed to get trampoline bounds; metadata for "
                         "macro \"%s\" is missing", entry.macro);
-                BoundsInfo c = getTrampolineBounds(U, I, depth+1);
-                b.size += c.size;
-                b.lb    = std::max(b.lb, c.lb);
-                b.ub    = std::min(b.ub, c.ub);
+                size = getTrampolineBounds(U, I, depth+1, size, b);
                 continue;
             }
             case ENTRY_REL8:
             {
+                size += sizeof(int8_t);
                 if (!entry.use_label)
                 {
                     intptr_t lb = (intptr_t)entry.uint64 + (INT8_MIN + 1);
                     intptr_t ub = (intptr_t)entry.uint64 + (INT8_MAX - 1);
-                    lb -= b.size + sizeof(int8_t);
-                    ub -= b.size + sizeof(int8_t);
+                    lb -= size;
+                    ub -= size;
                     b.lb = std::max(b.lb, lb);
                     b.ub = std::min(b.ub, ub);
                 }
-                b.size += sizeof(int8_t);
                 continue;
             }
             case ENTRY_REL32:
             {
+                size += sizeof(int32_t);
                 if (!entry.use_label)
                 {
                     intptr_t lb = (intptr_t)entry.uint64 + (INT32_MIN + 1);
                     intptr_t ub = (intptr_t)entry.uint64 + (INT32_MAX - 1);
-                    lb -= b.size + sizeof(int32_t);
-                    ub -= b.size + sizeof(int32_t);
+                    lb -= size;
+                    ub -= size;
                     b.lb = std::max(b.lb, lb);
                     b.ub = std::min(b.ub, ub);
                 }
-                b.size += sizeof(int32_t);
                 continue;
             }
             case ENTRY_INSTRUCTION:
             {
                 int r = relocateInstr(I->addr, /*offset=*/0, I->original.bytes,
                     I->size, I->pic, nullptr);
-                b.size += (r < 0? 0: r);
+                size += (r < 0? 0: r);
                 continue;
             }
             case ENTRY_INSTRUCTION_BYTES:
-                b.size += I->size;
+                size += I->size;
                 continue;
             case ENTRY_CONTINUE:
-                b.size += buildContinue(I, /*offset=*/0, nullptr);
+                size += buildContinue(I, /*offset=*/0, nullptr);
                 continue;
             case ENTRY_TAKEN:
-                b.size += /*sizeof(jmpq)=*/5;
+                size += /*sizeof(jmpq)=*/5;
                 continue;
         }
     }
-    return b;
+    return size;
 }
 
 /*
@@ -411,10 +392,11 @@ static BoundsInfo getTrampolineBounds(const Trampoline *T, const Instr *I,
  */
 Bounds getTrampolineBounds(const Trampoline *T, const Instr *I)
 {
+    Bounds b = {INTPTR_MIN, INTPTR_MAX};
     if (T == evicteeTrampoline)
-        return {INTPTR_MIN, INTPTR_MAX};
-    BoundsInfo b = getTrampolineBounds(T, I, /*depth=*/0);
-    return {b.lb, b.ub};
+        return b;
+    getTrampolineBounds(T, I, /*depth=*/0, /*size=*/0, b);
+    return b;
 }
 
 /*
@@ -602,7 +584,7 @@ static void buildBytes(const Trampoline *T, const Instr *I, int32_t offset32,
                 {
                     if (rel < INT8_MIN || rel > INT8_MAX)
                         error("failed to build trampoline; rel8 value (%zd) "
-                            "is out-of-range (%d..%d)", rel, INT8_MIN,
+                            "is out-of-range (%d..%d)", rel, (int)INT8_MIN,
                             INT8_MAX);
                     int8_t rel8 = (int8_t)rel;
                     buf.push((uint8_t)rel8);
@@ -611,7 +593,7 @@ static void buildBytes(const Trampoline *T, const Instr *I, int32_t offset32,
                 {
                     if (rel < INT32_MIN || rel > INT32_MAX)
                         error("failed to build trampoline; rel32 value (%zd) "
-                            "is out-of-range (%zd..%zd)", rel, INT32_MIN,
+                            "is out-of-range (%zd..%zd)", rel, (ssize_t)INT32_MIN,
                             INT32_MAX);
                     int32_t rel32 = (int32_t)rel;
                     buf.push((const uint8_t *)&rel32, sizeof(rel32));
