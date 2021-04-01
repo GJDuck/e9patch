@@ -178,6 +178,8 @@ void e9frontend::getInstrInfo(const ELF *elf, const Instr *I, InstrInfo *info,
             bool write =
                 (((D->operands[i].actions & ZYDIS_OPERAND_ACTION_WRITE) != 0) ||
                  ((D->operands[i].actions & ZYDIS_OPERAND_ACTION_CONDWRITE) != 0));
+            if (D->mnemonic == ZYDIS_MNEMONIC_NOP)
+                read = write = false;
             switch (D->operands[i].type)
             {
                 case ZYDIS_OPERAND_TYPE_REGISTER:
