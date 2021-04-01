@@ -26,20 +26,17 @@
 /*
  * Prototypes.
  */
-static const cs_x86_op *getOperand(const cs_insn *I, int idx, x86_op_type type,
-    uint8_t access);
+static const OpInfo *getOperand(const InstrInfo *I, int idx, OpType type,
+    Access access);
 static intptr_t makeMatchValue(MatchKind match, int idx, MatchField field,
-    const cs_insn *I, intptr_t offset, intptr_t result, bool *defined);
+    const InstrInfo *I, intptr_t result, bool *defined);
 
 /*
  * Get the type of an operand.
  */
-static Type getOperandType(const cs_insn *I, const cs_x86_op *op, bool ptr,
+static Type getOperandType(const InstrInfo *I, const OpInfo *op, bool ptr,
     FieldKind field)
 {
-    const cs_detail *detail = I->detail;
-    const cs_x86 *x86       = &detail->x86;
-
     Type t = TYPE_NULL_PTR;
     if (op == nullptr)
         return t;
@@ -51,27 +48,27 @@ static Type getOperandType(const cs_insn *I, const cs_x86_op *op, bool ptr,
         case FIELD_SIZE:
             return TYPE_INT64;
         case FIELD_DISPL:
-            return (op->type == X86_OP_MEM? TYPE_INT32: t);
+            return (op->type == OPTYPE_MEM? TYPE_INT32: t);
         case FIELD_BASE:
-            t = (op->type == X86_OP_MEM? getRegType(op->mem.base): t);
+            t = (op->type == OPTYPE_MEM? getRegType(op->mem.base): t);
             return (ptr && t != TYPE_NULL_PTR? t | TYPE_PTR: t);
         case FIELD_INDEX:
-            t = (op->type == X86_OP_MEM? getRegType(op->mem.index): t);
+            t = (op->type == OPTYPE_MEM? getRegType(op->mem.index): t);
             return (ptr && t != TYPE_NULL_PTR? t | TYPE_PTR: t);
         case FIELD_SCALE:
-            return (op->type == X86_OP_MEM? TYPE_INT8: t);
+            return (op->type == OPTYPE_MEM? TYPE_INT8: t);
         case FIELD_NONE:
             break;
     }
 
     switch (op->type)
     {
-        case X86_OP_REG:
+        case OPTYPE_REG:
             t = getRegType(op->reg);
             if (ptr && t == TYPE_INT32)
                 t = TYPE_INT64;
             break;
-        case X86_OP_MEM:
+        case OPTYPE_MEM:
             switch (op->size)
             {
                 case sizeof(int8_t):
@@ -86,8 +83,8 @@ static Type getOperandType(const cs_insn *I, const cs_x86_op *op, bool ptr,
                     t = (ptr? TYPE_INT8: t); break;
             }
             break;
-        case X86_OP_IMM:
-            switch (x86->encoding.imm_size)
+        case OPTYPE_IMM:
+            switch (I->encoding.size.imm)
             {
                 case sizeof(int8_t):
                     t = TYPE_INT8; break;
@@ -130,14 +127,14 @@ static void sendLoadValueMetadata(FILE *out, intptr_t value, int argno)
  * Returns scratch storage indicating where the current value is moved to:
  * (<0)=stack, (<RMAX)=register, else no need to save register.
  */
-static int sendTemporaryMovReg(FILE *out, CallInfo &info, x86_reg reg,
-    const x86_reg *exclude, int *slot)
+static int sendTemporaryMovReg(FILE *out, CallInfo &info, Register reg,
+    const Register *exclude, int *slot)
 {
     int regno = getRegIdx(reg);
     assert(regno >= 0);
-    x86_reg rscratch = info.getScratch(exclude);
+    Register rscratch = info.getScratch(exclude);
     int scratch;
-    if (rscratch != X86_REG_INVALID)
+    if (rscratch != REGISTER_INVALID)
     {
         // Save old value into a scratch register:
         scratch = getRegIdx(rscratch);
@@ -157,20 +154,19 @@ static int sendTemporaryMovReg(FILE *out, CallInfo &info, x86_reg reg,
 /*
  * Temporarily save a register, allowing it to be used for another purpose.
  */
-static int sendTemporarySaveReg(FILE *out, CallInfo &info, x86_reg reg,
-    const x86_reg *exclude, int *slot)
+static int sendTemporarySaveReg(FILE *out, CallInfo &info, Register reg,
+    const Register *exclude, int *slot)
 {
     if (info.isClobbered(reg))
         return INT32_MAX;
-
     return sendTemporaryMovReg(out, info, reg, exclude, slot);
 }
 
 /*
  * Temporarily restore a register to its original value.
  */
-static int sendTemporaryRestoreReg(FILE *out, CallInfo &info, x86_reg reg,
-    const x86_reg *exclude, int *slot)
+static int sendTemporaryRestoreReg(FILE *out, CallInfo &info, Register reg,
+    const Register *exclude, int *slot)
 {
     if (!info.isClobbered(reg))
         return INT32_MAX;
@@ -190,7 +186,7 @@ static int sendTemporaryRestoreReg(FILE *out, CallInfo &info, x86_reg reg,
 /*
  * Undo sendTemporaryMovReg().
  */
-static void sendUndoTemporaryMovReg(FILE *out, x86_reg reg, int scratch)
+static void sendUndoTemporaryMovReg(FILE *out, Register reg, int scratch)
 {
     if (scratch > RMAX_IDX)
         return;     // Was not saved.
@@ -211,11 +207,11 @@ static void sendUndoTemporaryMovReg(FILE *out, x86_reg reg, int scratch)
 /*
  * Send instructions that ensure the given register is saved.
  */
-static bool sendSaveRegToStack(FILE *out, CallInfo &info, x86_reg reg)
+static bool sendSaveRegToStack(FILE *out, CallInfo &info, Register reg)
 {
     if (info.isSaved(reg))
         return true;
-    x86_reg rscratch = (info.isClobbered(X86_REG_RAX)? X86_REG_RAX:
+    Register rscratch = (info.isClobbered(REGISTER_RAX)? REGISTER_RAX:
         info.getScratch());
     auto result = sendPush(out, info.rsp_offset, info.before, reg, rscratch);
     if (result.first)
@@ -231,11 +227,11 @@ static bool sendSaveRegToStack(FILE *out, CallInfo &info, x86_reg reg)
 /*
  * Send a load (mov/lea) from a memory operand to a register.
  */
-static bool sendLoadFromMemOpToR64(FILE *out, const cs_insn *I,
-    CallInfo &info, uint8_t size, x86_reg seg_reg, int32_t disp,
-    x86_reg base_reg, x86_reg index_reg, uint8_t scale, bool lea, int regno)
+static bool sendLoadFromMemOpToR64(FILE *out, const InstrInfo *I,
+    CallInfo &info, uint8_t size, Register seg_reg, int32_t disp,
+    Register base_reg, Register index_reg, uint8_t scale, bool lea, int regno)
 {
-    if (lea && (seg_reg == X86_REG_FS || seg_reg == X86_REG_GS))
+    if (lea && (seg_reg == REGISTER_FS || seg_reg == REGISTER_GS))
     {
         // LEA assumes all segment registers are zero.  Since %fs/%gs may
         // be non-zero, these segment registers cannot be handled.
@@ -250,9 +246,9 @@ static bool sendLoadFromMemOpToR64(FILE *out, const cs_insn *I,
     uint8_t seg_prefix = 0x00;
     switch (seg_reg)
     {
-        case X86_REG_FS:
+        case REGISTER_FS:
             seg_prefix = 0x64; break;
-        case X86_REG_GS:
+        case REGISTER_GS:
             seg_prefix = 0x65; break;
         default:
             break;
@@ -261,24 +257,24 @@ static bool sendLoadFromMemOpToR64(FILE *out, const cs_insn *I,
     uint8_t size_prefix = 0x00;
     switch (base_reg)
     {
-        case X86_REG_EAX: case X86_REG_ECX: case X86_REG_EDX:
-        case X86_REG_EBX: case X86_REG_ESP: case X86_REG_EBP:
-        case X86_REG_ESI: case X86_REG_EDI: case X86_REG_R8D:
-        case X86_REG_R9D: case X86_REG_R10D: case X86_REG_R11D:
-        case X86_REG_R12D: case X86_REG_R13D: case X86_REG_R14D:
-        case X86_REG_R15D: case X86_REG_EIP:
+        case REGISTER_EAX: case REGISTER_ECX: case REGISTER_EDX:
+        case REGISTER_EBX: case REGISTER_ESP: case REGISTER_EBP:
+        case REGISTER_ESI: case REGISTER_EDI: case REGISTER_R8D:
+        case REGISTER_R9D: case REGISTER_R10D: case REGISTER_R11D:
+        case REGISTER_R12D: case REGISTER_R13D: case REGISTER_R14D:
+        case REGISTER_R15D: case REGISTER_EIP:
             size_prefix = 0x67; break;
         default:
             break;
     }
     switch (index_reg)
     {
-        case X86_REG_EAX: case X86_REG_ECX: case X86_REG_EDX:
-        case X86_REG_EBX: case X86_REG_ESP: case X86_REG_EBP:
-        case X86_REG_ESI: case X86_REG_EDI: case X86_REG_R8D:
-        case X86_REG_R9D: case X86_REG_R10D: case X86_REG_R11D:
-        case X86_REG_R12D: case X86_REG_R13D: case X86_REG_R14D:
-        case X86_REG_R15D:
+        case REGISTER_EAX: case REGISTER_ECX: case REGISTER_EDX:
+        case REGISTER_EBX: case REGISTER_ESP: case REGISTER_EBP:
+        case REGISTER_ESI: case REGISTER_EDI: case REGISTER_R8D:
+        case REGISTER_R9D: case REGISTER_R10D: case REGISTER_R11D:
+        case REGISTER_R12D: case REGISTER_R13D: case REGISTER_R14D:
+        case REGISTER_R15D:
             size_prefix = 0x67; break;
         default:
             break;
@@ -287,13 +283,13 @@ static bool sendLoadFromMemOpToR64(FILE *out, const cs_insn *I,
     const uint8_t B[] =
         {0x00, 0x00, 0x00, 0x00, 0x01, 0x01, 0x00,
          0x00, 0x01, 0x01, 0x00, 0x00, 0x01, 0x01, 0x01, 0x01, 0x00};
-    uint8_t b = (base_reg == X86_REG_INVALID || base_reg == X86_REG_RIP ||
-                 base_reg == X86_REG_EIP? 0x00: B[getRegIdx(base_reg)]);
+    uint8_t b = (base_reg == REGISTER_NONE || base_reg == REGISTER_RIP ||
+                 base_reg == REGISTER_EIP? 0x00: B[getRegIdx(base_reg)]);
     
     const uint8_t X[] =
         {0x00, 0x00, 0x00, 0x00, 0x02, 0x02, 0x00,
          0x00, 0x02, 0x02, 0x00, 0x00, 0x02, 0x02, 0x02, 0x02, 0x00};
-    uint8_t x = (index_reg == X86_REG_INVALID? 0x00: X[getRegIdx(index_reg)]);
+    uint8_t x = (index_reg == REGISTER_NONE? 0x00: X[getRegIdx(index_reg)]);
     
     const uint8_t R[] =
         {0x00, 0x00, 0x00, 0x00, 0x04, 0x04, 0x00,
@@ -312,9 +308,9 @@ static bool sendLoadFromMemOpToR64(FILE *out, const cs_insn *I,
     uint8_t sib       = 0x00;
     bool have_sib     = false;
     bool have_rel32   = false;
-    if (base_reg == X86_REG_RSP || base_reg == X86_REG_ESP)
+    if (base_reg == REGISTER_RSP || base_reg == REGISTER_ESP)
         disp += info.rsp_offset;
-    if (base_reg == X86_REG_RIP || base_reg == X86_REG_EIP)
+    if (base_reg == REGISTER_RIP || base_reg == REGISTER_EIP)
     {
         mod         = 0x00;
         rm          = 0x05;
@@ -324,13 +320,13 @@ static bool sendLoadFromMemOpToR64(FILE *out, const cs_insn *I,
     }
     else
     {
-        if (index_reg != X86_REG_INVALID ||
-                (base_reg == X86_REG_RSP || base_reg == X86_REG_ESP) ||
-                (base_reg == X86_REG_R12 || base_reg == X86_REG_R12D) ||
-                (base_reg == X86_REG_INVALID))
+        if (index_reg != REGISTER_NONE ||
+                (base_reg == REGISTER_RSP || base_reg == REGISTER_ESP) ||
+                (base_reg == REGISTER_R12 || base_reg == REGISTER_R12D) ||
+                (base_reg == REGISTER_NONE))
         {
             // Need SIB:
-            assert(index_reg != X86_REG_RSP && index_reg != X86_REG_ESP);
+            assert(index_reg != REGISTER_RSP && index_reg != REGISTER_ESP);
             uint8_t ss = 0x00;
             switch (scale)
             {
@@ -344,9 +340,9 @@ static bool sendLoadFromMemOpToR64(FILE *out, const cs_insn *I,
                     ss = 0x03;
                     break;
             }
-            uint8_t base = (base_reg == X86_REG_INVALID? 0x05:
+            uint8_t base = (base_reg == REGISTER_NONE? 0x05:
                 REG[getRegIdx(base_reg)]);
-            uint8_t index = (index_reg == X86_REG_INVALID? 0x04:
+            uint8_t index = (index_reg == REGISTER_NONE? 0x04:
                 REG[getRegIdx(index_reg)]);
             sib = (ss << 6) | (index << 3) | base;
             rm  = 0x04;
@@ -355,14 +351,14 @@ static bool sendLoadFromMemOpToR64(FILE *out, const cs_insn *I,
         else
             rm = REG[getRegIdx(base_reg)];
 
-        if (base_reg == X86_REG_INVALID)
+        if (base_reg == REGISTER_NONE)
         {
             disp_size = sizeof(int32_t);
             mod = 0x00;
         }
         else if (disp == 0x0 &&
-                base_reg != X86_REG_RBP && base_reg != X86_REG_EBP &&
-                base_reg != X86_REG_R13 && base_reg != X86_REG_R13D)
+                base_reg != REGISTER_RBP && base_reg != REGISTER_EBP &&
+                base_reg != REGISTER_R13 && base_reg != REGISTER_R13D)
         {
             disp_size = 0;
             mod = 0x00;
@@ -389,12 +385,12 @@ static bool sendLoadFromMemOpToR64(FILE *out, const cs_insn *I,
 
     uint8_t modrm = (mod << 6) | (reg << 3) | rm;
 
-    x86_reg exclude[4] = {getReg(regno)};
+    Register exclude[4] = {getReg(regno)};
     int j = 1;
-    if (base_reg != X86_REG_INVALID)
+    if (base_reg != REGISTER_NONE)
         exclude[j++] = getCanonicalReg(base_reg);
     exclude[j++] = getCanonicalReg(index_reg);
-    exclude[j++] = X86_REG_INVALID;
+    exclude[j++] = REGISTER_INVALID;
     int slot = 0;
     int scratch_1 = sendTemporaryRestoreReg(out, info, base_reg, exclude,
         &slot);
@@ -452,7 +448,7 @@ static bool sendLoadFromMemOpToR64(FILE *out, const cs_insn *I,
 /*
  * Load a register to an arg register.
  */
-static void sendLoadRegToArg(FILE *out, x86_reg reg, CallInfo &info, int argno)
+static void sendLoadRegToArg(FILE *out, Register reg, CallInfo &info, int argno)
 {
     size_t size = getRegSize(reg);
     if (info.isClobbered(reg))
@@ -500,7 +496,7 @@ static void sendLoadRegToArg(FILE *out, x86_reg reg, CallInfo &info, int argno)
 /*
  * Emits instructions to load a register by value or reference.
  */
-static bool sendLoadRegToArg(FILE *out, const cs_insn *I, x86_reg reg,
+static bool sendLoadRegToArg(FILE *out, const InstrInfo *I, Register reg,
     bool ptr, CallInfo &info, int argno)
 {
     if (ptr)
@@ -538,8 +534,8 @@ static bool sendLoadRegToArg(FILE *out, const cs_insn *I, x86_reg reg,
  * Emits instructions to load an operand into the corresponding
  * regno register.  If the operand does not exist, load 0.
  */
-static bool sendLoadOperandMetadata(FILE *out, const cs_insn *I,
-    const cs_x86_op *op, bool ptr, FieldKind field, CallInfo &info, int argno)
+static bool sendLoadOperandMetadata(FILE *out, const InstrInfo *I,
+    const OpInfo *op, bool ptr, FieldKind field, CallInfo &info, int argno)
 {
     if (field != FIELD_NONE)
     {
@@ -567,7 +563,7 @@ static bool sendLoadOperandMetadata(FILE *out, const cs_insn *I,
         {
             case FIELD_DISPL: case FIELD_BASE: case FIELD_INDEX:
             case FIELD_SCALE:
-                if (op->type != X86_OP_MEM)
+                if (op->type != OPTYPE_MEM)
                 {
                     warning(CONTEXT_FORMAT "failed to load %s into register "
                         "%s; cannot load %s of non-memory operand",
@@ -585,7 +581,7 @@ static bool sendLoadOperandMetadata(FILE *out, const cs_insn *I,
                 sendLoadValueMetadata(out, op->mem.disp, argno);
                 return true;
             case FIELD_BASE:
-                if (op->mem.base == X86_REG_INVALID)
+                if (op->mem.base == REGISTER_NONE)
                 {
                     warning(CONTEXT_FORMAT "failed to load memory operand "
                         "base into register %s; operand does not use a base "
@@ -596,7 +592,7 @@ static bool sendLoadOperandMetadata(FILE *out, const cs_insn *I,
                 return sendLoadRegToArg(out, I, op->mem.base, ptr, info,
                     argno);
             case FIELD_INDEX:
-                if (op->mem.index == X86_REG_INVALID)
+                if (op->mem.index == REGISTER_NONE)
                 {
                     warning(CONTEXT_FORMAT "failed to load memory operand "
                         "index into register %s; operand does not use an "
@@ -616,11 +612,11 @@ static bool sendLoadOperandMetadata(FILE *out, const cs_insn *I,
             case FIELD_TYPE:
                 switch (op->type)
                 {
-                    case X86_OP_IMM:
+                    case OPTYPE_IMM:
                         sendLoadValueMetadata(out, 0x1, argno); break;
-                    case X86_OP_REG:
+                    case OPTYPE_REG:
                         sendLoadValueMetadata(out, 0x2, argno); break;
-                    case X86_OP_MEM:
+                    case OPTYPE_MEM:
                         sendLoadValueMetadata(out, 0x3, argno); break;
                     default:
                         warning(CONTEXT_FORMAT "failed to load memory operand "
@@ -632,16 +628,12 @@ static bool sendLoadOperandMetadata(FILE *out, const cs_insn *I,
                 return true;
             case FIELD_ACCESS:
             {
-                if (op->type == X86_OP_IMM)
+                if (op->type == OPTYPE_IMM)
                 {
                     sendLoadValueMetadata(out, PROT_READ, argno);
                     return true;
                 }
-                int access = (op->access & CS_AC_READ? PROT_READ: 0) |
-                             (op->access & CS_AC_WRITE? PROT_WRITE: 0);
-                access = (op->type == X86_OP_MEM &&
-                          (I->id == X86_INS_LEA || I->id == X86_INS_NOP)?
-                          0: access);
+                Access access = op->access;
                 access |= 0x80;     // Ensure non-zero
                 sendLoadValueMetadata(out, access, argno);
                 return true;
@@ -653,15 +645,15 @@ static bool sendLoadOperandMetadata(FILE *out, const cs_insn *I,
 
     switch (op->type)
     {
-        case X86_OP_REG:
+        case OPTYPE_REG:
             return sendLoadRegToArg(out, I, op->reg, ptr, info, argno);
 
-        case X86_OP_MEM:
+        case OPTYPE_MEM:
             return sendLoadFromMemOpToR64(out, I, info, op->size,
-                op->mem.segment, op->mem.disp, op->mem.base, op->mem.index,
+                op->mem.seg, op->mem.disp, op->mem.base, op->mem.index,
                 op->mem.scale, ptr, argno);
 
-        case X86_OP_IMM:
+        case OPTYPE_IMM:
             if (!ptr)
                 sendLoadValueMetadata(out, op->imm, argno);
             else
@@ -681,15 +673,15 @@ static bool sendLoadOperandMetadata(FILE *out, const cs_insn *I,
 /*
  * Emits operand data.
  */
-static void sendOperandDataMetadata(FILE *out, const cs_insn *I,
-    const cs_x86_op *op, int argno)
+static void sendOperandDataMetadata(FILE *out, const InstrInfo *I,
+    const OpInfo *op, int argno)
 {
     if (op == nullptr)
         return;
 
     switch (op->type)
     {
-        case X86_OP_IMM:
+        case OPTYPE_IMM:
             fprintf(out, "\".Limmediate_%d\",", argno);
             switch (op->size)
             {
@@ -720,40 +712,37 @@ static void sendOperandDataMetadata(FILE *out, const cs_insn *I,
  * corresponding argno register.  Else, if I is not a jump/call/return
  * instruction, load 0.
  */
-static void sendLoadTargetMetadata(FILE *out, const cs_insn *I, CallInfo &info,
-    int argno)
+static void sendLoadTargetMetadata(FILE *out, const InstrInfo *I,
+    CallInfo &info, int argno)
 {
-    const cs_detail *detail = I->detail;
-    const cs_x86 *x86       = &detail->x86;
-    const cs_x86_op *op     = &x86->operands[0];
-
-    switch (I->id)
+    const OpInfo *op = &I->op[0];
+    switch (I->mnemonic)
     {
-        case X86_INS_RET:
+        case MNEMONIC_RET:
             sendMovFromStackToR64(out, info.rsp_offset, argno);
             return;
-        case X86_INS_CALL:
-        case X86_INS_JMP:
-        case X86_INS_JO: case X86_INS_JNO: case X86_INS_JB: case X86_INS_JAE:
-        case X86_INS_JE: case X86_INS_JNE: case X86_INS_JBE: case X86_INS_JA:
-        case X86_INS_JS: case X86_INS_JNS: case X86_INS_JP: case X86_INS_JNP:
-        case X86_INS_JL: case X86_INS_JGE: case X86_INS_JLE: case X86_INS_JG:
-        case X86_INS_JCXZ: case X86_INS_JECXZ: case X86_INS_JRCXZ:
-            if (x86->op_count == 1)
+        case MNEMONIC_CALL:
+        case MNEMONIC_JMP:
+        case MNEMONIC_JO: case MNEMONIC_JNO: case MNEMONIC_JB: case MNEMONIC_JAE:
+        case MNEMONIC_JE: case MNEMONIC_JNE: case MNEMONIC_JBE: case MNEMONIC_JA:
+        case MNEMONIC_JS: case MNEMONIC_JNS: case MNEMONIC_JP: case MNEMONIC_JNP:
+        case MNEMONIC_JL: case MNEMONIC_JGE: case MNEMONIC_JLE: case MNEMONIC_JG:
+        case MNEMONIC_JCXZ: case MNEMONIC_JECXZ: case MNEMONIC_JRCXZ:
+            if (I->count.op == 1)
                 break;
             // Fallthrough:
 
         default:
         unknown:
 
-            // This is NOT a jump/call/return, so the target is set to (-1):
+            // This is NOT a jump/call/return, so the target is set to 0:
             sendSExtFromI32ToR64(out, 0, argno);
             return;
     }
 
     switch (op->type)
     {
-        case X86_OP_REG:
+        case OPTYPE_REG:
             if (info.isClobbered(op->reg))
                 sendMovFromStackToR64(out, info.getOffset(op->reg), argno);
             else
@@ -763,15 +752,15 @@ static void sendLoadTargetMetadata(FILE *out, const cs_insn *I, CallInfo &info,
                 sendMovFromR64ToR64(out, regno, argno);
             }
             return;
-        case X86_OP_MEM:
+        case OPTYPE_MEM:
             // This is an indirect jump/call.  Convert the instruction into a
             // mov instruction that loads the target in the correct register
             (void)sendLoadFromMemOpToR64(out, I, info, op->size,
-                op->mem.segment, op->mem.disp, op->mem.base, op->mem.index,
+                op->mem.seg, op->mem.disp, op->mem.base, op->mem.index,
                 op->mem.scale, /*lea=*/true, argno);
             return;
         
-        case X86_OP_IMM:
+        case OPTYPE_IMM:
         {
             // This is a direct jump/call.  Emit an LEA that loads the target
             // into the correct register.
@@ -790,75 +779,75 @@ static void sendLoadTargetMetadata(FILE *out, const cs_insn *I, CallInfo &info,
  * Emits instructions to load the address of the next instruction to be
  * executed by the CPU.
  */
-static void sendLoadNextMetadata(FILE *out, const cs_insn *I, CallInfo &info,
+static void sendLoadNextMetadata(FILE *out, const InstrInfo *I, CallInfo &info,
     int argno)
 {
     const char *regname = getRegName(getReg(argno))+1;
     uint8_t opcode = 0x06;
-    switch (I->id)
+    switch (I->mnemonic)
     {
-        case X86_INS_RET:
-        case X86_INS_CALL:
-        case X86_INS_JMP:
+        case MNEMONIC_RET:
+        case MNEMONIC_CALL:
+        case MNEMONIC_JMP:
             sendLoadTargetMetadata(out, I, info, argno);
             return;
-        case X86_INS_JO:
+        case MNEMONIC_JO:
             opcode = 0x70;
             break;
-        case X86_INS_JNO:
+        case MNEMONIC_JNO:
             opcode = 0x71;
             break;
-        case X86_INS_JB:
+        case MNEMONIC_JB:
             opcode = 0x72;
             break;
-        case X86_INS_JAE:
+        case MNEMONIC_JAE:
             opcode = 0x73;
             break;
-        case X86_INS_JE:
+        case MNEMONIC_JE:
             opcode = 0x74;
             break;
-        case X86_INS_JNE:
+        case MNEMONIC_JNE:
             opcode = 0x75;
             break;
-        case X86_INS_JBE:
+        case MNEMONIC_JBE:
             opcode = 0x76;
             break;
-        case X86_INS_JA:
+        case MNEMONIC_JA:
             opcode = 0x77;
             break;
-        case X86_INS_JS:
+        case MNEMONIC_JS:
             opcode = 0x78;
             break;
-        case X86_INS_JNS:
+        case MNEMONIC_JNS:
             opcode = 0x79;
             break;
-        case X86_INS_JP:
+        case MNEMONIC_JP:
             opcode = 0x7a;
             break;
-        case X86_INS_JNP:
+        case MNEMONIC_JNP:
             opcode = 0x7b;
             break;
-        case X86_INS_JL:
+        case MNEMONIC_JL:
             opcode = 0x7c;
             break;
-        case X86_INS_JGE:
+        case MNEMONIC_JGE:
             opcode = 0x7d;
             break;
-        case X86_INS_JLE:
+        case MNEMONIC_JLE:
             opcode = 0x7e;
             break;
-        case X86_INS_JG:
+        case MNEMONIC_JG:
             opcode = 0x7f;
             break;
-        case X86_INS_JECXZ: case X86_INS_JRCXZ:
+        case MNEMONIC_JECXZ: case MNEMONIC_JRCXZ:
         {
             // Special handling for jecxz/jrcxz.  This is similar to other
             // jcc instructions (see below), except we must restore %rcx:
-            x86_reg exclude[] = {getReg(argno), X86_REG_INVALID};
+            Register exclude[] = {getReg(argno), REGISTER_INVALID};
             int slot = 0;
-            int scratch = sendTemporaryRestoreReg(out, info, X86_REG_RCX,
+            int scratch = sendTemporaryRestoreReg(out, info, REGISTER_RCX,
                 exclude, &slot);
-            if (I->id == X86_INS_JECXZ)
+            if (I->mnemonic == MNEMONIC_JECXZ)
                 fprintf(out, "%u,", 0x67);
             fprintf(out, "%u,{\"rel8\":\".Ltaken%s\"},", 0xe3, regname);
             sendLeaFromPCRelToR64(out, "{\"rel32\":\".Lcontinue\"}", argno);
@@ -866,7 +855,7 @@ static void sendLoadNextMetadata(FILE *out, const cs_insn *I, CallInfo &info,
             fprintf(out, "\".Ltaken%s\",", regname);
             sendLoadTargetMetadata(out, I, info, argno);
             fprintf(out, "\".Lnext%s\",", regname);
-            sendUndoTemporaryMovReg(out, X86_REG_RCX, scratch);
+            sendUndoTemporaryMovReg(out, REGISTER_RCX, scratch);
             return;
         }
         default:
@@ -931,18 +920,12 @@ static void sendStringCharData(FILE *out, char c)
 /*
  * String asm string data.
  */
-static void sendAsmStrData(FILE *out, const cs_insn *I,
+static void sendAsmStrData(FILE *out, const InstrInfo *I,
     bool newline = false)
 {
     fputc('\"', out);
-    for (unsigned i = 0; I->mnemonic[i] != '\0'; i++)
-        sendStringCharData(out, I->mnemonic[i]);
-    if (I->op_str[0] != '\0')
-    {
-        sendStringCharData(out, ' ');
-        for (unsigned i = 0; I->op_str[i] != '\0'; i++)
-            sendStringCharData(out, I->op_str[i]);
-    }
+    for (unsigned i = 0; I->string.instr[i] != '\0'; i++)
+        sendStringCharData(out, I->string.instr[i]);
     if (newline)
         sendStringCharData(out, '\n');
     fputc('\"', out);
@@ -986,16 +969,13 @@ static const char *buildMetadataString(FILE *out, char *buf, long *pos)
 /*
  * Lookup a value from a CSV file based on the matching.
  */
-static bool matchEval(csh handle, const MatchExpr *expr, const cs_insn *I,
-    intptr_t offset, const char *section, const char *basename = nullptr,
-    const Record **record = nullptr);
-static intptr_t lookupValue(csh handle, const Action *action,
-    const cs_insn *I, intptr_t offset, const char *section,
+static bool matchEval(const MatchExpr *expr, const InstrInfo *I,
+    const char *basename = nullptr, const Record **record = nullptr);
+static intptr_t lookupValue(const Action *action, const InstrInfo *I,
     const char *basename, intptr_t idx)
 {
     const Record *record = nullptr;
-    bool pass = matchEval(handle, action->match, I, offset, section, basename,
-        &record);
+    bool pass = matchEval(action->match, I, basename, &record);
     if (!pass || record == nullptr)
         error("failed to lookup value from file \"%s.csv\"; matching is "
             "ambiguous", basename);
@@ -1011,9 +991,8 @@ static intptr_t lookupValue(csh handle, const Action *action,
  * Send instructions to load an argument into a register.
  */
 static Type sendLoadArgumentMetadata(FILE *out, CallInfo &info,
-    csh handle, const ELF *elf, const Action *action, const Argument &arg,
-    const cs_insn *I, off_t offset, const char *section, intptr_t id,
-    int argno)
+    const ELF *elf, const Action *action, const Argument &arg,
+    const InstrInfo *I, intptr_t id, int argno)
 {
     int regno = getArgRegIdx(argno);
     if (regno < 0)
@@ -1026,8 +1005,7 @@ static Type sendLoadArgumentMetadata(FILE *out, CallInfo &info,
     {
         case ARGUMENT_USER:
         {
-            intptr_t value = lookupValue(handle, action, I, offset, section,
-                arg.name, arg.value);
+            intptr_t value = lookupValue(action, I, arg.name, arg.value);
             sendLoadValueMetadata(out, value, regno);
             break;
         }
@@ -1035,7 +1013,7 @@ static Type sendLoadArgumentMetadata(FILE *out, CallInfo &info,
             sendLoadValueMetadata(out, arg.value, regno);
             break;
         case ARGUMENT_OFFSET:
-            sendLoadValueMetadata(out, offset, regno);
+            sendLoadValueMetadata(out, I->offset, regno);
             break;
         case ARGUMENT_ADDR:
             sendLeaFromPCRelToR64(out, "{\"rel32\":\".Linstruction\"}", regno);
@@ -1073,9 +1051,7 @@ static Type sendLoadArgumentMetadata(FILE *out, CallInfo &info,
             break;
         case ARGUMENT_ASM_SIZE: case ARGUMENT_ASM_LEN:
         {
-            intptr_t len = strlen(I->mnemonic);
-            if (I->op_str[0] != '\0')
-                len += strlen(I->op_str) + 1;
+            intptr_t len = strlen(I->string.instr);
             sendLoadValueMetadata(out,
                 (arg.kind == ARGUMENT_ASM_SIZE? len+1: len), regno);
             break;
@@ -1136,28 +1112,28 @@ static Type sendLoadArgumentMetadata(FILE *out, CallInfo &info,
                     sendLeaFromStackToR64(out, info.rsp_offset, regno);
                     break;
                 case REGISTER_EFLAGS:
-                    if (info.isSaved(X86_REG_EFLAGS))
+                    if (info.isSaved(REGISTER_EFLAGS))
                         sendMovFromStack16ToR64(out,
-                            info.getOffset(X86_REG_EFLAGS), regno);
+                            info.getOffset(REGISTER_EFLAGS), regno);
                     else
                     {
-                        x86_reg exclude[] = {X86_REG_RAX, getReg(regno),
-                            X86_REG_INVALID};
+                        Register exclude[] = {REGISTER_RAX, getReg(regno),
+                            REGISTER_INVALID};
                         int slot = 0;
                         int scratch = sendTemporarySaveReg(out, info,
-                            X86_REG_RAX, exclude, &slot);
+                            REGISTER_RAX, exclude, &slot);
                         // seto %al
                         // lahf
                         fprintf(out, "%u,%u,%u,", 0x0f, 0x90, 0xc0);
                         fprintf(out, "%u,", 0x9f);
                         sendMovFromRAX16ToR64(out, regno);
-                        sendUndoTemporaryMovReg(out, X86_REG_RAX, scratch);
+                        sendUndoTemporaryMovReg(out, REGISTER_RAX, scratch);
                     }
                     t = TYPE_INT16;
                     break;
                 default:
                 {
-                    x86_reg reg = getReg((Register)arg.value);
+                    Register reg = (Register)arg.value;
                     sendLoadRegToArg(out, I, reg, /*ptr=*/false, info, regno);
                     switch (getRegSize(reg))
                     {
@@ -1177,7 +1153,7 @@ static Type sendLoadArgumentMetadata(FILE *out, CallInfo &info,
             break;
         ARGUMENT_REG_PTR:
         {
-            x86_reg reg = getReg((Register)arg.value);
+            Register reg = (Register)arg.value;
             sendSaveRegToStack(out, info, reg);
             sendLeaFromStackToR64(out, info.getOffset(reg), regno);
             switch (getRegSize(reg))
@@ -1196,7 +1172,7 @@ static Type sendLoadArgumentMetadata(FILE *out, CallInfo &info,
         case ARGUMENT_STATE:
         {
             // State is saved starting from %rflags
-            x86_reg reg = X86_REG_EFLAGS;
+            Register reg = REGISTER_EFLAGS;
             sendLeaFromStackToR64(out, info.getOffset(reg), regno);
             t = TYPE_VOID | TYPE_PTR;
             break;
@@ -1252,22 +1228,21 @@ static Type sendLoadArgumentMetadata(FILE *out, CallInfo &info,
                 t |= TYPE_PTR;
 
             if (!sendLoadFromMemOpToR64(out, I, info, arg.memop.size,
-                    getReg(arg.memop.seg), arg.memop.disp,
-                    getReg(arg.memop.base), getReg(arg.memop.index),
-                    arg.memop.scale, /*lea=*/arg.ptr, regno))
+                    arg.memop.seg, arg.memop.disp, arg.memop.base,
+                    arg.memop.index, arg.memop.scale, /*lea=*/arg.ptr, regno))
                 t = TYPE_NULL_PTR;
             break;
         case ARGUMENT_OP: case ARGUMENT_SRC: case ARGUMENT_DST:
         case ARGUMENT_IMM: case ARGUMENT_REG: case ARGUMENT_MEM:
         {
-            uint8_t access = (arg.kind == ARGUMENT_SRC? CS_AC_READ:
-                             (arg.kind == ARGUMENT_DST? CS_AC_WRITE:
-                              CS_AC_READ | CS_AC_WRITE));
-            x86_op_type type = (arg.kind == ARGUMENT_IMM? X86_OP_IMM:
-                               (arg.kind == ARGUMENT_REG? X86_OP_REG:
-                               (arg.kind == ARGUMENT_MEM? X86_OP_MEM:
-                                X86_OP_INVALID)));
-            const cs_x86_op *op = getOperand(I, (int)arg.value, type, access);
+            Access access = (arg.kind == ARGUMENT_SRC? ACCESS_READ:
+                            (arg.kind == ARGUMENT_DST? ACCESS_WRITE:
+                                ACCESS_READ | ACCESS_WRITE));
+            OpType type = (arg.kind == ARGUMENT_IMM? OPTYPE_IMM:
+                          (arg.kind == ARGUMENT_REG? OPTYPE_REG:
+                          (arg.kind == ARGUMENT_MEM? OPTYPE_MEM:
+                                OPTYPE_INVALID)));
+            const OpInfo *op = getOperand(I, (int)arg.value, type, access);
             t = getOperandType(I, op, arg.ptr, arg.field);
             if (op == nullptr)
             {
@@ -1289,7 +1264,7 @@ static Type sendLoadArgumentMetadata(FILE *out, CallInfo &info,
             }
             bool dangerous = false;
             if (!arg.ptr && arg.field == FIELD_NONE && op != nullptr &&
-                    op->type == X86_OP_MEM)
+                    op->type == OPTYPE_MEM)
             {
                 // Filter dangerous memory operand pass-by-value arguments:
                 if (action->call == CALL_AFTER)
@@ -1302,13 +1277,13 @@ static Type sendLoadArgumentMetadata(FILE *out, CallInfo &info,
                     t = TYPE_NULL_PTR;
                     dangerous = true;
                 }
-                else switch (I->id)
+                else switch (I->mnemonic)
                 {
                     default:
                         if (op->access != 0)
                             break;
                         // Fallthrough
-                    case X86_INS_LEA: case X86_INS_NOP:
+                    case MNEMONIC_LEA: case MNEMONIC_NOP:
                         warning(CONTEXT_FORMAT "failed to load memory "
                             "operand contents into register %s; operand is "
                             "not accessed by the %s instruction",
@@ -1339,7 +1314,7 @@ static Type sendLoadArgumentMetadata(FILE *out, CallInfo &info,
  * Send argument data metadata.
  */
 static void sendArgumentDataMetadata(FILE *out, const Argument &arg,
-    const cs_insn *I, int argno)
+    const InstrInfo *I, int argno)
 {
     switch (arg.kind)
     {
@@ -1354,7 +1329,7 @@ static void sendArgumentDataMetadata(FILE *out, const Argument &arg,
             if (arg.duplicate)
                 return;
             fputs("\".Lbytes\",", out);
-            sendBytesData(out, I->bytes, I->size);
+            sendBytesData(out, I->data, I->size);
             fputc(',', out);
             break;
         case ARGUMENT_OP: case ARGUMENT_SRC: case ARGUMENT_DST:
@@ -1362,14 +1337,14 @@ static void sendArgumentDataMetadata(FILE *out, const Argument &arg,
         {
             if (!arg.ptr)
                 return;
-            uint8_t access = (arg.kind == ARGUMENT_SRC? CS_AC_READ:
-                             (arg.kind == ARGUMENT_DST? CS_AC_WRITE:
-                              CS_AC_READ | CS_AC_WRITE));
-            x86_op_type type = (arg.kind == ARGUMENT_IMM? X86_OP_IMM:
-                               (arg.kind == ARGUMENT_REG? X86_OP_REG:
-                               (arg.kind == ARGUMENT_MEM? X86_OP_MEM:
-                                X86_OP_INVALID)));
-            const cs_x86_op *op = getOperand(I, (int)arg.value, type, access);
+            Access access = (arg.kind == ARGUMENT_SRC? ACCESS_READ:
+                            (arg.kind == ARGUMENT_DST? ACCESS_WRITE:
+                                ACCESS_READ | ACCESS_WRITE));
+            OpType type = (arg.kind == ARGUMENT_IMM? OPTYPE_IMM:
+                          (arg.kind == ARGUMENT_REG? OPTYPE_REG:
+                          (arg.kind == ARGUMENT_MEM? OPTYPE_MEM:
+                                OPTYPE_INVALID)));
+            const OpInfo *op = getOperand(I, (int)arg.value, type, access);
             sendOperandDataMetadata(out, I, op, getArgRegIdx(argno));
             break;
         }
@@ -1381,9 +1356,8 @@ static void sendArgumentDataMetadata(FILE *out, const Argument &arg,
 /*
  * Build metadata.
  */
-static Metadata *buildMetadata(csh handle, const ELF *elf,
-    const Action *action, const cs_insn *I, off_t offset,
-    const char *section, intptr_t id, Metadata *metadata, char *buf,
+static Metadata *buildMetadata(const ELF *elf, const Action *action,
+    const InstrInfo *I, intptr_t id, Metadata *metadata, char *buf,
     size_t size)
 {
     if (action == nullptr)
@@ -1410,8 +1384,7 @@ static Metadata *buildMetadata(csh handle, const ELF *elf,
         {
             sendAsmStrData(out, I, /*newline=*/true);
             const char *asm_str = buildMetadataString(out, buf, &pos);
-            intptr_t len = 1 + strlen(I->mnemonic) +
-                (I->op_str[0] == '\0'? 0: 1 + strlen(I->op_str));
+            intptr_t len = strlen(I->string.instr) + 1;
             sendIntegerData(out, 32, len);
             const char *asm_str_len = buildMetadataString(out, buf, &pos);
 
@@ -1445,8 +1418,8 @@ static Metadata *buildMetadata(csh handle, const ELF *elf,
             TypeSig sig = TYPESIG_EMPTY;
             for (const auto &arg: action->args)
             {
-                Type t = sendLoadArgumentMetadata(out, info, handle, elf,
-                    action, arg, I, offset, section, id, argno);
+                Type t = sendLoadArgumentMetadata(out, info, elf, action, arg,
+                    I, id, argno);
                 sig = setType(sig, t, argno);
                 argno++;
             }
@@ -1464,7 +1437,7 @@ static Metadata *buildMetadata(csh handle, const ELF *elf,
             }
             for (int regno = 0; !action->clean && regno < RMAX_IDX; regno++)
             {
-                x86_reg reg = getReg(regno);
+                Register reg = getReg(regno);
                 if (!info.isCallerSave(reg) && info.isClobbered(reg))
                 {
                     // Restore clobbered callee-save register:
@@ -1506,20 +1479,20 @@ static Metadata *buildMetadata(csh handle, const ELF *elf,
                     0x48, 0x8d, 0xa4, 0x24, rsp_args_offset);
             }
             bool pop_rsp = false;
-            x86_reg reg;
-            while ((reg = info.pop()) != X86_REG_INVALID)
+            Register reg;
+            while ((reg = info.pop()) != REGISTER_INVALID)
             {
                 switch (reg)
                 {
-                    case X86_REG_RSP:
+                    case REGISTER_RSP:
                         pop_rsp = true;
                         continue;           // %rsp is popped last.
                     default:
                         break;
                 }
-                bool preserve_rax = info.isUsed(X86_REG_RAX);
-                x86_reg rscratch = (preserve_rax? info.getScratch():
-                    X86_REG_INVALID);
+                bool preserve_rax = info.isUsed(REGISTER_RAX);
+                Register rscratch = (preserve_rax? info.getScratch():
+                    REGISTER_INVALID);
                 if (sendPop(out, preserve_rax, reg, rscratch))
                     info.clobber(rscratch);
             }
@@ -1530,7 +1503,7 @@ static Metadata *buildMetadata(csh handle, const ELF *elf,
 
             // Restore %rsp.
             if (pop_rsp)
-                sendPop(out, false, X86_REG_RSP);
+                sendPop(out, false, REGISTER_RSP);
             else
             {
                 // lea 0x4000(%rsp),%rsp

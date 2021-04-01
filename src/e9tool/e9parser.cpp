@@ -30,272 +30,6 @@
 
 using namespace e9frontend;
 
-static Register getRegister(x86_reg reg)
-{
-    switch (reg)
-    {
-        case X86_REG_AH:        return REGISTER_AH;
-        case X86_REG_CH:        return REGISTER_CH;
-        case X86_REG_DH:        return REGISTER_DH;
-        case X86_REG_BH:        return REGISTER_BH;
-
-        case X86_REG_AL:        return REGISTER_AL;
-        case X86_REG_CL:        return REGISTER_CL;
-        case X86_REG_DL:        return REGISTER_DL;
-        case X86_REG_BL:        return REGISTER_BL;
-        case X86_REG_SPL:       return REGISTER_SPL;
-        case X86_REG_BPL:       return REGISTER_BPL;
-        case X86_REG_SIL:       return REGISTER_SIL;
-        case X86_REG_DIL:       return REGISTER_DIL;
-        case X86_REG_R8B:       return REGISTER_R8B;
-        case X86_REG_R9B:       return REGISTER_R9B;
-        case X86_REG_R10B:      return REGISTER_R10B;
-        case X86_REG_R11B:      return REGISTER_R11B;
-        case X86_REG_R12B:      return REGISTER_R12B;
-        case X86_REG_R13B:      return REGISTER_R13B;
-        case X86_REG_R14B:      return REGISTER_R14B;
-        case X86_REG_R15B:      return REGISTER_R15B;
-
-        case X86_REG_AX:        return REGISTER_AX;
-        case X86_REG_CX:        return REGISTER_CX;
-        case X86_REG_DX:        return REGISTER_DX;
-        case X86_REG_BX:        return REGISTER_BX;
-        case X86_REG_SP:        return REGISTER_SP;
-        case X86_REG_BP:        return REGISTER_BP;
-        case X86_REG_SI:        return REGISTER_SI;
-        case X86_REG_DI:        return REGISTER_DI;
-        case X86_REG_R8W:       return REGISTER_R8W;
-        case X86_REG_R9W:       return REGISTER_R9W;
-        case X86_REG_R10W:      return REGISTER_R10W;
-        case X86_REG_R11W:      return REGISTER_R11W;
-        case X86_REG_R12W:      return REGISTER_R12W;
-        case X86_REG_R13W:      return REGISTER_R13W;
-        case X86_REG_R14W:      return REGISTER_R14W;
-        case X86_REG_R15W:      return REGISTER_R15W;
-
-        case X86_REG_EFLAGS:    return REGISTER_EFLAGS;
-        case X86_REG_IP:        return REGISTER_IP;
-
-        case X86_REG_EAX:       return REGISTER_EAX;
-        case X86_REG_ECX:       return REGISTER_ECX;
-        case X86_REG_EDX:       return REGISTER_EDX;
-        case X86_REG_EBX:       return REGISTER_EBX;
-        case X86_REG_ESP:       return REGISTER_ESP;
-        case X86_REG_EBP:       return REGISTER_EBP;
-        case X86_REG_ESI:       return REGISTER_ESI;
-        case X86_REG_EDI:       return REGISTER_EDI;
-        case X86_REG_R8D:       return REGISTER_R8D;
-        case X86_REG_R9D:       return REGISTER_R9D;
-        case X86_REG_R10D:      return REGISTER_R10D;
-        case X86_REG_R11D:      return REGISTER_R11D;
-        case X86_REG_R12D:      return REGISTER_R12D;
-        case X86_REG_R13D:      return REGISTER_R13D;
-        case X86_REG_R14D:      return REGISTER_R14D;
-        case X86_REG_R15D:      return REGISTER_R15D;
-        
-        case X86_REG_EIP:       return REGISTER_EIP;
-
-        case X86_REG_RAX:       return REGISTER_RAX;
-        case X86_REG_RCX:       return REGISTER_RCX;
-        case X86_REG_RDX:       return REGISTER_RDX;
-        case X86_REG_RBX:       return REGISTER_RBX;
-        case X86_REG_RSP:       return REGISTER_RSP;
-        case X86_REG_RBP:       return REGISTER_RBP;
-        case X86_REG_RSI:       return REGISTER_RSI;
-        case X86_REG_RDI:       return REGISTER_RDI;
-        case X86_REG_R8:        return REGISTER_R8;
-        case X86_REG_R9:        return REGISTER_R9;
-        case X86_REG_R10:       return REGISTER_R10;
-        case X86_REG_R11:       return REGISTER_R11;
-        case X86_REG_R12:       return REGISTER_R12;
-        case X86_REG_R13:       return REGISTER_R13;
-        case X86_REG_R14:       return REGISTER_R14;
-        case X86_REG_R15:       return REGISTER_R15;
-        
-        case X86_REG_RIP:       return REGISTER_RIP;
-
-        case X86_REG_XMM0:      return REGISTER_XMM0;
-        case X86_REG_XMM1:      return REGISTER_XMM1;
-        case X86_REG_XMM2:      return REGISTER_XMM2;
-        case X86_REG_XMM3:      return REGISTER_XMM3;
-        case X86_REG_XMM4:      return REGISTER_XMM4;
-        case X86_REG_XMM5:      return REGISTER_XMM5;
-        case X86_REG_XMM6:      return REGISTER_XMM6;
-        case X86_REG_XMM7:      return REGISTER_XMM7;
-        case X86_REG_XMM8:      return REGISTER_XMM8;
-        case X86_REG_XMM9:      return REGISTER_XMM9;
-        case X86_REG_XMM10:     return REGISTER_XMM10;
-        case X86_REG_XMM11:     return REGISTER_XMM11;
-        case X86_REG_XMM12:     return REGISTER_XMM12;
-        case X86_REG_XMM13:     return REGISTER_XMM13;
-        case X86_REG_XMM14:     return REGISTER_XMM14;
-        case X86_REG_XMM15:     return REGISTER_XMM15;
-        case X86_REG_XMM16:     return REGISTER_XMM16;
-        case X86_REG_XMM17:     return REGISTER_XMM17;
-        case X86_REG_XMM18:     return REGISTER_XMM18;
-        case X86_REG_XMM19:     return REGISTER_XMM19;
-        case X86_REG_XMM20:     return REGISTER_XMM20;
-        case X86_REG_XMM21:     return REGISTER_XMM21;
-        case X86_REG_XMM22:     return REGISTER_XMM22;
-        case X86_REG_XMM23:     return REGISTER_XMM23;
-        case X86_REG_XMM24:     return REGISTER_XMM24;
-        case X86_REG_XMM25:     return REGISTER_XMM25;
-        case X86_REG_XMM26:     return REGISTER_XMM26;
-        case X86_REG_XMM27:     return REGISTER_XMM27;
-        case X86_REG_XMM28:     return REGISTER_XMM28;
-        case X86_REG_XMM29:     return REGISTER_XMM29;
-        case X86_REG_XMM30:     return REGISTER_XMM30;
-        case X86_REG_XMM31:     return REGISTER_XMM31;
-        
-        case X86_REG_YMM0:      return REGISTER_YMM0;
-        case X86_REG_YMM1:      return REGISTER_YMM1;
-        case X86_REG_YMM2:      return REGISTER_YMM2;
-        case X86_REG_YMM3:      return REGISTER_YMM3;
-        case X86_REG_YMM4:      return REGISTER_YMM4;
-        case X86_REG_YMM5:      return REGISTER_YMM5;
-        case X86_REG_YMM6:      return REGISTER_YMM6;
-        case X86_REG_YMM7:      return REGISTER_YMM7;
-        case X86_REG_YMM8:      return REGISTER_YMM8;
-        case X86_REG_YMM9:      return REGISTER_YMM9;
-        case X86_REG_YMM10:     return REGISTER_YMM10;
-        case X86_REG_YMM11:     return REGISTER_YMM11;
-        case X86_REG_YMM12:     return REGISTER_YMM12;
-        case X86_REG_YMM13:     return REGISTER_YMM13;
-        case X86_REG_YMM14:     return REGISTER_YMM14;
-        case X86_REG_YMM15:     return REGISTER_YMM15;
-        case X86_REG_YMM16:     return REGISTER_YMM16;
-        case X86_REG_YMM17:     return REGISTER_YMM17;
-        case X86_REG_YMM18:     return REGISTER_YMM18;
-        case X86_REG_YMM19:     return REGISTER_YMM19;
-        case X86_REG_YMM20:     return REGISTER_YMM20;
-        case X86_REG_YMM21:     return REGISTER_YMM21;
-        case X86_REG_YMM22:     return REGISTER_YMM22;
-        case X86_REG_YMM23:     return REGISTER_YMM23;
-        case X86_REG_YMM24:     return REGISTER_YMM24;
-        case X86_REG_YMM25:     return REGISTER_YMM25;
-        case X86_REG_YMM26:     return REGISTER_YMM26;
-        case X86_REG_YMM27:     return REGISTER_YMM27;
-        case X86_REG_YMM28:     return REGISTER_YMM28;
-        case X86_REG_YMM29:     return REGISTER_YMM29;
-        case X86_REG_YMM30:     return REGISTER_YMM30;
-        case X86_REG_YMM31:     return REGISTER_YMM31;
-
-        case X86_REG_ZMM0:      return REGISTER_ZMM0;
-        case X86_REG_ZMM1:      return REGISTER_ZMM1;
-        case X86_REG_ZMM2:      return REGISTER_ZMM2;
-        case X86_REG_ZMM3:      return REGISTER_ZMM3;
-        case X86_REG_ZMM4:      return REGISTER_ZMM4;
-        case X86_REG_ZMM5:      return REGISTER_ZMM5;
-        case X86_REG_ZMM6:      return REGISTER_ZMM6;
-        case X86_REG_ZMM7:      return REGISTER_ZMM7;
-        case X86_REG_ZMM8:      return REGISTER_ZMM8;
-        case X86_REG_ZMM9:      return REGISTER_ZMM9;
-        case X86_REG_ZMM10:     return REGISTER_ZMM10;
-        case X86_REG_ZMM11:     return REGISTER_ZMM11;
-        case X86_REG_ZMM12:     return REGISTER_ZMM12;
-        case X86_REG_ZMM13:     return REGISTER_ZMM13;
-        case X86_REG_ZMM14:     return REGISTER_ZMM14;
-        case X86_REG_ZMM15:     return REGISTER_ZMM15;
-        case X86_REG_ZMM16:     return REGISTER_ZMM16;
-        case X86_REG_ZMM17:     return REGISTER_ZMM17;
-        case X86_REG_ZMM18:     return REGISTER_ZMM18;
-        case X86_REG_ZMM19:     return REGISTER_ZMM19;
-        case X86_REG_ZMM20:     return REGISTER_ZMM20;
-        case X86_REG_ZMM21:     return REGISTER_ZMM21;
-        case X86_REG_ZMM22:     return REGISTER_ZMM22;
-        case X86_REG_ZMM23:     return REGISTER_ZMM23;
-        case X86_REG_ZMM24:     return REGISTER_ZMM24;
-        case X86_REG_ZMM25:     return REGISTER_ZMM25;
-        case X86_REG_ZMM26:     return REGISTER_ZMM26;
-        case X86_REG_ZMM27:     return REGISTER_ZMM27;
-        case X86_REG_ZMM28:     return REGISTER_ZMM28;
-        case X86_REG_ZMM29:     return REGISTER_ZMM29;
-        case X86_REG_ZMM30:     return REGISTER_ZMM30;
-        case X86_REG_ZMM31:     return REGISTER_ZMM31;
-
-        case X86_REG_ES:        return REGISTER_ES;
-        case X86_REG_CS:        return REGISTER_CS;
-        case X86_REG_SS:        return REGISTER_SS;
-        case X86_REG_DS:        return REGISTER_DS;
-        case X86_REG_FS:        return REGISTER_FS;
-        case X86_REG_GS:        return REGISTER_GS;
-
-        case X86_REG_CR0:       return REGISTER_CR0;
-        case X86_REG_CR1:       return REGISTER_CR1;
-        case X86_REG_CR2:       return REGISTER_CR2;
-        case X86_REG_CR3:       return REGISTER_CR3;
-        case X86_REG_CR4:       return REGISTER_CR4;
-        case X86_REG_CR5:       return REGISTER_CR5;
-        case X86_REG_CR6:       return REGISTER_CR6;
-        case X86_REG_CR7:       return REGISTER_CR7;
-        case X86_REG_CR8:       return REGISTER_CR8;
-        case X86_REG_CR9:       return REGISTER_CR9;
-        case X86_REG_CR10:      return REGISTER_CR10;
-        case X86_REG_CR11:      return REGISTER_CR11;
-        case X86_REG_CR12:      return REGISTER_CR12;
-        case X86_REG_CR13:      return REGISTER_CR13;
-        case X86_REG_CR14:      return REGISTER_CR14;
-        case X86_REG_CR15:      return REGISTER_CR15;
-        
-        case X86_REG_DR0:       return REGISTER_DR0;
-        case X86_REG_DR1:       return REGISTER_DR1;
-        case X86_REG_DR2:       return REGISTER_DR2;
-        case X86_REG_DR3:       return REGISTER_DR3;
-        case X86_REG_DR4:       return REGISTER_DR4;
-        case X86_REG_DR5:       return REGISTER_DR5;
-        case X86_REG_DR6:       return REGISTER_DR6;
-        case X86_REG_DR7:       return REGISTER_DR7;
-        case X86_REG_DR8:       return REGISTER_DR8;
-        case X86_REG_DR9:       return REGISTER_DR9;
-        case X86_REG_DR10:      return REGISTER_DR10;
-        case X86_REG_DR11:      return REGISTER_DR11;
-        case X86_REG_DR12:      return REGISTER_DR12;
-        case X86_REG_DR13:      return REGISTER_DR13;
-        case X86_REG_DR14:      return REGISTER_DR14;
-        case X86_REG_DR15:      return REGISTER_DR15;
-        
-        case X86_REG_FP0:       return REGISTER_FP0;
-        case X86_REG_FP1:       return REGISTER_FP1;
-        case X86_REG_FP2:       return REGISTER_FP2;
-        case X86_REG_FP3:       return REGISTER_FP3;
-        case X86_REG_FP4:       return REGISTER_FP4;
-        case X86_REG_FP5:       return REGISTER_FP5;
-        case X86_REG_FP6:       return REGISTER_FP6;
-        case X86_REG_FP7:       return REGISTER_FP7;
-        
-        case X86_REG_K0:       return REGISTER_K0;
-        case X86_REG_K1:       return REGISTER_K1;
-        case X86_REG_K2:       return REGISTER_K2;
-        case X86_REG_K3:       return REGISTER_K3;
-        case X86_REG_K4:       return REGISTER_K4;
-        case X86_REG_K5:       return REGISTER_K5;
-        case X86_REG_K6:       return REGISTER_K6;
-        case X86_REG_K7:       return REGISTER_K7;
-        
-        case X86_REG_MM0:       return REGISTER_MM0;
-        case X86_REG_MM1:       return REGISTER_MM1;
-        case X86_REG_MM2:       return REGISTER_MM2;
-        case X86_REG_MM3:       return REGISTER_MM3;
-        case X86_REG_MM4:       return REGISTER_MM4;
-        case X86_REG_MM5:       return REGISTER_MM5;
-        case X86_REG_MM6:       return REGISTER_MM6;
-        case X86_REG_MM7:       return REGISTER_MM7;
- 
-        case X86_REG_ST0:       return REGISTER_ST0;
-        case X86_REG_ST1:       return REGISTER_ST1;
-        case X86_REG_ST2:       return REGISTER_ST2;
-        case X86_REG_ST3:       return REGISTER_ST3;
-        case X86_REG_ST4:       return REGISTER_ST4;
-        case X86_REG_ST5:       return REGISTER_ST5;
-        case X86_REG_ST6:       return REGISTER_ST6;
-        case X86_REG_ST7:       return REGISTER_ST7;
-
-        case X86_REG_FPSW:      return REGISTER_FPSW;
-
-        default:                return REGISTER_UNKNOWN;
-    }
-}
-
 /*
  * Tokens.
  */
@@ -466,7 +200,7 @@ static const TokenInfo tokens[] =
     {"fs",              TOKEN_REGISTER,         REGISTER_FS},
     {"gs",              TOKEN_REGISTER,         REGISTER_GS},
     {"id",              TOKEN_ID,               0},
-    {"imm",             TOKEN_IMM,              OP_TYPE_IMM},
+    {"imm",             TOKEN_IMM,              OPTYPE_IMM},
     {"in",              TOKEN_IN,               0},
     {"index",           TOKEN_INDEX,            0},
     {"instr",           TOKEN_INSTR,            0},
@@ -474,7 +208,7 @@ static const TokenInfo tokens[] =
     {"len",             TOKEN_LENGTH,           0},
     {"length",          TOKEN_LENGTH,           0},
     {"match",           TOKEN_MATCH,            0},
-    {"mem",             TOKEN_MEM,              OP_TYPE_MEM},
+    {"mem",             TOKEN_MEM,              OPTYPE_MEM},
     {"mem16",           TOKEN_MEM16,            0},
     {"mem32",           TOKEN_MEM32,            0},
     {"mem64",           TOKEN_MEM64,            0},
@@ -534,7 +268,7 @@ static const TokenInfo tokens[] =
     {"rdx",             TOKEN_REGISTER,         REGISTER_RDX},
     {"read",            TOKEN_READ,             ACCESS_READ},
     {"reads",           TOKEN_READS,            0},
-    {"reg",             TOKEN_REG,              OP_TYPE_REG},
+    {"reg",             TOKEN_REG,              OPTYPE_REG},
     {"regs",            TOKEN_REGS,             0},
     {"replace",         TOKEN_REPLACE,          0},
     {"return",          TOKEN_RETURN,           0},

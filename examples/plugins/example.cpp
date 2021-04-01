@@ -52,7 +52,7 @@ using namespace e9frontend;
 /*
  * Initialize the counters and the trampoline.
  */
-extern void *e9_plugin_init_v1(FILE *out, const e9frontend::ELF *elf)
+extern void *e9_plugin_init_v1(FILE *out, const ELF *elf)
 {
     /* 
      * This example uses 3 counters (one for calls/jumps/returns).
@@ -147,57 +147,44 @@ extern void *e9_plugin_init_v1(FILE *out, const e9frontend::ELF *elf)
 /*
  * We match all control-flow transfer instructions.
  */
-extern intptr_t e9_plugin_match_v1(FILE *out, const e9frontend::ELF *elf,
-    csh handle, off_t offset, const cs_insn *I, void *context)
+extern intptr_t e9_plugin_match_v1(FILE *out, const ELF *elf, const Instr *Is,
+    size_t size, size_t idx, const InstrInfo *info, void *context)
 {
-    const cs_detail *detail = I->detail;
-    for (uint8_t i = 0; i < detail->groups_count; i++)
+    switch (info->mnemonic)
     {
-        switch (detail->groups[i])
-        {
-            case CS_GRP_CALL:
-            case CS_GRP_JUMP:
-            case CS_GRP_RET:
-                return 1;
-            default:
-                break;
-        }
+        case MNEMONIC_RET:
+            return 1;
+        case MNEMONIC_JB: case MNEMONIC_JBE: case MNEMONIC_JCXZ:
+        case MNEMONIC_JECXZ: case MNEMONIC_JKNZD: case MNEMONIC_JKZD:
+        case MNEMONIC_JL: case MNEMONIC_JLE: case MNEMONIC_JMP:
+        case MNEMONIC_JNB: case MNEMONIC_JNBE: case MNEMONIC_JNL:
+        case MNEMONIC_JNLE: case MNEMONIC_JNO: case MNEMONIC_JNP:
+        case MNEMONIC_JNS: case MNEMONIC_JNZ: case MNEMONIC_JO:
+        case MNEMONIC_JP: case MNEMONIC_JRCXZ: case MNEMONIC_JS:
+        case MNEMONIC_JZ:
+            return 2;
+        case MNEMONIC_CALL:
+            return 3;
+        default:
+            return 0;
     }
-
-    return 0;
 }
 
 /*
  * Patch the selected instructions.
  */
-extern void e9_plugin_patch_v1(FILE *out, const e9frontend::ELF *elf,
-    csh handle, off_t offset, const cs_insn *I, void *context)
+extern void e9_plugin_patch_v1(FILE *out, const ELF *elf, const Instr *Is,
+    size_t size, size_t idx, const InstrInfo *info, void *context)
 {
-    Metadata metadata[2];
-    const cs_detail *detail = I->detail;
-    intptr_t counter = -1;
-    for (uint8_t i = 0; counter < 0 && i < detail->groups_count; i++)
-    {
-        switch (detail->groups[i])
-        {
-            case CS_GRP_CALL:
-                counter = COUNTERS + 0 * sizeof(size_t);
-                break;
-            case CS_GRP_JUMP:
-                counter = COUNTERS + 1 * sizeof(size_t);
-                break;
-            case CS_GRP_RET:
-                counter = COUNTERS + 2 * sizeof(size_t);
-                break;
-            default:
-                break;
-        }
-    }
-    if (counter < 0)
+    intptr_t counter = e9_plugin_match_v1(out, elf, Is, size, idx, info,
+        context);
+    if (counter == 0)
         return;
-
+    counter = COUNTERS + (counter - 1) * sizeof(size_t);
+ 
     // We instantiate the trampoline template with $counter pointing to
     // the counter corresponding to the instruction type:
+    Metadata metadata[2];
     metadata[0].name = "counter";
     std::string buf;
     buf += "{\"rel32\":";
@@ -209,6 +196,6 @@ extern void e9_plugin_patch_v1(FILE *out, const e9frontend::ELF *elf,
     metadata[1].data = nullptr;
 
     // Send a "patch" E9Patch API message.
-    sendPatchMessage(out, "cflimit", offset, metadata);
+    sendPatchMessage(out, "cflimit", Is[idx].offset, metadata);
 }
 

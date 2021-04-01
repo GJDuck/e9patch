@@ -1,7 +1,7 @@
 #CC=clang
 #CXX=clang++
 
-CXXFLAGS = -std=c++14 -Wall -Wno-reorder -fPIC -pie
+CXXFLAGS = -std=c++11 -Wall -Wno-reorder -fPIC -pie
 
 E9PATCH_OBJS=\
     src/e9patch/e9alloc.o \
@@ -21,7 +21,8 @@ E9TOOL_SRC=\
     src/e9tool/e9metadata.cpp \
     src/e9tool/e9parser.cpp \
     src/e9tool/e9tool.cpp \
-    src/e9tool/e9types.cpp
+    src/e9tool/e9types.cpp \
+    src/e9tool/e9x86_64.cpp 
 
 release: CXXFLAGS += -O2 -D NDEBUG
 release: $(E9PATCH_OBJS)
@@ -35,16 +36,17 @@ debug: $(E9PATCH_OBJS)
 e9tool.o: $(E9TOOL_SRC)
 	$(CXX) $(CXXFLAGS) -c src/e9tool/e9tool.cpp
 
-tool: CXXFLAGS += -O2 -I src/e9tool/ -I capstone/include/ -Wno-unused-function
+tool: CXXFLAGS += -O2 -I src/e9tool/ -I zydis/include/ \
+    -I zydis/dependencies/zycore/include/ -Wno-unused-function
 tool: e9tool.o
-	$(CXX) $(CXXFLAGS) e9tool.o -o e9tool capstone/libcapstone.a \
+	$(CXX) $(CXXFLAGS) e9tool.o -o e9tool libZydis.a \
         -Wl,--export-dynamic -ldl
 	strip e9tool
 
-tool.debug: CXXFLAGS += -O0 -g -I src/e9tool/ -I capstone/include/ \
-    -Wno-unused-function
+tool.debug: CXXFLAGS += -O0 -g -I src/e9tool/ -I zydis/include/ \
+    -I zydis/dependencies/zycore/include/ -Wno-unused-function
 tool.debug: e9tool.o
-	$(CXX) $(CXXFLAGS) e9tool.o -o e9tool capstone/libcapstone.a \
+	$(CXX) $(CXXFLAGS) e9tool.o -o e9tool libZydis.a \
         -Wl,--export-dynamic -ldl
 
 loader:

@@ -384,7 +384,7 @@ static intptr_t lookupSymbol(const ELF *elf, const char *name, TypeSig sig)
 /*
  * Print warning for symbol mismatch.
  */
-static void lookupSymbolWarnings(const ELF *elf, const cs_insn *I,
+static void lookupSymbolWarnings(const ELF *elf, const InstrInfo *I,
     const char *name, TypeSig sig)
 {
     Symbols &symbols = elf->symbols;

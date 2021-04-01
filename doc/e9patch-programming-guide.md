@@ -512,14 +512,14 @@ The E9Tool plugin API is very simple and consists of just four functions:
 
 1. `e9_plugin_init_v1(FILE *out, const ELF *in, ...)`:
     Called once before the binary is disassembled.
-2. `e9_plugin_instr_v1(FILE *out, const ELF *in, ...)`:
-    Called once for each disassembled instruction.
-3. `e9_plugin_match_v1(FILE *out, const ELF *in, ...)`:
-    Called once for each matching.
-4. `e9_plugin_patch_v1(FILE *out, const ELF *in, ...)`:
+2. `e9_plugin_match_v1(FILE *out, const ELF *in, ...)`:
+    Called once for each match location.
+3. `e9_plugin_patch_v1(FILE *out, const ELF *in, ...)`:
     Called for each patch location.
-5. `e9_plugin_fini_v1(FILE *out, const ELF *in, ...)`:
+4. `e9_plugin_fini_v1(FILE *out, const ELF *in, ...)`:
     Called once after all instructions have been patched.
+5. `e9_plugin_event_v1(FILE *out, const ELF *in, ...)`:
+    Called once for each event (see the `Event` enum).
 
 Note that each function is optional, and the plugin can choose not to
 define it.  However, The plugin must define at least one of these functions
@@ -534,16 +534,24 @@ Each function takes at least two arguments, namely:
 
 Some functions take additional arguments, including:
 
-* `handle`: Capstone handle.
-* `offset`: File offset of instruction (if applicable).
-* `I`: Instruction (if applicable).
+* `event`: An `Event` enum value.
+* `Is`: An array of all disassembled instructions.
+* `size`: The number of elements in `Is`.
+* `idx`: The index (into `Is`) of the instruction being
+   matched/patched.
+* `info`: The detailed information about the instruction being
+   matched/patched.
 * `context`: An optional plugin-defined context returned by the
   `e9_plugin_init_v1()` function.
+
+Note that the `info` structure is temporary and will be immediately destroyed
+after the API call returns.
+In constrast, the `Is` array is persistent and will remain valid between calls.
 
 Some API function return a value, including:
 
 * `e9_plugin_init_v1()` returns an optional `context` that will be
-  passed to all other API calls.
+   passed to all other API calls.
 * `e9_plugin_match_v1()` returns an integer value of the plugin's
    choosing.  This integer value can be matched using by the `--match`
    E9Tool command-line option, else the value will be ignored.
@@ -563,11 +571,6 @@ the `e9_plugin_init_v1()` function will do the following tasks
 3. Reserve parts of the virtual address space
 4. Load ELF binaries into the virtual address space
 5. Create and return the context (if necessary)
-
-The `e9_plugin_instr_v1()` function will do the following:
-
-1. Analyze or remember the instruction (if necessary)
-2. Setup additional trampolines (if necessary)
 
 The `e9_plugin_match_v1()` function will do the following:
 
@@ -598,7 +601,7 @@ The syntax is as follows:
 
 * `--action`: Selects the E9Tool "action" command-line option.
   This tells E9Tool what patching/instrumentation action to do.
-* `plugin(myPlugin).patchh()`: Specifies that instrument the program using the
+* `plugin(myPlugin).patch()`: Specifies that instrument the program using the
   `myPlugin.so` plugin.
 
 If `myPlugin.so` exports the `e9_plugin_match_v1()` function, it is also

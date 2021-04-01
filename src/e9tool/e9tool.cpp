@@ -5,7 +5,7 @@
  * |  __/\__, | || (_) | (_) | |
  *  \___|  /_/ \__\___/ \___/|_|
  *                              
- * Copyright (C) 2020 National University of Singapore
+ * Copyright (C) 2021 National University of Singapore
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -42,44 +42,20 @@
 #include <elf.h>
 
 #define PAGE_SIZE       4096
-
 #define MAX_ACTIONS     (1 << 16)
-#define MAX_SECTIONS    (1 << 10)
-
-#include "e9plugin.h"
-#include "e9frontend.cpp"
 
 /*
  * Options.
  */
 static bool option_trap_all     = false;
 static bool option_detail       = false;
-static bool option_notify       = false;
 static std::string option_format("binary");
 static std::string option_output("a.out");
 static std::string option_syntax("ATT");
 
-/*
- * Instruction location.
- */
-struct Location
-{
-    uint64_t offset:48;
-    uint64_t size:4;
-    uint64_t emitted:1;
-    uint64_t patch:1;
-    uint64_t section:10;
-    uint64_t address:48;
-    uint64_t action:16;
-
-    Location(size_t section, intptr_t addr, off_t offset, size_t size,
-        bool patch, unsigned action) :
-        address(addr), offset(offset), size(size), emitted(0), patch(patch),
-        section(section), action(action)
-    {
-        ;
-    }
-};
+#include "e9plugin.h"
+#include "e9frontend.cpp"
+#include "e9x86_64.cpp"
 
 /*
  * Excluded locations.
@@ -100,7 +76,7 @@ struct Plugin
     void *context;
     intptr_t result;
     PluginInit initFunc;
-    PluginInstr instrFunc;
+    PluginEvent eventFunc;
     PluginMatch matchFunc;
     PluginPatch patchFunc;
     PluginFini finiFunc;
@@ -153,23 +129,6 @@ enum MatchField
     MATCH_FIELD_INDEX,
     MATCH_FIELD_SCALE,
 };
-
-/*
- * Operand types.
- */
-enum OpType
-{
-    OP_TYPE_IMM = 1,
-    OP_TYPE_REG,
-    OP_TYPE_MEM
-};
-
-/*
- * Access types.
- */
-typedef unsigned Access;
-#define ACCESS_READ             0x01
-#define ACCESS_WRITE            0x02
 
 /*
  * Match types.
@@ -426,12 +385,12 @@ static Plugin *openPlugin(const char *basename)
     plugin->context   = nullptr;
     plugin->result    = 0;
     plugin->initFunc  = (PluginInit)dlsym(handle, "e9_plugin_init_v1");
-    plugin->instrFunc = (PluginInstr)dlsym(handle, "e9_plugin_instr_v1");
+    plugin->eventFunc = (PluginEvent)dlsym(handle, "e9_plugin_event_v1");
     plugin->matchFunc = (PluginMatch)dlsym(handle, "e9_plugin_match_v1");
     plugin->patchFunc = (PluginPatch)dlsym(handle, "e9_plugin_patch_v1");
     plugin->finiFunc  = (PluginFini)dlsym(handle, "e9_plugin_fini_v1");
     if (plugin->initFunc == nullptr &&
-            plugin->instrFunc == nullptr &&
+            plugin->eventFunc == nullptr &&
             plugin->patchFunc == nullptr &&
             plugin->finiFunc == nullptr)
         error("failed to load plugin \"%s\"; the shared "
@@ -439,38 +398,37 @@ static Plugin *openPlugin(const char *basename)
             plugin->filename);
 
     plugins.insert({plugin->filename, plugin});
-    option_notify = option_notify || (plugin->instrFunc != nullptr);
     return plugin;
 }
 
 /*
  * Notify all plugins of a new instruction.
  */
-static void notifyPlugins(FILE *out, const ELF *elf, csh handle, off_t offset,
-    const cs_insn *I)
+static void notifyPlugins(FILE *out, const ELF *elf, const Instr *Is,
+    size_t size, Event event)
 {
     for (auto i: plugins)
     {
         Plugin *plugin = i.second;
-        if (plugin->instrFunc == nullptr)
+        if (plugin->eventFunc == nullptr)
             continue;
-        plugin->instrFunc(out, elf, handle, offset, I, plugin->context);
+        plugin->eventFunc(out, elf, Is, size, event, plugin->context);
     }
 }
 
 /*
  * Get the match value for all plugins.
  */
-static void matchPlugins(FILE *out, const ELF *elf, csh handle, off_t offset,
-    const cs_insn *I)
+static void matchPlugins(FILE *out, const ELF *elf, const Instr *Is,
+    size_t size, size_t idx, const InstrInfo *I)
 {
     for (auto i: plugins)
     {
         Plugin *plugin = i.second;
         if (plugin->matchFunc == nullptr)
             continue;
-        plugin->result = plugin->matchFunc(out, elf, handle, offset, I,
-            plugin->context);
+        plugin->result = plugin->matchFunc(out, elf, Is, size, idx,
+            I, plugin->context);
     }
 }
 
@@ -1530,27 +1488,16 @@ static Exclude parseExclude(const ELF &elf, const char *str)
 /*
  * Create match string.
  */
-static const char *makeMatchString(MatchKind match, const cs_insn *I,
-    const char *section, char *buf, size_t buf_size)
+static const char *makeMatchString(MatchKind match, const InstrInfo *I)
 {
     switch (match)
     {
         case MATCH_ASSEMBLY:
-            if (I->op_str[0] == '\0')
-                return I->mnemonic;
-            else
-            {
-                ssize_t r = snprintf(buf, buf_size, "%s %s",
-                    I->mnemonic, I->op_str);
-                if (r < 0 || r >= (ssize_t)buf_size)
-                    error("failed to create assembly string of size %zu",
-                        buf_size);
-                return buf;
-            }
+            return I->string.instr;
         case MATCH_MNEMONIC:
-            return I->mnemonic;
+            return I->string.mnemonic;
         case MATCH_SECTION:
-            return section;
+            return I->string.section;
         default:
             return "";
     }
@@ -1559,16 +1506,14 @@ static const char *makeMatchString(MatchKind match, const cs_insn *I,
 /*
  * Get an operand.
  */
-static const cs_x86_op *getOperand(const cs_insn *I, int idx, x86_op_type type,
-    uint8_t access)
+static const OpInfo *getOperand(const InstrInfo *I, int idx, OpType type,
+    Access access)
 {
-    const cs_x86 *x86 = &I->detail->x86;
-    for (uint8_t i = 0; i < x86->op_count; i++)
+    for (uint8_t i = 0; i < I->count.op; i++)
     {
-        const cs_x86_op *op = x86->operands + i;
-        if ((type == X86_OP_INVALID? true: op->type == type) &&
-            ((op->access & access) != 0 ||
-             (op->type == X86_OP_IMM && (access & CS_AC_READ) != 0)))
+        const OpInfo *op = I->op + i;
+        if ((type == OPTYPE_INVALID? true: op->type == type) &&
+            (op->access & access) != 0)
         {
             if (idx == 0)
                 return op;
@@ -1581,17 +1526,14 @@ static const cs_x86_op *getOperand(const cs_insn *I, int idx, x86_op_type type,
 /*
  * Get number of operands.
  */
-static intptr_t getNumOperands(const cs_insn *I, x86_op_type type,
-    uint8_t access)
+static intptr_t getNumOperands(const InstrInfo *I, OpType type, Access access)
 {
-    const cs_x86 *x86 = &I->detail->x86;
     intptr_t n = 0;
-    for (uint8_t i = 0; i < x86->op_count; i++)
+    for (uint8_t i = 0; i < I->count.op; i++)
     {
-        const cs_x86_op *op = x86->operands + i;
-        if ((type == X86_OP_INVALID? true: op->type == type) &&
-            ((op->access & access) != 0 ||
-             (op->type == X86_OP_IMM && (access & CS_AC_READ) != 0)))
+        const OpInfo *op = I->op + i;
+        if ((type == OPTYPE_INVALID? true: op->type == type) &&
+            (op->access & access) != 0)
         {
             n++;
         }
@@ -1603,27 +1545,25 @@ static intptr_t getNumOperands(const cs_insn *I, x86_op_type type,
  * Create match value.
  */
 static MatchValue makeMatchValue(MatchKind match, int idx, MatchField field,
-    const cs_insn *I, intptr_t offset, intptr_t plugin_val)
+    const InstrInfo *I, intptr_t plugin_val)
 {
     MatchValue result = {0};
     result.type = MATCH_TYPE_INTEGER;
-    const cs_detail *detail = I->detail;
-    const cs_x86_op *op = nullptr;
-    x86_op_type type = X86_OP_INVALID;
-    uint8_t access = CS_AC_READ | CS_AC_WRITE;
-    bool found = false;
+    const OpInfo *op = nullptr;
+    OpType type = OPTYPE_INVALID;
+    uint8_t access = ACCESS_READ | ACCESS_WRITE;
     switch (match)
     {
         case MATCH_SRC:
-            access = CS_AC_READ; break;
+            access = ACCESS_READ; break;
         case MATCH_DST:
-            access = CS_AC_WRITE; break;
+            access = ACCESS_WRITE; break;
         case MATCH_IMM:
-            type = X86_OP_IMM; break;
+            type = OPTYPE_IMM; break;
         case MATCH_REG:
-            type = X86_OP_REG; break;
+            type = OPTYPE_REG; break;
         case MATCH_MEM:
-            type = X86_OP_MEM; break;
+            type = OPTYPE_MEM; break;
         default:
             break;
     }
@@ -1636,16 +1576,24 @@ static MatchValue makeMatchValue(MatchKind match, int idx, MatchField field,
         case MATCH_ADDRESS:
             result.i = (intptr_t)I->address; return result;
         case MATCH_CALL:
-            for (uint8_t i = 0; !found && i < detail->groups_count; i++)
-                if (detail->groups[i] == CS_GRP_CALL)
-                    found = true;
-            result.i = found;
-            return result;
+            result.i = (I->mnemonic == MNEMONIC_CALL); return result;
         case MATCH_JUMP:
-            for (uint8_t i = 0; !found && i < detail->groups_count; i++)
-                if (detail->groups[i] == CS_GRP_JUMP)
-                    found = true;
-            result.i = found;
+            switch (I->mnemonic)
+            {
+                case MNEMONIC_JB: case MNEMONIC_JBE: case MNEMONIC_JCXZ:
+                case MNEMONIC_JECXZ: case MNEMONIC_JKNZD: case MNEMONIC_JKZD:
+                case MNEMONIC_JL: case MNEMONIC_JLE: case MNEMONIC_JMP:
+                case MNEMONIC_JNB: case MNEMONIC_JNBE: case MNEMONIC_JNL:
+                case MNEMONIC_JNLE: case MNEMONIC_JNO: case MNEMONIC_JNP:
+                case MNEMONIC_JNS: case MNEMONIC_JNZ: case MNEMONIC_JO:
+                case MNEMONIC_JP: case MNEMONIC_JRCXZ: case MNEMONIC_JS:
+                case MNEMONIC_JZ:
+                    result.i = true;
+                    break;
+                default:
+                    result.i = false;
+                    break;
+            }
             return result;
         case MATCH_OP: case MATCH_SRC: case MATCH_DST:
         case MATCH_IMM: case MATCH_REG: case MATCH_MEM:
@@ -1670,14 +1618,14 @@ static MatchValue makeMatchValue(MatchKind match, int idx, MatchField field,
                     case MATCH_FIELD_NONE:
                         switch (op->type)
                         {
-                            case X86_OP_IMM:
+                            case OPTYPE_IMM:
                                 result.i = (intptr_t)op->imm;
                                 return result;
-                            case X86_OP_REG:
+                            case OPTYPE_REG:
                                 result.type = MATCH_TYPE_REGISTER;
-                                result.reg  = getRegister(op->reg);
+                                result.reg  = op->reg;
                                 return result;
-                            case X86_OP_MEM:
+                            case OPTYPE_MEM:
                                 result.type = MATCH_TYPE_MEMORY;
                                 return result;
                             default:
@@ -1687,76 +1635,54 @@ static MatchValue makeMatchValue(MatchKind match, int idx, MatchField field,
                         result.i = (intptr_t)op->size; return result;
                     case MATCH_FIELD_TYPE:
                         result.type = MATCH_TYPE_OPERAND;
-                        switch (op->type)
-                        {
-                            case X86_OP_IMM:
-                                result.op = OP_TYPE_IMM; return result;
-                            case X86_OP_REG:
-                                result.op = OP_TYPE_REG; return result;
-                            case X86_OP_MEM:
-                                result.op = OP_TYPE_MEM; return result;
-                            default:
-                                goto undefined;
-                        }
+                        result.op   = op->type;
+                        return result;
                     case MATCH_FIELD_ACCESS:
                     {
-                        result.type = MATCH_TYPE_ACCESS;
-                        if (op->type == X86_OP_IMM)
-                        {
-                            result.access = ACCESS_READ;
-                            return result;
-                        }
-                        Access access = 0;
-                        if ((op->access & CS_AC_READ) != 0)
-                            access |= ACCESS_READ;
-                        if ((op->access & CS_AC_WRITE) != 0)
-                            access |= ACCESS_WRITE;
-                        if (op->type == X86_OP_MEM &&
-                                (I->id == X86_INS_LEA || I->id == X86_INS_NOP))
-                            access = 0;     // Capstone bug workaround
-                        result.access = access;
+                        result.type   = MATCH_TYPE_ACCESS;
+                        result.access = op->access;
                         return result;
                     }
                     case MATCH_FIELD_SEG:
-                        if (op->type != X86_OP_MEM)
+                        if (op->type != OPTYPE_MEM)
                             goto undefined;
-                        if (op->mem.segment == X86_REG_INVALID)
+                        if (op->mem.seg == REGISTER_NONE)
                         {
                             result.type = MATCH_TYPE_NIL;
                             return result;
                         }
                         result.type = MATCH_TYPE_REGISTER;
-                        result.reg  = getRegister(op->mem.segment);
+                        result.reg  = op->mem.seg;
                         return result;
                     case MATCH_FIELD_DISPL:
-                        if (op->type != X86_OP_MEM)
+                        if (op->type != OPTYPE_MEM)
                             goto undefined;
                         result.i = (intptr_t)op->mem.disp;
                         return result;
                     case MATCH_FIELD_BASE:
-                        if (op->type != X86_OP_MEM)
+                        if (op->type != OPTYPE_MEM)
                             goto undefined;
-                        if (op->mem.base == X86_REG_INVALID)
+                        if (op->mem.base == REGISTER_NONE)
                         {
                             result.type = MATCH_TYPE_NIL;
                             return result;
                         }
                         result.type = MATCH_TYPE_REGISTER;
-                        result.reg  = getRegister(op->mem.base);
+                        result.reg  = op->mem.base;
                         return result;
                     case MATCH_FIELD_INDEX:
-                        if (op->type != X86_OP_MEM)
+                        if (op->type != OPTYPE_MEM)
                             goto undefined;
-                        if (op->mem.index == X86_REG_INVALID)
+                        if (op->mem.index == REGISTER_NONE)
                         {
                             result.type = MATCH_TYPE_NIL;
                             return result;
                         }
                         result.type = MATCH_TYPE_REGISTER;
-                        result.reg  = getRegister(op->mem.index);
+                        result.reg  = op->mem.index;
                         return result;
                     case MATCH_FIELD_SCALE:
-                        if (op->type != X86_OP_MEM)
+                        if (op->type != OPTYPE_MEM)
                             goto undefined;
                         result.i = (intptr_t)op->mem.scale;
                         return result;
@@ -1766,17 +1692,13 @@ static MatchValue makeMatchValue(MatchKind match, int idx, MatchField field,
             }
             goto undefined;
         case MATCH_OFFSET:
-            result.i = offset; return result;
+            result.i = (intptr_t)I->offset; return result;
         case MATCH_PLUGIN:
             result.i = plugin_val; return result;
         case MATCH_RANDOM:
             result.i = (intptr_t)rand(); return result;
         case MATCH_RETURN:
-            for (uint8_t i = 0; !found && i < detail->groups_count; i++)
-                if (detail->groups[i] == CS_GRP_RET)
-                    found = true;
-            result.i = found;
-            return result;
+            result.i = (I->mnemonic == MNEMONIC_RET); return result;
         case MATCH_SIZE:
             result.i = (intptr_t)I->size; return result;
         default:
@@ -1789,9 +1711,8 @@ static MatchValue makeMatchValue(MatchKind match, int idx, MatchField field,
 /*
  * Evaluate a matching.
  */
-static bool matchEval(csh handle, const MatchExpr *expr, const cs_insn *I,
-    intptr_t offset, const char *section, const char *basename,
-    const Record **record)
+static bool matchEval(const MatchExpr *expr, const InstrInfo *I,
+    const char *basename, const Record **record)
 {
     if (expr == nullptr)
         return true;
@@ -1800,23 +1721,18 @@ static bool matchEval(csh handle, const MatchExpr *expr, const cs_insn *I,
     switch (expr->op)
     {
         case MATCH_OP_NOT:
-            pass = matchEval(handle, expr->arg1, I, offset, section, nullptr,
-                nullptr);
+            pass = matchEval(expr->arg1, I, nullptr, nullptr);
             return !pass;
         case MATCH_OP_AND:
-            pass = matchEval(handle, expr->arg1, I, offset, section, basename,
-                record);
+            pass = matchEval(expr->arg1, I, basename, record);
             if (!pass)
                 return false;
-            return matchEval(handle, expr->arg2, I, offset, section, basename,
-                record);
+            return matchEval(expr->arg2, I, basename, record);
         case MATCH_OP_OR:
-            pass = matchEval(handle, expr->arg1, I, offset, section, basename,
-                record);
+            pass = matchEval(expr->arg1, I, basename, record);
             if (pass)
                 return true;
-            return matchEval(handle, expr->arg2, I, offset, section, basename,
-                record);
+            return matchEval(expr->arg2, I, basename, record);
         case MATCH_OP_TEST:
             test = expr->test;
             break;
@@ -1833,9 +1749,7 @@ static bool matchEval(csh handle, const MatchExpr *expr, const cs_insn *I,
                 pass = true;
                 break;
             }
-            char buf[BUFSIZ];
-            const char *str = makeMatchString(test->match, I, section, buf,
-                sizeof(buf)-1);
+            const char *str = makeMatchString(test->match, I);
             std::cmatch cmatch;
             pass = std::regex_match(str, cmatch, *test->regex);
             pass = (test->cmp == MATCH_CMP_NEQ? !pass: pass);
@@ -1848,22 +1762,16 @@ static bool matchEval(csh handle, const MatchExpr *expr, const cs_insn *I,
                 pass = true;
                 break;
             }
-            cs_regs reads, writes;
-            uint8_t reads_len, writes_len;
-            cs_err err = cs_regs_access(handle, I, reads, &reads_len,
-                writes, &writes_len);
-            if (err != 0)
-                error("failed to get registers for instruction");
             for (uint8_t i = 0; !pass && test->match != MATCH_WRITES &&
-                    i < reads_len; i++)
+                    I->regs.read[i] != REGISTER_INVALID; i++)
             {
-                auto j = test->regs->find(getRegister((x86_reg)reads[i]));
+                auto j = test->regs->find(I->regs.read[i]);
                 pass = (j != test->regs->end());
             }
             for (uint8_t i = 0; !pass && test->match != MATCH_READS &&
-                    i < writes_len; i++)
+                    I->regs.write[i] != REGISTER_INVALID; i++)
             {
-                auto j = test->regs->find(getRegister((x86_reg)writes[i]));
+                auto j = test->regs->find(I->regs.write[i]);
                 pass = (j != test->regs->end());
             }
             break;
@@ -1880,7 +1788,7 @@ static bool matchEval(csh handle, const MatchExpr *expr, const cs_insn *I,
                 test->cmp != MATCH_CMP_DEFINED && test->values->size() == 0)
                 break;
             MatchValue x = makeMatchValue(test->match, test->idx,
-                test->field, I, offset,
+                test->field, I, 
                 (test->match == MATCH_PLUGIN?  test->plugin->result: 0));
             switch (test->cmp)
             {
@@ -1945,60 +1853,20 @@ static bool matchEval(csh handle, const MatchExpr *expr, const cs_insn *I,
 /*
  * Matching.
  */
-static bool matchAction(csh handle, const Action *action, const cs_insn *I,
-    intptr_t offset, const char *section)
+static bool matchAction(const Action *action, const InstrInfo *I)
 {
-#if 0
-    // TODO: fix option_debug
-    if (option_debug)
-    {
-        fprintf(stderr, "%s0x%lx%s [%s%s%s]:",
-            (option_is_tty? "\33[36m": ""),
-            I->address,
-            (option_is_tty? "\33[0m": ""),
-            I->mnemonic,
-            (I->op_str[0] == '\0'? "": " "),
-            I->op_str);
-    }
-#endif
-    bool pass = matchEval(handle, action->match, I, offset, section);
-#if 0
-        if (option_debug)
-        {
-            fprintf(stderr, " [%s%s%s]",
-                (option_is_tty? (pass? "\33[32m": "\33[31m"): ""),
-                entry.string.c_str(),
-                (option_is_tty? "\33[0m": ""));
-        }
-        if (!pass)
-            break;
-    }
-    if (option_debug)
-    {
-        if (!pass)
-        {
-            fputc('\n', stderr);
-            return false;
-        }
-        fprintf(stderr, " action %s%s%s\n",
-            (option_is_tty? "\33[33m": ""),
-            action->string.c_str(),
-            (option_is_tty? "\33[0m": ""));
-    }
-#endif
-    return pass;
+    return matchEval(action->match, I);
 }
 
 /*
  * Matching.
  */
-static int match(csh handle, const std::vector<Action *> &actions,
-    const cs_insn *I, off_t offset, const char *section)
+static int match(const std::vector<Action *> &actions, const InstrInfo *I)
 {
     int idx = 0;
     for (const auto action: actions)
     {
-        if (matchAction(handle, action, I, offset, section))
+        if (matchAction(action, I))
             return idx;
         idx++;
     }
@@ -2030,17 +1898,15 @@ static size_t exclude(const std::vector<Exclude> &excludes, intptr_t addr)
 /*
  * Send an instruction message (if necessary).
  */
-static bool sendInstructionMessage(FILE *out, Location &loc, intptr_t addr)
+static bool sendInstructionMessage(FILE *out, Instr &I, intptr_t addr)
 {
-    if (std::abs((intptr_t)loc.address - addr) >
+    if (std::abs((intptr_t)I.address - addr) >
             INT8_MAX + /*sizeof(short jmp)=*/2 + /*max instruction size=*/15)
         return false;
-
-    if (loc.emitted)
+    if (I.emitted)
         return true;
-    loc.emitted = true;
-
-    sendInstructionMessage(out, loc.address, loc.size, loc.offset);
+    I.emitted = true;
+    sendInstructionMessage(out, I.address, I.size, I.offset);
     return true;
 }
 
@@ -2162,8 +2028,8 @@ static void usage(FILE *stream, const char *progname)
         "\n"
         "\t--sync N\n"
         "\t\tSkip N instructions after the disassembler desyncs.  This\n"
-        "\t\tcan be a useful hack if the disassembler (capstone) fails, or\n"
-        "\t\tif the .text section contains data.\n"
+        "\t\tcan be a useful hack if the disassembler fails, or if the\n"
+        "\t\texecutable section(s) contain data.\n"
         "\n"
         "\t--syntax SYNTAX\n"
         "\t\tSelects the assembly syntax to be SYNTAX.  Possible values are:\n"
@@ -2651,56 +2517,22 @@ int main(int argc, char **argv)
     /*
      * Disassemble the ELF file.
      */
-    csh handle;
-    cs_err err = cs_open(CS_ARCH_X86, CS_MODE_64, &handle);
-    if (err != 0)
-        error("failed to open capstone handle (err = %u)", err);
-    if (option_detail)
-        cs_option(handle, CS_OPT_DETAIL, CS_OPT_ON);
-    if (option_syntax != "intel")
-        cs_option(handle, CS_OPT_SYNTAX, CS_OPT_SYNTAX_ATT);
-    cs_option(handle, CS_OPT_SKIPDATA, CS_OPT_ON);
-
-    std::map<off_t, const char *> sections;
-    for (const auto entry: elf.sections)
+    initDisassembler();
+    std::vector<Instr> Is;
+    // Step (1): Find the locations of all instructions:
+    for (const auto *shdr: elf.exes)
     {
-        const Elf64_Shdr *shdr = entry.second;
-        if (shdr->sh_size == 0 ||
-                shdr->sh_type != SHT_PROGBITS ||
-                (shdr->sh_flags & SHF_WRITE) != 0 ||
-                (shdr->sh_flags & SHF_ALLOC) == 0 ||
-                (shdr->sh_flags & SHF_EXECINSTR) == 0)
-            continue;   // Not executable instructions.
-        sections.insert({(off_t)shdr->sh_offset, entry.first});
-    }
-
-    std::vector<Location> locs;
-    std::vector<const char *> sidx;
-    cs_insn *I = cs_malloc(handle);
-    intptr_t prev = INTPTR_MIN;
-    for (const auto entry: sections)
-    {
-        const char *section = entry.second;
-        sidx.push_back(section);
-        if (sidx.size() >= MAX_SECTIONS)
-            error("failed to disassemble the \"%s\" section of \"%s\"; "
-                "maximum number of sections (%u) exceeded", section,
-                MAX_SECTIONS, filename);
-        auto i = elf.sections.find(section);
-        assert(i != elf.sections.end());
-        const Elf64_Shdr *shdr = i->second;
+        const char *section   = elf.strs + shdr->sh_name;
         size_t section_size   = (size_t)shdr->sh_size;
         off_t section_offset  = (off_t)shdr->sh_offset;
         intptr_t section_addr = (intptr_t)shdr->sh_addr;
-        size_t section_idx    = sidx.size()-1;
-        if (prev > section_addr)
-            error("failed to disassemble the \"%s\" section of \"%s\"; "
-                "overlapping sections detected", section, filename);
 
         const uint8_t *start = elf.data + section_offset;
         const uint8_t *code  = start, *end = start + section_size;
-        uint64_t address = section_addr;
-        size_t size     = section_size;
+        size_t size          = section_size;
+        off_t offset         = section_offset;
+        intptr_t address     = section_addr;
+
         bool failed = false;
         unsigned sync = 0;
         while (true)
@@ -2709,40 +2541,29 @@ int main(int argc, char **argv)
             if (skip > 0)
             {
                 address += skip;
+                offset  += skip;
                 size     = (skip > size? 0: size - skip);
                 code    += skip;
                 sync     = 0;
             }
-            if (!cs_disasm_iter(handle, &code, &size, &address, I))
+            Instr I;
+            if (!decode(&code, &size, &offset, &address, &I))
                 break;
             if (sync > 0)
             {
                 sync--;
                 continue;
             }
-            if (I->mnemonic[0] == '.')
+            if (I.data)
             {
-                warning("failed to disassemble (%s%s%s) at address 0x%lx in "
-                    "the \"%s\" section", I->mnemonic,
-                    (I->op_str[0] == '\0'? "": " "), I->op_str,
-                    I->address, section);
+                warning("failed to disassemble (.byte 0x%.2X) at address "
+                    "0x%lx in section \"%s\"", *(code - I.size), I.address,
+                    section);
                 failed = true;
                 sync = option_sync;
                 continue;
             }
-
-            int idx = -1;
-            off_t offset = section_offset + ((intptr_t)I->address - section_addr);
-            if (option_notify)
-                notifyPlugins(backend.out, &elf, handle, offset, I);
-            else
-            {
-                matchPlugins(backend.out, &elf, handle, offset, I);
-                idx = match(handle, actions, I, offset, section);
-            }
-            Location loc(section_idx, I->address, offset, I->size, (idx >= 0),
-                idx);
-            locs.push_back(loc);
+            Is.push_back(I);
         }
         if (code < end)
             error("failed to disassemble the \"%s\" section 0x%lx..0x%lx; "
@@ -2754,102 +2575,87 @@ int main(int argc, char **argv)
             if (option_sync < 0)
                 error("failed to disassemble the \"%s\" section of \"%s\"; "
                     "this may be caused by (1) data in the \"%s\" section, or (2) "
-                    "a bug in the third party disassembler (capstone)",
+                    "a bug in the third party disassembler",
                     section, filename, section);
             else
                 warning("failed to disassemble the \"%s\" section of \"%s\"; "
                     "the rewritten binary may be corrupt", section, filename);
         }
-        prev = section_offset + section_size;
     }
-    locs.shrink_to_fit();
-    if (option_notify)
+    Is.shrink_to_fit();
+    notifyPlugins(backend.out, &elf, Is.data(), Is.size(),
+        EVENT_DISASSEMBLY_COMPLETE);
+    size_t count = Is.size();
+    // Step (2): Find all matching instructions:
+    for (size_t i = 0; i < count; i++)
     {
-        // The first disassembly pass was used for notifications.
-        // We employ a second disassembly pass for matching.
- 
-        size_t count = locs.size();
-        for (size_t i = 0; i < count; i++)
+        RawInstr raw;
+        InstrInfo I;
+        getInstrInfo(&elf, &Is[i], &I, &raw);
+        matchPlugins(backend.out, &elf, Is.data(), Is.size(), i, &I);
+        int idx = match(actions, &I);
+        bool matched = (idx >= 0);
+        if (matched)
         {
-            Location &loc = locs[i];
-            const char *section = sidx[loc.section];
-            off_t offset = (off_t)loc.offset;
-            uint64_t address = (uint64_t)loc.address;
-            const uint8_t *code = elf.data + offset;
-            size_t size = loc.size;
-            bool ok = cs_disasm_iter(handle, &code, &size, &address, I);
-            if (!ok)
-                error("failed to disassemble instruction at address 0x%lx",
-                    address);
-            matchPlugins(backend.out, &elf, handle, offset, I);
-            int idx = match(handle, actions, I, offset, section);
-            if (idx >= 0)
-            {
-                Location new_loc(loc.section, I->address, offset, I->size,
-                    true, idx);
-                locs[i] = new_loc;
-            }
+            Is[i].patch  = true;
+            Is[i].action = idx;
         }
+        debug("%s0x%lx%s: %s%s%s%s",
+            (option_is_tty? "\33[31m": ""),
+            I.address,
+            (option_is_tty? "\33[0m": ""),
+            (matched && option_is_tty? "\33[32m": ""),
+            I.string.instr,
+            (matched && option_is_tty? "\33[0m": ""),
+            (matched && !option_is_tty? " (matched)": ""));
     }
+    notifyPlugins(backend.out, &elf, Is.data(), Is.size(),
+        EVENT_MATCHING_COMPLETE);
 
     /*
      * Send instructions & patches.  Note: this MUST be done in reverse!
      */
-    size_t count = locs.size();
     intptr_t id = -1;
     for (ssize_t i = (ssize_t)count - 1; i >= 0; i--)
     {
-        Location &loc = locs[i];
-        if (!loc.patch)
+        if (!Is[i].patch)
             continue;
 
-        const char *section = sidx[loc.section];
-        off_t offset = (off_t)loc.offset;
-        intptr_t addr = (intptr_t)loc.address;
-
         // Disassmble the instruction again.
-        const uint8_t *code = elf.data + offset;
-        uint64_t address = (uint64_t)addr;
-        size_t size = loc.size;
-        bool ok = cs_disasm_iter(handle, &code, &size, &address, I);
-        if (!ok)
-            error("failed to disassemble instruction at address 0x%lx", addr);
-
+        RawInstr raw;
+        InstrInfo I;
+        getInstrInfo(&elf, &Is[i], &I, &raw);
         bool done = false;
         for (ssize_t j = i; !done && j >= 0; j--)
-            done = !sendInstructionMessage(backend.out, locs[j], addr);
+            done = !sendInstructionMessage(backend.out, Is[j], Is[i].address);
         done = false;
         for (size_t j = i + 1; !done && j < count; j++)
-            done = !sendInstructionMessage(backend.out, locs[j], addr);
+            done = !sendInstructionMessage(backend.out, Is[j], Is[i].address);
 
-        const Action *action = actions[loc.action];
+        const Action *action = actions[Is[i].action];
         id++;
         if (action->kind == ACTION_PLUGIN)
         {
             // Special handling for plugins:
             if (action->plugin->patchFunc != nullptr)
             {
-                action->plugin->patchFunc(backend.out, &elf, handle, offset,
-                    I, action->context);
+                action->plugin->patchFunc(backend.out, &elf, Is.data(),
+                    Is.size(), i, &I, action->context);
             }
         }
         else
         {
             // Builtin actions:
-            char buf[4096];
+            char buf[BUFSIZ];
             Metadata metadata_buf[MAX_ARGNO+1];
-            Metadata *metadata = buildMetadata(handle, &elf, action, I, offset,
-                section, id, metadata_buf, buf, sizeof(buf)-1);
-            sendPatchMessage(backend.out, action->name, offset,  metadata);
+            Metadata *metadata = buildMetadata(&elf, action, &I, id,
+                metadata_buf, buf, sizeof(buf)-1);
+            sendPatchMessage(backend.out, action->name, I.offset,  metadata);
         }
     }
-    cs_free(I, 1);
-
-    /*
-     * Finalize all plugins.
-     */
-    finiPlugins(backend.out, &elf);
-    cs_close(&handle);
+    notifyPlugins(backend.out, &elf, Is.data(), Is.size(),
+        EVENT_PATCHING_COMPLETE);
+    Is.clear();
 
     /*
      * Emit the final binary/patch file.
@@ -2873,9 +2679,14 @@ int main(int argc, char **argv)
     sendEmitMessage(backend.out, option_output.c_str(), option_format.c_str());
 
     /*
-     * Wait for the e9patch to complete.
+     * Wait for E9Patch to complete.
      */
     waitBackend(backend);
+
+    /*
+     * Finalize all plugins.
+     */
+    finiPlugins(backend.out, &elf);
 
     return 0;
 }

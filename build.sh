@@ -15,22 +15,14 @@ else
     OFF=
 fi
 
-VERSION=e3f106739a6ae78d47772dff31062d644ea21078
-
 while [ $# -ge 1 ]
 do
     case "$1" in
-        --capstone)
-            VERSION="$2"
-            shift
-            ;;
         --help|-h)
             echo "usage: $0 [OPTIONS]"
             echo
             echo "OPTIONS:"
             echo
-            echo "    --capstone VERSION"
-            echo "        Build using Capstone VERSION"
             echo "    --help, -h"
             echo "        Print this message"
             echo
@@ -44,25 +36,36 @@ do
     shift
 done
 
-TARGET=`readlink capstone`
-if [ "$TARGET" != "capstone-$VERSION" ]
+TARGET=`readlink zydis`
+if [ ! -d zydis ]
 then
-    if [ ! -f capstone-$VERSION.zip ]
-    then
-        echo -e "${GREEN}$0${OFF}: downloading capstone.zip..."
-        wget -O capstone-$VERSION.zip \
-            https://github.com/aquynh/capstone/archive/$VERSION.zip
-    fi
+    echo -e "${GREEN}$0${OFF}: cloning Zydis..."
+    git clone --recursive 'https://github.com/zyantific/zydis.git' 
 
-    echo -e "${GREEN}$0${OFF}: extracting capstone-$VERSION.zip..."
-    unzip capstone-$VERSION.zip
-    rm -rf capstone
-    ln -s capstone-$VERSION capstone
-
-    echo -e "${GREEN}$0${OFF}: building capstone-$VERSION..."
-    cd capstone
-    CAPSTONE_ARCHS="x86" ./make.sh
-    cd ..
+    echo -e "${GREEN}$0${OFF}: building Zydis..."
+	cat << EOF > zydis/include/ZydisExportConfig.h
+#ifndef ZYDIS_EXPORT_H
+#define ZYDIS_EXPORT_H
+#define ZYDIS_EXPORT
+#define ZYDIS_NO_EXPORT
+#define ZYDIS_DEPRECATED __attribute__ ((__deprecated__))
+#define ZYDIS_DEPRECATED_EXPORT ZYDIS_EXPORT ZYDIS_DEPRECATED
+#define ZYDIS_DEPRECATED_NO_EXPORT ZYDIS_NO_EXPORT ZYDIS_DEPRECATED
+#define ZYDIS_NO_DEPRECATED
+#endif
+EOF
+	cat << EOF > zydis/include/ZycoreExportConfig.h
+#ifndef ZYCORE_EXPORT_H
+#define ZYCORE_EXPORT_H
+#define ZYCORE_EXPORT
+#define ZYCORE_NO_EXPORT
+#define ZYCORE_DEPRECATED __attribute__ ((__deprecated__))
+#define ZYCORE_DEPRECATED_EXPORT ZYCORE_EXPORT ZYCORE_DEPRECATED
+#define ZYCORE_DEPRECATED_NO_EXPORT ZYCORE_NO_EXPORT ZYCORE_DEPRECATED
+#define ZYCORE_NO_DEPRECATED
+#endif
+EOF
+    make -f Makefile.zydis
 fi
 
 echo -e "${GREEN}$0${OFF}: building e9patch and e9tool..."
