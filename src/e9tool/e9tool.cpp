@@ -1513,7 +1513,7 @@ static const OpInfo *getOperand(const InstrInfo *I, int idx, OpType type,
     {
         const OpInfo *op = I->op + i;
         if ((type == OPTYPE_INVALID? true: op->type == type) &&
-            (op->access & access) != 0)
+            (op->access & access) == access)
         {
             if (idx == 0)
                 return op;
@@ -1533,7 +1533,7 @@ static intptr_t getNumOperands(const InstrInfo *I, OpType type, Access access)
     {
         const OpInfo *op = I->op + i;
         if ((type == OPTYPE_INVALID? true: op->type == type) &&
-            (op->access & access) != 0)
+            (op->access & access) == access)
         {
             n++;
         }
@@ -1551,7 +1551,7 @@ static MatchValue makeMatchValue(MatchKind match, int idx, MatchField field,
     result.type = MATCH_TYPE_INTEGER;
     const OpInfo *op = nullptr;
     OpType type = OPTYPE_INVALID;
-    uint8_t access = ACCESS_READ | ACCESS_WRITE;
+    uint8_t access = 0;
     switch (match)
     {
         case MATCH_SRC:
@@ -1638,11 +1638,9 @@ static MatchValue makeMatchValue(MatchKind match, int idx, MatchField field,
                         result.op   = op->type;
                         return result;
                     case MATCH_FIELD_ACCESS:
-                    {
                         result.type   = MATCH_TYPE_ACCESS;
                         result.access = op->access;
                         return result;
-                    }
                     case MATCH_FIELD_SEG:
                         if (op->type != OPTYPE_MEM)
                             goto undefined;
