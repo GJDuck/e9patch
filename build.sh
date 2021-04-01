@@ -65,7 +65,7 @@ EOF
 #define ZYCORE_NO_DEPRECATED
 #endif
 EOF
-    make -f Makefile.zydis
+    make -f Makefile.zydis -j `nproc`
 fi
 
 echo -e "${GREEN}$0${OFF}: building e9patch and e9tool..."

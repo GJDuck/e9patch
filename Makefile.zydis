@@ -1,0 +1,30 @@
+CC=gcc
+CFLAGS=-fPIC -O2 -I zydis/include/ -I zydis/dependencies/zycore/include/ \
+    -I zydis/src/
+
+OBJS=zydis/src/Decoder.o \
+     zydis/src/DecoderData.o \
+     zydis/src/FormatterATT.o \
+     zydis/src/FormatterBase.o \
+     zydis/src/FormatterBuffer.o \
+     zydis/src/Formatter.o \
+     zydis/src/FormatterIntel.o \
+     zydis/src/MetaInfo.o \
+     zydis/src/Mnemonic.o \
+     zydis/src/Register.o \
+     zydis/src/SharedData.o \
+     zydis/src/String.o \
+     zydis/src/Utils.o \
+     zydis/src/Zydis.o \
+     zydis/dependencies/zycore/src/Allocator.o \
+     zydis/dependencies/zycore/src/ArgParse.o \
+     zydis/dependencies/zycore/src/Bitset.o \
+     zydis/dependencies/zycore/src/Format.o \
+     zydis/dependencies/zycore/src/List.o \
+     zydis/dependencies/zycore/src/String.o \
+     zydis/dependencies/zycore/src/Vector.o \
+     zydis/dependencies/zycore/src/Zycore.o
+
+all: $(OBJS)
+	ar rcs libZydis.a $(OBJS)
+
