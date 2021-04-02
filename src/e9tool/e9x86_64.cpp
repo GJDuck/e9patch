@@ -33,6 +33,7 @@ static Mnemonic convert(ZydisMnemonic mnemonic);
  * Zydis structures.
  */
 static ZydisDecoder decoder;
+static ZydisDecoder decoder_minimal;
 static ZydisFormatter formatter;
 
 /*
@@ -44,6 +45,12 @@ static void initDisassembler(void)
         ZYDIS_ADDRESS_WIDTH_64);
     if (!ZYAN_SUCCESS(result))
         error("failed to initialize disassembler decoder");
+    result = ZydisDecoderInit(&decoder_minimal, ZYDIS_MACHINE_MODE_LONG_64,
+        ZYDIS_ADDRESS_WIDTH_64);
+    if (!ZYAN_SUCCESS(result))
+        error("failed to initialize disassembler decoder");
+    (void)ZydisDecoderEnableMode(&decoder_minimal, ZYDIS_DECODER_MODE_MINIMAL,
+        ZYAN_TRUE);
     
     ZydisFormatterInit(&formatter,
         (option_syntax == "intel"? ZYDIS_FORMATTER_STYLE_INTEL:
@@ -76,7 +83,8 @@ bool decode(const uint8_t **code, size_t *size, off_t *offset,
 
     ZydisDecodedInstruction D_0;
     ZydisDecodedInstruction *D = &D_0;
-    ZyanStatus result = ZydisDecoderDecodeBuffer(&decoder, *code, *size, D);
+    ZyanStatus result = ZydisDecoderDecodeBuffer(&decoder_minimal, *code,
+        *size, D);
     
     I->address = (size_t)*address;
     I->offset  = (size_t)*offset;
