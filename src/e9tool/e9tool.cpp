@@ -49,9 +49,9 @@
  */
 static bool option_trap_all     = false;
 static bool option_detail       = false;
+static bool option_intel_syntax = false;
 static std::string option_format("binary");
 static std::string option_output("a.out");
-static std::string option_syntax("ATT");
 
 #include "e9plugin.h"
 #include "e9frontend.cpp"
@@ -1787,7 +1787,7 @@ static bool matchEval(const MatchExpr *expr, const InstrInfo *I,
                 break;
             MatchValue x = makeMatchValue(test->match, test->idx,
                 test->field, I, 
-                (test->match == MATCH_PLUGIN?  test->plugin->result: 0));
+                (test->match == MATCH_PLUGIN? test->plugin->result: 0));
             switch (test->cmp)
             {
                 case MATCH_CMP_DEFINED:
@@ -2222,8 +2222,11 @@ int main(int argc, char **argv)
                 break;
             }
             case OPTION_SYNTAX:
-                option_syntax = optarg;
-                if (option_syntax != "ATT" && option_syntax != "intel")
+                if (strcmp(optarg, "ATT") == 0)
+                    option_intel_syntax = false;
+                else if (strcmp(optarg, "intel") == 0)
+                    option_intel_syntax = true;
+                else
                     error("bad value \"%s\" for `--syntax' option; "
                         "expected \"ATT\" or \"intel\"", optarg);
                 break;

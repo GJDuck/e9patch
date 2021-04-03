@@ -53,12 +53,14 @@ static void initDisassembler(void)
         ZYAN_TRUE);
     
     ZydisFormatterInit(&formatter,
-        (option_syntax == "intel"? ZYDIS_FORMATTER_STYLE_INTEL:
-                                   ZYDIS_FORMATTER_STYLE_ATT));
+        (option_intel_syntax? ZYDIS_FORMATTER_STYLE_INTEL:
+                              ZYDIS_FORMATTER_STYLE_ATT));
     if (!ZYAN_SUCCESS(result))
         error("failed to initialize disassembler formatter");
     (void)ZydisFormatterSetProperty(&formatter,
         ZYDIS_FORMATTER_PROP_FORCE_SIZE, ZYAN_TRUE);
+    (void)ZydisFormatterSetProperty(&formatter,
+        ZYDIS_FORMATTER_PROP_FORCE_RELATIVE_RIPREL, ZYAN_TRUE);
     (void)ZydisFormatterSetProperty(&formatter,
         ZYDIS_FORMATTER_PROP_ADDR_PADDING_ABSOLUTE,
         ZYDIS_PADDING_DISABLED);
@@ -178,8 +180,9 @@ void e9frontend::getInstrInfo(const ELF *elf, const Instr *I, InstrInfo *info,
             info->regs.read[k++] = REGISTER_EFLAGS;
         if (D->cpu_flags_written != 0)
             info->regs.write[l++] = REGISTER_EFLAGS;
-        for (unsigned i = 0; i < D->operand_count; i++)
+        for (unsigned i0 = 0; i0 < D->operand_count; i0++)
         {
+            unsigned i = (option_intel_syntax? i0: D->operand_count - i0 - 1);
             bool read =
                 (((D->operands[i].actions & ZYDIS_OPERAND_ACTION_READ) != 0) ||
                  ((D->operands[i].actions & ZYDIS_OPERAND_ACTION_CONDREAD) != 0));
@@ -254,6 +257,31 @@ void e9frontend::getInstrInfo(const ELF *elf, const Instr *I, InstrInfo *info,
         if (!ZYAN_SUCCESS(result))
             error("failed to decompress instruction at address 0x%lx; "
                 "formatting failed", I->address);
+        if (!option_intel_syntax &&
+            (D->mnemonic == ZYDIS_MNEMONIC_JMP ||
+             D->mnemonic == ZYDIS_MNEMONIC_CALL) &&
+            (D->operands[0].type == ZYDIS_OPERAND_TYPE_REGISTER ||
+             D->operands[0].type == ZYDIS_OPERAND_TYPE_MEMORY))
+        {
+            // ZyDis does not format the '*'?
+            // This can lead to ambiguity, so we add it ourselves.
+            char *s = info->string.instr;
+            for (; *s != ' '; s++)
+                ;
+            s++;
+            if (*s != '*')
+            {
+                char c = '*';
+                for (; *s != '\0'; s++)
+                {
+                    char d = *s;
+                    *s = c;
+                    c = d;
+                }
+                *s++ = c;
+                *s++ = '\0';
+            }
+        }
         info->string.mnemonic = ZydisMnemonicGetString(D->mnemonic);
     }
 }
