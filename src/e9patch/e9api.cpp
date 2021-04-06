@@ -117,21 +117,36 @@ static void queueFlush(Binary *B, intptr_t cursor)
 
     cursor += /*max short jmp=*/ INT8_MAX + 2 + /*max instruction size=*/15 +
         /*a bit extra=*/32;
-    while (!B->Q.empty() && B->Q.back().first->addr > cursor)
+    while (!B->Q.empty() &&
+            (B->Q.back().options || B->Q.back().I->addr > cursor))
     {
-        auto entry = B->Q.back();
-        B->Q.pop_back();
-        Instr *I            = entry.first;
-        const Trampoline *T = entry.second;
-        for (unsigned i = 0; i < I->size; i++)
+        const auto &entry = B->Q.back();
+        if (!entry.options)
         {
-            assert(I->patched.state[i] == STATE_QUEUED);
-            I->patched.state[i] = STATE_INSTRUCTION;
+            // Patch entry
+            Instr *I            = entry.I;
+            const Trampoline *T = entry.T;
+            for (unsigned i = 0; i < I->size; i++)
+            {
+                assert(I->patched.state[i] == STATE_QUEUED);
+                I->patched.state[i] = STATE_INSTRUCTION;
+            }
+            if (patch(*B, I, T))
+                stat_num_patched++;
+            else
+                stat_num_failed++;
         }
-        if (patch(*B, I, T))
-            stat_num_patched++;
         else
-            stat_num_failed++;
+        {
+            // Options entry
+            char * const *argv = entry.argv;
+            int argc;
+            for (argc = 0; argv[argc] != nullptr; argc++)
+                ;
+            parseOptions(argc, argv, /*api=*/true);
+            delete[] argv;
+        }
+        B->Q.pop_back();
     }
 }
 
@@ -155,7 +170,8 @@ static void queuePatch(Binary *B, Instr *I, const Trampoline *T)
         I->patched.state[i] = STATE_QUEUED;
     }
 
-    B->Q.push_front({I, T});
+    PatchEntry entry(I, T);
+    B->Q.push_front(entry);
     queueFlush(B, I->addr);
 }
 
@@ -649,7 +665,7 @@ static void parseTrampoline(Binary *B, const Message &msg)
 /*
  * Parse an option message.
  */
-static void parseOptions(const Message &msg)
+static void parseOptions(Binary *B, const Message &msg)
 {
     char * const *argv = nullptr;
     bool dup = false;
@@ -671,11 +687,8 @@ static void parseOptions(const Message &msg)
     if (dup)
         error("failed to parse \"option\" message (id=%u); duplicate "
             "parameters detected", msg.id);
-    int argc;
-    for (argc = 0; argv[argc] != nullptr; argc++)
-        ;
-    parseOptions(argc, argv, /*api=*/true);
-    delete[] argv;
+    PatchEntry entry(argv);
+    B->Q.push_front(entry);
 }
 
 /*
@@ -710,7 +723,7 @@ Binary *parseMessage(Binary *B, Message &msg)
             parseTrampoline(B, msg);
             return B;
         case METHOD_OPTION:
-            parseOptions(msg);
+            parseOptions(B, msg);
             return B;
         default:
             error("failed to parse message stream; got unknown message "

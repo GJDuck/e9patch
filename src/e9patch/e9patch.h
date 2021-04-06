@@ -1,6 +1,6 @@
 /*
  * e9patch.h
- * Copyright (C) 2020 National University of Singapore
+ * Copyright (C) 2021 National University of Singapore
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -324,10 +324,37 @@ enum Mode
 };
 
 /*
+ * Patch Queue entry.
+ */
+struct PatchEntry
+{
+    bool options;
+    union
+    {
+        char * const *argv;             // Options.
+        struct
+        {
+            Instr *I;                   // Instruction.
+            const Trampoline *T;        // Trampoline.
+        };
+    };
+
+    PatchEntry(char * const *argv) : options(true), argv(argv)
+    {
+        ;
+    }
+
+    PatchEntry(Instr *I, const Trampoline *T) : options(false), I(I), T(T)
+    {
+        ;
+    }
+};
+
+/*
  * Binary representation.
  */
 typedef std::map<off_t, Instr *> InstrSet;
-typedef std::deque<std::pair<Instr *, const Trampoline *>> PatchQueue;
+typedef std::deque<PatchEntry> PatchQueue;
 typedef std::map<const char *, Trampoline *, CStrCmp> TrampolineSet;
 typedef std::vector<intptr_t> InitSet;
 struct Binary
