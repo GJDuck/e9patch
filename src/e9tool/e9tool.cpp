@@ -2429,7 +2429,7 @@ int main(int argc, char **argv)
     for (const char *option: option_options)
         options.push_back(option);
     if (options.size() > 0)
-        sendOptionMessage(backend.out, options);
+        sendOptionsMessage(backend.out, options);
     for (auto addr: option_trap)
     {
         options.clear();
@@ -2437,7 +2437,7 @@ int main(int argc, char **argv)
         std::string val;
         val += std::to_string(addr);
         options.push_back(val.c_str());
-        sendOptionMessage(backend.out, options);
+        sendOptionsMessage(backend.out, options);
     }
 
     /*

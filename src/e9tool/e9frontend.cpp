@@ -1467,12 +1467,12 @@ static unsigned sendBinaryMessage(FILE *out, const char *mode,
 }
 
 /*
- * Send a "option" message.
+ * Send a "options" message.
  */
-unsigned e9frontend::sendOptionMessage(FILE *out,
+unsigned e9frontend::sendOptionsMessage(FILE *out,
     std::vector<const char *> &argv)
 {
-    sendMessageHeader(out, "option");
+    sendMessageHeader(out, "options");
     sendParamHeader(out, "argv");
     fputc('[', out);
     bool prev = false;

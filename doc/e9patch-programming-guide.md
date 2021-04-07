@@ -132,7 +132,8 @@ The main JSON-RPC messages are:
 * [2.3 Reserve Message](#reserve-message)
 * [2.4 Instruction Message](#instruction-message)
 * [2.5 Patch Message](#patch-message)
-* [2.6 Emit Message](#emit-message)
+* [2.6 Options Message](#options-message)
+* [2.7 Emit Message](#emit-message)
 
 The E9Patch JSON-RPC parser does not yet support the full JSON syntax, but
 implements a reasonable subset.
@@ -470,7 +471,33 @@ necessary to manage the complex dependencies between patch locations.
         }
 
 ---
-### <a id="emit-message">2.6 Emit Message</a>
+### <a id="options-message">2.6 Options Message</a>
+
+The `"options"` message allows E9Patch command-line options to be passed using
+the JSON-RPC interface.
+The new options will be applied to subsequent messages.
+For the complete list of command-line options, see:
+
+        ./e9patch --help
+
+#### Parameters:
+
+* `"argv"`: a list of command-line options.
+
+#### Example:
+
+        {
+            "jsonrpc": "2.0",
+            "method": "options",
+            "params":
+            {
+                "argv": ["--tactic-T3=false", "--mem-mapping-size=4096"]
+            },
+            "id": 777
+        }
+
+---
+### <a id="emit-message">2.7 Emit Message</a>
 
 The `"emit"` message instructs E9Patch to emit the patched binary file.
 

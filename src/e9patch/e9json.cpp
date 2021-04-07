@@ -479,7 +479,7 @@ static bool validateParam(Method method, ParamName paramName)
                 default:
                     return false;
             }
-        case METHOD_OPTION:
+        case METHOD_OPTIONS:
             switch (paramName)
             {
                 case PARAM_ARGV:
@@ -1155,8 +1155,8 @@ bool getMessage(FILE *stream, size_t lineno, Message &msg)
                 msg.method = METHOD_INSTRUCTION;
             break;
         case 'o':
-            if (strcmp(parser.s, "option") == 0)
-                msg.method = METHOD_OPTION;
+            if (strcmp(parser.s, "options") == 0)
+                msg.method = METHOD_OPTIONS;
             break;
         case 'p':
             if (strcmp(parser.s, "patch") == 0)

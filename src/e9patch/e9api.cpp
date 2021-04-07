@@ -682,10 +682,10 @@ static void parseOptions(Binary *B, const Message &msg)
         }
     }
     if (argv == nullptr)
-        error("failed to parse \"option\" message (id=%u); missing "
+        error("failed to parse \"options\" message (id=%u); missing "
             "\"argv\" parameter", msg.id);
     if (dup)
-        error("failed to parse \"option\" message (id=%u); duplicate "
+        error("failed to parse \"options\" message (id=%u); duplicate "
             "parameters detected", msg.id);
     PatchEntry entry(argv);
     B->Q.push_front(entry);
@@ -722,7 +722,7 @@ Binary *parseMessage(Binary *B, Message &msg)
         case METHOD_TRAMPOLINE:
             parseTrampoline(B, msg);
             return B;
-        case METHOD_OPTION:
+        case METHOD_OPTIONS:
             parseOptions(B, msg);
             return B;
         default:
