@@ -185,7 +185,7 @@ struct Instr
     const size_t pcrel32_idx:4;         // 32bit PC-relative imm idx (or 0)
     const size_t pcrel8_idx:4;          // 8bit PC-relative imm idx (or 0)
     const size_t pic:1;                 // PIC? (stored here for convenience)
-    const size_t debug:1;               // Debug trampoline?
+    size_t       debug:1;               // Debug trampoline?
     size_t       evicted:1;             // The instruction evicted?
     size_t       no_optimize:1;         // Disable -Ojump-elim?
     const intptr_t addr;                // The address of the instruction

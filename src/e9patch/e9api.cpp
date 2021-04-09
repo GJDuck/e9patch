@@ -131,6 +131,8 @@ static void queueFlush(Binary *B, intptr_t cursor)
                 assert(I->patched.state[i] == STATE_QUEUED);
                 I->patched.state[i] = STATE_INSTRUCTION;
             }
+            I->debug = (option_trap_all ||
+                option_trap.find(I->addr) != option_trap.end());
             if (patch(*B, I, T))
                 stat_num_patched++;
             else
@@ -155,15 +157,6 @@ static void queueFlush(Binary *B, intptr_t cursor)
  */
 static void queuePatch(Binary *B, Instr *I, const Trampoline *T)
 {
-    if (!option_tactic_backward_T3)
-    {
-        if (patch(*B, I, T))
-            stat_num_patched++;
-        else
-            stat_num_failed++;
-        return;
-    }
-
     for (unsigned i = 0; i < I->size; i++)
     {
         assert(I->patched.state[i] == STATE_INSTRUCTION);
@@ -339,11 +332,9 @@ static void parseInstruction(Binary *B, const Message &msg)
         else
             pcrel32_idx = pcrel_idx;    // Must be pcrel32
     }
-    bool debug = (option_trap_all ||
-        option_trap.find(address) != option_trap.end());
     Instr *I = new Instr(offset, address, length, B->original.bytes + offset,
         B->patched.bytes + offset, B->patched.state + offset, pcrel32_idx,
-        pcrel8_idx, B->elf.pic, debug);
+        pcrel8_idx, B->elf.pic, /*debug=*/false);
     insertInstruction(B, I);
 }
 
