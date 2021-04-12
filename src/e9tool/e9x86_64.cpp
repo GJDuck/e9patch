@@ -223,6 +223,9 @@ void e9frontend::getInstrInfo(const ELF *elf, const Instr *I, InstrInfo *info,
                 case ZYDIS_OPERAND_TYPE_IMMEDIATE:
                     info->op[j].type = OPTYPE_IMM;
                     info->op[j].imm  = (int64_t)D->operands[i].imm.value.s;
+                    if (D->operands[i].imm.is_relative)
+                        info->op[j].imm += (int64_t)I->address +
+                                           (int64_t)I->size;
                     break;
                 case ZYDIS_OPERAND_TYPE_REGISTER:
                     info->op[j].type = OPTYPE_REG;
