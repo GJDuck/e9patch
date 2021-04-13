@@ -2016,7 +2016,7 @@ ELF *e9frontend::parseELF(const char *filename, intptr_t base)
         const Elf64_Shdr *shdr = shdrs + i;
         if (shdr->sh_name >= strtab_size)
             continue;
-        if (shdr->sh_offset + shdr->sh_size >= size)
+        if (shdr->sh_offset + shdr->sh_size > size)
             continue;
         if (shdr->sh_type == SHT_REL || shdr->sh_type == SHT_RELA)
             reloc = true;
