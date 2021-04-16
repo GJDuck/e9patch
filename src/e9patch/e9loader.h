@@ -1,6 +1,6 @@
 /*
  * e9loader.h
- * Copyright (C) 2020 National University of Singapore
+ * Copyright (C) 2021 National University of Singapore
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -20,8 +20,8 @@
 #define __E9LOADER_H
 
 /*
- * Loader address
+ * Loader entry offset.
  */
-#define LOADER_ADDRESS          0x20FEDC000
+#define LOADER_OFFSET           sizeof(void *)
 
 #endif

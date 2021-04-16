@@ -1,6 +1,6 @@
 /*
  * e9loader.cpp
- * Copyright (C) 2020 National University of Singapore
+ * Copyright (C) 2021 National University of Singapore
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to
@@ -72,7 +72,13 @@ struct linux_dirent64
 
 asm (
     /*
-     * Entry into stage #1.  We:
+     * Loader base stored here:
+     */
+    ".Lbase:\n"
+    ".quad 0x0\n"
+
+    /*
+     * Entry into stage #1 (.Lbase+8).  We:
      *  (1) save the state.
      *  (2) call e9entry()
      *  (3) setup stage #2 parameters
@@ -105,9 +111,9 @@ asm (
     // (3) setup stage #2 parameters
     // Stage #2 expects certain parameters to be in specific registers:
     "\tmov %eax, %r8d\n"                    // fd into %r8
-    "\tleaq _entry(%rip), %r12\n"           // base into %r12
-    "\tmovabs $" STRING(LOADER_ADDRESS) ",%rdx\n"
-    "\tsubq %rdx,%r12\n"
+    "\tleaq .Lbase(%rip), %r12\n"           // .Lbase into %r12
+    "\tmov (%r12), %rdx\n"                  // Loader base into %rdx
+    "\tsubq %rdx,%r12\n"                    // ELF base into %r12
     "\tmov $9, %r13d\n"                     // SYS_MMAP into %r13
     "\tleaq .LMMAP_ERROR(%rip), %r14\n"     // mmap error handler into %r14
 

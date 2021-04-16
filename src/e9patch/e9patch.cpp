@@ -1,6 +1,6 @@
 /*
  * e9patch.cpp
- * Copyright (C) 2020 National University of Singapore
+ * Copyright (C) 2021 National University of Singapore
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -43,13 +43,15 @@ bool option_Ojump_peephole      = true;
 bool option_Oorder_trampolines  = false;
 bool option_Oscratch_stack      = false;
 size_t option_mem_granularity   = 64;
-intptr_t option_mem_lb          = INTPTR_MIN;
-intptr_t option_mem_ub          = INTPTR_MAX;
+intptr_t option_mem_lb          = -0x100000000;
+intptr_t option_mem_ub          =  0x200000000;
+intptr_t option_mem_loader      =  0x20e9e9000;
 size_t option_mem_mapping_size  = PAGE_SIZE;
 bool option_mem_multi_page      = true;
 bool option_static_loader       = false;
 std::set<intptr_t> option_trap;
 bool option_trap_all            = false;
+bool option_trap_entry          = false;
 static std::string option_input("-");
 static std::string option_output("-");
 
@@ -217,11 +219,16 @@ static void usage(FILE *stream, const char *progname)
         "\n"
         "\t--mem-lb=LB\n"
         "\t\tSet LB to be the minimum allowable trampoline address.\n"
-        "\t\tDefault: -0x8000000000000000\n"
+        "\t\tDefault: -0x100000000\n"
         "\n"
         "\t--mem-ub=UB\n"
         "\t\tSet UB to be the maximum allowable trampoline address.\n"
-        "\t\tDefault: 0x7fffffffffffffff\n"
+        "\t\tDefault: 0x200000000\n"
+        "\n"
+        "\t--mem-loader=ADDR\n"
+        "\t\tSet ADDR to be the base address of the program loader.\n"
+        "\t\tThe ADDR must be >= the `--mem-ub=UB' value.\n"
+        "\t\tDefault: 0x20e9e9000\n"
         "\n"
         "\t--mem-mapping-size=SIZE\n"
         "\t\tSet the mapping size to SIZE which must be a power-of-two\n"
@@ -262,7 +269,13 @@ static void usage(FILE *stream, const char *progname)
         "\t\tEnable [disable] the insertion of a trap (int3) instruction at\n"
         "\t\tall trampoline entries.\n"
         "\t\tDefault: false (disabled)\n"
-        "\n", progname, PAGE_SIZE, PAGE_SIZE);
+        "\n"
+        "\t--trap-entry[=false]\n"
+        "\t\tEnable [disable] the insertion of a trap (int3) at the program\n"
+        "\t\tloader entry-point.\n"
+        "\t\tDefault: false (disabled)\n"
+        "\n",
+        progname, PAGE_SIZE, PAGE_SIZE);
 }
 
 /*
@@ -275,6 +288,7 @@ enum Option
     OPTION_INPUT,
     OPTION_MEM_GRANULARITY,
     OPTION_MEM_LB,
+    OPTION_MEM_LOADER,
     OPTION_MEM_MAPPING_SIZE,
     OPTION_MEM_MULTI_PAGE,
     OPTION_MEM_UB,
@@ -293,6 +307,7 @@ enum Option
     OPTION_TACTIC_BACKWARD_T3,
     OPTION_TRAP,
     OPTION_TRAP_ALL,
+    OPTION_TRAP_ENTRY,
 };
 
 /*
@@ -314,6 +329,7 @@ void parseOptions(int argc, char * const argv[], bool api)
         {"input",              req_arg, nullptr, OPTION_INPUT},
         {"mem-granularity",    req_arg, nullptr, OPTION_MEM_GRANULARITY},
         {"mem-lb",             req_arg, nullptr, OPTION_MEM_LB},
+        {"mem-loader",         req_arg, nullptr, OPTION_MEM_LOADER},
         {"mem-mapping-size",   req_arg, nullptr, OPTION_MEM_MAPPING_SIZE},
         {"mem-multi-page",     opt_arg, nullptr, OPTION_MEM_MULTI_PAGE},
         {"mem-ub",             req_arg, nullptr, OPTION_MEM_UB},
@@ -327,6 +343,7 @@ void parseOptions(int argc, char * const argv[], bool api)
         {"tactic-backward-T3", no_arg,  nullptr, OPTION_TACTIC_BACKWARD_T3},
         {"trap",               req_arg, nullptr, OPTION_TRAP},
         {"trap-all",           opt_arg, nullptr, OPTION_TRAP_ALL},
+        {"trap-entry",         opt_arg, nullptr, OPTION_TRAP_ENTRY},
         {nullptr,              no_arg,  nullptr, 0}
     };
 
@@ -417,6 +434,9 @@ void parseOptions(int argc, char * const argv[], bool api)
             case OPTION_TRAP_ALL:
                 option_trap_all = parseBoolOptArg("--trap-all", optarg);
                 break;
+            case OPTION_TRAP_ENTRY:
+                option_trap_entry = parseBoolOptArg("--trap-entry", optarg);
+                break;
             case OPTION_STATIC_LOADER:
                 option_static_loader =
                     parseBoolOptArg("--static-loader", optarg);
@@ -435,11 +455,15 @@ void parseOptions(int argc, char * const argv[], bool api)
                 }
                 break;
             case OPTION_MEM_LB:
-                option_mem_lb = parseIntOptArg("--mem-lb", optarg, INTPTR_MIN,
-                    INTPTR_MAX);
+                option_mem_lb = parseIntOptArg("--mem-lb", optarg,
+                    -0x100000000, 0x200000000);
                 break;
             case OPTION_MEM_UB:
-                option_mem_ub = parseIntOptArg("--mem-ub", optarg, INTPTR_MIN,
+                option_mem_ub = parseIntOptArg("--mem-ub", optarg,
+                    -0x100000000, 0x200000000);
+                break;
+            case OPTION_MEM_LOADER:
+                option_mem_loader = parseIntOptArg("--mem-loader", optarg, 0x0,
                     INTPTR_MAX);
                 break;
             case OPTION_MEM_MAPPING_SIZE:
@@ -469,6 +493,10 @@ void parseOptions(int argc, char * const argv[], bool api)
         error("failed to parse command-line options; extraneous non-option "
             "argument \"%s\", try `--help' for more information",
             argv[optind]);
+    if (option_mem_loader < option_mem_ub)
+        error("failed to set `--mem-loader' to address 0x%lx; the address "
+            "value must be >= the `--mem-ub' bound (0x%lx)",
+            option_mem_loader, option_mem_ub);
 }
 
 /*

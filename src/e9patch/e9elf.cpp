@@ -1,6 +1,6 @@
 /*
  * e9elf.cpp
- * Copyright (C) 2020 National University of Singapore
+ * Copyright (C) 2021 National University of Singapore
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -389,8 +389,8 @@ static size_t emitLoadFuncPtrIntoRAX(uint8_t *data, bool pic, intptr_t fptr)
  * Emit the loader.
  */
 static size_t emitLoader(const RefactorSet &refactors,
-    const MappingSet &mappings, uint8_t *data, intptr_t entry, bool pic,
-    const InitSet &inits, intptr_t mmap, Mode mode)
+    const MappingSet &mappings, uint8_t *data, intptr_t base, intptr_t entry,
+    bool pic, const InitSet &inits, intptr_t mmap, Mode mode)
 {
     /*
      * Stage #1
@@ -398,6 +398,10 @@ static size_t emitLoader(const RefactorSet &refactors,
 
     // Step (1): Emit the loader entry:
     memcpy(data, e9loader_bin, e9loader_bin_len);
+    memcpy(data, &base, sizeof(base));
+    assert(data[sizeof(base)] == 0x90);
+    if (option_trap_entry)
+        data[sizeof(base)] = 0xcc;      // nop ---> int3
     size_t size = e9loader_bin_len;
 
     /*
@@ -432,6 +436,7 @@ static size_t emitLoader(const RefactorSet &refactors,
     size_t prev_len   = SIZE_MAX;
     int prev_prot     = prot;
     std::vector<Bounds> bounds;
+    intptr_t ub       = INTPTR_MIN;
     for (int preload = 1; preload >= false; preload--)
     {
         for (auto mapping: mappings)
@@ -447,6 +452,7 @@ static size_t emitLoader(const RefactorSet &refactors,
                 getVirtualBounds(mapping, bounds);
                 for (const auto b: bounds)
                 {
+                    ub            = std::max(ub, mapping->base + b.ub);
                     intptr_t base = mapping->base + b.lb;
                     size_t len    = b.ub - b.lb;
                     off_t offset  = offset_0 + b.lb;
@@ -467,6 +473,15 @@ static size_t emitLoader(const RefactorSet &refactors,
                 }
             }
         }
+    }
+    if (ub > base)
+    {
+        // This error may occur if the front-end changes `--mem-loader'
+        // mid-way through the patching process.  It is easiest to detect
+        // the error here than earlier.
+        error("loader base address (0x%lx) (see `--mem-loader') must not "
+            "exceed maximum mapping address (0x%lx) (see `--mem-ub')",
+            base, ub);
     }
     for (const auto &refactor: refactors)
     {
@@ -661,7 +676,7 @@ size_t emitElf(const Binary *B, const MappingSet &mappings,
         {
             Elf64_Ehdr *ehdr = B->elf.ehdr;
             old_entry     = (intptr_t)B->elf.ehdr->e_entry;
-            ehdr->e_entry = (Elf64_Addr)LOADER_ADDRESS;
+            ehdr->e_entry = (Elf64_Addr)option_mem_loader + LOADER_OFFSET;
             break;
         }
         case MODE_SHARED_OBJECT:
@@ -681,7 +696,8 @@ size_t emitElf(const Binary *B, const MappingSet &mappings,
                 {
                     found = true;
                     old_entry = (intptr_t)dynamic[i].d_un.d_ptr;
-                    dynamic[i].d_un.d_ptr = (Elf64_Addr)LOADER_ADDRESS;
+                    dynamic[i].d_un.d_ptr = (Elf64_Addr)option_mem_loader +
+                        LOADER_OFFSET;
                 }
             }
             if (!found)
@@ -693,7 +709,7 @@ size_t emitElf(const Binary *B, const MappingSet &mappings,
     // Step (5): Emit the loader:
     off_t loader_offset = (off_t)size;
     size_t loader_size  = emitLoader(refactors, mappings, data + size,
-        old_entry, B->elf.pic, B->inits, B->mmap, B->mode);
+        option_mem_loader, old_entry, B->elf.pic, B->inits, B->mmap, B->mode);
     size += loader_size;
 
     // Step (6): Modify the PHDR to load the loader.
@@ -704,7 +720,7 @@ size_t emitElf(const Binary *B, const MappingSet &mappings,
     phdr->p_type   = PT_LOAD;
     phdr->p_flags  = PF_X | PF_R;
     phdr->p_offset = loader_offset;
-    phdr->p_vaddr  = (Elf64_Addr)LOADER_ADDRESS;
+    phdr->p_vaddr  = (Elf64_Addr)option_mem_loader;
     phdr->p_paddr  = (Elf64_Addr)nullptr;
     phdr->p_filesz = loader_size;
     phdr->p_memsz  = loader_size;
