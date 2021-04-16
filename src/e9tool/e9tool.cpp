@@ -1620,6 +1620,9 @@ static MatchValue makeMatchValue(MatchKind match, int idx, MatchField field,
                         {
                             case OPTYPE_IMM:
                                 result.i = (intptr_t)op->imm;
+                                if (I->relative)
+                                    result.i += (intptr_t)I->address +
+                                                (intptr_t)I->size;
                                 return result;
                             case OPTYPE_REG:
                                 result.type = MATCH_TYPE_REGISTER;

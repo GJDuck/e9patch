@@ -159,6 +159,7 @@ void e9frontend::getInstrInfo(const ELF *elf, const Instr *I, InstrInfo *info,
         info->offset                 = I->offset;
         info->mnemonic               = convert(D->mnemonic);
         info->size                   = I->size;
+        info->relative               = false;
         info->encoding.size.disp     =
             (D->raw.disp.offset != 0? D->raw.disp.size: -1);
         info->encoding.size.imm      =
@@ -224,8 +225,7 @@ void e9frontend::getInstrInfo(const ELF *elf, const Instr *I, InstrInfo *info,
                     info->op[j].type = OPTYPE_IMM;
                     info->op[j].imm  = (int64_t)D->operands[i].imm.value.s;
                     if (D->operands[i].imm.is_relative)
-                        info->op[j].imm += (int64_t)I->address +
-                                           (int64_t)I->size;
+                        info->relative = true;
                     break;
                 case ZYDIS_OPERAND_TYPE_REGISTER:
                     info->op[j].type = OPTYPE_REG;
@@ -240,6 +240,8 @@ void e9frontend::getInstrInfo(const ELF *elf, const Instr *I, InstrInfo *info,
                     info->op[j].mem.base  = convert(D->operands[i].mem.base);
                     info->op[j].mem.index = convert(D->operands[i].mem.index);
                     info->op[j].mem.scale = D->operands[i].mem.scale;
+                    if (D->operands[i].mem.base == ZYDIS_REGISTER_RIP)
+                        info->relative = true;
                     break;
                 default:
                     continue;

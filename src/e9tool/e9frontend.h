@@ -2022,6 +2022,7 @@ struct InstrInfo
     off_t           offset;         // Instruction file offset
     Mnemonic        mnemonic;       // Instruction mnemonic enum
     uint8_t         size;           // Instruction size
+    bool            relative;       // Imm/disp used for relative address?
     struct
     {
         struct
