@@ -2056,6 +2056,70 @@ struct InstrInfo
         const char *mnemonic;       // Instruction mnemonic string
         char        instr[64];      // Instruction string
     } string;
+
+    /*
+     * Helper functions.
+     */
+    bool hasREX() const
+    {
+        return (encoding.offset.rex >= 0);
+    }
+    bool hasMODRM() const
+    {
+        return (encoding.offset.modrm >= 0);
+    }
+    bool hasSIB() const
+    {
+        return (encoding.offset.sib >= 0);
+    }
+    bool hasDISP() const
+    {
+        return (encoding.offset.disp >= 0);
+    }
+    bool hasIMM() const
+    {
+        return (encoding.offset.imm >= 0);
+    }
+    uint8_t getREX() const
+    {
+        return (hasREX()? data[encoding.offset.rex]: 0);
+    }
+    uint8_t getMODRM() const
+    {
+        return (hasMODRM()? data[encoding.offset.modrm]: 0);
+    }
+    uint8_t getSIB() const
+    {
+        return (hasMODRM()? data[encoding.offset.sib]: 0);
+    }
+    int32_t getDISP() const
+    {
+        switch (encoding.size.disp)
+        {
+            case sizeof(int8_t):
+                return (int32_t)*(int8_t *)(data + encoding.offset.disp);
+            case sizeof(int32_t):
+                return *(int32_t *)(data + encoding.offset.disp);
+            default:
+                return 0;
+        }
+    }
+    int64_t getIMM() const
+    {
+        switch (encoding.size.imm)
+        {
+            case sizeof(int8_t):
+                return (int64_t)*(int8_t *)(data + encoding.offset.imm);
+            case sizeof(int16_t):
+                return (int64_t)*(int16_t *)(data + encoding.offset.imm);
+            case sizeof(int32_t):
+                return (int64_t)*(int32_t *)(data + encoding.offset.imm);
+            case sizeof(int64_t):
+                return *(int64_t *)(data + encoding.offset.imm);
+            default:
+                return 0;
+        }
+    }
 };
 
 /*
