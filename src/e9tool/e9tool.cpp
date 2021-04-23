@@ -2578,8 +2578,8 @@ int main(int argc, char **argv)
         {
             if (option_sync < 0)
                 error("failed to disassemble the \"%s\" section of \"%s\"; "
-                    "this may be caused by (1) data in the \"%s\" section, or (2) "
-                    "a bug in the third party disassembler",
+                    "this may be caused by (1) data in the \"%s\" section, or "
+                    "(2) a bug in the third party disassembler",
                     section, filename, section);
             else
                 warning("failed to disassemble the \"%s\" section of \"%s\"; "

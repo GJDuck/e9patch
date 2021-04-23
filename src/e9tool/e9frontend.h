@@ -34,8 +34,33 @@ namespace e9frontend
 {
 
 /*
- * ELF file.
+ * C-string comparator.
  */
+struct CStrCmp
+{
+    bool operator()(const char* a, const char* b) const
+    {
+        return (strcmp(a, b) < 0);
+    }
+};
+
+/*
+ * ELF Types.
+ */
+typedef std::map<const char *, const Elf64_Shdr *, CStrCmp> SectionInfo;
+typedef std::map<const char *, const Elf64_Sym *, CStrCmp>  SymbolInfo;
+typedef std::map<const char *, intptr_t, CStrCmp> GOTInfo;
+typedef std::map<const char *, intptr_t, CStrCmp> PLTInfo;
+
+/*
+ * ELF file type.
+ */
+enum ElfType
+{
+    ELFTYPE_DSO,                    // Shared object
+    ELFTYPE_PIE,                    // Position-independent Executable
+    ELFTYPE_EXEC,                   // Executable
+};
 struct ELF;
 
 /*
@@ -1989,6 +2014,17 @@ struct OpInfo
 };
 
 /*
+ * Flags.
+ */
+#define FLAG_CF                 0x01
+#define FLAG_PF                 0x02
+#define FLAG_AF                 0x04
+#define FLAG_ZF                 0x08
+#define FLAG_SF                 0x10
+#define FLAG_ALL                \
+    (FLAG_CF | FLAG_PF | FLAG_AF | FLAG_ZF | FLAG_SF)
+
+/*
  * Compressed instruction representation.
  * Use getInstrInfo() for more detailed information.
  */
@@ -2045,6 +2081,11 @@ struct InstrInfo
         Register    read[16];       // Instruction register reads
         Register    write[16];      // Instruction register writes
     } regs;
+    struct
+    {
+        uint8_t     read;           // Instruction flags read from
+        uint8_t     write;          // Instruction flags written to
+    } flags;
     struct
     {
         uint8_t     op;             // Number of operands
@@ -2251,12 +2292,12 @@ extern unsigned sendTrampolineMessage(FILE *out, const char *name,
     const char *template_);
 
 /*
- * Misc. functions:
+ * ELF functions.
  */
-extern void getInstrInfo(const ELF *elf, const Instr *I, InstrInfo *info,
-    void *raw = nullptr);
 extern ELF *parseELF(const char *filename, intptr_t base);
 extern void freeELF(ELF *elf);
+extern ElfType getELFType(const ELF *elf);
+extern const char *getELFFilename(const ELF *elf);
 extern const uint8_t *getELFData(const ELF *elf);
 extern size_t getELFDataSize(const ELF *elf);
 extern intptr_t getELFBaseAddr(const ELF *elf);
@@ -2266,6 +2307,18 @@ extern const Elf64_Sym *getELFDynSym(const ELF *elf, const char *name);
 extern const Elf64_Sym *getELFSym(const ELF *elf, const char *name);
 extern intptr_t getELFPLTEntry(const ELF *elf, const char *name);
 extern intptr_t getELFGOTEntry(const ELF *elf, const char *name);
+extern const char *getELFStrTab(const ELF *elf);
+extern const SectionInfo &getELFSectionInfo(const ELF *elf);
+extern const SymbolInfo &getELFDynSymInfo(const ELF *elf);
+extern const SymbolInfo &getELFSymInfo(const ELF *elf);
+extern const GOTInfo &getELFGOTInfo(const ELF *elf);
+extern const PLTInfo &getELFPLTInfo(const ELF *elf);
+
+/*
+ * Misc. functions:
+ */
+extern void getInstrInfo(const ELF *elf, const Instr *I, InstrInfo *info,
+    void *raw = nullptr);
 extern intptr_t getSymbol(const ELF *elf, const char *symbol);
 extern void NO_RETURN error(const char *msg, ...);
 extern void warning(const char *msg, ...);

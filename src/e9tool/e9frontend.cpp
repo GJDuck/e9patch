@@ -95,17 +95,6 @@ static void sendLeaFromPCRelToR64(FILE *out, int32_t offset, int regno);
 static void sendLeaFromStackToR64(FILE *out, int32_t offset, int regno);
 
 /*
- * C-string comparator.
- */
-struct CStrCmp
-{
-    bool operator()(const char* a, const char* b) const
-    {
-        return (strcmp(a, b) < 0);
-    }
-};
-
-/*
  * Symbols.
  */
 typedef uint8_t Type;
@@ -1180,10 +1169,6 @@ struct CallInfo
  */
 namespace e9frontend
 {
-    typedef std::map<const char *, const Elf64_Shdr *, CStrCmp> SectionInfo;
-    typedef std::map<const char *, const Elf64_Sym *, CStrCmp>  SymbolInfo;
-    typedef std::map<const char *, intptr_t, CStrCmp> GOTInfo;
-    typedef std::map<const char *, intptr_t, CStrCmp> PLTInfo;
     struct ELF
     {
         // Data
@@ -2167,6 +2152,19 @@ void freeELF(ELF *elf)
 /*
  * ELF getters.
  */
+e9frontend::ElfType e9frontend::getELFType(const ELF *elf)
+{
+    if (elf->dso)
+        return ELFTYPE_DSO;
+    else if (elf->pie)
+        return ELFTYPE_PIE;
+    else
+        return ELFTYPE_EXEC;
+}
+const char *e9frontend::getELFFilename(const ELF *elf)
+{
+    return elf->filename;
+}
 const uint8_t *e9frontend::getELFData(const ELF *elf)
 {
     return elf->data;
@@ -2217,6 +2215,30 @@ intptr_t e9frontend::getELFGOTEntry(const ELF *elf, const char *name)
     if (i == elf->got.end())
         return INTPTR_MIN;
     return i->second;
+}
+const char *e9frontend::getELFStrTab(const ELF *elf)
+{
+    return elf->strs;
+}
+extern const SectionInfo &e9frontend::getELFSectionInfo(const ELF *elf)
+{
+    return elf->sections;
+}
+extern const SymbolInfo &e9frontend::getELFDynSymInfo(const ELF *elf)
+{
+    return elf->dynsyms;
+}
+extern const SymbolInfo &e9frontend::getELFSymInfo(const ELF *elf)
+{
+    return elf->syms;
+}
+extern const GOTInfo &e9frontend::getELFGOTInfo(const ELF *elf)
+{
+    return elf->got;
+}
+extern const PLTInfo &e9frontend::getELFPLTInfo(const ELF *elf)
+{
+    return elf->plt;
 }
 
 /*
