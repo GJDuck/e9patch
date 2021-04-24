@@ -757,7 +757,7 @@ static void sendLoadTargetMetadata(FILE *out, const InstrInfo *I,
             // mov instruction that loads the target in the correct register
             (void)sendLoadFromMemOpToR64(out, I, info, op->size,
                 op->mem.seg, op->mem.disp, op->mem.base, op->mem.index,
-                op->mem.scale, /*lea=*/true, argno);
+                op->mem.scale, /*lea=*/false, argno);
             return;
         
         case OPTYPE_IMM:
@@ -766,7 +766,7 @@ static void sendLoadTargetMetadata(FILE *out, const InstrInfo *I,
             // into the correct register.
 
             // lea rel(%rip),%rarg
-            intptr_t target = /*I->address + I->size +*/ op->imm;
+            intptr_t target = I->address + I->size + op->imm;
             sendLeaFromPCRelToR64(out, target, argno);
             return;
         }
