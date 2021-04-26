@@ -330,7 +330,6 @@ struct Action
     const char * const symbol;
     const ELF * elf;
     Plugin * const plugin;
-    void *context;
     const std::vector<Argument> args;
     const bool clean;
     const CallKind call;
@@ -342,8 +341,8 @@ struct Action
             CallKind call, int status) :
             string(string), match(match), kind(kind), name(name),
             filename(filename), symbol(symbol), elf(nullptr),
-            plugin(plugin), context(nullptr), args(args), clean(clean),
-            call(call), status(status)
+            plugin(plugin), args(args), clean(clean), call(call),
+            status(status)
     {
         ;
     }
@@ -2644,7 +2643,7 @@ int main(int argc, char **argv)
             if (action->plugin->patchFunc != nullptr)
             {
                 action->plugin->patchFunc(backend.out, &elf, Is.data(),
-                    Is.size(), i, &I, action->context);
+                    Is.size(), i, &I, action->plugin->context);
             }
         }
         else
