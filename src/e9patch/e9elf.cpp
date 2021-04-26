@@ -452,7 +452,8 @@ static size_t emitLoader(const RefactorSet &refactors,
                 getVirtualBounds(mapping, bounds);
                 for (const auto b: bounds)
                 {
-                    ub            = std::max(ub, mapping->base + b.ub);
+                    if (!IS_ABSOLUTE(mapping->base))
+                        ub = std::max(ub, mapping->base + b.ub);
                     intptr_t base = mapping->base + b.lb;
                     size_t len    = b.ub - b.lb;
                     off_t offset  = offset_0 + b.lb;
