@@ -204,6 +204,17 @@ void e9frontend::getInstrInfo(const ELF *elf, const Instr *I, InstrInfo *info,
             info->regs.read[k++] = REGISTER_EFLAGS;
         if (D->cpu_flags_written != 0x0)
             info->regs.write[l++] = REGISTER_EFLAGS;
+        Register seg = REGISTER_NONE;
+        if (D->attributes & ZYDIS_ATTRIB_HAS_SEGMENT_CS)
+            seg = REGISTER_CS;
+        if (D->attributes & ZYDIS_ATTRIB_HAS_SEGMENT_SS)
+            seg = REGISTER_SS;
+        if (D->attributes & ZYDIS_ATTRIB_HAS_SEGMENT_ES)
+            seg = REGISTER_ES;
+        if (D->attributes & ZYDIS_ATTRIB_HAS_SEGMENT_FS)
+            seg = REGISTER_FS;
+        if (D->attributes & ZYDIS_ATTRIB_HAS_SEGMENT_GS)
+            seg = REGISTER_GS;
         for (unsigned i0 = 0; i0 < D->operand_count; i0++)
         {
             unsigned i = (option_intel_syntax? i0: D->operand_count - i0 - 1);
@@ -215,6 +226,7 @@ void e9frontend::getInstrInfo(const ELF *elf, const Instr *I, InstrInfo *info,
                  ((D->operands[i].actions & ZYDIS_OPERAND_ACTION_CONDWRITE) != 0));
             if (D->mnemonic == ZYDIS_MNEMONIC_NOP)
                 read = write = false;
+
             switch (D->operands[i].type)
             {
                 case ZYDIS_OPERAND_TYPE_REGISTER:
@@ -224,8 +236,7 @@ void e9frontend::getInstrInfo(const ELF *elf, const Instr *I, InstrInfo *info,
                         info->regs.write[l++] = convert(D->operands[i].reg.value);
                     break;
                 case ZYDIS_OPERAND_TYPE_MEMORY:
-                    if (D->operands[i].mem.segment != ZYDIS_REGISTER_NONE)
-                        info->regs.read[k++] = convert(D->operands[i].mem.segment);
+                    info->regs.read[k++] = seg;
                     if (D->operands[i].mem.base != ZYDIS_REGISTER_NONE)
                         info->regs.read[k++] = convert(D->operands[i].mem.base);
                     if (D->operands[i].mem.index != ZYDIS_REGISTER_NONE)
@@ -256,8 +267,7 @@ void e9frontend::getInstrInfo(const ELF *elf, const Instr *I, InstrInfo *info,
                     break;
                 case ZYDIS_OPERAND_TYPE_MEMORY:
                     info->op[j].type      = OPTYPE_MEM;
-                    info->op[j].mem.seg   =
-                        convert(D->operands[i].mem.segment);
+                    info->op[j].mem.seg   = seg;
                     info->op[j].mem.disp  =
                         (int32_t)D->operands[i].mem.disp.value;
                     info->op[j].mem.base  = convert(D->operands[i].mem.base);

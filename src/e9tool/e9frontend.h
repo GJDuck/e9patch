@@ -19,10 +19,12 @@
 #ifndef __E9FRONTEND_H
 #define __E9FRONTEND_H
 
+#include <map>
 #include <vector>
 
 #include <cstdint>
 #include <cstdio>
+#include <cstring>
 
 #include <elf.h>
 
