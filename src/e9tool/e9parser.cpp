@@ -134,8 +134,9 @@ static const TokenInfo tokens[] =
     {"&&",              TOKEN_AND,              0},
     {"(",               (Token)'(',             0},
     {")",               (Token)')',             0},
+    {"+",               (Token)'+',             0},
     {",",               (Token)',',             0},
-    {"-",               TOKEN_NONE,             (Access)0x0},
+    {"-",               (Token)'-',             0},
     {"--",              TOKEN_NONE,             (Access)0x0},
     {"-w",              TOKEN_WRITE,            ACCESS_WRITE},
     {".",               (Token)'.',             0},
@@ -518,7 +519,7 @@ struct Parser
                 strcpy(s, "<end-of-input>");
                 return TOKEN_EOF;
             case '[': case ']': case '@': case ',': case '(': case ')':
-            case '&': case '.': case ':':
+            case '&': case '.': case ':': case '+':
                 s[0] = c; s[1] = '\0';
                 pos++;
                 if ((c == '&' || c == '.') && buf[pos] == c)
@@ -536,6 +537,22 @@ struct Parser
                     pos++;
                 }
                 return getTokenFromName(s);
+            case '-':
+                s[0] = c; s[1] = '\0';
+                pos++;
+                if (buf[pos] == '-' || buf[pos] == 'w')
+                {
+                    s[1] = buf[pos]; s[2] = '\0';
+                    pos++;
+                }
+                return getTokenFromName(s);
+            case 'r':
+                if (buf[pos+1] == '-')
+                {
+                    s[0] = 'r'; s[1] = '-'; s[2] = '\0';
+                    pos += 2;
+                    return getTokenFromName(s);
+                }
             case '|':
                 if (buf[pos+1] == '|')
                 {
@@ -550,21 +567,8 @@ struct Parser
         
         // Integers:
         unsigned j = 0;
-        if (isdigit(c) || (c == '-' && isdigit(buf[pos+1])) || c == '+')
+        if (isdigit(c))
         {
-            bool neg = false;
-            switch (c)
-            {
-                case '-':
-                    neg = true;
-                    // Fallthrough:
-                case '+':
-                    s[j++] = c;
-                    c = buf[++pos];
-                    break;
-                default:
-                    break;
-            }
             int base = 10;
             if (c == '0' && buf[pos+1] == 'x')
             {
@@ -586,10 +590,9 @@ struct Parser
             if (j >= TOKEN_MAXLEN)
                 return TOKEN_ERROR;
             char *end = nullptr;
-            i = (intptr_t)strtoull((neg? s+1: s), &end, base);
+            i = (intptr_t)strtoull(s, &end, base);
             if (end == nullptr || *end != '\0')
                 return TOKEN_ERROR;
-            i = (neg? -i: i);
             return TOKEN_INTEGER;
         }
 
@@ -626,11 +629,11 @@ struct Parser
         }
 
         // Names:
-        if (isalpha(c) || c == '_' || c == '-' || c == '%')
+        if (isalpha(c) || c == '_' || c == '%')
         {
             s[j++] = c;
             pos++;
-            while ((isalnum(buf[pos]) || buf[pos] == '_' || buf[pos] == '-') &&
+            while ((isalnum(buf[pos]) || buf[pos] == '_') &&
                     j < TOKEN_MAXLEN)
                 s[j++] = buf[pos++];
             s[j] = '\0';

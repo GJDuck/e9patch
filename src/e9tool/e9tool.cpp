@@ -501,6 +501,7 @@ static void parseValues(Parser &parser, MatchType type, MatchCmp cmp,
     while (true)
     {
         MatchValue value = {0};
+        bool neg = false;
         switch (parser.getToken())
         {
             case '&':
@@ -511,9 +512,21 @@ static void parseValues(Parser &parser, MatchType type, MatchCmp cmp,
             case TOKEN_NIL:
                 value.type = MATCH_TYPE_NIL;
                 break;
+            case '-':
+                if (parser.peekToken() != TOKEN_INTEGER)
+                {
+                    value.type   = MATCH_TYPE_ACCESS;
+                    value.access = (Access)0x0;
+                    break;
+                }
+                neg = true;
+                // Fallthrough:
+            case '+':
+                parser.expectToken(TOKEN_INTEGER);
+                // Fallthrough:
             case TOKEN_INTEGER:
                 value.type = MATCH_TYPE_INTEGER;
-                value.i    = parser.i;
+                value.i    = (neg? -parser.i: parser.i);
                 break;
             case TOKEN_REGISTER:
                 value.type = MATCH_TYPE_REGISTER;
@@ -903,10 +916,21 @@ static void parseMemOp(Parser &parser, int t, MemOp &memop)
         memop.seg = (Register)parser.i;
         parser.expectToken(':');
     }
-    if (parser.peekToken() == TOKEN_INTEGER)
+    bool neg = false;
+    switch (parser.peekToken())
     {
-        parser.getToken();
-        disp64 = parser.i;
+        case '-':
+            neg = true;
+            // Fallthrough:
+        case '+':
+            parser.getToken();
+            // Fallthrough:
+        case TOKEN_INTEGER:
+            parser.expectToken(TOKEN_INTEGER);
+            disp64 = (neg? -parser.i: parser.i);
+            break;
+        default:
+            break;
     }
 
     if (parser.peekToken() != '(')
@@ -1144,7 +1168,7 @@ static Action *parseAction(const ELF &elf, const char *str,
             while (true)
             {
                 t = parser.getToken();
-                bool ptr = false;
+                bool ptr = false, neg = false;
                 if (t == '&')
                 {
                     ptr = true;
@@ -1223,8 +1247,14 @@ static Action *parseAction(const ELF &elf, const char *str,
                         value = parser.i;
                         arg = ARGUMENT_REGISTER;
                         break;
+                    case '-':
+                        neg = true;
+                        // Fallthrough:
+                    case '+':
+                        parser.expectToken(TOKEN_INTEGER);
+                        // Fallthrough:
                     case TOKEN_INTEGER:
-                        value = parser.i;
+                        value = (neg? -parser.i: parser.i);
                         arg = ARGUMENT_INTEGER;
                         break;
                     case TOKEN_STRING:
@@ -1404,10 +1434,21 @@ static Exclude parseExcludeBound(Parser &parser, const char *str,
 {
     Exclude bound = {INTPTR_MAX, INTPTR_MIN};
     int t = parser.getToken();
+    bool neg = false;
     switch (t)
     {
+        case '-':
+            neg = true;
+            // Fallthrough:
+        case '+':
+            parser.expectToken(TOKEN_INTEGER);
+            // Fallthrough:
         case TOKEN_INTEGER:
-            return {parser.i, parser.i};
+        {
+            intptr_t b = (neg? -parser.i: parser.i);
+            bound = {b, b};
+            break;
+        }
         case '&':
             t = parser.getToken();
             // Fallthrough:
@@ -1450,18 +1491,44 @@ static Exclude parseExcludeBound(Parser &parser, const char *str,
                 "section \"%s\" in \"%s", str, name.c_str(), elf.filename);
         }
     }
-    if (parser.peekToken() != '.')
-        return bound;
-    parser.getToken();
-    switch (parser.getToken())
+    if (parser.peekToken() == '.')
     {
-        case TOKEN_START:
-            return {bound.lo, bound.lo};
-        case TOKEN_END:
-            return {bound.hi, bound.hi};
-        default:
-            parser.unexpectedToken();
+        parser.getToken();
+        switch (parser.getToken())
+        {
+            case TOKEN_START:
+                bound.hi = bound.lo;
+                break;
+            case TOKEN_END:
+                bound.lo = bound.hi;
+                break;
+            default:
+                parser.unexpectedToken();
+        }
     }
+    neg = false;
+    intptr_t offset = 0;
+    switch (parser.peekToken())
+    {
+        case '-':
+            neg = true;
+            // Fallthrough
+        case '+':
+            parser.getToken();
+            parser.expectToken(TOKEN_INTEGER);
+            offset = parser.i;
+            if (offset < INT32_MIN || offset > INT32_MAX)
+                error("failed to parse exclusion \"%s\"; offset %ld is "
+                    "out-of-range %zd..%zd", str, offset, INT32_MIN,
+                    INT32_MAX);
+            offset = (neg? -offset: offset);
+            bound.lo += offset;
+            bound.hi += offset;
+            break;
+        default:
+            break;
+    }
+    return bound;
 }
 static Exclude parseExclude(const ELF &elf, const char *str)
 {

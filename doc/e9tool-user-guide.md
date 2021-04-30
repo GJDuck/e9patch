@@ -1,4 +1,4 @@
-# E9Tool User's Guide
+T# E9Tool User's Guide
 
 **NOTE**: This guide is a work-in-progress and still incomplete.
 
@@ -341,7 +341,8 @@ inside the `.text` section.
 The general syntax for `RANGE` is:
 <pre>
     RANGE ::=   ADDR [ <b>..</b> ADDR ]
-    ADDR  ::=   INTEGER
+    ADDR  ::=   VALUE [ <b>+<b> INTEGER ]
+    VALUE ::=   INTEGER
               | SYMBOL
               | SECTION [ <b>.</b> ( <b>start</b> | <b>end</b> ) ]
 </pre>
@@ -353,6 +354,7 @@ For example:
 * `.plt.start .. .text.end`: equivalent to the above
 * `.plt .. .text.start`: exclude all sections between `.plt` and the starting
   address of `.text`.  The `.text` section itself will not be excluded.
+* `malloc .. malloc+16`: exclude the 16-byte PLT entry for malloc.
 * `.text`: exclude the entire `.text` section.
 
 Note that a `RANGE` may include a lower and upper bound, i.e., `LB .. UB`.
