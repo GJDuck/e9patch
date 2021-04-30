@@ -1,4 +1,4 @@
-T# E9Tool User's Guide
+# E9Tool User's Guide
 
 **NOTE**: This guide is a work-in-progress and still incomplete.
 
