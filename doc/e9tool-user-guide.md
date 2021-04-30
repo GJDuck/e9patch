@@ -341,7 +341,7 @@ inside the `.text` section.
 The general syntax for `RANGE` is:
 <pre>
     RANGE ::=   ADDR [ <b>..</b> ADDR ]
-    ADDR  ::=   VALUE [ <b>+<b> INTEGER ]
+    ADDR  ::=   VALUE [ <b>+</b> INTEGER ]
     VALUE ::=   INTEGER
               | SYMBOL
               | SECTION [ <b>.</b> ( <b>start</b> | <b>end</b> ) ]
