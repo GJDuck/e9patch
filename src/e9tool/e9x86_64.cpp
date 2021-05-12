@@ -161,9 +161,9 @@ void e9frontend::getInstrInfo(const ELF *elf, const Instr *I, InstrInfo *info,
         info->size                   = I->size;
         info->relative               = false;
         info->encoding.size.disp     =
-            (D->raw.disp.offset != 0? D->raw.disp.size: -1);
+            (D->raw.disp.offset != 0? D->raw.disp.size / 8: -1);
         info->encoding.size.imm      =
-            (D->raw.imm[0].offset != 0? D->raw.imm[0].size: -1);
+            (D->raw.imm[0].offset != 0? D->raw.imm[0].size / 8: -1);
         info->encoding.offset.rex    =
             (D->attributes & ZYDIS_ATTRIB_HAS_REX? D->raw.rex.offset: -1);
         info->encoding.offset.opcode = D->raw.prefix_count;

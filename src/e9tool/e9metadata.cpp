@@ -84,7 +84,7 @@ static Type getOperandType(const InstrInfo *I, const OpInfo *op, bool ptr,
             }
             break;
         case OPTYPE_IMM:
-            switch (I->encoding.size.imm)
+            switch (op->size)
             {
                 case sizeof(int8_t):
                     t = TYPE_INT8; break;
