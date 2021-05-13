@@ -1487,8 +1487,9 @@ static Exclude parseExcludeBound(Parser &parser, const char *str,
                 bound = {val, val};
                 break;
             }
-            error("failed to parse exclusion \"%s\"; no such symbol or "
-                "section \"%s\" in \"%s", str, name.c_str(), elf.filename);
+            warning("ignoring exclusion \"%s\"; no such symbol or "
+                "section \"%s\" in \"%s\"", str, name.c_str(), elf.filename);
+            return bound;
         }
     }
     if (parser.peekToken() == '.')
@@ -1535,11 +1536,15 @@ static Exclude parseExclude(const ELF &elf, const char *str)
     Parser parser(str, "exclusion", elf);
 
     Exclude lb = parseExcludeBound(parser, str, elf);
+    if (lb.lo == INTPTR_MAX && lb.hi == INTPTR_MIN)
+        return lb;
     Exclude ub = lb;
     if (parser.peekToken() == TOKEN_DOTDOT)
     {
         parser.getToken();
         ub = parseExcludeBound(parser, str, elf);
+        if (ub.lo == INTPTR_MAX && lb.hi == INTPTR_MIN)
+            return ub;
     }
     parser.expectToken(TOKEN_EOF);
     Exclude exclude = {std::min(lb.lo, ub.hi), std::max(lb.lo, ub.hi)};
