@@ -355,32 +355,39 @@ static size_t emitLoaderMmap(uint8_t *data, bool pic, intptr_t addr,
 }
 
 /*
- * Loads a function pointer into %rax.
+ * Load a pointer into register.
  */
-static size_t emitLoadFuncPtrIntoRAX(uint8_t *data, bool pic, intptr_t fptr)
+static size_t emitLoadPtrIntoReg(uint8_t *data, bool pic, intptr_t ptr,
+    int reg)
 {
     size_t size = 0;
-    bool absolute = IS_ABSOLUTE(fptr);
-    fptr = BASE_ADDRESS(fptr);
-    if (fptr <= INT32_MAX)
+    if (ptr < 0)
     {
-        // mov $fptr32,%eax
-        int32_t fptr32 = (int32_t)fptr;
-        data[size++] = 0xb8;
-        memcpy(data + size, &fptr32, sizeof(fptr32));
-        size += sizeof(fptr32);
+        // xor %reg32,%reg32
+        data[size++] = 0x31; data[size++] = 0xc0 + 0x9 * reg;
+        return size;
+    }
+    bool absolute = IS_ABSOLUTE(ptr);
+    ptr = BASE_ADDRESS(ptr);
+    if (ptr <= INT32_MAX)
+    {
+        // mov $ptr32,%reg32
+        int32_t ptr32 = (int32_t)ptr;
+        data[size++] = 0xb8 + reg;
+        memcpy(data + size, &ptr32, sizeof(ptr32));
+        size += sizeof(ptr32);
     }
     else
     {
-        // movabs $fptr,%rax
-        data[size++] = 0x48; data[size++] = 0xb8;
-        memcpy(data + size, &fptr, sizeof(fptr));
-        size += sizeof(fptr);
+        // movabs $ptr,%reg
+        data[size++] = 0x48; data[size++] = 0xb8 + reg;
+        memcpy(data + size, &ptr, sizeof(ptr));
+        size += sizeof(ptr);
     }
     if (pic && !absolute)
     {
-        // addq %r12,%rax
-        data[size++] = 0x4c; data[size++] = 0x01; data[size++] = 0xe0;
+        // addq %r12,%reg
+        data[size++] = 0x4c; data[size++] = 0x01; data[size++] = 0xe0 + reg;
     }
     return size;
 }
@@ -390,7 +397,7 @@ static size_t emitLoadFuncPtrIntoRAX(uint8_t *data, bool pic, intptr_t fptr)
  */
 static size_t emitLoader(const RefactorSet &refactors,
     const MappingSet &mappings, uint8_t *data, intptr_t base, intptr_t entry,
-    bool pic, const InitSet &inits, intptr_t mmap, Mode mode)
+    intptr_t dynamic, bool pic, const InitSet &inits, intptr_t mmap, Mode mode)
 {
     /*
      * Stage #1
@@ -517,8 +524,7 @@ static size_t emitLoader(const RefactorSet &refactors,
     // Step (4): Call the initialization routines (if any):
     for (auto init: inits)
     {
-        size += emitLoadFuncPtrIntoRAX(data + size, pic, init);
-
+        size += emitLoadPtrIntoReg(data + size, pic, init, /*rax=*/0);
         switch (mode)
         {
             case MODE_EXECUTABLE:
@@ -532,6 +538,8 @@ static size_t emitLoader(const RefactorSet &refactors,
                 };
                 memcpy(data + size, restore_args, sizeof(restore_args));
                 size += sizeof(restore_args);
+                size += emitLoadPtrIntoReg(data + size, pic, dynamic,
+                    /*rcx=*/1);
                 break;
             }
             case MODE_SHARED_OBJECT:
@@ -541,6 +549,7 @@ static size_t emitLoader(const RefactorSet &refactors,
                     0x31, 0xff,                     // xor %edi,%edi
                     0x31, 0xf6,                     // xor %esi,%esi
                     0x31, 0xd2,                     // xor %edx,%edx
+                    0x31, 0xc9,                     // xor %ecx,%ecx
                 };
                 memcpy(data + size, zero_args, sizeof(zero_args));
                 size += sizeof(zero_args);
@@ -553,7 +562,7 @@ static size_t emitLoader(const RefactorSet &refactors,
     }
 
     // Step (5): Setup jump to the real program/library entry address.
-    size += emitLoadFuncPtrIntoRAX(data + size, pic, entry);
+    size += emitLoadPtrIntoReg(data + size, pic, entry, /*rax=*/0);
 
     // Step (6): Restore the register state (saved by loader entry):
     const uint8_t restore_state[] =
@@ -671,6 +680,10 @@ size_t emitElf(const Binary *B, const MappingSet &mappings,
 
     // Step (4): Modify the entry address.
     intptr_t old_entry = 0;
+    Elf64_Phdr *phdr = B->elf.phdr_dynamic;
+    intptr_t dynamic = -1;
+    if (phdr != nullptr)
+        dynamic = (intptr_t)phdr->p_vaddr;
     switch (B->mode)
     {
         case MODE_EXECUTABLE:
@@ -682,7 +695,6 @@ size_t emitElf(const Binary *B, const MappingSet &mappings,
         }
         case MODE_SHARED_OBJECT:
         {
-            Elf64_Phdr *phdr = B->elf.phdr_dynamic;
             if (phdr == nullptr)
                 error("failed to replace DT_INIT entry; missing PT_DYNAMIC "
                     "program header");
@@ -710,14 +722,15 @@ size_t emitElf(const Binary *B, const MappingSet &mappings,
     // Step (5): Emit the loader:
     off_t loader_offset = (off_t)size;
     size_t loader_size  = emitLoader(refactors, mappings, data + size,
-        option_mem_loader, old_entry, B->elf.pic, B->inits, B->mmap, B->mode);
+        option_mem_loader, old_entry, dynamic, B->elf.pic, B->inits, B->mmap,
+        B->mode);
     size += loader_size;
 
     // Step (6): Modify the PHDR to load the loader.
     // NOTE: Currently we use the well-known and easy-to-implement PT_NOTE
     //       injection method to load the loader.  Some alternative methods
     //       may also work, but are not yet implemented.
-    Elf64_Phdr *phdr = B->elf.phdr_note;
+    phdr           = B->elf.phdr_note;
     phdr->p_type   = PT_LOAD;
     phdr->p_flags  = PF_X | PF_R;
     phdr->p_offset = loader_offset;
