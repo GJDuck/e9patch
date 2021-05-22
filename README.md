@@ -80,7 +80,7 @@ However, E9Patch is not 100% assumption-free, and does assume:
 * The binary can be *disassembled* and does not use *overlapping
   instructions*.
   The default E9Tool frontend uses the
-  [Capstone disassembler](http://www.capstone-engine.org/).
+  [Zydis disassembler](https://github.com/zyantific/zydis).
 * The binary does not read from, or write, to the patched executable
   segments.
   For example, *self-modifying code* is not supported.
@@ -115,16 +115,21 @@ Building E9Patch is very easy: simply run the `build.sh` script.
 This should automatically build two tools:
 
 1. `e9patch`: the binary rewriter backend; and
-2. `e9tool`: a basic frontend for `e9patch`.
+2. `e9tool`: a basic linear disassembly frontend for E9Patch.
+
+*Note*: E9Tool and E9Patch are considered to be different tools.
+Limitations of E9Tool do not necessarily extend to E9Patch itself.
+Other frontends for E9Patch (e.g., based on more advanced disassembly
+techniques) can be built, although this is currently future work.
 
 ## Examples
 
-The `e9patch` tool is usable via the `e9tool` front-end.
+E9Patch is usable via the E9Tool frontend.
 
 For example, to add instruction printing instrumentation to all `xor`
 instructions in `xterm`, we can use the following command:
 
-        $ ./e9tool --match 'asm=xor.*' --action print `which xterm`
+        $ ./e9tool -M 'asm=xor.*' -M print xterm
 
 This will write out a modified `xterm` into the file `a.out`.
 
@@ -148,42 +153,42 @@ For a full list of supported options and modes, see:
 Patch all jump instructions with "empty" (a.k.a. "passthru")
 instrumentation:
 
-        $ ./e9tool --match 'asm=j.*' --action passthru `which xterm`
+        $ ./e9tool -M 'asm=j.*' -A passthru xterm
         $ ./a.out
 
 Print all jump instructions with "print" instrumentation:
 
-        $ ./e9tool --match 'asm=j.*' --action print `which xterm`
+        $ ./e9tool -M 'asm=j.*' -A print xterm
         $ ./a.out
 
 Same as above, but use "Intel" syntax:
 
-        $ ./e9tool --match 'asm=j.*' --action print `which xterm` --syntax=intel
+        $ ./e9tool -M 'asm=j.*' -A print xterm --syntax=intel
         $ ./a.out
 
 Patch all jump instructions with a call to an empty function:
 
         $ ./e9compile.sh examples/nop.c
-        $ ./e9tool --match 'asm=j.*' --action 'call[naked] entry@nop' `which xterm`
+        $ ./e9tool -M 'asm=j.*' -A 'call[naked] entry@nop' xterm
         $ ./a.out
 
 Patch all jump instructions with instruction count instrumentation:
 
         $ ./e9compile.sh examples/counter.c
-        $ ./e9tool --match 'asm=j.*' --action 'call entry@counter' `which xterm`
+        $ ./e9tool -M 'asm=j.*' -A 'call entry@counter' xterm
         $ FREQ=10000 ./a.out
 
 Patch all jump instructions with pretty print instrumentation:
 
         $ ./e9compile.sh examples/print.c
-        $ ./e9tool --match 'asm=j.*' --action 'call entry(addr,instr,size,asm)@print' `which xterm`
+        $ ./e9tool -M 'asm=j.*' -A 'call entry(addr,instr,size,asm)@print' xterm
         $ ./a.out
 
 Patch all jump instructions with "delay" instrumentation to slow the
 program down:
 
         $ ./e9compile.sh examples/delay.c
-        $ ./e9tool --match 'asm=j.*' --action 'call entry@delay' `which xterm`
+        $ ./e9tool -M 'asm=j.*' -A 'call entry@delay' xterm
         $ DELAY=100000 ./a.out
 
 Patch all jump instructions in Google Chrome with empty instrumentation:
@@ -191,7 +196,7 @@ Patch all jump instructions in Google Chrome with empty instrumentation:
         $ mkdir -p chrome
         $ for FILE in /opt/google/chrome/*; do ln -sf $FILE chrome/; done
         $ rm chrome/chrome
-        $ ./e9tool --match 'asm=j.*' --action passthru /opt/google/chrome/chrome -c 4 --exclude=.text..ChromeMain -o chrome/chrome
+        $ ./e9tool -M 'asm=j.*' -A passthru /opt/google/chrome/chrome -c 4 --exclude=.text..ChromeMain -o chrome/chrome
         $ cd chrome
         $ ./chrome
 
@@ -202,7 +207,7 @@ instrumentation:
         $ mkdir -p chrome
         $ for FILE in /opt/google/chrome/*; do ln -sf $FILE chrome/; done
         $ rm chrome/chrome
-        $ ./e9tool --match 'asm=j.*' --action 'call entry@counter' /opt/google/chrome/chrome -c 4 --exclude=.text..ChromeMain -o chrome/chrome
+        $ ./e9tool -M 'asm=j.*' -A 'call entry@counter' /opt/google/chrome/chrome -c 4 --exclude=.text..ChromeMain -o chrome/chrome
         $ cd chrome
         $ FREQ=10000000 ./chrome
 
