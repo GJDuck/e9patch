@@ -1043,7 +1043,6 @@ static Type sendLoadArgumentMetadata(FILE *out, CallInfo &info,
             break;
         case ARGUMENT_STATIC_ADDR:
             sendLoadValueMetadata(out, (intptr_t)I->address, regno);
-            t = TYPE_CONST_VOID_PTR;
             break;
         case ARGUMENT_ASM:
             sendLeaFromPCRelToR64(out, "{\"rel32\":\".LasmStr\"}", regno);
