@@ -1235,8 +1235,7 @@ static Type sendLoadArgumentMetadata(FILE *out, CallInfo &info,
         case ARGUMENT_IMM: case ARGUMENT_REG: case ARGUMENT_MEM:
         {
             Access access = (arg.kind == ARGUMENT_SRC? ACCESS_READ:
-                            (arg.kind == ARGUMENT_DST? ACCESS_WRITE:
-                                ACCESS_READ | ACCESS_WRITE));
+                            (arg.kind == ARGUMENT_DST? ACCESS_WRITE: 0));
             OpType type = (arg.kind == ARGUMENT_IMM? OPTYPE_IMM:
                           (arg.kind == ARGUMENT_REG? OPTYPE_REG:
                           (arg.kind == ARGUMENT_MEM? OPTYPE_MEM:

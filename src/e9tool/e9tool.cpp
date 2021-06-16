@@ -1584,7 +1584,7 @@ static const OpInfo *getOperand(const InstrInfo *I, int idx, OpType type,
     {
         const OpInfo *op = I->op + i;
         if ((type == OPTYPE_INVALID? true: op->type == type) &&
-            (op->access & access) != 0)
+            (op->access & access) == access)
         {
             if (idx == 0)
                 return op;
