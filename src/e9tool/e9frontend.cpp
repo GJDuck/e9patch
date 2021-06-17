@@ -3358,7 +3358,7 @@ static bool hasSuffix(const std::string &str, const char *suffix)
 static const char *findBinary(const char *filename, bool exe = true,
     bool dot = false)
 {
-    if (filename[0] == '/')
+    if (filename[0] == '/' || filename[0] == '.')
         return filename;
     std::vector<std::string> path;
     getPath(exe, path);
