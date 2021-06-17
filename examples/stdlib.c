@@ -1606,7 +1606,7 @@ static char *strcpy(char *dst, const char *src)
 
 static const char *strerror(int errnum)
 {
-    switch (errno)
+    switch (errnum)
     {
         case E2BIG:
             return "Argument list too long";
