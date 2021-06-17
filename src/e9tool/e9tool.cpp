@@ -33,6 +33,7 @@
 
 #include <fcntl.h>
 #include <getopt.h>
+#include <libgen.h>
 #include <sys/mman.h>
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -2148,6 +2149,22 @@ struct ActionEntry
 };
 
 /*
+ * Get executable path.
+ */
+static void getExePath(std::string &path)
+{
+    char buf[PATH_MAX+1];
+    ssize_t len = readlink("/proc/self/exe", buf, sizeof(buf)-1);
+    if (len < 0 || (size_t)len > sizeof(buf)-1)
+        error("failed to read executable path: %s", strerror(errno));
+    buf[len] = '\0';
+    char *dir = dirname(buf);
+    path += dir;
+    if (path.size() > 0 && path[path.size()-1] != '/')
+        path += '/';
+}
+
+/*
  * Entry.
  */
 int main(int argc, char **argv)
@@ -2186,7 +2203,7 @@ int main(int argc, char **argv)
     ssize_t option_sync = -1;
     bool option_executable = false, option_shared = false,
         option_static_loader = false;
-    std::string option_backend("./e9patch");
+    std::string option_backend("");
     std::set<intptr_t> option_trap;
     std::vector<std::string> option_match;
     std::vector<ActionEntry> option_actions;
@@ -2432,7 +2449,16 @@ int main(int argc, char **argv)
         }
     }
     else
+    {
+        if (option_backend == "")
+        {
+            // By default, we use the "e9patch" that exists in the same dir
+            // as "e9tool".
+            getExePath(option_backend);
+            option_backend += "e9patch";
+        }
         spawnBackend(option_backend.c_str(), options, backend);
+    }
 
     /*
      * Send binary message.
