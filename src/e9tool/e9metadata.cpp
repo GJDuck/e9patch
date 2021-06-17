@@ -1286,7 +1286,7 @@ static Type sendLoadArgumentMetadata(FILE *out, CallInfo &info,
                             "operand contents into register %s; operand is "
                             "not accessed by the %s instruction",
                             CONTEXT(I), getRegName(getReg(regno)),
-                            I->mnemonic);
+                            I->string.mnemonic);
                         sendSExtFromI32ToR64(out, 0, regno);
                         t = TYPE_NULL_PTR;
                         dangerous = true;
