@@ -2037,7 +2037,7 @@ static void usage(FILE *stream, const char *progname)
         "\t--debug\n"
         "\t\tEnable debug output.\n"
         "\n"
-        "\t--exclude RANGE\n"
+        "\t--exclude RANGE, -E RANGE\n"
         "\t\tExclude the address RANGE from disassembly and rewriting.\n"
         "\t\tHere, RANGE has the format `LB .. UB', where LB/UB are\n"
         "\t\tinteger addresses, section names or symbols.  The address\n"
