@@ -209,6 +209,8 @@ void e9frontend::getInstrInfo(const ELF *elf, const Instr *I, InstrInfo *info,
             seg = REGISTER_CS;
         if (D->attributes & ZYDIS_ATTRIB_HAS_SEGMENT_SS)
             seg = REGISTER_SS;
+        if (D->attributes & ZYDIS_ATTRIB_HAS_SEGMENT_DS)
+            seg = REGISTER_DS;
         if (D->attributes & ZYDIS_ATTRIB_HAS_SEGMENT_ES)
             seg = REGISTER_ES;
         if (D->attributes & ZYDIS_ATTRIB_HAS_SEGMENT_FS)
