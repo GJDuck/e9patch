@@ -1095,11 +1095,11 @@ static Type sendLoadArgumentMetadata(FILE *out, CallInfo &info,
                         case CALL_AFTER:
                             sendLeaFromPCRelToR64(out,
                                 "{\"rel32\":\".Lcontinue\"}", regno);
+                            break;
                         default:
                             sendLeaFromPCRelToR64(out,
                                 "{\"rel32\":\".Linstruction\"}", regno);
                             break;
-                        break;
                     }
                     t = TYPE_CONST_VOID_PTR;
                     break;
