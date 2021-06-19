@@ -519,11 +519,22 @@ static bool sendLoadRegToArg(FILE *out, const InstrInfo *I, Register reg,
         int regno = getRegIdx(reg);
         if (regno < 0)
         {
-            warning(CONTEXT_FORMAT "failed to move register %s into "
-                "register %s; not possible or not yet implemented",
-                CONTEXT(I), getRegName(reg), getRegName(getReg(argno)));
-            sendSExtFromI32ToR64(out, 0, argno);
-            return false;
+            // We handle %rip specially:
+            if (reg != REGISTER_RIP)
+            {
+                warning(CONTEXT_FORMAT "failed to move register %s into "
+                    "register %s; not possible or not yet implemented",
+                    CONTEXT(I), getRegName(reg), getRegName(getReg(argno)));
+                sendSExtFromI32ToR64(out, 0, argno);
+                return false;
+            }
+            else if (info.before)
+                sendLeaFromPCRelToR64(out,
+                    "{\"rel32\":\".Linstruction\"}", argno);
+            else
+                sendLeaFromPCRelToR64(out,
+                    "{\"rel32\":\".Lcontinue\"}", argno);
+            return true;
         }
         sendLoadRegToArg(out, reg, info, argno);
     }
