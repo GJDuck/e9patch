@@ -1,0 +1,1 @@
+-M 'mnemonic=cmp.* && op[0].size == 8' -A 'call[replace] cmp_and_clr_z(op[0],op[1],&rflags,asm)@patch'

@@ -1,0 +1,2 @@
+movq 0x19a(%rip), %rcx	# ZERO ALL REGS
+Illegal instruction

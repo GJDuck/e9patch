@@ -1,0 +1,1 @@
+-M 'defined(src[0]) and defined(dst[0]) and src[0].access == r,rw and dst[0].access == w,rw' -A 'call entry(addr,src[0],dst[0],instr,size,asm)@inst'

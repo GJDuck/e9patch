@@ -1,0 +1,2 @@
+jnz 0xa002ae	# TAKE 0xa002ae
+Segmentation fault

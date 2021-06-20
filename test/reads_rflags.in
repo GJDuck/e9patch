@@ -1,0 +1,1 @@
+-M 'rflags in reads' -A 'call entry(rflags,target,next,instr,size,asm)@inst'

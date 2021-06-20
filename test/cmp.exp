@@ -1,0 +1,8 @@
+cmp %rax, %rbx
+cmp $0x33, %ebx
+cmp %r8, %rcx
+cmp $0x85, %rax
+cmp %rax, %rcx
+cmp %rcx, %rdx
+cmp %rcx, %rdx
+PASSED

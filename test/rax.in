@@ -1,0 +1,1 @@
+-M 'rax in regs' -A 'call entry(rax,eax,ax,instr,size,asm)@inst'

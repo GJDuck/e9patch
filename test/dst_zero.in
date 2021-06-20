@@ -1,0 +1,1 @@
+-M 'defined(dst[0]) && dst[0].size == 8' -A 'call[after] dst_zero(&dst[0],asm)@patch'

@@ -1,0 +1,3 @@
+-M 'mnemonic = cmp.* && op[0] == rax && op[1] == rbx' -A 'call swap(&rax,&rbx,asm)@patch'
+
+# This swap does not affect the program, since rax==rbx

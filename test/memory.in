@@ -1,0 +1,1 @@
+-M 'defined(mem[0])' -A 'call entry(mem[0].disp,mem[0].base,&mem[0],instr,size,asm)@inst'

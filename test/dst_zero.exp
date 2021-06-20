@@ -1,0 +1,3 @@
+movq 0x5e(%rip), %rax # DST 8877665544332211 --> 0x0
+mov $0x8877665544332211, %rbx # DST 8877665544332211 --> 0x0
+Illegal instruction

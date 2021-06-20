@@ -1,0 +1,4 @@
+jnz 0xa002ae	# NO_TAKE 0xa00106
+js 0xa00106	# NO_TAKE 0xa0010a
+jz 0xa00122	# NO_TAKE 0xa00120
+Illegal instruction

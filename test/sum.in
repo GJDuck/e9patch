@@ -1,0 +1,1 @@
+-M true -A 'call sum(rax,asm)@patch'

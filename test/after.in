@@ -1,0 +1,4 @@
+-M true -A 'call[after] entry(rip,rsp,rflags,instr,size,asm)@inst'
+
+# Compare against rip_rsp_rflags for reference
+

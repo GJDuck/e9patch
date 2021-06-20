@@ -1,0 +1,1 @@
+-M jump -A 'call[conditional.jump] never_take(addr,size,asm)@patch'

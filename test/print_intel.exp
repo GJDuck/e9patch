@@ -1,0 +1,94 @@
+jnz 0xa002ae
+push r15
+js 0xa00106
+mov rax, qword ptr [rip+0x5e]
+mov rbx, 0x8877665544332211
+cmp rbx, rax
+jz 0xa00122
+nop
+jns 0xa00128
+nop dword ptr [rax], eax
+jnl 0xa0012f
+jle 0xa00133
+cmp ebx, 0x33
+jnle 0xa0013a
+jle 0xa002ae
+mov r8, qword ptr [rip+0x28]
+mov rcx, qword ptr [rip+0x19a]
+cmp rcx, r8
+nop dword ptr [rax], eax
+jnz 0xa00159
+jnle 0xa0015d
+jrcxz 0xa00161
+jmp 0xa00163
+call 0xa00168
+jmp 0xa0016d
+jmp 0xa00177
+lea r10, [rip+0x14]
+push r10
+push r11
+mov rcx, 0xffffffffffff8889
+jmp qword ptr [rsp+rcx*1+0x777f]
+call 0xa001b5
+add rsp, 0x8
+lea rdx, [rip+0x2]
+call rdx
+pop r14
+add r9, 0x6
+add r10, r9
+sub r8, 0x8
+sub r10, r8
+imul r10
+imul r10, r11
+imul r10, r11, 0x77
+and rax, 0xfe
+and rbx, rax
+or rbx, 0x13
+or rbx, rcx
+not rcx
+neg rcx
+shl rdi, 0x7
+sar rdi, 0x3
+push r13
+mov rax, 0x4519
+pxor xmm0, xmm0
+cvtsi2ss xmm0, rax
+sqrtss xmm1, xmm0
+comiss xmm1, xmm0
+jz 0xa001fb
+cvttss2si rax, xmm1
+cmp rax, 0x85
+jnz 0xa001fb
+mov rax, qword ptr [rsp-0x100]
+test rax, rax
+jz 0xa00232
+xor esi, esi
+mov rax, qword ptr [rsp+rsi*8-0x100]
+test rax, rax
+jz 0xa00243
+mov rax, qword ptr cs:[rsp+rsi*8-0x100]
+mov rcx, qword ptr ds:[rsp+rsi*8-0x100]
+cmp rcx, rax
+jz 0xa0025c
+mov ecx, dword ptr [0xa00000]
+jecxz 0xa002ae
+inc esi
+mov rcx, qword ptr [rax+rsi*8+0xa00000]
+jrcxz 0xa002ae
+mov rdx, qword ptr [rsi*8+0xa00000]
+cmp rdx, rcx
+jnz 0xa002ae
+mov rdx, qword ptr [0xa00008]
+cmp rdx, rcx
+jnz 0xa002ae
+xor eax, eax
+inc eax
+mov edi, eax
+inc rdi
+lea rsi, [rip+0x54]
+mov rdx, 0x7
+syscall
+PASSED
+mov eax, 0x3c
+xor edi, edi
+syscall

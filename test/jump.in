@@ -1,0 +1,1 @@
+-M 'addr == &entry' -A 'call[conditional.jump] "jump"(&data_END,asm)@patch'

@@ -1,0 +1,1 @@
+-M 'call and imm[0] == 0xa00168' -A 'call entry(addr,imm[0],target,instr,size,asm)@inst'

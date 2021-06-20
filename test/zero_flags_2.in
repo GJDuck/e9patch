@@ -1,0 +1,1 @@
+-M true -A 'call[after] zero_flags(state,asm)@patch'

@@ -1,0 +1,1 @@
+-M false -A 'call entry(0x1,0x2,0x3,instr,size,asm)@inst'

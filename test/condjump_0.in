@@ -1,0 +1,1 @@
+-M true -A 'call[conditional.jump] ret_0(asm)@patch'

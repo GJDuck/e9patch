@@ -1,0 +1,1 @@
+-M 'mnemonic == (i.*|j.*|x.*)' -A 'call entry(rax,ah,al,instr,size,asm)@inst'
