@@ -1,0 +1,1 @@
+-M 'op[0].type == mem' -A 'call entry(op[0].base,op[0].index,op[0].scale,instr,size,asm)@inst'

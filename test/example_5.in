@@ -1,0 +1,1 @@
+-M 'op.size > 1' -A 'call entry(r10,r11,r12,instr,size,asm)@inst'

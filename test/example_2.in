@@ -1,0 +1,1 @@
+-M 'mnemonic == jmp' -A 'call entry(addr,target,next,instr,size,asm)@inst'

@@ -137,6 +137,8 @@ supported:
     <td>The size of the instruction in bytes</td></tr>
 <tr><td><b><tt>random</tt></b></td><td><tt>Integer</tt></td>
     <td>A random value [0..<tt>RAND_MAX</tt>]</td></tr>
+<tr><td><b><tt>target</tt></b></td><td><tt>Intger</tt></td>
+    <td>The jump/call target (if statically known).</td></tr>
 <tr><td><b><tt>op.size</tt></b></td><td><tt>Integer</tt></td>
     <td>The number of operands</td></tr>
 <tr><td><b><tt>src.size</tt></b></td><td><tt>Integer</tt></td>
@@ -284,8 +286,8 @@ an attribute is defined or not.
   match all instructions whose assembly representation matches
   the regular expression `jmp.*%r.*`
   (will match jump instructions that access a register).
-* (`mnemonic == jmpq`):
-  match all instructions whose mnemonic is `jmpq`.
+* (`mnemonic == jmp`):
+  match all instructions whose mnemonic is `jmp`.
 * (`addr == 0x4234a7`):
   match the instruction at the virtual address `0x4234a7`.
 * (`addr == 0x4234a7,0x44bd6e,0x4514b4`):
@@ -322,7 +324,7 @@ an attribute is defined or not.
   match all instructions that do not access the flags register.
 * `defined(mem[0])`:
   match all instructions that have at least one memory operand.
-* (`call and imm[0] == &malloc`):
+* (`call and target == &malloc`):
   match all direct calls to `malloc()`.
 
 ---

@@ -1,0 +1,1 @@
+-M 'not rflags in regs' -A 'call entry(addr,op[0],op[1],instr,size,asm)@inst'

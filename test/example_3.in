@@ -1,0 +1,1 @@
+-M 'addr == 0xa00100,0xa0012f,0xa0015d,0xa001b5,0xa0022b,0xb00011,0xc00022' -A 'call entry(r13,r14,r15,instr,size,asm)@inst'

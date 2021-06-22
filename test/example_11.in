@@ -1,0 +1,1 @@
+-M 'mem[0].base == rsp and mem[0].index == rsi' -A 'call entry(mem[0].disp,mem[0].base,mem[0].index,instr,size,asm)@inst'
