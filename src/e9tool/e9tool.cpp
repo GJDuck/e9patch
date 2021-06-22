@@ -49,7 +49,6 @@
  * Options.
  */
 static bool option_trap_all     = false;
-static bool option_detail       = false;
 static bool option_intel_syntax = false;
 static std::string option_format("binary");
 static std::string option_output("a.out");
@@ -102,6 +101,7 @@ enum MatchKind
     MATCH_RETURN,
     MATCH_SECTION,
     MATCH_SIZE,
+    MATCH_TARGET,
 
     MATCH_OP,
     MATCH_SRC,
@@ -610,6 +610,8 @@ static MatchTest *parseTest(Parser &parser)
             match = MATCH_SIZE; break;
         case TOKEN_SRC:
             match = MATCH_SRC; break;
+        case TOKEN_TARGET:
+            match = MATCH_TARGET; break;
         case TOKEN_TRUE:
             match = MATCH_TRUE; break;
         case TOKEN_REGISTER:
@@ -753,12 +755,6 @@ static MatchTest *parseTest(Parser &parser)
                 error("failed to parse matching; invalid match "
                     "comparison operator \"%s\" for attribute \"%s\"",
                     parser.s, parser.getName(attr));
-            break;
-        case MATCH_CALL: case MATCH_JUMP: case MATCH_RETURN: case MATCH_PLUGIN:
-        case MATCH_OP: case MATCH_SRC: case MATCH_DST:
-        case MATCH_IMM: case MATCH_REG: case MATCH_MEM:
-        case MATCH_READS: case MATCH_WRITES: case MATCH_REGS:
-            option_detail = true;
             break;
         default:
             break;
@@ -1117,7 +1113,6 @@ static Action *parseAction(const ELF &elf, const char *str,
         parser.expectToken('(');
         parser.expectToken(')');
         plugin = openPlugin(filename);
-        option_detail = true;
     }
     else if (kind == ACTION_CALL)
     {
@@ -1219,9 +1214,7 @@ static Action *parseAction(const ELF &elf, const char *str,
                         parseMemOp(parser, t, memop);
                         break;
                     case TOKEN_NEXT:
-                        option_detail = true;
-                        arg = ARGUMENT_NEXT;
-                        break;
+                        arg = ARGUMENT_NEXT; break;
                     case TOKEN_OFFSET:
                         arg = ARGUMENT_OFFSET; break;
                     case TOKEN_OP:
@@ -1239,9 +1232,7 @@ static Action *parseAction(const ELF &elf, const char *str,
                     case TOKEN_SRC:
                         arg = ARGUMENT_SRC; break;
                     case TOKEN_TARGET:
-                        option_detail = true;
-                        arg = ARGUMENT_TARGET;
-                        break;
+                        arg = ARGUMENT_TARGET; break;
                     case TOKEN_TRAMPOLINE:
                         arg = ARGUMENT_TRAMPOLINE; break;
                     case TOKEN_REGISTER:
@@ -1270,7 +1261,6 @@ static Action *parseAction(const ELF &elf, const char *str,
                 {
                     case ARGUMENT_OP: case ARGUMENT_SRC: case ARGUMENT_DST:
                     case ARGUMENT_IMM: case ARGUMENT_REG: case ARGUMENT_MEM:
-                        option_detail = true;
                         value = parseIndex(parser, 0, 7);
                         if (parser.peekToken() == '.')
                         {
@@ -1774,6 +1764,28 @@ static MatchValue makeMatchValue(MatchKind match, int idx, MatchField field,
             result.i = (I->mnemonic == MNEMONIC_RET); return result;
         case MATCH_SIZE:
             result.i = (intptr_t)I->size; return result;
+        case MATCH_TARGET:
+            switch (I->mnemonic)
+            {
+                case MNEMONIC_CALL:
+                case MNEMONIC_JMP:
+                case MNEMONIC_JO: case MNEMONIC_JNO: case MNEMONIC_JB:
+                case MNEMONIC_JAE: case MNEMONIC_JE: case MNEMONIC_JNE:
+                case MNEMONIC_JBE: case MNEMONIC_JA: case MNEMONIC_JS:
+                case MNEMONIC_JNS: case MNEMONIC_JP: case MNEMONIC_JNP:
+                case MNEMONIC_JL: case MNEMONIC_JGE: case MNEMONIC_JLE:
+                case MNEMONIC_JG: case MNEMONIC_JCXZ: case MNEMONIC_JECXZ:
+                case MNEMONIC_JRCXZ:
+                    if (I->count.op != 1 || I->op[0].type != OPTYPE_IMM)
+                        goto undefined;
+                    result.i = (intptr_t)I->op[0].imm + (intptr_t)I->address +
+                        (intptr_t)I->size;
+                    return result;
+                default:
+                    break;
+            }
+            goto undefined;
+
         default:
         undefined:
             result.type = MATCH_TYPE_UNDEFINED;
@@ -1854,7 +1866,7 @@ static bool matchEval(const MatchExpr *expr, const InstrInfo *I,
         case MATCH_OP: case MATCH_SRC: case MATCH_DST:
         case MATCH_IMM: case MATCH_REG: case MATCH_MEM:
         case MATCH_PLUGIN: case MATCH_RANDOM: case MATCH_RETURN:
-        case MATCH_SIZE:
+        case MATCH_SIZE: case MATCH_TARGET:
         {
             if (test->cmp != MATCH_CMP_EQ_ZERO &&
                 test->cmp != MATCH_CMP_NEQ_ZERO &&
