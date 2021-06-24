@@ -253,3 +253,96 @@ intptr_t ret_1(const char *_asm)
     return 1;
 }
 
+void imm_by_ptr(const int32_t *imm_ptr, const char *_asm)
+{
+    fprintf(stderr, "%s # IMM = 0x%.8X\n", _asm, (unsigned)*imm_ptr);
+}
+
+void rax_by_ptr(const uint64_t *rax_ptr, const char *_asm)
+{
+    fprintf(stderr, "%s # %%rax = 0x%.16lX\n", _asm, *rax_ptr);
+}
+
+asm
+(
+    ".globl naked\n"
+    ".type naked, @function\n"
+    "naked:\n"
+    "pushfq\n"
+    "push %rax\n"
+    "push %rsi\n"
+    "push %rdx\n"
+    "push %rcx\n"
+    "push %r11\n"
+    "mov %rdi,%rdx\n"
+    ".Lloop:\n"
+    "cmpb $0x0,(%rdx)\n"
+    "je .Lexit\n"
+    "inc %rdx\n"
+    "jmp .Lloop\n"
+    ".Lexit:\n"
+    "sub %rdi,%rdx\n"
+    "mov %rdi,%rsi\n"
+    "mov $1,%eax\n"     // SYS_write
+    "mov $2,%edi\n"     // stderr
+    "syscall\n"
+    "lea .Lnewline(%rip),%rsi\n"
+    "mov $1,%eax\n"     // SYS_write
+    "mov $2,%edi\n"     // stderr
+    "mov $1,%edx\n"
+    "syscall\n"
+    "pop %r11\n"
+    "pop %rcx\n"
+    "pop %rdx\n"
+    "pop %rsi\n"
+    "pop %rax\n"
+    "popfq\n"
+    "retq\n"
+    ".Lnewline:\n"
+    ".byte 0x0a\n"      // newline
+
+    ".globl ret_0x0\n"
+    ".type ret_0x0, @function\n"
+    "ret_0x0:\n"
+    "mov $0x0, %eax\n"
+    "retq\n"
+
+    ".global nop\n"
+    ".type nop, @function\n"
+    "nop:\n"
+    "retq\n"
+
+    ".global naked_bug\n"
+    ".type naked_bug, @function\n"
+    "naked_bug:\n"
+    "pushfq\n"
+    "cmp $0x44332211,%edi\n"
+    "jne .Lexit2\n"
+    "push %rax\n"
+    "push %rsi\n"
+    "push %rdx\n"
+    "push %rcx\n"
+    "push %r11\n"
+    "mov $1,%eax\n"     // SYS_write
+    "mov $2,%edi\n"     // stderr
+    "lea .Lstring(%rip),%rsi\n"
+    "mov $5,%edx\n"
+    "syscall\n"
+    "pop %r11\n"
+    "pop %rcx\n"
+    "pop %rdx\n"
+    "pop %rsi\n"
+    "pop %rax\n"
+    "jmp .Lexit2\n"
+    ".Lstring:\n"
+    ".ascii \"PASS\\n\"\n"
+    "int3\n"
+    "int3\n"
+    "int3\n"
+    "int3\n"
+    "int3\n"
+    ".Lexit2:\n"
+    "popfq\n"
+    "retq\n"
+);
+

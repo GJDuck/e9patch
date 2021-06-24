@@ -492,7 +492,9 @@ The following arguments are supported:
 <tr><td><i>Integer</i></td><td><tt>intptr_t</tt></td>
     <td>An integer constant</td></tr>
 <tr><td><tt>&amp;</tt><i>Name</i></td><td><tt>const void &#42;</tt></td>
-    <td>A section/symbol/PLT/GOT name from the input ELF binary (passed-by-pointer)</td></tr>
+    <td>The runtime address of the named section/symbol/PLT/GOT entry</td></tr>
+<tr><td><tt>static &amp;</tt><i>Name</i></td><td><tt>const void &#42;</tt></td>
+    <td>The ELF address of the named section/symbol/PLT/GOT entry</td></tr>
 <tr><td><b><tt>asm</tt></b></td><td><tt>const char &#42;</tt></td>
     <td>Assembly representation of the matching instruction</td></tr>
 <tr><td><b><tt>asm.size</tt></b></td><td><tt>size_t</tt></td>
@@ -503,16 +505,22 @@ The following arguments are supported:
     <td>The runtime base address of the binary</td></tr>
 <tr><td><b><tt>addr</tt></b></td><td><tt>const void &#42;</tt></td>
     <td>The runtime address of the matching instruction</td></tr>
+<tr><td><b><tt>static addr</tt></b></td><td><tt>size_t</tt></td>
+    <td>The ELF address of the matching instruction</td></tr>
 <tr><td><b><tt>id</tt></b></td><td><tt>intptr_t</tt></td>
     <td>A unique identifier (one per patch)</td></tr>
 <tr><td><b><tt>instr</tt></b></td><td><tt>const uint8_t &#42;</tt></td>
     <td>The machine-code bytes of the matching instruction</td></tr>
 <tr><td><b><tt>next</tt></b></td><td><tt>const void &#42;</tt></td>
     <td>The runtime address of the next executed instruction</td></tr>
+<tr><td><b><tt>static next</tt></b></td><td><tt>const void &#42;</tt></td>
+    <td>The ELF address of the next executed instruction</td></tr>
 <tr><td><b><tt>offset</tt></b></td><td><tt>off_t</tt></td>
     <td>The ELF file offset of the matching instruction</td></tr>
 <tr><td><b><tt>target</tt></b></td><td><tt>const void &#42;</tt></td>
     <td>The runtime address of the jump/call/return target, else <tt>NULL</tt></td></tr>
+<tr><td><b><tt>static target</tt></b></td><td><tt>const void &#42;</tt></td>
+    <td>The ELF address of the jump/call/return target, else <tt>NULL</tt></td></tr>
 <tr><td><b><tt>trampoline</tt></b></td><td><tt>const void &#42;</tt></td>
     <td>The runtime address of the trampoline</td></tr>
 <tr><td><b><tt>random</tt></b></td><td><tt>intptr_t</tt></td>
@@ -521,8 +529,6 @@ The following arguments are supported:
     <td>The size of <tt>instr</tt> in bytes</td></tr>
 <tr><td><b><tt>state</tt></b></td><td><tt>void &#42;</tt></td>
     <td>A pointer to a structure containing all general purpose registers</td></tr>
-<tr><td><b><tt>staticAddr</tt></b></td><td><tt>size_t</tt></td>
-    <td>The ELF virtual address of the matching instruction</td></tr>
 <tr><td><b><tt>ah</tt></b>,...,<b><tt>dh</tt></b>, <b><tt>al</tt></b>,...,<b><tt>r15b</tt></b></td><td><tt>int8_t</tt></td>
     <td>The corresponding 8bit register</td></tr>
 <tr><td><b><tt>ax</tt></b>,...,<b><tt>r15w</tt></b></td><td><tt>int16_t</tt></td>
@@ -728,6 +734,9 @@ Notes:
   register will be updated accordingly.
   The structure does not include the stack register (`%rsp`) which must be
   passed separately.
+* The `static` version of some arguments gives the address relative to the ELF
+  base, given by the formula: *runtime address = ELF address + ELF base*.
+  This corresponds to the value used by the matching.
 
 ---
 ##### <a id="s2211">2.2.1.1 Pass-by-pointer</a>

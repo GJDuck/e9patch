@@ -1,1 +1,1 @@
--M 'mem[0].disp > 0x1000' -A 'call entry(mem[0].disp,rbp,bp,instr,size,asm)@inst'
+./test -M 'mem[0].disp > 0x1000' -A 'call entry(mem[0].disp,rbp,bp,instr,size,asm)@inst'

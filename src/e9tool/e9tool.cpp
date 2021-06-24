@@ -1164,11 +1164,19 @@ static Action *parseAction(const ELF &elf, const char *str,
             while (true)
             {
                 t = parser.getToken();
-                bool ptr = false, neg = false;
-                if (t == '&')
+                bool ptr = false, neg = false, _static = false;
+                switch (t)
                 {
-                    ptr = true;
-                    t = parser.getToken();
+                    case TOKEN_STATIC:
+                        _static = true;
+                        t = parser.getToken();
+                        if (t != '&')
+                            break;
+                        // Fallthrough
+                    case '&':
+                        ptr = true;
+                        t = parser.getToken();
+                        break;
                 }
                 ArgumentKind arg = ARGUMENT_INVALID;
                 FieldKind field  = FIELD_NONE;
@@ -1228,7 +1236,8 @@ static Action *parseAction(const ELF &elf, const char *str,
                     case TOKEN_STATE:
                         arg = ARGUMENT_STATE; break;
                     case TOKEN_STATIC_ADDR:
-                        arg = ARGUMENT_STATIC_ADDR; break;
+                        error("the `staticAddr' argument is deprecated; "
+                            "please use `static addr' instead");
                     case TOKEN_SRC:
                         arg = ARGUMENT_SRC; break;
                     case TOKEN_TARGET:
@@ -1321,6 +1330,19 @@ static Action *parseAction(const ELF &elf, const char *str,
                                 "pass argument `%s' by pointer",
                                 parser.getName(arg_token));
                 }
+                if (_static)
+                {
+                    switch (arg)
+                    {
+                        case ARGUMENT_ADDR: case ARGUMENT_NEXT:
+                        case ARGUMENT_SYMBOL: case ARGUMENT_TARGET:
+                            break;
+                        default:
+                            error("failed to parse call action; cannot "
+                                "use `static' with `%s' argument",
+                                parser.getName(arg_token));
+                    }
+                }
                 bool duplicate = false;
                 for (const auto &prevArg: args)
                 {
@@ -1330,8 +1352,8 @@ static Action *parseAction(const ELF &elf, const char *str,
                         break;
                     }
                 }
-                args.push_back({arg, field, ptr, duplicate, value, memop,
-                    name});
+                args.push_back({arg, field, ptr, _static, duplicate, value,
+                    memop, name});
                 t = parser.getToken();
                 if (t == ')')
                     break;

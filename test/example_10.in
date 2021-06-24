@@ -1,1 +1,1 @@
--M 'reg[0] == rax and reg[1] == rbx' -A 'call entry(staticAddr,rax,rbx,instr,size,asm)@inst'
+./test -M 'reg[0] == rax and reg[1] == rbx' -A 'call entry(static addr,rax,rbx,instr,size,asm)@inst'

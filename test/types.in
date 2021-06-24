@@ -1,1 +1,1 @@
--M 'op[0].type == imm && op[1].type == reg' -A 'call entry(id,addr,staticAddr,instr,size,asm)@inst'
+./test -M 'op[0].type == imm && op[1].type == reg' -A 'call entry(id,addr,static addr,instr,size,asm)@inst'

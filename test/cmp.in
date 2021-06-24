@@ -1,1 +1,1 @@
--M 'mnemonic=cmp.*' -A 'call[replace] cmp(op[0],op[1],&rflags,asm)@patch'
+./test -M 'mnemonic=cmp.*' -A 'call[replace] cmp(op[0],op[1],&rflags,asm)@patch'

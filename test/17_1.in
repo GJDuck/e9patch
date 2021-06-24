@@ -1,1 +1,1 @@
--M 'jump and imm[0] == &data_END' -A 'call entry(addr,imm[0],target,instr,size,asm)@inst'
+./test -M 'jump and imm[0] == &data_END' -A 'call entry(addr,imm[0],target,instr,size,asm)@inst'

@@ -185,6 +185,19 @@ data_END:
     je .Lpass_z
     ud2
 .Lpass_z:
+
+.if PIE
+    lea _start(%rip),%rax
+    lea -0xa00000(%rax),%rax
+    mov 0xa00000(%rax),%rcx
+    jecxz .Lunreachable
+    inc %esi
+    mov 0xa00000(%rax,%rsi,8),%rcx
+    jrcxz .Lunreachable
+    mov 0xa00008(%rax),%rdx
+    cmp %rcx,%rdx
+    jne .Lunreachable
+.else
     mov 0xa00000,%ecx
     jecxz .Lunreachable
     inc %esi
@@ -196,6 +209,7 @@ data_END:
     mov 0xa00008,%rdx
     cmp %rcx,%rdx
     jne .Lunreachable
+.endif
 
 .Lprint:
     xor %eax,%eax   # SYS_write

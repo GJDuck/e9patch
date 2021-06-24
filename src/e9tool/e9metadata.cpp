@@ -123,6 +123,27 @@ static void sendLoadValueMetadata(FILE *out, intptr_t value, int argno)
 }
 
 /*
+ * Emits an instructio to load a pointer into the corresponding argno
+ * register.
+ */
+static void sendLoadPointerMetadata(FILE *out, CallInfo &info,
+    bool _static, intptr_t static_ptr, const char *dynamic_ptr, int argno)
+{
+    if (_static || !info.pic)
+        sendLoadValueMetadata(out, static_ptr, argno);
+    else
+        sendLeaFromPCRelToR64(out, dynamic_ptr, argno);
+}
+static void sendLoadPointerMetadata(FILE *out, CallInfo &info, bool _static,
+    intptr_t ptr, int argno)
+{
+    if (_static || !info.pic)
+        sendLoadValueMetadata(out, ptr, argno);
+    else
+        sendLeaFromPCRelToR64(out, ptr, argno);
+}
+
+/*
  * Temporarily move a register.
  * Returns scratch storage indicating where the current value is moved to:
  * (<0)=stack, (<RMAX)=register, else no need to save register.
@@ -229,7 +250,8 @@ static bool sendSaveRegToStack(FILE *out, CallInfo &info, Register reg)
  */
 static bool sendLoadFromMemOpToR64(FILE *out, const InstrInfo *I,
     CallInfo &info, uint8_t size, Register seg_reg, int32_t disp,
-    Register base_reg, Register index_reg, uint8_t scale, bool lea, int regno)
+    Register base_reg, Register index_reg, uint8_t scale, bool lea, int regno,
+    bool asis = false)
 {
     if (lea && (seg_reg == REGISTER_FS || seg_reg == REGISTER_GS))
     {
@@ -385,19 +407,21 @@ static bool sendLoadFromMemOpToR64(FILE *out, const InstrInfo *I,
 
     uint8_t modrm = (mod << 6) | (reg << 3) | rm;
 
-    Register exclude[4] = {getReg(regno)};
-    int j = 1;
-    if (base_reg != REGISTER_NONE)
-        exclude[j++] = getCanonicalReg(base_reg);
-    exclude[j++] = getCanonicalReg(index_reg);
-    exclude[j++] = REGISTER_INVALID;
-    int slot = 0;
-    int scratch_1 = sendTemporaryRestoreReg(out, info, base_reg, exclude,
-        &slot);
-    int scratch_2 = INT32_MAX;
-    if (index_reg != base_reg)
-        scratch_2 = sendTemporaryRestoreReg(out, info, index_reg, exclude,
+    int slot = 0, scratch_1 = INT32_MAX, scratch_2 = INT32_MAX;
+    if (!asis)
+    {
+        Register exclude[4] = {getReg(regno)};
+        int j = 1;
+        if (base_reg != REGISTER_NONE)
+            exclude[j++] = getCanonicalReg(base_reg);
+        exclude[j++] = getCanonicalReg(index_reg);
+        exclude[j++] = REGISTER_INVALID;
+        scratch_1 = sendTemporaryRestoreReg(out, info, base_reg, exclude,
             &slot);
+        if (index_reg != base_reg)
+            scratch_2 = sendTemporaryRestoreReg(out, info, index_reg, exclude,
+                &slot);
+    }
 
     if (seg_prefix != 0)
         fprintf(out, "%u,", seg_prefix);
@@ -439,9 +463,11 @@ static bool sendLoadFromMemOpToR64(FILE *out, const InstrInfo *I,
             break;
     }
 
-    sendUndoTemporaryMovReg(out, base_reg, scratch_1);
-    sendUndoTemporaryMovReg(out, index_reg, scratch_2);
-
+    if (!asis)
+    {
+        sendUndoTemporaryMovReg(out, base_reg, scratch_1);
+        sendUndoTemporaryMovReg(out, index_reg, scratch_2);
+    }
     return true;
 }
 
@@ -719,18 +745,63 @@ static void sendOperandDataMetadata(FILE *out, const InstrInfo *I,
 }
 
 /*
+ * Emits instructions to translate an address into a static address, if
+ * necessary.  This essentially just subtracts the ELF base address.
+ */
+static void sendTranslateToStaticAddress(FILE *out, const InstrInfo *I,
+    CallInfo &info, bool _static, int argno)
+{
+    if (!_static || !info.pic)
+        return;
+    Register exclude[] = {getReg(argno), REGISTER_INVALID};
+    Register rscratch = info.getScratch(exclude);
+    bool save_rax = false;
+    if (rscratch == REGISTER_INVALID)
+    {
+        rscratch = REGISTER_RAX;
+        save_rax = true;
+        fprintf(out, "%u,", 0x50);      // push %rax
+    }
+    int regno = getRegIdx(rscratch);
+
+    sendLeaFromPCRelToR64(out, "{\"rel32\":0}", regno);
+
+    // The not+lea implement %arg -= %base without affecting %rflags:
+
+    // not %reg
+    const uint8_t REX[] =
+        {0x48, 0x48, 0x48, 0x48, 0x49, 0x49, 0x00,
+         0x48, 0x49, 0x49, 0x48, 0x48, 0x49, 0x49, 0x49, 0x49, 0x48};
+    const uint8_t MODRM[] =
+        {0xd7, 0xd6, 0xd2, 0xd1, 0xd0, 0xd1, 0x00,
+         0xd0, 0xd2, 0xd3, 0xd3, 0xd5, 0xd4, 0xd5, 0xd6, 0xd7, 0xd4};
+    fprintf(out, "%u,%u,%u,", REX[regno], 0xf7, MODRM[regno]);
+
+    // lea 0x1(%arg,%reg,1),%arg
+    sendLoadFromMemOpToR64(out, I, info, /*size=*/8, /*seg=*/REGISTER_NONE,
+        /*disp=*/0x1, /*base=*/getReg(argno), /*index=*/rscratch,
+        /*scale=*/1, /*lea=*/true, argno, /*asis=*/true);
+
+    if (save_rax)
+        fprintf(out, "%u,", 0x58);      // pop %rax
+    else
+        info.clobber(rscratch);
+}
+
+/*
  * Emits instructions to load the jump/call/return target into the
  * corresponding argno register.  Else, if I is not a jump/call/return
  * instruction, load 0.
  */
 static void sendLoadTargetMetadata(FILE *out, const InstrInfo *I,
-    CallInfo &info, int argno)
+    CallInfo &info, bool _static, int argno)
 {
     const OpInfo *op = &I->op[0];
     switch (I->mnemonic)
     {
         case MNEMONIC_RET:
             sendMovFromStackToR64(out, info.rsp_offset, argno);
+            sendTranslateToStaticAddress(out, I, info, _static, argno);
             return;
         case MNEMONIC_CALL:
         case MNEMONIC_JMP:
@@ -762,6 +833,7 @@ static void sendLoadTargetMetadata(FILE *out, const InstrInfo *I,
                 assert(regno >= 0);
                 sendMovFromR64ToR64(out, regno, argno);
             }
+            sendTranslateToStaticAddress(out, I, info, _static, argno);
             return;
         case OPTYPE_MEM:
             // This is an indirect jump/call.  Convert the instruction into a
@@ -769,16 +841,16 @@ static void sendLoadTargetMetadata(FILE *out, const InstrInfo *I,
             (void)sendLoadFromMemOpToR64(out, I, info, op->size,
                 op->mem.seg, op->mem.disp, op->mem.base, op->mem.index,
                 op->mem.scale, /*lea=*/false, argno);
+            sendTranslateToStaticAddress(out, I, info, _static, argno);
             return;
         
         case OPTYPE_IMM:
         {
-            // This is a direct jump/call.  Emit an LEA that loads the target
-            // into the correct register.
+            // This is a direct jump/call.  Load the target into the correct
+            // register.
 
-            // lea rel(%rip),%rarg
             intptr_t target = I->address + I->size + op->imm;
-            sendLeaFromPCRelToR64(out, target, argno);
+            sendLoadPointerMetadata(out, info, _static, target, argno);
             return;
         }
         default:
@@ -791,7 +863,7 @@ static void sendLoadTargetMetadata(FILE *out, const InstrInfo *I,
  * executed by the CPU.
  */
 static void sendLoadNextMetadata(FILE *out, const InstrInfo *I, CallInfo &info,
-    int argno)
+    bool _static, int argno)
 {
     const char *regname = getRegName(getReg(argno))+1;
     uint8_t opcode = 0x06;
@@ -800,7 +872,7 @@ static void sendLoadNextMetadata(FILE *out, const InstrInfo *I, CallInfo &info,
         case MNEMONIC_RET:
         case MNEMONIC_CALL:
         case MNEMONIC_JMP:
-            sendLoadTargetMetadata(out, I, info, argno);
+            sendLoadTargetMetadata(out, I, info, _static, argno);
             return;
         case MNEMONIC_JO:
             opcode = 0x70;
@@ -861,18 +933,18 @@ static void sendLoadNextMetadata(FILE *out, const InstrInfo *I, CallInfo &info,
             if (I->mnemonic == MNEMONIC_JECXZ)
                 fprintf(out, "%u,", 0x67);
             fprintf(out, "%u,{\"rel8\":\".Ltaken%s\"},", 0xe3, regname);
-            sendLeaFromPCRelToR64(out, "{\"rel32\":\".Lcontinue\"}", argno);
+            sendLoadPointerMetadata(out, info, _static, I->address + I->size,
+                "{\"rel32\":\".Lcontinue\"}", argno);
             fprintf(out, "%u,{\"rel8\":\".Lnext%s\"},", 0xeb, regname);
             fprintf(out, "\".Ltaken%s\",", regname);
-            sendLoadTargetMetadata(out, I, info, argno);
+            sendLoadTargetMetadata(out, I, info, _static, argno);
             fprintf(out, "\".Lnext%s\",", regname);
             sendUndoTemporaryMovReg(out, REGISTER_RCX, scratch);
             return;
         }
         default:
-
-            // leaq .Lcontinue(%rip),%rarg:
-            sendLeaFromPCRelToR64(out, "{\"rel32\":\".Lcontinue\"}", argno);
+            sendLoadPointerMetadata(out, info, _static, I->address + I->size,
+                "{\"rel32\":\".Lcontinue\"}", argno);
             return;
     }
 
@@ -881,14 +953,15 @@ static void sendLoadNextMetadata(FILE *out, const InstrInfo *I, CallInfo &info,
 
     // .LnotTaken:
     // leaq .Lcontinue(%rip),%rarg
-    // jmp .Lnext; 
-    sendLeaFromPCRelToR64(out, "{\"rel32\":\".Lcontinue\"}", argno);
+    // jmp .Lnext;
+    sendLoadPointerMetadata(out, info, _static, I->address + I->size,
+        "{\"rel32\":\".Lcontinue\"}", argno);
     fprintf(out, "%u,{\"rel8\":\".Lnext%s\"},", 0xeb, regname);
 
     // .Ltaken:
     // ... load target into %rarg
     fprintf(out, "\".Ltaken%s\",", regname);
-    sendLoadTargetMetadata(out, I, info, argno);
+    sendLoadTargetMetadata(out, I, info, _static, argno);
     
     // .Lnext:
     fprintf(out, "\".Lnext%s\",", regname);
@@ -1011,6 +1084,7 @@ static Type sendLoadArgumentMetadata(FILE *out, CallInfo &info,
             "maximum number of arguments (%d)", argno);
     sendSaveRegToStack(out, info, getReg(regno));
 
+    bool _static = arg._static;
     Type t = TYPE_INT64;
     switch (arg.kind)
     {
@@ -1027,7 +1101,8 @@ static Type sendLoadArgumentMetadata(FILE *out, CallInfo &info,
             sendLoadValueMetadata(out, I->offset, regno);
             break;
         case ARGUMENT_ADDR:
-            sendLeaFromPCRelToR64(out, "{\"rel32\":\".Linstruction\"}", regno);
+            sendLoadPointerMetadata(out, info, _static, I->address,
+                "{\"rel32\":\".Linstruction\"}", regno);
             t = TYPE_CONST_VOID_PTR;
             break;
         case ARGUMENT_ID:
@@ -1039,21 +1114,20 @@ static Type sendLoadArgumentMetadata(FILE *out, CallInfo &info,
                 case CALL_AFTER:
                     // If we reach here after the instruction, it means the
                     // branch was NOT taken, so (next=.Lcontinue).
-                    sendLeaFromPCRelToR64(out, "{\"rel32\":\".Lcontinue\"}",
+                    sendLoadPointerMetadata(out, info, _static,
+                        I->address + I->size, "{\"rel32\":\".Lcontinue\"}",
                         regno);
                     break;
                 default:
-                    sendLoadNextMetadata(out, I, info, regno);
+                    sendLoadNextMetadata(out, I, info, _static, regno);
                     break;
             }
             t = TYPE_CONST_VOID_PTR;
             break;
         case ARGUMENT_BASE:
-            sendLeaFromPCRelToR64(out, "{\"rel32\":0}", regno);
+            sendLoadPointerMetadata(out, info, _static, 0x0, "{\"rel32\":0}",
+                regno);
             t = TYPE_CONST_VOID_PTR;
-            break;
-        case ARGUMENT_STATIC_ADDR:
-            sendLoadValueMetadata(out, (intptr_t)I->address, regno);
             break;
         case ARGUMENT_ASM:
             sendLeaFromPCRelToR64(out, "{\"rel32\":\".LasmStr\"}", regno);
@@ -1074,7 +1148,7 @@ static Type sendLoadArgumentMetadata(FILE *out, CallInfo &info,
             sendLoadValueMetadata(out, I->size, regno);
             break;
         case ARGUMENT_TARGET:
-            sendLoadTargetMetadata(out, I, info, regno);
+            sendLoadTargetMetadata(out, I, info, _static, regno);
             t = TYPE_CONST_VOID_PTR;
             break;
         case ARGUMENT_TRAMPOLINE:
@@ -1207,12 +1281,14 @@ static Type sendLoadArgumentMetadata(FILE *out, CallInfo &info,
                 {
                     // Dynamically load the pointer from the GOT
                     sendMovFromPCRelToR64(out, val, regno);
+                    sendTranslateToStaticAddress(out, I, info, _static,
+                        regno);
                     break;
                 }
             }
             if (val >= INT32_MIN && val <= INT32_MAX)
             {
-                sendLeaFromPCRelToR64(out, val, regno);
+                sendLoadPointerMetadata(out, info, _static, val, regno);
                 break;
             }
             warning(CONTEXT_FORMAT "failed to load ELF object into "
@@ -1347,8 +1423,7 @@ static void sendArgumentDataMetadata(FILE *out, const Argument &arg,
             if (!arg.ptr)
                 return;
             Access access = (arg.kind == ARGUMENT_SRC? ACCESS_READ:
-                            (arg.kind == ARGUMENT_DST? ACCESS_WRITE:
-                                ACCESS_READ | ACCESS_WRITE));
+                            (arg.kind == ARGUMENT_DST? ACCESS_WRITE: 0));
             OpType type = (arg.kind == ARGUMENT_IMM? OPTYPE_IMM:
                           (arg.kind == ARGUMENT_REG? OPTYPE_REG:
                           (arg.kind == ARGUMENT_MEM? OPTYPE_MEM:
@@ -1422,8 +1497,9 @@ static Metadata *buildMetadata(const ELF *elf, const Action *action,
             bool before = (action->call != CALL_AFTER);
             bool conditional = (action->call == CALL_CONDITIONAL ||
                                 action->call == CALL_CONDITIONAL_JUMP);
+            bool pic = (getELFType(elf) != ELFTYPE_EXEC);
             CallInfo info(action->clean, state, conditional,
-                action->args.size(), before);
+                action->args.size(), before, pic);
             TypeSig sig = TYPESIG_EMPTY;
             for (const auto &arg: action->args)
             {

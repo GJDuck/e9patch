@@ -1,1 +1,1 @@
--M 'addr >= 0xa00100 && addr <= 0xa0012f' -A 'call entry(addr,rip,size,instr,size,asm)@inst'
+./test -M 'addr >= 0xa00100 && addr <= 0xa0012f' -A 'call entry(addr,rip,size,instr,size,asm)@inst'

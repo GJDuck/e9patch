@@ -1,0 +1,1 @@
+./test.pie -M 'defined(imm[0]) && imm[0].size == 4' -A 'call imm_by_ptr(&imm[0],asm)@patch'

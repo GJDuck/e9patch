@@ -16,6 +16,7 @@
  */
 
 #include <string>
+#include <vector>
 
 #include <cctype>
 #include <cstdio>
@@ -69,7 +70,7 @@ static bool runTest(const struct dirent *test)
     for (int i = 0; (c = getc(IN)) != '\n' && isprint(c) && i < 1024; i++)
         command += c;
     fclose(IN);
-    command += " -E data..data_END -E data2...text -E .text..entry ./test -o ";
+    command += " -E data..data_END -E data2...text -E .text..entry -o ";
     command += exe;
     command += " >";
     command += log;
@@ -170,13 +171,17 @@ int main(void)
     if (n < 0)
         error("failed to scan current directory: %s", strerror(errno));
     size_t passed = 0, failed = 0, total = 0;
+    std::vector<std::string> fails;
     for (int i = 0; i < n; i++)
     {
         total++;
         if (runTest(tests[i]))
             passed++;
         else
+        {
+            fails.push_back(tests[i]->d_name);
             failed++;
+        }
     }
 
     const char *highlight = "", *off = "";
@@ -193,6 +198,18 @@ int main(void)
     printf("PASSED = %s%.2f%%%s (%zu/%zu); FAILED = %s%.2f%%%s (%zu/%zu)\n\n",
         highlight, (double)passed / (double)total * 100.0, off, passed, total,
         highlight, (double)failed / (double)total * 100.0, off, failed, total);
+    if (fails.size() > 0)
+    {
+        printf("FAILED = {");
+        bool prev = false;
+        for (const auto &fail: fails)
+        {
+            if (prev)
+                putchar(',');
+            printf("%s", fail.c_str());
+        }
+        printf("}\n\n");
+    }
 
     return 0;
 }

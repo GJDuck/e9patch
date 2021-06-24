@@ -1,0 +1,94 @@
+jnz 0xa002ae
+push %r15
+js 0xa00106
+movq 0x5e(%rip), %rax
+mov $0x8877665544332211, %rbx
+cmp %rax, %rbx
+jz 0xa00122
+nop
+jns 0xa00128
+nopl %eax, (%rax)
+jnl 0xa0012f
+jle 0xa00133
+cmp $0x33, %ebx
+jnle 0xa0013a
+jle 0xa002ae
+movq 0x28(%rip), %r8
+movq 0x19a(%rip), %rcx
+cmp %r8, %rcx
+nopl %eax, (%rax)
+jnz 0xa00159
+jnle 0xa0015d
+jrcxz 0xa00161
+jmp 0xa00163
+call 0xa00168
+jmp 0xa0016d
+jmp 0xa00177
+lea 0x14(%rip), %r10
+push %r10
+push %r11
+mov $-0x7777, %rcx
+jmpq *0x777f(%rsp,%rcx,1)
+call 0xa001b5
+add $0x8, %rsp
+lea 0x2(%rip), %rdx
+call *%rdx
+pop %r14
+add $0x6, %r9
+add %r9, %r10
+sub $0x8, %r8
+sub %r8, %r10
+imul %r10
+imul %r11, %r10
+imul $0x77, %r11, %r10
+and $0xfe, %rax
+and %rax, %rbx
+or $0x13, %rbx
+or %rcx, %rbx
+not %rcx
+neg %rcx
+shl $0x7, %rdi
+sar $0x3, %rdi
+push %r13
+mov $0x4519, %rax
+pxor %xmm0, %xmm0
+cvtsi2ss %rax, %xmm0
+sqrtss %xmm0, %xmm1
+comiss %xmm0, %xmm1
+jz 0xa001fb
+cvttss2si %xmm1, %rax
+cmp $0x85, %rax
+jnz 0xa001fb
+movq -0x100(%rsp), %rax
+test %rax, %rax
+jz 0xa00232
+xor %esi, %esi
+movq -0x100(%rsp,%rsi,8), %rax
+test %rax, %rax
+jz 0xa00243
+movq %cs:-0x100(%rsp,%rsi,8), %rax
+movq %ds:-0x100(%rsp,%rsi,8), %rcx
+cmp %rax, %rcx
+jz 0xa0025c
+movl 0xa00000, %ecx
+jecxz 0xa002ae
+inc %esi
+movq 0xa00000(%rax,%rsi,8), %rcx
+jrcxz 0xa002ae
+movq 0xa00000(,%rsi,8), %rdx
+cmp %rcx, %rdx
+jnz 0xa002ae
+movq 0xa00008, %rdx
+cmp %rcx, %rdx
+jnz 0xa002ae
+xor %eax, %eax
+inc %eax
+mov %eax, %edi
+inc %rdi
+lea 0x54(%rip), %rsi
+mov $0x7, %rdx
+syscall
+PASSED
+mov $0x3c, %eax
+xor %edi, %edi
+syscall

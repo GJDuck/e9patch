@@ -1,1 +1,1 @@
--M 'mem[0].seg != nil' -A 'call entry(addr,mem[0],&mem[0],instr,size,asm)@inst'
+./test -M 'mem[0].seg != nil' -A 'call entry(addr,mem[0],&mem[0],instr,size,asm)@inst'

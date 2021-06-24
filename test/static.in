@@ -1,0 +1,1 @@
+./test -M true -A 'call entry(addr,static addr,base,instr,size,asm)@inst'

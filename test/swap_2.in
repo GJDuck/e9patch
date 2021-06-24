@@ -1,1 +1,1 @@
--M 'mnemonic = cmp.* && op[0] == rax && op[1] == rbx' -A 'call swap(&rax,&r15,asm)@patch'
+./test -M 'mnemonic = cmp.* && op[0] == rax && op[1] == rbx' -A 'call swap(&rax,&r15,asm)@patch'

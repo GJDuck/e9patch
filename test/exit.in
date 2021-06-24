@@ -1,1 +1,1 @@
--M 'asm=xor.*' -A 'exit(0)'
+./test -M 'asm=xor.*' -A 'exit(0)'

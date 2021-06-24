@@ -1,1 +1,1 @@
--M true -A passthru
+./test -M true -A passthru

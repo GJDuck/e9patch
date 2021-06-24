@@ -1,1 +1,1 @@
--M 'size == 2' -A 'call entry(asm.size,asm.len,op[0].size,instr,size,asm)@inst'
+./test -M 'size == 2' -A 'call entry(asm.size,asm.len,op[0].size,instr,size,asm)@inst'

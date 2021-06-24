@@ -873,6 +873,7 @@ struct CallInfo
 
     const int * const rsave;                    // Caller save regsters.
     const bool before;                          // Before or after inst.
+    const bool pic;                             // PIC?
     int32_t rsp_offset = 0x4000;                // Stack offset
     std::map<Register, RegInfo> info;           // Register info
     std::vector<Register> pushed;               // Pushed registers
@@ -1147,15 +1148,16 @@ struct CallInfo
      * Constructor.
      */
     CallInfo(bool clean, bool state,  bool conditional, size_t num_args,
-             bool before) :
+             bool before, bool pic) :
         rsave(getCallerSaveRegs(clean, state, conditional, num_args)),
-        before(before)
+        before(before), pic(pic)
     {
         for (unsigned i = 0; rsave[i] >= 0; i++)
             push(getReg(rsave[i]), /*caller_save=*/true);
-        if (clean)
+        if (clean || state)
         {
-            // For clean calls, %rax will be clobbered when %rflags in pushed.
+            // For clean/state calls, %rax will be clobbered when %rflags
+            // is pushed.
             clobber(REGISTER_RAX);
         }
     }

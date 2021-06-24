@@ -1,0 +1,1 @@
+./test -M true -A 'call[naked] "naked"(asm,state,rsp,rax,&rax,trampoline,target,next)@patch'

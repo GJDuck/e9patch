@@ -1,0 +1,1 @@
+./test.pie -M 'jump or call or return' -A 'call entry(static addr,static target,static next,instr,size,asm)@inst'

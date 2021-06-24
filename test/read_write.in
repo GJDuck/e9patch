@@ -1,1 +1,1 @@
--M 'op.size == 1 && op[0].access == rw' -A 'call entry(addr,src[0],dst[0],instr,size,asm)@inst'
+./test -M 'op.size == 1 && op[0].access == rw' -A 'call entry(addr,src[0],dst[0],instr,size,asm)@inst'

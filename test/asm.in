@@ -1,1 +1,1 @@
--M 'asm==.*\(\%rip\).*' -A 'call entry(addr,rip,mem[0].disp,instr,size,asm)@inst'
+./test -M 'asm==.*\(\%rip\).*' -A 'call entry(addr,rip,mem[0].disp,instr,size,asm)@inst'

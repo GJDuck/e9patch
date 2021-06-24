@@ -1,1 +1,1 @@
--M 'rflags in writes' -A 'call entry(rflags,op[0],op[1],instr,size,asm)@inst'
+./test -M 'rflags in writes' -A 'call entry(rflags,op[0],op[1],instr,size,asm)@inst'

@@ -1,0 +1,1 @@
+./test.pie -M 'jump and target == &data_END' -A 'call entry(static &data_END, static target, static next,instr,size,asm)@inst'

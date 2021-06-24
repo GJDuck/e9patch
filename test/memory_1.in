@@ -1,1 +1,1 @@
--M 'mem[0].base == nil' -A 'call entry(mem[0].disp,mem[0].index,&mem[0],instr,size,asm)@inst'
+./test -M 'mem[0].base == nil' -A 'call entry(mem[0].disp,mem[0].index,&mem[0],instr,size,asm)@inst'

@@ -1,1 +1,1 @@
--M 'target == &data_END' -A 'call entry(addr,target,next,instr,size,asm)@inst'
+./test -M 'target == &data_END' -A 'call entry(addr,target,next,instr,size,asm)@inst'

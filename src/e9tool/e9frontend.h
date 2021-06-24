@@ -2218,7 +2218,6 @@ enum ArgumentKind
     ARGUMENT_ADDR,                  // Instruction address
     ARGUMENT_NEXT,                  // Next instruction address
     ARGUMENT_BASE,                  // Base address of ELF binary in memory
-    ARGUMENT_STATIC_ADDR,           // (Static) instruction address
     ARGUMENT_ASM,                   // Assembly string
     ARGUMENT_ASM_SIZE,              // Assembly string size
     ARGUMENT_ASM_LEN,               // Assembly string length
@@ -2250,6 +2249,7 @@ struct Argument
     ArgumentKind kind;              // Argument kind.
     FieldKind field;                // Argument field.
     bool ptr;                       // Argument is passed by pointer?
+    bool _static;                   // Argument is static?
     bool duplicate;                 // Argument is a duplicate?
     intptr_t value;                 // Argument value.
     MemOp memop;                    // Argument memop value.
