@@ -62,7 +62,7 @@ static bool runTest(const struct dirent *test)
     log += ".log";
 
     // Step (1): generate the EXE
-    std::string command("../e9tool ");
+    std::string command("../../e9tool ");
     FILE *IN = fopen(in.c_str(), "r");
     if (IN == nullptr)
         error("failed to open file \"%s\": %s", in.c_str(), strerror(errno));

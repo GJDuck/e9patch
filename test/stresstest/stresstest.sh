@@ -17,11 +17,11 @@ fi
 
 set -e
 mkdir -p tmp
-./e9compile.sh examples/nop.c >/dev/null 2>&1 
+../../e9compile.sh ../../examples/nop.c >/dev/null 2>&1 
 
 # Setup the example.so plugin
 g++ -std=c++11 -fPIC -shared -o example.so -O2 \
-    examples/plugins/example.cpp -I src/e9tool/ -I capstone/include/
+    ../../examples/plugins/example.cpp -I ../../src/e9tool/ 
 export LIMIT=99999999999
 
 for ACTION in \
@@ -35,13 +35,13 @@ for ACTION in \
     'print'
 do
     # Step (1): duplicate the tools
-    if ! ./e9tool ./e9tool --match true "--action=$ACTION" \
+    if ! ../../e9tool ../../e9tool --match true "--action=$ACTION" \
             -o tmp/e9tool.patched  -c 6 -s >/dev/null 2>&1
     then
        echo -e "${RED}FAILED${OFF}: e9tool  ${YELLOW}$ACTION${OFF} [step (1)]"
        continue
     fi
-    if ! ./e9tool ./e9patch --match true "--action=$ACTION" \
+    if ! ../../e9tool ../../e9patch --match true "--action=$ACTION" \
             -o tmp/e9patch.patched -c 6 -s >/dev/null 2>&1
     then
         echo -e "${RED}FAILED${OFF}: e9patch ${YELLOW}$ACTION${OFF} [step (1)]"
@@ -50,15 +50,15 @@ do
  
     # Step (2): duplicate the tools with the duplicated tools
     if ! tmp/e9tool.patched --backend "$PWD/tmp/e9patch.patched" \
-            ./e9tool  --match true "--action=$ACTION" -o tmp/e9tool.2.patched \
-            -c 6 -s >/dev/null 2>&1
+            ../../e9tool  --match true "--action=$ACTION" \
+            -o tmp/e9tool.2.patched -c 6 -s >/dev/null 2>&1
     then
         echo -e "${RED}FAILED${OFF}: e9tool  ${YELLOW}$ACTION${OFF} [step (2)]"
         continue;
     fi
     if !  tmp/e9tool.patched --backend "$PWD/tmp/e9patch.patched" \
-            ./e9patch --match true "--action=$ACTION" -o tmp/e9patch.2.patched \
-            -c 6 -s >/dev/null 2>&1
+            ../../e9patch --match true "--action=$ACTION" \
+            -o tmp/e9patch.2.patched -c 6 -s >/dev/null 2>&1
     then
         echo -e "${RED}FAILED${OFF}: e9patch ${YELLOW}$ACTION${OFF} [step (2)]"
         continue
