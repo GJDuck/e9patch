@@ -56,10 +56,28 @@ _start:
     pop %rdi
     pop %rax
 
-    jmp entry
+    .byte 0xe9, 0x80, 0x00, 0x00, 0x00  # jmp entry
 
     # The instrumented code starts here:
-.align 256
+.globl begin
+.type begin, @object
+begin:
+
+    .byte 0x0f, 0x1f, 0x84, 0x00, 0x00, 0x00, 0x00, 0x00    # NOP
+    movabs $0x1111111111111111, %r11
+    movabs $0x1111111111111111, %r12
+    movabs $0x1111111111111111, %r13
+    movabs $0x1111111111111111, %r14
+    movabs $0x1111111111111111, %r15
+    movabs $0x1111111111111111, %r11
+    movabs $0x1111111111111111, %r12
+    movabs $0x1111111111111111, %r13
+    movabs $0x1111111111111111, %r14
+    movabs $0x1111111111111111, %r15
+    movabs $0x1111111111111111, %r15
+    movabs $0x1111111111111111, %r15
+
+    # Execution starts here:
 .globl entry
 .type entry, @object
 entry:
@@ -188,25 +206,25 @@ data_END:
 
 .if PIE
     lea _start(%rip),%rax
-    lea -0xa00000(%rax),%rax
-    mov 0xa00000(%rax),%rcx
+    lea -0xa000000(%rax),%rax
+    mov 0xa000000(%rax),%rcx
     jecxz .Lunreachable
     inc %esi
-    mov 0xa00000(%rax,%rsi,8),%rcx
+    mov 0xa000000(%rax,%rsi,8),%rcx
     jrcxz .Lunreachable
-    mov 0xa00008(%rax),%rdx
+    mov 0xa000008(%rax),%rdx
     cmp %rcx,%rdx
     jne .Lunreachable
 .else
-    mov 0xa00000,%ecx
+    mov 0xa000000,%ecx
     jecxz .Lunreachable
     inc %esi
-    mov 0xa00000(%rax,%rsi,8),%rcx
+    mov 0xa000000(%rax,%rsi,8),%rcx
     jrcxz .Lunreachable
-    mov 0xa00000(,%rsi,8),%rdx
+    mov 0xa000000(,%rsi,8),%rdx
     cmp %rcx,%rdx
     jne .Lunreachable
-    mov 0xa00008,%rdx
+    mov 0xa000008,%rdx
     cmp %rcx,%rdx
     jne .Lunreachable
 .endif

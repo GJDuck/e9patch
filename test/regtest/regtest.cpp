@@ -48,7 +48,7 @@ static bool option_tty = false;
 /*
  * Run a single test case.
  */
-static bool runTest(const struct dirent *test)
+static bool runTest(const struct dirent *test, const std::string &options)
 {
     std::string in(test->d_name);
     std::string basename(in, 0, in.size()-3);
@@ -63,6 +63,12 @@ static bool runTest(const struct dirent *test)
 
     // Step (1): generate the EXE
     std::string command("../../e9tool ");
+    if (options != "")
+    {
+        command += options;
+        command += ' ';
+    }
+    command += "-M 'addr >= &entry' ";
     FILE *IN = fopen(in.c_str(), "r");
     if (IN == nullptr)
         error("failed to open file \"%s\": %s", in.c_str(), strerror(errno));
@@ -70,7 +76,7 @@ static bool runTest(const struct dirent *test)
     for (int i = 0; (c = getc(IN)) != '\n' && isprint(c) && i < 1024; i++)
         command += c;
     fclose(IN);
-    command += " -E data..data_END -E data2...text -E .text..entry -o ";
+    command += " -E data..data_END -E data2...text -E .text..begin -o ";
     command += exe;
     command += " >";
     command += log;
@@ -163,8 +169,16 @@ static int isTest(const struct dirent *entry)
 /*
  * Entry.
  */
-int main(void)
+int main(int argc, char **argv)
 {
+    std::string options;
+    for (int i = 1; i < argc; i++)
+    {
+        if (i > 1)
+            options += ' ';
+        options += argv[i];
+    }
+
     option_tty = (isatty(STDOUT_FILENO) && isatty(STDERR_FILENO));
     struct dirent **tests = nullptr;
     int n = scandir(".", &tests, isTest, alphasort);
@@ -175,7 +189,7 @@ int main(void)
     for (int i = 0; i < n; i++)
     {
         total++;
-        if (runTest(tests[i]))
+        if (runTest(tests[i], options))
             passed++;
         else
         {
@@ -206,6 +220,7 @@ int main(void)
         {
             if (prev)
                 putchar(',');
+            prev = true;
             printf("%s", fail.c_str());
         }
         printf("}\n\n");

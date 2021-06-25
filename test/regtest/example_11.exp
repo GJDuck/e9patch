@@ -1,6 +1,6 @@
-ffffffffffffff00:0000000000c03f88:0000000000000000: 48 8b 84 f4 00 ff ff ff movq -0x100(%rsp,%rsi,8), %rax
-ffffffffffffff00:0000000000c03f88:0000000000000000: 2e 48 8b 84 f4 00 ff ff movq %cs:-0x100(%rsp,%rsi,8), %rax
+ffffffffffffff00:000000000c003f88:0000000000000000: 48 8b 84 f4 00 ff ff ff movq -0x100(%rsp,%rsi,8), %rax
+ffffffffffffff00:000000000c003f88:0000000000000000: 2e 48 8b 84 f4 00 ff ff movq %cs:-0x100(%rsp,%rsi,8), %rax
                                                     ff 
-ffffffffffffff00:0000000000c03f88:0000000000000000: 3e 48 8b 8c f4 00 ff ff movq %ds:-0x100(%rsp,%rsi,8), %rcx
+ffffffffffffff00:000000000c003f88:0000000000000000: 3e 48 8b 8c f4 00 ff ff movq %ds:-0x100(%rsp,%rsi,8), %rcx
                                                     ff 
 PASSED

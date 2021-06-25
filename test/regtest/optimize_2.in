@@ -1,0 +1,1 @@
+-O2 ./test.pie -M true -A 'call entry(static addr,id,r13d,instr,len,asm)@inst'

@@ -4,7 +4,7 @@
 8877665544332211:8877665544332211:000000002d2d2d2d: 48 39 c3                cmp %rax, %rbx
 8877665544332211:8877665544332211:000000002d2d2d2d: 48 8b 0d 9a 01 00 00    movq 0x19a(%rip), %rcx
 8877665544332211:8877665544332211:00ffeeddccbbaa99: 48 c7 c1 89 88 ff ff    mov $-0x7777, %rcx
-ce3c9b0bb0b4f832:8877665544332211:ffffffffffff8889: 48 25 fe 00 00 00       and $0xfe, %rax
+2d9bfa6b1014f832:8877665544332211:ffffffffffff8889: 48 25 fe 00 00 00       and $0xfe, %rax
 0000000000000032:8877665544332211:ffffffffffff8889: 48 21 c3                and %rax, %rbx
 0000000000000032:0000000000000010:ffffffffffff8889: 48 83 cb 13             or $0x13, %rbx
 0000000000000032:0000000000000013:ffffffffffff8889: 48 09 cb                or %rcx, %rbx
@@ -22,7 +22,7 @@ ce3c9b0bb0b4f832:8877665544332211:ffffffffffff8889: 48 25 fe 00 00 00       and 
 0000000000000000:ffffffffffff889b:ffffffffffff888a: 3e 48 8b 8c f4 00 ff ff movq %ds:-0x100(%rsp,%rsi,8), %rcx
                                                     ff 
 0000000000000000:ffffffffffff889b:0000000000000000: 48 39 c1                cmp %rax, %rcx
-0000000000000000:ffffffffffff889b:00000000f9258d48: 48 8b 8c f0 00 00 a0 00 movq 0xa00000(%rax,%rsi,8), %rcx
+0000000000000000:ffffffffffff889b:00000000f9258d48: 48 8b 8c f0 00 00 00 0a movq 0xa000000(%rax,%rsi,8), %rcx
 0000000000000000:ffffffffffff889b:1cba0b0b0b0bb8c0: 48 39 ca                cmp %rcx, %rdx
 0000000000000000:ffffffffffff889b:1cba0b0b0b0bb8c0: 48 39 ca                cmp %rcx, %rdx
 PASSED
