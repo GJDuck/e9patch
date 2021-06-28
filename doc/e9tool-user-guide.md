@@ -119,6 +119,8 @@ supported:
 <tr><td><b><tt>false</tt></b></td><td><tt>Boolean</tt></td><td>False</td></tr>
 <tr><td><b><tt>jump<tt></b></td><td><tt>Boolean</tt></td>
     <td>True for jump instructions, false otherwise</tt></td>
+<tr><td><b><tt>condjump<tt></b></td><td><tt>Boolean</tt></td>
+    <td>True for conditional jump instructions, false otherwise</tt></td>
 <tr><td><b><tt>call<tt></b></td><td><tt>Boolean</tt></td>
     <td>True for call instructions, false otherwise</tt></td>
 <tr><td><b><tt>return<tt></b></td><td><tt>Boolean</tt></td>
@@ -139,6 +141,18 @@ supported:
     <td>A random value [0..<tt>RAND_MAX</tt>]</td></tr>
 <tr><td><b><tt>target</tt></b></td><td><tt>Intger</tt></td>
     <td>The jump/call target (if statically known).</td></tr>
+<tr><td><b><tt>x87<tt></b></td><td><tt>Boolean</tt></td>
+    <td>True for x87 instructions, false otherwise</tt></td>
+<tr><td><b><tt>mmx<tt></b></td><td><tt>Boolean</tt></td>
+    <td>True for MMX instructions, false otherwise</tt></td>
+<tr><td><b><tt>sse<tt></b></td><td><tt>Boolean</tt></td>
+    <td>True for SSE instructions, false otherwise</tt></td>
+<tr><td><b><tt>avx<tt></b></td><td><tt>Boolean</tt></td>
+    <td>True for AVX instructions, false otherwise</tt></td>
+<tr><td><b><tt>avx2<tt></b></td><td><tt>Boolean</tt></td>
+    <td>True for AVX2 instructions, false otherwise</tt></td>
+<tr><td><b><tt>avx512<tt></b></td><td><tt>Boolean</tt></td>
+    <td>True for AVX512 instructions, false otherwise</tt></td>
 <tr><td><b><tt>op.size</tt></b></td><td><tt>Integer</tt></td>
     <td>The number of operands</td></tr>
 <tr><td><b><tt>src.size</tt></b></td><td><tt>Integer</tt></td>
@@ -432,7 +446,7 @@ The syntax for a call action is as follows:
 
     OPTIONS ::=   <b>[</b> OPTION <b>,</b> ... <b>]</b>
     OPTION  ::=   <b>clean</b> | <b>naked</b>
-                | <b>before</b> | <b>after</b> | <b>replace</b> | <b>conditional</b> [ <b>.</b> <b>jump</b> ]
+                | <b>before</b> | <b>after</b> | <b>replace</b> | <b>conditional</b> | [ <b>condjump</b> ]
 
     ARGS ::=   <b>(</b> ARG <b>,</b> ... <b>)</b>
 </pre>
@@ -853,7 +867,7 @@ This can also be used for function overloading:
 
 Call actions support different *options*.
 
-The `before`/`after`/`replace`/`conditional`/`conditional.jump` options
+The `before`/`after`/`replace`/`conditional`/`condjump` options
 specify where the instrumentation should be placed in relation to the
 matching instruction.
 Here:
@@ -874,13 +888,13 @@ Here:
        result = func(...);
        if (result) { nop } else { instruction }
 </pre>
-* `conditional.jump` inspects the return value of the function.
+* `condjump` inspects the return value of the function.
    If the returned value is non-zero, then control-flow will jump to the
    returned value interpreted as an address, and without executing the
    matching instruction.
    Otherwise if zero, the matching instruction will be executed as normal
    (like `before`).
-   Essentially, `conditional.jump` implements the following pseudocode:
+   Essentially, `condjump` implements the following pseudocode:
 <pre>
         result = func(...);
         if (result) { goto result } else { instruction }

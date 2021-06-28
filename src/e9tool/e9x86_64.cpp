@@ -28,6 +28,7 @@ typedef ZydisDecodedInstruction RawInstr;
  */
 static Register convert(ZydisRegister reg);
 static Mnemonic convert(ZydisMnemonic mnemonic);
+static uint16_t convert(ZydisInstructionCategory category, ZydisISAExt isa);
 
 /*
  * Zydis structures.
@@ -158,6 +159,8 @@ void e9frontend::getInstrInfo(const ELF *elf, const Instr *I, InstrInfo *info,
         info->address                = I->address;
         info->offset                 = I->offset;
         info->mnemonic               = convert(D->mnemonic);
+        info->category               =
+            convert(D->meta.category, D->meta.isa_ext);
         info->size                   = I->size;
         info->relative               = false;
         info->encoding.size.disp     =
@@ -2225,6 +2228,46 @@ static Mnemonic convert(ZydisMnemonic mnemonic)
         case ZYDIS_MNEMONIC_XSUSLDTRK:          return MNEMONIC_XSUSLDTRK;
         case ZYDIS_MNEMONIC_XTEST:              return MNEMONIC_XTEST;                                                                       
         default:                                return MNEMONIC_UNKNOWN;
+    }
+}
+
+/*
+ * ZydisInstructionCategory to category
+ */
+static uint16_t convert(ZydisInstructionCategory category, ZydisISAExt isa)
+{
+    switch (category)
+    { 
+        case ZYDIS_CATEGORY_RET:
+            return CATEGORY_RETURN;
+        case ZYDIS_CATEGORY_CALL:
+            return CATEGORY_CALL;
+        case ZYDIS_CATEGORY_UNCOND_BR:
+            return CATEGORY_JUMP;
+        case ZYDIS_CATEGORY_COND_BR:
+            return CATEGORY_CONDITIONAL | CATEGORY_JUMP;
+        default:
+            break;
+    }
+    switch (isa)
+    {
+        case ZYDIS_ISA_EXT_X87:
+            return CATEGORY_X87;
+        case ZYDIS_ISA_EXT_MMX:
+            return CATEGORY_MMX;
+        case ZYDIS_ISA_EXT_SSE: case ZYDIS_ISA_EXT_SSE2:
+        case ZYDIS_ISA_EXT_SSE3: case ZYDIS_ISA_EXT_SSE4:
+        case ZYDIS_ISA_EXT_SSE4A: case ZYDIS_ISA_EXT_SSSE3:
+            return CATEGORY_SSE;
+        case ZYDIS_ISA_EXT_AVX:
+            return CATEGORY_AVX;
+        case ZYDIS_ISA_EXT_AVX2: case ZYDIS_ISA_EXT_AVX2GATHER:
+            return CATEGORY_AVX2;
+        case ZYDIS_ISA_EXT_AVX512EVEX: case ZYDIS_ISA_EXT_AVX512VEX:
+        case ZYDIS_ISA_EXT_AVXAES:
+            return CATEGORY_AVX512;
+        default:
+            return 0x0;
     }
 }
 

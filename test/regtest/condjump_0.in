@@ -1,1 +1,1 @@
-./test -M true -A 'call[conditional.jump] ret_0(asm)@patch'
+./test -M true -A 'call[condjump] ret_0(asm)@patch'

@@ -94,7 +94,9 @@ enum MatchKind
     MATCH_ASSEMBLY,
     MATCH_ADDRESS,
     MATCH_CALL,
+    MATCH_CONDJUMP,
     MATCH_JUMP,
+    MATCH_MMX,
     MATCH_MNEMONIC,
     MATCH_OFFSET,
     MATCH_RANDOM,
@@ -102,6 +104,11 @@ enum MatchKind
     MATCH_SECTION,
     MATCH_SIZE,
     MATCH_TARGET,
+    MATCH_X87,
+    MATCH_SSE,
+    MATCH_AVX,
+    MATCH_AVX2,
+    MATCH_AVX512,
 
     MATCH_OP,
     MATCH_SRC,
@@ -584,6 +591,8 @@ static MatchTest *parseTest(Parser &parser)
             match = MATCH_FALSE; break;
         case TOKEN_IMM:
             match = MATCH_IMM; break;
+        case TOKEN_CONDJUMP:
+            match = MATCH_CONDJUMP; break;
         case TOKEN_JUMP:
             match = MATCH_JUMP; break;
         case TOKEN_MEM:
@@ -641,6 +650,18 @@ static MatchTest *parseTest(Parser &parser)
                     parser.unexpectedToken();
             }
             break;
+        case TOKEN_AVX:
+            match = MATCH_AVX; break;
+        case TOKEN_AVX2:
+            match = MATCH_AVX2; break;
+        case TOKEN_AVX512:
+            match = MATCH_AVX512; break;
+        case TOKEN_MMX:
+            match = MATCH_MMX; break;
+        case TOKEN_SSE:
+            match = MATCH_SSE; break;
+        case TOKEN_X87:
+            match = MATCH_X87; break;
         default:
             parser.unexpectedToken();
     }
@@ -1086,7 +1107,7 @@ static Action *parseAction(const ELF &elf, const char *str,
     // Parse the rest of the action (if necessary):
     CallKind call = CALL_BEFORE;
     bool clean = false, naked = false, before = false, after = false,
-         replace = false, conditional = false, jump = false;
+         replace = false, conditional = false, condjump = false;
     const char *symbol   = nullptr;
     const char *filename = nullptr;
     Plugin *plugin = nullptr;
@@ -1131,16 +1152,19 @@ static Action *parseAction(const ELF &elf, const char *str,
                         before = true; break;
                     case TOKEN_CLEAN:
                         clean = true; break;
-                    case TOKEN_CONDITIONAL:
+                    case TOKEN_COND:
                         if (parser.peekToken() == '.')
                         {
                             parser.getToken();
                             parser.expectToken(TOKEN_JUMP);
-                            jump = true;
+                            error("the `conditional.jump' call option is deprecated; "
+                                "please use `condjump' instead");
                         }
                         else
                             conditional = true;
                         break;
+                    case TOKEN_CONDJUMP:
+                        condjump = true; break;
                     case TOKEN_NAKED:
                         naked = true; break;
                     case TOKEN_REPLACE:
@@ -1368,15 +1392,15 @@ static Action *parseAction(const ELF &elf, const char *str,
             error("failed to parse call action; `clean' and `naked' "
                 "attributes cannot be used together");
         if ((int)before + (int)after + (int)replace + (int)conditional +
-                (int)jump > 1)
+                (int)condjump > 1)
             error("failed to parse call action; only one of the `before', "
-                "`after', `replace', `conditional' and `conditional.jump' "
+                "`after', `replace', `conditional' and `condjump' "
                 "attributes can be used together");
         clean = (clean? true: !naked);
         call = (after? CALL_AFTER:
                (replace? CALL_REPLACE:
                (conditional? CALL_CONDITIONAL:
-               (jump? CALL_CONDITIONAL_JUMP: CALL_BEFORE))));
+               (condjump? CALL_CONDITIONAL_JUMP: CALL_BEFORE))));
     }
     parser.expectToken(TOKEN_EOF);
 
@@ -1406,9 +1430,9 @@ static Action *parseAction(const ELF &elf, const char *str,
                 case CALL_REPLACE:
                     call_name += "replace_"; break;
                 case CALL_CONDITIONAL:
-                    call_name += "conditional_"; break;
+                    call_name += "cond_"; break;
                 case CALL_CONDITIONAL_JUMP:
-                    call_name += "jump_"; break;
+                    call_name += "condjump_"; break;
             }
             call_name += symbol;
             call_name += '_';
@@ -1660,25 +1684,13 @@ static MatchValue makeMatchValue(MatchKind match, int idx, MatchField field,
         case MATCH_ADDRESS:
             result.i = (intptr_t)I->address; return result;
         case MATCH_CALL:
-            result.i = (I->mnemonic == MNEMONIC_CALL); return result;
-        case MATCH_JUMP:
-            switch (I->mnemonic)
-            {
-                case MNEMONIC_JB: case MNEMONIC_JBE: case MNEMONIC_JCXZ:
-                case MNEMONIC_JECXZ: case MNEMONIC_JKNZD: case MNEMONIC_JKZD:
-                case MNEMONIC_JL: case MNEMONIC_JLE: case MNEMONIC_JMP:
-                case MNEMONIC_JNB: case MNEMONIC_JNBE: case MNEMONIC_JNL:
-                case MNEMONIC_JNLE: case MNEMONIC_JNO: case MNEMONIC_JNP:
-                case MNEMONIC_JNS: case MNEMONIC_JNZ: case MNEMONIC_JO:
-                case MNEMONIC_JP: case MNEMONIC_JRCXZ: case MNEMONIC_JS:
-                case MNEMONIC_JZ:
-                    result.i = true;
-                    break;
-                default:
-                    result.i = false;
-                    break;
-            }
+            result.i = ((I->category & CATEGORY_CALL) != 0); return result;
+        case MATCH_CONDJUMP:
+            result.i = (((I->category & CATEGORY_JUMP) != 0) &&
+                         ((I->category & CATEGORY_CONDITIONAL) != 0));
             return result;
+        case MATCH_JUMP:
+            result.i = ((I->category & CATEGORY_JUMP) != 0); return result;
         case MATCH_OP: case MATCH_SRC: case MATCH_DST:
         case MATCH_IMM: case MATCH_REG: case MATCH_MEM:
             if (idx < 0)
@@ -1783,31 +1795,32 @@ static MatchValue makeMatchValue(MatchKind match, int idx, MatchField field,
         case MATCH_RANDOM:
             result.i = (intptr_t)rand(); return result;
         case MATCH_RETURN:
-            result.i = (I->mnemonic == MNEMONIC_RET); return result;
+            result.i = ((I->category & CATEGORY_RETURN) != 0); return result;
         case MATCH_SIZE:
             result.i = (intptr_t)I->size; return result;
         case MATCH_TARGET:
-            switch (I->mnemonic)
+            if ((I->category & CATEGORY_CALL) != 0 ||
+                (I->category & CATEGORY_JUMP) != 0)
             {
-                case MNEMONIC_CALL:
-                case MNEMONIC_JMP:
-                case MNEMONIC_JO: case MNEMONIC_JNO: case MNEMONIC_JB:
-                case MNEMONIC_JAE: case MNEMONIC_JE: case MNEMONIC_JNE:
-                case MNEMONIC_JBE: case MNEMONIC_JA: case MNEMONIC_JS:
-                case MNEMONIC_JNS: case MNEMONIC_JP: case MNEMONIC_JNP:
-                case MNEMONIC_JL: case MNEMONIC_JGE: case MNEMONIC_JLE:
-                case MNEMONIC_JG: case MNEMONIC_JCXZ: case MNEMONIC_JECXZ:
-                case MNEMONIC_JRCXZ:
-                    if (I->count.op != 1 || I->op[0].type != OPTYPE_IMM)
-                        goto undefined;
-                    result.i = (intptr_t)I->op[0].imm + (intptr_t)I->address +
-                        (intptr_t)I->size;
-                    return result;
-                default:
-                    break;
+                if (I->count.op != 1 || I->op[0].type != OPTYPE_IMM)
+                    goto undefined;
+                result.i = (intptr_t)I->op[0].imm + (intptr_t)I->address +
+                    (intptr_t)I->size;
+                return result;
             }
             goto undefined;
-
+        case MATCH_AVX:
+            result.i = ((I->category & CATEGORY_AVX) != 0); return result;
+        case MATCH_AVX2:
+            result.i = ((I->category & CATEGORY_AVX2) != 0); return result;
+        case MATCH_AVX512:
+            result.i = ((I->category & CATEGORY_AVX512) != 0); return result;
+        case MATCH_MMX:
+            result.i = ((I->category & CATEGORY_MMX) != 0); return result;
+        case MATCH_SSE:
+            result.i = ((I->category & CATEGORY_SSE) != 0); return result;
+        case MATCH_X87:
+            result.i = ((I->category & CATEGORY_X87) != 0); return result;
         default:
         undefined:
             result.type = MATCH_TYPE_UNDEFINED;
@@ -1888,7 +1901,9 @@ static bool matchEval(const MatchExpr *expr, const InstrInfo *I,
         case MATCH_OP: case MATCH_SRC: case MATCH_DST:
         case MATCH_IMM: case MATCH_REG: case MATCH_MEM:
         case MATCH_PLUGIN: case MATCH_RANDOM: case MATCH_RETURN:
-        case MATCH_SIZE: case MATCH_TARGET:
+        case MATCH_SIZE: case MATCH_TARGET: case MATCH_CONDJUMP:
+        case MATCH_AVX: case MATCH_AVX2: case MATCH_AVX512:
+        case MATCH_MMX: case MATCH_SSE: case MATCH_X87:
         {
             if (test->cmp != MATCH_CMP_EQ_ZERO &&
                 test->cmp != MATCH_CMP_NEQ_ZERO &&

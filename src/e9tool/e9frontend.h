@@ -1982,6 +1982,20 @@ enum Register : uint8_t
 };
 
 /*
+ * Instruction categories.
+ */
+#define CATEGORY_RETURN         0x0001
+#define CATEGORY_CALL           0x0002
+#define CATEGORY_JUMP           0x0004
+#define CATEGORY_CONDITIONAL    0x0008
+#define CATEGORY_X87            0x0010
+#define CATEGORY_MMX            0x0020
+#define CATEGORY_SSE            0x0040
+#define CATEGORY_AVX            0x0080
+#define CATEGORY_AVX2           0x0100
+#define CATEGORY_AVX512         0x0200
+
+/*
  * Operands.
  */
 enum OpType : int8_t
@@ -2059,6 +2073,7 @@ struct InstrInfo
     intptr_t        address;        // Instruction address
     off_t           offset;         // Instruction file offset
     Mnemonic        mnemonic;       // Instruction mnemonic enum
+    uint16_t        category;       // Instruction category
     uint8_t         size;           // Instruction size
     bool            relative;       // Imm/disp used for relative address?
     struct

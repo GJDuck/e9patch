@@ -1,0 +1,1 @@
+./test -M sse -A 'call entry(addr,op[0].size,op[1].size,instr,size,asm)@inst'

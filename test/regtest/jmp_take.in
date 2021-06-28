@@ -1,1 +1,1 @@
-./test -M jump -A 'call[conditional.jump] always_take(target,asm)@patch'
+./test -M jump -A 'call[condjump] always_take(target,asm)@patch'
