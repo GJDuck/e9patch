@@ -2248,7 +2248,7 @@ int main(int argc, char **argv)
     option_is_tty = isatty(STDERR_FILENO);
     std::vector<const char *> option_options;
     unsigned option_compression_level = 9;
-    char option_optimization_level = '1';
+    char option_optimization_level = '2';
     ssize_t option_sync = -1;
     bool option_executable = false, option_shared = false,
         option_static_loader = false;
