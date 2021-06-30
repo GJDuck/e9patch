@@ -2538,6 +2538,7 @@ int main(int argc, char **argv)
             options.push_back("-Ojump-elim=0");
             options.push_back("-Ojump-elim-size=0");
             options.push_back("-Ojump-peephole=false");
+            options.push_back("-Ojump-peephole-2=false");
             options.push_back("-Oorder-trampolines=false");
             options.push_back("-Oscratch-stack=false");
             options.push_back("--mem-granularity=64");
@@ -2547,6 +2548,7 @@ int main(int argc, char **argv)
             options.push_back("-Ojump-elim-size=0");
             options.push_back("-Oorder-trampolines=false");
             options.push_back("-Ojump-peephole=true");
+            options.push_back("-Ojump-peephole-2=true");
             options.push_back("-Oscratch-stack=true");
             options.push_back("--mem-granularity=128");
             break;
@@ -2555,6 +2557,7 @@ int main(int argc, char **argv)
             options.push_back("-Ojump-elim-size=64");
             options.push_back("-Oorder-trampolines=true");
             options.push_back("-Ojump-peephole=true");
+            options.push_back("-Ojump-peephole-2=true");
             options.push_back("-Oscratch-stack=true");
             options.push_back("--mem-granularity=128");
             break;
@@ -2563,6 +2566,7 @@ int main(int argc, char **argv)
             options.push_back("-Ojump-elim-size=512");
             options.push_back("-Oorder-trampolines=true");
             options.push_back("-Ojump-peephole=true");
+            options.push_back("-Ojump-peephole-2=true");
             options.push_back("-Oscratch-stack=true");
             options.push_back("--mem-granularity=4096");
             break;
@@ -2570,6 +2574,7 @@ int main(int argc, char **argv)
             options.push_back("-Ojump-elim=0");
             options.push_back("-Ojump-elim-size=0");
             options.push_back("-Ojump-peephole=true");
+            options.push_back("-Ojump-peephole-2=true");
             options.push_back("-Oorder-trampolines=true");
             options.push_back("-Oscratch-stack=true");
             options.push_back("--mem-granularity=4096");
@@ -2758,6 +2763,10 @@ int main(int argc, char **argv)
             I.string.instr,
             (matched && option_is_tty? "\33[0m": ""),
             (matched && !option_is_tty? " (matched)": ""));
+        if (I.size >= /*sizeof(jmpq)=*/5 &&
+                ((I.category & CATEGORY_JUMP) != 0 ||
+                 (I.category & CATEGORY_CALL) != 0))
+            Is[i].jump = true;
     }
     notifyPlugins(backend.out, &elf, Is.data(), Is.size(),
         EVENT_MATCHING_COMPLETE);
@@ -2768,6 +2777,18 @@ int main(int argc, char **argv)
     intptr_t id = -1;
     for (ssize_t i = (ssize_t)count - 1; i >= 0; i--)
     {
+        switch (option_optimization_level)
+        {
+            case '2': case '3': case 's':
+                if (!Is[i].emitted && Is[i].jump)
+                {
+                    // Always emits jump/calls for -Ojump-peephole-2
+                    Is[i].emitted = true;
+                    sendInstructionMessage(backend.out, Is[i].address,
+                        Is[i].size, Is[i].offset);
+                }
+                break;
+        }
         if (!Is[i].patch)
             continue;
 

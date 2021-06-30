@@ -394,6 +394,65 @@ static void parsePatch(Binary *B, const Message &msg)
 }
 
 /*
+ * Optimize CFT instructions that target patched instructions trampolines.
+ * We can instead jump directly to the trampoline if possible.
+ */
+static void optimizePeephole2(Binary *B)
+{
+    for (const auto &entry: B->Is)
+    {
+        off_t offset = entry.first;
+        Instr *I = entry.second;
+        if (I->trampoline != INTPTR_MIN)
+            continue;
+        if (I->size != /*sizeof(jmpq/call rel32)=*/5 &&
+                I->size != /*sizeof(jcc rel32)=*/6)
+            continue;
+        bool jcc = false;
+        switch (I->original.bytes[0])
+        {
+            case 0xE8: case 0xE9:
+                break;
+            case 0x0F:
+                switch (I->original.bytes[1])
+                {
+                    case 0x80: case 0x81: case 0x82: case 0x83: case 0x84:
+                    case 0x85: case 0x86: case 0x87: case 0x88: case 0x89:
+                    case 0x8A: case 0x8B: case 0x8C: case 0x8D: case 0x8E:
+                    case 0x8F:
+                        jcc = true;
+                        break;
+                    default:
+                        continue;
+                }
+                break;
+            default:
+                continue;
+        }
+        bool ok = true;
+        for (size_t i = 0; ok && i < I->size; i++)
+            ok = (I->patched.state[i] == STATE_INSTRUCTION);
+        if (!ok)
+            continue;
+
+        int32_t rel32 = *(int32_t *)(I->original.bytes + (jcc? 2: 1));
+        intptr_t target = I->addr + (intptr_t)I->size + (intptr_t)rel32;
+        offset += (off_t)I->size + (off_t)rel32;
+        auto i = B->Is.find(offset);
+        if (i == B->Is.end())
+            continue;
+        Instr *J = i->second;
+        if (J->addr != target || J->trampoline == INTPTR_MIN)
+            continue;
+        intptr_t diff = J->trampoline - (I->addr + (intptr_t)I->size);
+        if (diff < INT32_MIN || diff > INT32_MAX)
+            continue;
+        int32_t diff32 = (int32_t)diff;
+        *(int32_t *)(I->patched.bytes + (jcc? 2: 1)) = diff32;
+    }
+}
+
+/*
  * Parse an emit message.
  */
 static void parseEmit(Binary *B, const Message &msg)
@@ -425,10 +484,13 @@ static void parseEmit(Binary *B, const Message &msg)
         error("failed to parse \"emit\" message (id=%u); duplicate "
             "parameters detected");
 
-
     // Flush the queue:
     queueFlush(B, INTPTR_MIN);
     putchar('\n');
+
+    // Post-processing optimizations:
+    if (option_Ojump_peephole_2)
+        optimizePeephole2(B);
 
     // Create and optimize the mappings:
     MappingSet mappings;

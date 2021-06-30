@@ -40,6 +40,7 @@ bool option_tactic_backward_T3  = true;
 unsigned option_Ojump_elim      = 0;
 unsigned option_Ojump_elim_size = 64;
 bool option_Ojump_peephole      = true;
+bool option_Ojump_peephole_2    = true;
 bool option_Oorder_trampolines  = false;
 bool option_Oscratch_stack      = false;
 size_t option_mem_granularity   = 64;
@@ -186,6 +187,10 @@ static void usage(FILE *stream, const char *progname)
         "\t\tEnables [disables] jump-from-trampoline peephole optimization.\n"
         "\t\tDefault: true (enabled)\n"
         "\n"
+        "\t-Ojump-peephole-2[=false]\n"
+        "\t\tEnables [disables] jump-to-trampoline peephole optimization.\n"
+        "\t\tDefault: true (enabled)\n"
+        "\n"
         "\t-Oorder-trampolines[=false]\n"
         "\t\tEnables [disables] the ordering of trampolines with respect\n"
         "\t\tto the original instruction ordering (as much as is possible).\n"
@@ -295,6 +300,7 @@ enum Option
     OPTION_OJUMP_ELIM,
     OPTION_OJUMP_ELIM_SIZE,
     OPTION_OJUMP_PEEPHOLE,
+    OPTION_OJUMP_PEEPHOLE_2,
     OPTION_OORDER_TRAMPOLINES,
     OPTION_OSCRATCH_STACK,
     OPTION_OUTPUT,
@@ -322,6 +328,7 @@ void parseOptions(int argc, char * const argv[], bool api)
         {"Ojump-elim",         req_arg, nullptr, OPTION_OJUMP_ELIM},
         {"Ojump-elim-size",    req_arg, nullptr, OPTION_OJUMP_ELIM_SIZE},
         {"Ojump-peephole",     opt_arg, nullptr, OPTION_OJUMP_PEEPHOLE},
+        {"Ojump-peephole-2",   opt_arg, nullptr, OPTION_OJUMP_PEEPHOLE_2},
         {"Oorder-trampolines", opt_arg, nullptr, OPTION_OORDER_TRAMPOLINES},
         {"Oscratch-stack",     opt_arg, nullptr, OPTION_OSCRATCH_STACK},
         {"debug",              no_arg,  nullptr, OPTION_DEBUG},
@@ -390,6 +397,10 @@ void parseOptions(int argc, char * const argv[], bool api)
             case OPTION_OJUMP_PEEPHOLE:
                 option_Ojump_peephole =
                     parseBoolOptArg("-Ojump-peephole", optarg);
+                break;
+            case OPTION_OJUMP_PEEPHOLE_2:
+                option_Ojump_peephole_2 =
+                    parseBoolOptArg("-Ojump-peephole-2", optarg);
                 break;
             case OPTION_OORDER_TRAMPOLINES:
                 option_Oorder_trampolines =
