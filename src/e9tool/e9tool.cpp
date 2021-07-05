@@ -2165,11 +2165,6 @@ static void usage(FILE *stream, const char *progname)
         "\t\treliable for large/complex binaries.  However, this may bloat\n"
         "\t\tthe size of the output patched binary.\n"
         "\n"
-        "\t--sync N\n"
-        "\t\tSkip N instructions after the disassembler desyncs.  This\n"
-        "\t\tcan be a useful hack if the disassembler fails, or if the\n"
-        "\t\texecutable section(s) contain data.\n"
-        "\n"
         "\t--syntax SYNTAX\n"
         "\t\tSelects the assembly syntax to be SYNTAX.  Possible values are:\n"
         "\n"
@@ -2203,7 +2198,6 @@ enum Option
     OPTION_OUTPUT,
     OPTION_SHARED,
     OPTION_STATIC_LOADER,
-    OPTION_SYNC,
     OPTION_SYNTAX,
     OPTION_TRAP,
     OPTION_TRAP_ALL,
@@ -2256,7 +2250,6 @@ int main(int argc, char **argv)
         {"output",        req_arg, nullptr, OPTION_OUTPUT},
         {"shared",        no_arg,  nullptr, OPTION_SHARED},
         {"static-loader", no_arg,  nullptr, OPTION_STATIC_LOADER},
-        {"sync",          req_arg, nullptr, OPTION_SYNC},
         {"syntax",        req_arg, nullptr, OPTION_SYNTAX},
         {"trap",          req_arg, nullptr, OPTION_TRAP},
         {"trap-all",      no_arg,  nullptr, OPTION_TRAP_ALL},
@@ -2266,7 +2259,6 @@ int main(int argc, char **argv)
     std::vector<const char *> option_options;
     unsigned option_compression_level = 9;
     char option_optimization_level = '2';
-    ssize_t option_sync = -1;
     bool option_executable = false, option_shared = false,
         option_static_loader = false;
     std::string option_backend("");
@@ -2366,18 +2358,6 @@ int main(int argc, char **argv)
             case 's':
                 option_static_loader = true;
                 break;
-            case OPTION_SYNC:
-            {
-                errno = 0;
-                char *end = nullptr;
-                unsigned long r = strtoul(optarg, &end, 10);
-                if (errno != 0 || end == optarg ||
-                        (end != nullptr && *end != '\0') || r > 1000)
-                    error("bad value \"%s\" for `--sync' option; "
-                        "expected an integer 0..1000", optarg);
-                option_sync = (ssize_t)r;
-                break;
-            }
             case OPTION_SYNTAX:
                 if (strcmp(optarg, "ATT") == 0)
                     option_intel_syntax = false;
@@ -2706,7 +2686,6 @@ int main(int argc, char **argv)
         intptr_t address     = section_addr;
 
         bool failed = false;
-        unsigned sync = 0;
         while (true)
         {
             size_t skip = exclude(excludes, address);
@@ -2716,23 +2695,16 @@ int main(int argc, char **argv)
                 offset  += skip;
                 size     = (skip > size? 0: size - skip);
                 code    += skip;
-                sync     = 0;
             }
             Instr I;
             if (!decode(&code, &size, &offset, &address, &I))
                 break;
-            if (sync > 0)
-            {
-                sync--;
-                continue;
-            }
             if (I.data)
             {
                 warning("failed to disassemble (.byte 0x%.2X) at address "
                     "0x%lx in section \"%s\"", *(code - I.size), I.address,
                     section);
                 failed = true;
-                sync = option_sync;
                 continue;
             }
             Is.push_back(I);
@@ -2743,16 +2715,10 @@ int main(int argc, char **argv)
                 section, section_addr, section_addr + section_size,
                 section_addr, section_addr + (code - start));
         if (failed)
-        {
-            if (option_sync < 0)
-                error("failed to disassemble the \"%s\" section of \"%s\"; "
-                    "this may be caused by (1) data in the \"%s\" section, or "
-                    "(2) a bug in the third party disassembler",
-                    section, filename, section);
-            else
-                warning("failed to disassemble the \"%s\" section of \"%s\"; "
-                    "the rewritten binary may be corrupt", section, filename);
-        }
+            error("failed to disassemble the \"%s\" section of \"%s\"; "
+                "this may be caused by (1) data in the \"%s\" section, or "
+                "(2) a bug in the third party disassembler",
+                section, filename, section);
     }
     Is.shrink_to_fit();
     notifyPlugins(backend.out, &elf, Is.data(), Is.size(),
