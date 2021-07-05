@@ -1166,6 +1166,14 @@ struct CallInfo
     CallInfo(const CallInfo &) = delete;
 };
 
+enum TargetKind : uint8_t
+{
+    TARGET_ENTRY,
+    TARGET_DIRECT,
+    TARGET_INDIRECT
+};
+typedef std::map<intptr_t, TargetKind> Targets;
+
 /*
  * ELF file.
  */
@@ -1206,6 +1214,8 @@ namespace e9frontend
         bool pie;                       // PIE?
         bool dso;                       // Shared object?
         bool reloc;                     // Needs relocation?
+ 
+        Targets targets;                // Jump/Call targets [optional]
 
         mutable Symbols symbols;        // Symbol cache.
     };

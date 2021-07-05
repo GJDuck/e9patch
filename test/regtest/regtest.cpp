@@ -68,7 +68,7 @@ static bool runTest(const struct dirent *test, const std::string &options)
         command += options;
         command += ' ';
     }
-    command += "-M 'addr >= &entry' ";
+    command += "-M 'addr >= &\"entry\"' ";
     FILE *IN = fopen(in.c_str(), "r");
     if (IN == nullptr)
         error("failed to open file \"%s\": %s", in.c_str(), strerror(errno));

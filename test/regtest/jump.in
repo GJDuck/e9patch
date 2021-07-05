@@ -1,1 +1,1 @@
-./test -M 'addr == &entry' -A 'call[condjump] "jump"(&data_END,asm)@patch'
+./test -M 'addr == &"entry"' -A 'call[condjump] "jump"(&data_END,asm)@patch'

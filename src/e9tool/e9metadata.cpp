@@ -1053,13 +1053,14 @@ static const char *buildMetadataString(FILE *out, char *buf, long *pos)
 /*
  * Lookup a value from a CSV file based on the matching.
  */
-static bool matchEval(const MatchExpr *expr, const InstrInfo *I,
-    const char *basename = nullptr, const Record **record = nullptr);
-static intptr_t lookupValue(const Action *action, const InstrInfo *I,
-    const char *basename, intptr_t idx)
+static bool matchEval(const MatchExpr *expr, const Targets &targets,
+    const InstrInfo *I, const char *basename = nullptr,
+    const Record **record = nullptr);
+static intptr_t lookupValue(const Action *action, const Targets &targets,
+    const InstrInfo *I, const char *basename, intptr_t idx)
 {
     const Record *record = nullptr;
-    bool pass = matchEval(action->match, I, basename, &record);
+    bool pass = matchEval(action->match, targets, I, basename, &record);
     if (!pass || record == nullptr)
         error("failed to lookup value from file \"%s.csv\"; matching is "
             "ambiguous", basename);
@@ -1090,7 +1091,8 @@ static Type sendLoadArgumentMetadata(FILE *out, CallInfo &info,
     {
         case ARGUMENT_USER:
         {
-            intptr_t value = lookupValue(action, I, arg.name, arg.value);
+            intptr_t value = lookupValue(action, elf->targets, I, arg.name,
+                arg.value);
             sendLoadValueMetadata(out, value, regno);
             break;
         }

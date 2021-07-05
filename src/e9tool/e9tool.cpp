@@ -48,6 +48,7 @@
 /*
  * Options.
  */
+static bool option_cfg          = false;
 static bool option_trap_all     = false;
 static bool option_intel_syntax = false;
 static std::string option_format("binary");
@@ -55,6 +56,7 @@ static std::string option_output("a.out");
 
 #include "e9plugin.h"
 #include "e9frontend.cpp"
+#include "e9cfg.cpp"
 #include "e9x86_64.cpp"
 
 /*
@@ -109,6 +111,8 @@ enum MatchKind
     MATCH_AVX,
     MATCH_AVX2,
     MATCH_AVX512,
+
+    MATCH_BB_ENTRY,
 
     MATCH_OP,
     MATCH_SRC,
@@ -662,6 +666,17 @@ static MatchTest *parseTest(Parser &parser)
             match = MATCH_SSE; break;
         case TOKEN_X87:
             match = MATCH_X87; break;
+        case TOKEN_BB:
+            parser.expectToken('.');
+            switch (parser.getToken())
+            {
+                case TOKEN_ENTRY:
+                    match = MATCH_BB_ENTRY; break;
+                default:
+                    parser.unexpectedToken();
+            }
+            option_cfg = true;
+            break;
         default:
             parser.unexpectedToken();
     }
@@ -1157,8 +1172,8 @@ static Action *parseAction(const ELF &elf, const char *str,
                         {
                             parser.getToken();
                             parser.expectToken(TOKEN_JUMP);
-                            error("the `conditional.jump' call option is deprecated; "
-                                "please use `condjump' instead");
+                            error("the `conditional.jump' call option is "
+                                "deprecated; please use `condjump' instead");
                         }
                         else
                             conditional = true;
@@ -1179,8 +1194,13 @@ static Action *parseAction(const ELF &elf, const char *str,
                     parser.unexpectedToken();
             }
         }
-        parser.expectToken(TOKEN_STRING);
-        symbol = strDup(parser.s);
+        switch (parser.getToken())
+        {
+            case TOKEN_STRING: case TOKEN_ENTRY:
+                symbol = strDup(parser.s); break;
+            default:
+                parser.unexpectedToken();
+        }
         t = parser.peekToken();
         if (t == '(')
         {
@@ -1653,7 +1673,7 @@ static intptr_t getNumOperands(const InstrInfo *I, OpType type, Access access)
  * Create match value.
  */
 static MatchValue makeMatchValue(MatchKind match, int idx, MatchField field,
-    const InstrInfo *I, intptr_t plugin_val)
+    const Targets &targets, const InstrInfo *I, intptr_t plugin_val)
 {
     MatchValue result = {0};
     result.type = MATCH_TYPE_INTEGER;
@@ -1821,6 +1841,9 @@ static MatchValue makeMatchValue(MatchKind match, int idx, MatchField field,
             result.i = ((I->category & CATEGORY_SSE) != 0); return result;
         case MATCH_X87:
             result.i = ((I->category & CATEGORY_X87) != 0); return result;
+        case MATCH_BB_ENTRY:
+            result.i = (targets.find((intptr_t)I->address) != targets.end());
+            return result;
         default:
         undefined:
             result.type = MATCH_TYPE_UNDEFINED;
@@ -1831,8 +1854,8 @@ static MatchValue makeMatchValue(MatchKind match, int idx, MatchField field,
 /*
  * Evaluate a matching.
  */
-static bool matchEval(const MatchExpr *expr, const InstrInfo *I,
-    const char *basename, const Record **record)
+static bool matchEval(const MatchExpr *expr, const Targets &targets,
+    const InstrInfo *I, const char *basename, const Record **record)
 {
     if (expr == nullptr)
         return true;
@@ -1841,18 +1864,18 @@ static bool matchEval(const MatchExpr *expr, const InstrInfo *I,
     switch (expr->op)
     {
         case MATCH_OP_NOT:
-            pass = matchEval(expr->arg1, I, nullptr, nullptr);
+            pass = matchEval(expr->arg1, targets, I, nullptr, nullptr);
             return !pass;
         case MATCH_OP_AND:
-            pass = matchEval(expr->arg1, I, basename, record);
+            pass = matchEval(expr->arg1, targets, I, basename, record);
             if (!pass)
                 return false;
-            return matchEval(expr->arg2, I, basename, record);
+            return matchEval(expr->arg2, targets, I, basename, record);
         case MATCH_OP_OR:
-            pass = matchEval(expr->arg1, I, basename, record);
+            pass = matchEval(expr->arg1, targets, I, basename, record);
             if (pass)
                 return true;
-            return matchEval(expr->arg2, I, basename, record);
+            return matchEval(expr->arg2, targets, I, basename, record);
         case MATCH_OP_TEST:
             test = expr->test;
             break;
@@ -1904,13 +1927,14 @@ static bool matchEval(const MatchExpr *expr, const InstrInfo *I,
         case MATCH_SIZE: case MATCH_TARGET: case MATCH_CONDJUMP:
         case MATCH_AVX: case MATCH_AVX2: case MATCH_AVX512:
         case MATCH_MMX: case MATCH_SSE: case MATCH_X87:
+        case MATCH_BB_ENTRY:
         {
             if (test->cmp != MATCH_CMP_EQ_ZERO &&
                 test->cmp != MATCH_CMP_NEQ_ZERO &&
                 test->cmp != MATCH_CMP_DEFINED && test->values->size() == 0)
                 break;
             MatchValue x = makeMatchValue(test->match, test->idx,
-                test->field, I, 
+                test->field, targets, I, 
                 (test->match == MATCH_PLUGIN? test->plugin->result: 0));
             switch (test->cmp)
             {
@@ -1975,20 +1999,13 @@ static bool matchEval(const MatchExpr *expr, const InstrInfo *I,
 /*
  * Matching.
  */
-static bool matchAction(const Action *action, const InstrInfo *I)
-{
-    return matchEval(action->match, I);
-}
-
-/*
- * Matching.
- */
-static int match(const std::vector<Action *> &actions, const InstrInfo *I)
+static int match(const std::vector<Action *> &actions, const Targets &targets,
+    const InstrInfo *I)
 {
     int idx = 0;
     for (const auto action: actions)
     {
-        if (matchAction(action, I))
+        if (matchEval(action->match, targets, I))
             return idx;
         idx++;
     }
@@ -2741,6 +2758,11 @@ int main(int argc, char **argv)
     notifyPlugins(backend.out, &elf, Is.data(), Is.size(),
         EVENT_DISASSEMBLY_COMPLETE);
     size_t count = Is.size();
+
+    // Step (1a): CFG Analysis (if necessary).
+    if (option_cfg)
+        CFGAnalysis(&elf, Is.data(), Is.size(), elf.targets);
+
     // Step (2): Find all matching instructions:
     for (size_t i = 0; i < count; i++)
     {
@@ -2748,7 +2770,7 @@ int main(int argc, char **argv)
         InstrInfo I;
         getInstrInfo(&elf, &Is[i], &I, &raw);
         matchPlugins(backend.out, &elf, Is.data(), Is.size(), i, &I);
-        int idx = match(actions, &I);
+        int idx = match(actions, elf.targets, &I);
         bool matched = (idx >= 0);
         if (matched)
         {

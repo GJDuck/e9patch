@@ -16,6 +16,7 @@ E9PATCH_OBJS=\
     src/e9patch/e9x86_64.o
 
 E9TOOL_SRC=\
+    src/e9tool/e9cfg.cpp \
     src/e9tool/e9csv.cpp \
     src/e9tool/e9frontend.cpp \
     src/e9tool/e9metadata.cpp \
