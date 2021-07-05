@@ -346,3 +346,8 @@ asm
     "retq\n"
 );
 
+void string(const char *s)
+{
+    fprintf(stderr, "%s\n", s);
+}
+

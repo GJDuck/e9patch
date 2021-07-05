@@ -517,7 +517,7 @@ static void parseValues(Parser &parser, MatchType type, MatchCmp cmp,
         switch (parser.getToken())
         {
             case '&':
-                parser.expectToken(TOKEN_STRING);
+                parser.expectToken2(TOKEN_STRING, TOKEN_NAME);
                 value.type = MATCH_TYPE_INTEGER;
                 value.i = parseSymbol(parser, parser.s);
                 break;
@@ -689,7 +689,7 @@ static MatchTest *parseTest(Parser &parser)
         case MATCH_PLUGIN:
         {
             parser.expectToken('(');
-            parser.expectToken(TOKEN_STRING);
+            parser.expectToken2(TOKEN_STRING, TOKEN_NAME);
             std::string filename(parser.s);
             parser.expectToken(')');
             parser.expectToken('.');
@@ -813,7 +813,7 @@ static MatchTest *parseTest(Parser &parser)
             case TOKEN_REGEX:
                 str = parser.s;
                 break;
-            case TOKEN_STRING:
+            case TOKEN_STRING: case TOKEN_NAME:
                 str += parser.s;
                 break;
             default:
@@ -826,7 +826,8 @@ static MatchTest *parseTest(Parser &parser)
         if (cmp == MATCH_CMP_EQ_ZERO || cmp == MATCH_CMP_NEQ_ZERO)
             return test;
         test->values = new Index<MatchValue>;
-        if (parser.peekToken() == TOKEN_STRING)
+        if (parser.peekToken() == TOKEN_STRING ||
+                parser.peekToken() == TOKEN_NAME)
         {
             parser.getToken();
             if ((type & MATCH_TYPE_INTEGER) == 0)
@@ -1141,7 +1142,7 @@ static Action *parseAction(const ELF &elf, const char *str,
     else if (kind == ACTION_PLUGIN)
     {
         parser.expectToken('(');
-        parser.expectToken(TOKEN_STRING);
+        parser.expectToken2(TOKEN_STRING, TOKEN_NAME);
         filename = strDup(parser.s);
         parser.expectToken(')');
         parser.expectToken('.');
@@ -1196,7 +1197,7 @@ static Action *parseAction(const ELF &elf, const char *str,
         }
         switch (parser.getToken())
         {
-            case TOKEN_STRING: case TOKEN_ENTRY:
+            case TOKEN_STRING: case TOKEN_NAME: case TOKEN_ENTRY:
                 symbol = strDup(parser.s); break;
             default:
                 parser.unexpectedToken();
@@ -1304,8 +1305,13 @@ static Action *parseAction(const ELF &elf, const char *str,
                         break;
                     case TOKEN_STRING:
                         name = strDup(parser.s);
-                        arg = (parser.peekToken() == '['?
-                            ARGUMENT_USER: ARGUMENT_SYMBOL);
+                        arg = (parser.peekToken() == '['? ARGUMENT_USER:
+                            ARGUMENT_STRING);
+                        break;
+                    case TOKEN_NAME:
+                        name = strDup(parser.s);
+                        arg = (parser.peekToken() == '['? ARGUMENT_USER:
+                            ARGUMENT_SYMBOL);
                         break;
                     default:
                         parser.unexpectedToken();
@@ -1348,14 +1354,7 @@ static Action *parseAction(const ELF &elf, const char *str,
                         }
                         break;
 
-                    case ARGUMENT_MEMOP:
-                        break;
-
-                    case ARGUMENT_SYMBOL:
-                        if (!ptr)
-                            error("failed to parse call action; symbol "
-                                "argument `%s' must be passed-by-pointer",
-                                name);
+                    case ARGUMENT_MEMOP: case ARGUMENT_SYMBOL:
                         break;
 
                     case ARGUMENT_REGISTER:
@@ -1517,7 +1516,7 @@ static Exclude parseExcludeBound(Parser &parser, const char *str,
                 t = parser.getToken();
                 name += '.';
             }
-            if (t != TOKEN_STRING)
+            if (t != TOKEN_STRING && t != TOKEN_NAME)
                 parser.unexpectedToken();
             name += parser.s;
             const Elf64_Shdr *shdr = getELFSection(&elf, name.c_str());

@@ -1099,6 +1099,15 @@ static Type sendLoadArgumentMetadata(FILE *out, CallInfo &info,
         case ARGUMENT_INTEGER:
             sendLoadValueMetadata(out, arg.value, regno);
             break;
+        case ARGUMENT_STRING:
+        {
+            std::string offset("{\"rel32\":\".Lstring_");
+            offset += std::to_string(argno);
+            offset += "\"}";
+            sendLeaFromPCRelToR64(out, offset.c_str(), argno);
+            t = TYPE_CONST_CHAR_PTR;
+            break;
+        }
         case ARGUMENT_OFFSET:
             sendLoadValueMetadata(out, I->offset, regno);
             break;
@@ -1405,6 +1414,11 @@ static void sendArgumentDataMetadata(FILE *out, const Argument &arg,
 {
     switch (arg.kind)
     {
+        case ARGUMENT_STRING:
+            fprintf(out, "\".Lstring_%d\",{\"string\":", argno);
+            sendString(out, arg.name);
+            fputs("},", out);
+            break;
         case ARGUMENT_ASM:
             if (arg.duplicate)
                 return;
@@ -1437,6 +1451,7 @@ static void sendArgumentDataMetadata(FILE *out, const Argument &arg,
         default:
             break;
     }
+
 }
 
 /*

@@ -2229,6 +2229,7 @@ enum ArgumentKind
     ARGUMENT_INVALID,               // Invalid argument
     ARGUMENT_USER,                  // User-defined argument
     ARGUMENT_INTEGER,               // Constant integer argument
+    ARGUMENT_STRING,                // Constant string argument
     ARGUMENT_ID,                    // Patch ID
     ARGUMENT_OFFSET,                // Instruction file offset
     ARGUMENT_ADDR,                  // Instruction address
@@ -2269,7 +2270,8 @@ struct Argument
     bool duplicate;                 // Argument is a duplicate?
     intptr_t value;                 // Argument value.
     MemOp memop;                    // Argument memop value.
-    const char *name;               // Argument name (ARGUMENT_USER/SYMBOL).
+    const char *name;               // Argument name
+                                    // (ARGUMENT_USER/STRING/SYMBOL).
 };
 
 /*

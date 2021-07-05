@@ -505,6 +505,8 @@ The following arguments are supported:
 <tr><th>Argument</th><th>Type</th><th>Description</th></tr>
 <tr><td><i>Integer</i></td><td><tt>intptr_t</tt></td>
     <td>An integer constant</td></tr>
+<tr><td><i>String</i></td><td><tt>const char &#42;</tt></td>
+    <td>A string constant</td></tr>
 <tr><td><tt>&amp;</tt><i>Name</i></td><td><tt>const void &#42;</tt></td>
     <td>The runtime address of the named section/symbol/PLT/GOT entry</td></tr>
 <tr><td><tt>static &amp;</tt><i>Name</i></td><td><tt>const void &#42;</tt></td>

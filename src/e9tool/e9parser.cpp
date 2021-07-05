@@ -40,6 +40,7 @@ enum Token
     TOKEN_INTEGER = 2000,
     TOKEN_REGISTER,
     TOKEN_STRING,
+    TOKEN_NAME,
     TOKEN_REGEX,
 
     TOKEN_ACCESS = 4000,
@@ -465,6 +466,8 @@ static const char *getNameFromToken(Token token)
             return "<register>";
         case TOKEN_STRING:
             return "<string>";
+        case TOKEN_NAME:
+            return "<name>";
         case TOKEN_REGEX:
             return "<regex>";
         default:
@@ -662,7 +665,7 @@ struct Parser
                 return TOKEN_ERROR;
             Token t = getTokenFromName(s);
             if (t == TOKEN_ERROR)
-                return TOKEN_STRING;
+                return TOKEN_NAME;
             return t;
         }
 
@@ -695,6 +698,20 @@ struct Parser
             error("failed to parse %s at position \"%s\"; expected token "
                 "\"%s\", found \"%s\"", mode, str.c_str(),
                 getNameFromToken((Token)token), s);
+        }
+    }
+
+    void expectToken2(int token1, int token2)
+    {
+        int t = getToken();
+        if (t != token1 && t != token2)
+        {
+            std::string str;
+            getPositionStr(str);
+            error("failed to parse %s at position \"%s\"; expected token "
+                "\"%s\" or \"%s\", found \"%s\"", mode, str.c_str(),
+                getNameFromToken((Token)token1),
+                getNameFromToken((Token)token2), s);
         }
     }
 
