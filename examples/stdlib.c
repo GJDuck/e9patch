@@ -3070,6 +3070,315 @@ static int printf_unlocked(const char *format, ...)
 }
 
 /****************************************************************************/
+/* LIBDL                                                                    */
+/****************************************************************************/
+
+#ifdef LIBDL
+
+/*
+ * This is an implementation of libdl functionality (dlopen, etc.).
+ *
+ * NOTEs:
+ *  - This module must be initialized by calling dlinit(dynamic), where
+ *    `dynamic' is the pointer to the dynamic information passed as the
+ *    fourth argument to init(...).
+ *  - These functions are not the libdl versions, but the GLibc private
+ *    versions (__libc_dlopen, etc.), which do not officially exist.  Thus,
+ *    there is a chance this code will fail if glibc is updated.
+ *  - For this to work, the binary must link against libc (most do).
+ *  - The glibc versions are slightly different, e.g., no RTLD_NEXT.
+ *  - In principle, one could get the "real" libdl versions using
+ *    dlopen("libdl.so").
+ *  - BE AWARE OF ABI ISSUES.  External library code probably uses the SYSV
+ *    ABI meaning that the program may crash if you try and call it from a
+ *    clean call.  To avoid this, the dlcall() helper function may be used
+ *	  to safely switch to the SYSV ABI.
+ *
+ */
+
+#define dlopen      __hide__dlopen
+#define dlsym       __hide__dlsym
+#define dlvsym      __hide__dlvsym
+#define dlclose     __hide__dlclose
+#include <elf.h>
+#include <link.h>
+#undef  dlopen
+#undef  dlsym
+#undef  dlvsym
+#undef  dlclose
+
+typedef intptr_t (*dlopen_t)(const char *, int);
+typedef intptr_t (*dlclose_t)(void *);
+typedef intptr_t (*dlsym_t)(void *, const char *);
+typedef intptr_t (*dlvsym_t)(void *, const char *, const char *);
+struct hshtab_s
+{
+    uint32_t nbuckets;
+    uint32_t symoffset;
+    uint32_t bloomsz;
+    uint32_t bloomshft;
+    uint8_t data[];
+};
+
+static struct link_map *dldefault = NULL;
+static dlopen_t  dlopen_impl      = NULL;
+static dlsym_t   dlsym_impl       = NULL;
+static dlvsym_t  dlvsym_impl      = NULL;
+static dlclose_t dlclose_impl     = NULL;
+void            *dlerrno_impl     = NULL;
+
+intptr_t dlcall(void *f, ...);
+
+static const Elf64_Sym *dl_gnu_hash_lookup(const void *hshtab_0,
+    const Elf64_Sym *symtab, const char *strtab, const char *name)
+{
+    uint32_t h = 5381;
+    for (int i = 0; name[i]; i++)
+        h = (h << 5) + h + name[i];
+
+    const struct hshtab_s *hshtab =
+        (const struct hshtab_s *)hshtab_0;
+
+    const uint32_t *buckets =
+        (const uint32_t *)(hshtab->data + hshtab->bloomsz * sizeof(uint64_t));
+    const uint32_t *chain = buckets + hshtab->nbuckets;
+
+    uint32_t idx = buckets[h % hshtab->nbuckets];
+    if (idx < hshtab->symoffset)
+        return NULL;
+    for (; ; idx++)
+    {
+        const char* entry = strtab + symtab[idx].st_name;
+        const uint32_t hh = chain[idx - hshtab->symoffset];
+        if ((hh | 0x1) == (h | 0x1) && strcmp(name, entry) == 0)
+            return symtab + idx;
+        if ((hh & 0x1) != 0)
+            return NULL;
+    }
+}
+
+/*
+ * Initialize dynamic linker routines.
+ */
+static int dlinit(const void *dynamic_0)
+{
+    const Elf64_Dyn *dynamic = (const Elf64_Dyn *)dynamic_0;
+    if (dynamic == NULL)
+    {
+        errno = ENOEXEC;
+        return -1;
+    }
+
+	// Get the linkmap from DT_DEBUG
+    struct r_debug *debug = NULL;
+    for (size_t i = 0; dynamic[i].d_tag != DT_NULL; i++)
+    {
+        if (dynamic[i].d_tag == DT_DEBUG)
+            debug = (struct r_debug *)dynamic[i].d_un.d_ptr;
+    }
+    if (debug == NULL)
+    {
+        errno = ENOEXEC;
+        return -1;
+    }
+    struct link_map *link_map = debug->r_map;
+    dldefault = link_map;
+
+	// Scan all objects to find the __libc_dl*() functions.
+    for (struct link_map *l = link_map; l != NULL; l = l->l_next)
+    {
+        const Elf64_Dyn *dynamic = l->l_ld;
+        if (dynamic == NULL)
+            continue;
+        const void *hshtab      = NULL;
+        const Elf64_Sym *symtab = NULL;
+        const char *strtab      = NULL;
+        for (size_t i = 0; dynamic[i].d_tag != DT_NULL; i++)
+        {
+            switch (dynamic[i].d_tag)
+            {
+                case DT_STRTAB:
+                    strtab = (const char *)dynamic[i].d_un.d_ptr;
+                    break;
+                case DT_SYMTAB:
+                    symtab = (const Elf64_Sym *)dynamic[i].d_un.d_ptr;
+                    break;
+                case DT_GNU_HASH:
+                    hshtab = (const void *)dynamic[i].d_un.d_ptr;
+                    break;
+                default:
+                    continue;
+            }
+        }
+        if (hshtab == NULL || symtab == NULL || strtab == NULL)
+            continue;
+        if ((intptr_t)hshtab <= UINT32_MAX || (intptr_t)symtab <= UINT32_MAX ||
+                (intptr_t)strtab <= UINT32_MAX)
+            continue;
+        const Elf64_Sym *dlopen_sym = dl_gnu_hash_lookup(hshtab, symtab,
+            strtab, "__libc_dlopen_mode");
+        const Elf64_Sym *dlsym_sym = dl_gnu_hash_lookup(hshtab, symtab,
+            strtab, "__libc_dlsym");
+        const Elf64_Sym *dlvsym_sym = dl_gnu_hash_lookup(hshtab, symtab,
+            strtab, "__libc_dlvsym");
+        const Elf64_Sym *dlclose_sym = dl_gnu_hash_lookup(hshtab, symtab,
+            strtab, "__libc_dlclose");
+        const Elf64_Sym *dlerrno_sym = dl_gnu_hash_lookup(hshtab, symtab,
+            strtab, "__errno_location");
+        if (dlopen_sym != NULL && dlsym_sym != NULL && dlclose_sym != NULL &&
+                dlerrno_sym != NULL)
+        {
+            dlopen_impl  = (dlopen_t)(l->l_addr + dlopen_sym->st_value);
+            dlsym_impl   = (dlsym_t)(l->l_addr + dlsym_sym->st_value);
+            dlvsym_impl  = (dlvsym_t)(l->l_addr + dlvsym_sym->st_value);
+            dlclose_impl = (dlclose_t)(l->l_addr + dlclose_sym->st_value);
+            dlerrno_impl = (void *)(l->l_addr + dlerrno_sym->st_value);
+            return 0;
+        }
+    }
+
+    errno = EINVAL;
+    return -1;
+}
+
+static void *dlopen(const char *filename, int flags)
+{
+    if (dlopen_impl == NULL)
+        panic("dl not initialized");
+    return (void *)dlcall(dlopen_impl, filename, flags);
+}
+
+static void *dlsym(void *handle, const char *name)
+{
+    if (dlsym_impl == NULL)
+        panic("dl not initialized");
+    if (handle == NULL)
+        handle = dldefault;
+    return (void *)dlcall(dlsym_impl, handle, name);
+}
+
+static void *dlvsym(void *handle, const char *name, const char *version)
+{
+    if (dlvsym_impl == NULL)
+        panic("dl not initialized or unsupported");
+    if (handle == NULL)
+        handle = dldefault;
+    return (void *)dlcall(dlvsym_impl, handle, name, version);
+}
+
+static int dlclose(void *handle)
+{
+    if (dlclose_impl == NULL)
+        panic("dl not initialized");
+    return (int)dlcall(dlclose_impl, handle);
+}
+
+/*
+ * dlcall(f, ...) --- call SYSV ABI function f(...)
+ *
+ * This function should be used to call external library code or to switch to
+ * using the SYSV ABI.  It works by saving errno, the extended register state,
+ * as well as aligning the stack, as per the SYSV ABI specification.  The
+ * dlcall(...) operation is relatively slow, so should be used sparingly.
+ *
+ * WARNING:
+ *  - A maximum of SIXTEEN function parameters are supported by dlcall(f, ...).
+ */
+asm (
+    ".globl dlcall\n"
+    "dlcall:\n"
+
+    // Align the stack:
+    "mov %rsp,%r11\n"
+    "and $-64,%rsp\n"
+    "push %r11\n"
+
+    // Save errno:
+    "mov dlerrno_impl(%rip),%rax\n"
+    "push %rdi\n"
+    "push %rsi\n"
+    "push %rdx\n"
+    "push %rcx\n"
+    "push %r8\n"
+    "push %r9\n"
+    "push %r11\n"
+    "callq *%rax\n"             // __errno_location()
+    "pop %r11\n"
+    "pop %r9\n"
+    "pop %r8\n"
+    "pop %rcx\n"
+    "pop %rdx\n"
+    "pop %rsi\n"
+    "pop %rdi\n"
+    "push %rax\n"
+    "mov (%rax),%eax\n"
+    "push %rax\n"
+
+    // Save extended state:
+    "lea -(0x1000+64-3*8)(%rsp),%rsp\n"
+    "mov %rdx,%r10\n"
+    "xor %edx,%edx\n"
+    "mov $0xe7,%eax\n"          // x87,SSE,AVX,AVX512
+    "mov %rdx,512(%rsp)\n"      // Zero XSAVE header
+    "mov %rdx,512+8(%rsp)\n"
+    "mov %rdx,512+16(%rsp)\n"
+    "mov %rdx,512+24(%rsp)\n"
+    "xsave (%rsp)\n"
+
+    // Call the function:
+    "mov %r10,%rdx\n"
+    "mov %rdi,%r10\n"
+    "mov %rsi,%rdi\n"
+    "mov %rdx,%rsi\n"
+    "mov %rcx,%rdx\n"
+    "mov %r8,%rcx\n"
+    "mov %r9,%r8\n"
+    "mov 0x08(%r11),%r9\n"
+    "mov 0x58(%r11),%rax\n"
+    "push %rax\n"
+    "mov 0x50(%r11),%rax\n"
+    "push %rax\n"
+    "mov 0x48(%r11),%rax\n"
+    "push %rax\n"
+    "mov 0x40(%r11),%rax\n"
+    "push %rax\n"
+    "mov 0x38(%r11),%rax\n"
+    "push %rax\n"
+    "mov 0x30(%r11),%rax\n"
+    "push %rax\n"
+    "mov 0x28(%r11),%rax\n"
+    "push %rax\n"
+    "mov 0x20(%r11),%rax\n"
+    "push %rax\n"
+    "mov 0x18(%r11),%rax\n"
+    "push %rax\n"
+    "mov 0x10(%r11),%rax\n"
+    "push %rax\n"
+    "callq *%r10\n"             // f(...)
+
+    // Restore extended state:
+    "mov %rax,%rdi\n"
+    "xor %edx,%edx\n"
+    "mov $0xe7,%eax\n"
+    "xrstor 0x50(%rsp)\n"
+    "mov %rdi,%rax\n"
+
+    // Restore errno:
+    "lea 0x1000+64-3*8+0x50(%rsp),%rsp\n"
+    "pop %rdx\n"
+    "pop %rcx\n"
+    "mov %edx,(%rcx)\n"
+
+    // Unalign the stack:
+    "pop %rsp\n"
+
+    "retq\n"
+);
+
+
+#endif      /* defined(LIBC) */
+
+/****************************************************************************/
 /* MISC                                                                     */
 /****************************************************************************/
 

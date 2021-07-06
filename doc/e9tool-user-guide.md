@@ -28,6 +28,7 @@ to be used directly.
         * [2.2.2 Call Action Options](#s222)
         * [2.2.3 Call Action Standard Library](#s223)
         * [2.2.4 Call Action Initialization](#s224)
+        * [2.2.4 Call Action Dynamic Loading](#s225)
     - [2.3 Plugin Actions](#s23)
 
 ---
@@ -942,7 +943,7 @@ stack manually inside the instrumentation code.
 #### <a id="s223">2.2.3 Call Action Standard Library</a>
 
 The main limitation of call actions is that the instrumentation
-cannot use dynamically linked libraries, including `glibc`.
+cannot use dynamically linked libraries directly, including `glibc`.
 This is because the instrumentation binary is directly injected
 into the rewritten binary rather than dynamically/statically linked.
 
@@ -957,21 +958,8 @@ However, only a subset of libc is implemented, so it is WYSIWYG.
 Many common libc functions, including file I/O and memory
 allocation, have been implemented.
 
-It is not advisable to call the "real" `glibc` functions from call
-instrumentation, namely:
-
-* `glibc` functions use the System V ABI which is not compatible with
-  the clean call ABI.
-  Specifically, the clean ABI does not align the stack nor save/restore
-  floating point registers for performance reasons.
-* Many `glibc` functions are not reentrant and access/modify global state
-  such as `errno`.
-  Thus, calling `glibc` functions directly can break transparency and/or cause
-  problems such as deadlocks.
-
-Unlike `glibc`,
-the parallel libc is designed to be compatible with the clean ABI and
-handle problems such as deadlocks gracefully.
+Unlike `glibc` the parallel libc is designed to be compatible with the clean
+ABI and handle problems, such as deadlocks, more gracefully.
 
 ---
 #### <a id="s224">2.2.4 Call Action Initialization</a>
@@ -1003,6 +991,61 @@ zero/`NULL` for patched shared objects.
 
 In the example above, the initialization function searches for an
 environment variable `MAX`, and sets the `max` counter accordingly.
+
+---
+#### <a id="s225">2.2.5 Call Action Dynamic Loading</a>
+
+The parallel libc also provides an implementation of the standard dynamic linker
+functions `dlopen()`, `dlsym()`, and `dlclose()`.
+These can be used to dynamically load shared objects at runtime, or access
+existing shared libraries that are already dynamically linked into the original
+program.
+To enable, simply define the `LIBDL` macro before including `stdlib.c`.
+
+        #define LIBDL
+        #include "stdlib.c"
+
+The `dlinit(dynamic)` function must also be called in the `init()` routine,
+where `dynamic` is the fourth argument to the `init()` function:
+
+        void init(int argc, char **argv, char **envp, void *dynamic)
+        {
+            int result = dlinit(dynamic);
+            ...
+        }
+
+Once initialized, the `dlopen()`, `dlsym()`, and `dlclose()` functions can be
+used similarly to the standard `libdl` counterparts.
+
+Note that function pointers returned by `dlsym()` **should not be called
+directly** unless you know what you are doing.
+This is because most libraries are compiled with the System V ABI, which is
+incompatible with the clean call ABI used by the instrumentation.
+To avoid ABI incompatibility, the external library code should be called using
+a special wrapper function `dlcall()`:
+
+        intptr_t dlcall(void *func, arg1, arg2, ...);
+
+The `dlcall()` function will:
+
+* Align/restore the stack pointer to 16bytes, as required by the System V ABI.
+* Save/restore the extended register state, including `%xmm0`, etc.
+* Save/restore the glibc version of `errno`.
+
+Be aware that the dynamic loading API has several caveats:
+
+* The `dlopen()`, `dlsym()`, and `dlclose()` are wrappers for the glibc
+  versions of these functions (`__libc_dlopen`, etc.).
+  The glibc versions do not officially exist, so this functionality may change
+  at any time.
+  Also the glibc versions lack some features, such as `RTLD_NEXT`, that are
+  available with the standard libdl versions.
+* Since glibc is required, the original binary must be dynamically linked.
+* Many external library functions are not designed to be reentrant, and this
+  may cause deadlocks if a signal occurs when the signal handler is also
+  instrumented.
+* The `dlcall()` function supports a maximum of 16 arguments.
+* The `dlcall()` function is relatively slow, so ought to be used sparingly.
 
 ---
 ### <a id="s23">2.3 Plugin Actions</a>

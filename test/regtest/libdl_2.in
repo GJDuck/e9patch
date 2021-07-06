@@ -1,0 +1,1 @@
+./test.libc -M 'mnemonic==lea.*' -A 'call test_func_2@dl'
