@@ -1,0 +1,1 @@
+./test.pie -M 'asm=.*%cs:.*' -A 'call bug_18@patch'

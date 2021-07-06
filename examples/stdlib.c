@@ -1291,8 +1291,9 @@ static __attribute__((__noinline__)) void *malloc_allocate(size_t size,
     next += alloc_size;
     if (next > pool->access)
     {
-        size_t access_size =
-          ((next - pool->access) / MALLOC_PAGE_SIZE) + MALLOC_PAGE_SIZE;
+        size_t access_size = ((next - pool->access) / MALLOC_PAGE_SIZE) + 1;
+        access_size = (access_size < 4? 4: access_size);
+        access_size *= MALLOC_PAGE_SIZE;
         if (mprotect(pool->access, access_size, PROT_READ | PROT_WRITE) < 0)
         {
             if (lock)

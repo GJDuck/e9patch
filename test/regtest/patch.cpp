@@ -351,3 +351,15 @@ void string(const char *s)
     fprintf(stderr, "%s\n", s);
 }
 
+void bug_18(void)
+{
+    int size = 8192;
+    char *buf = (char *)malloc((size_t) size * sizeof(char));
+
+    for (int i = 0; i < size; i += 1)
+        buf[i] = 'a';
+	buf[size-1] = '\0';
+
+	fprintf(stderr, "buf = \"%.10s...\", strlen(buf) = %zu\n", buf, strlen(buf));
+}
+
