@@ -135,6 +135,19 @@ struct STATE
             int8_t ah;
         };
     };
+    union
+    {
+        int64_t rsp;
+        int32_t esp;
+        int16_t sp;
+        int16_t spl;
+    };
+    const union
+    {
+        int64_t rip;
+        int32_t eip;
+        int16_t ip;
+    };
 };
 
 /*
@@ -158,10 +171,9 @@ struct STATE
 /*
  * Entry point.
  *
- * call entry(addr,state,rsp,asm)@state
+ * call entry(state,asm)@state
  */
-void entry(const void *addr, const struct STATE *state, intptr_t rsp,
-    const char *_asm)
+void entry(const struct STATE *state, const char *_asm)
 {
     static mutex_t mutex = MUTEX_INITIALIZER;
     if (mutex_lock(&mutex) < 0)
@@ -169,12 +181,12 @@ void entry(const void *addr, const struct STATE *state, intptr_t rsp,
 
     clearerr_unlocked(stderr);
     fprintf_unlocked(stderr, RED "%.16lx" WHITE ": " GREEN "%s" WHITE "\n",
-        addr, _asm);
+        state->rip, _asm);
     fprintf_unlocked(stderr, "\t%rax    = 0x%.16lx (%ld)\n", state->rax, state->rax);
     fprintf_unlocked(stderr, "\t%rcx    = 0x%.16lx (%ld)\n", state->rcx, state->rcx);
     fprintf_unlocked(stderr, "\t%rdx    = 0x%.16lx (%ld)\n", state->rdx, state->rdx);
     fprintf_unlocked(stderr, "\t%rbx    = 0x%.16lx (%ld)\n", state->rbx, state->rbx);
-    fprintf_unlocked(stderr, "\t%rsp    = 0x%.16lx (%ld)\n", rsp, rsp);
+    fprintf_unlocked(stderr, "\t%rsp    = 0x%.16lx (%ld)\n", state->rsp, state->rsp);
     fprintf_unlocked(stderr, "\t%rbp    = 0x%.16lx (%ld)\n", state->rbp, state->rbp);
     fprintf_unlocked(stderr, "\t%rsi    = 0x%.16lx (%ld)\n", state->rsi, state->rsi);
     fprintf_unlocked(stderr, "\t%rdi    = 0x%.16lx (%ld)\n", state->rdi, state->rdi);

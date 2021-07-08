@@ -23,12 +23,12 @@ to be used directly.
         * [2.2.1 Call Action Arguments](#s221)
             - [2.2.1.1 Pass-by-pointer](#s2211)
             - [2.2.1.2 Polymorphic Arguments](#s2212)
-            - [2.2.1.4 Explicit Memory Operand Arguments](#s2213)
+            - [2.2.1.3 Explicit Memory Operand Arguments](#s2213)
             - [2.2.1.4 Undefined Arguments](#s2214)
         * [2.2.2 Call Action Options](#s222)
         * [2.2.3 Call Action Standard Library](#s223)
         * [2.2.4 Call Action Initialization](#s224)
-        * [2.2.4 Call Action Dynamic Loading](#s225)
+        * [2.2.5 Call Action Dynamic Loading](#s225)
     - [2.3 Plugin Actions](#s23)
 
 ---
@@ -745,12 +745,11 @@ Notes:
 * For technical reasons, the `%rip` register is considered constant and cannot
   be modified.
 * The `state` argument is a pointer to a structure containing all
-  general-purpose and flag registers.
+  general-purpose registers, the flag register (`%rflags`), the stack register
+  (`%rsp`) and the instruction pointer register (`%rip`).
   See the `examples/state.c` example for the structure layout.
-  The values in the structure can be modified, in which case the corresponding
-  register will be updated accordingly.
-  The structure does not include the stack register (`%rsp`) which must be
-  passed separately.
+  Except for `%rip`, the values in the structure can be modified, in which
+  case the corresponding register will be updated accordingly.
 * The `static` version of some arguments gives the address relative to the ELF
   base, given by the formula: *runtime address = ELF address + ELF base*.
   This corresponds to the value used by the matching.

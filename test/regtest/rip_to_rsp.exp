@@ -1,0 +1,10 @@
+jnz 0xa0002ae
+push %r15
+js 0xa000106
+movq 0x5e(%rip), %rax
+mov $0x8877665544332211, %rbx
+cmp %rax, %rbx
+jz 0xa000122
+nop
+setting %rsp to %rip=0xa000122
+Segmentation fault

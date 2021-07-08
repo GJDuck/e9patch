@@ -135,6 +135,19 @@ struct STATE
             int8_t ah;
         };
     };
+    union
+    {
+        int64_t rsp;
+        int32_t esp;
+        int16_t sp;
+        int16_t spl;
+    };
+    const union
+    {
+        int64_t rip;
+        int32_t eip;
+        int16_t ip;
+    };
 };
 
 template <typename T>
@@ -151,28 +164,28 @@ static void do_cmp(T x, T y, uint16_t *flags)
 void cmp(int64_t x, int64_t y, uint16_t *flags, const char *_asm)
 {
     fprintf(stderr, "%s\n", _asm); 
-	do_cmp(x, y, flags);
+    do_cmp(x, y, flags);
 }
 void cmp(int32_t x, int32_t y, uint16_t *flags, const char *_asm)
 {
     fprintf(stderr, "%s\n", _asm); 
-	do_cmp(x, y, flags);
+    do_cmp(x, y, flags);
 }
 void cmp(int16_t x, int16_t y, uint16_t *flags, const char *_asm)
 {
     fprintf(stderr, "%s\n", _asm); 
-	do_cmp(x, y, flags);
+    do_cmp(x, y, flags);
 }
 void cmp(int8_t x, int8_t y, uint16_t *flags, const char *_asm)
 {
     fprintf(stderr, "%s\n", _asm); 
-	do_cmp(x, y, flags);
+    do_cmp(x, y, flags);
 }
 
 void cmp_and_clr_z(int64_t x, int64_t y, uint16_t *flags, const char *_asm)
 {
     fprintf(stderr, "%s\n", _asm); 
-	do_cmp(x, y, flags);
+    do_cmp(x, y, flags);
     *flags &= ~0x4000;
 }
 
@@ -358,8 +371,19 @@ void bug_18(void)
 
     for (int i = 0; i < size; i += 1)
         buf[i] = 'a';
-	buf[size-1] = '\0';
+    buf[size-1] = '\0';
 
-	fprintf(stderr, "buf = \"%.10s...\", strlen(buf) = %zu\n", buf, strlen(buf));
+    fprintf(stderr, "buf = \"%.10s...\", strlen(buf) = %zu\n", buf, strlen(buf));
+}
+
+void rip_to_rsp(void *state_0, const char *_asm)
+{
+    fprintf(stderr, "%s\n", _asm);
+    STATE *state = (STATE *)state_0;
+    if (state->rip == 0xa000122)
+    {
+        fprintf(stderr, "setting %%rsp to %%rip=%p\n", (void *)state->rip);
+        state->rsp = state->rip;
+    }
 }
 

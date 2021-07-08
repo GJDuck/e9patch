@@ -1580,7 +1580,7 @@ static Metadata *buildMetadata(const ELF *elf, const Action *action,
                 fprintf(out, "%u,%u,%u,%u,{\"int32\":%d},",
                     0x48, 0x8d, 0xa4, 0x24, rsp_args_offset);
             }
-            bool pop_rsp = false;
+            bool pop_rsp = state;
             Register reg;
             while ((reg = info.pop()) != REGISTER_INVALID)
             {

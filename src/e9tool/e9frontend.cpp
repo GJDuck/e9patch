@@ -65,7 +65,8 @@ using namespace e9frontend;
 #define R14_IDX         14
 #define R15_IDX         15
 #define RSP_IDX         16
-#define RMAX_IDX        17
+#define RIP_IDX         17
+#define RMAX_IDX        RIP_IDX
 
 /*
  * Prototypes.
@@ -203,6 +204,8 @@ static Register getReg(int regno)
             return REGISTER_R15;
         case RSP_IDX:
             return REGISTER_RSP;
+        case RIP_IDX:
+            return REGISTER_RIP;
         default:
             return REGISTER_INVALID;
     }
@@ -806,7 +809,7 @@ static const int *getCallerSaveRegs(bool clean, bool state, bool conditional,
     {
         RAX_IDX, RCX_IDX, RDX_IDX, RBX_IDX, RBP_IDX, RSI_IDX, RDI_IDX, R8_IDX,
         R9_IDX, R10_IDX, R11_IDX, R12_IDX, R13_IDX, R14_IDX, R15_IDX,
-        RFLAGS_IDX, -1
+        RFLAGS_IDX, RSP_IDX, RIP_IDX, -1
     };
     static const int clean_save[] =
     {
@@ -1033,7 +1036,8 @@ struct CallInfo
         for (const auto &entry: info)
         {
             int regno = getRegIdx(entry.first);
-            if (regno < 0 || regno == RFLAGS_IDX || regno == RSP_IDX)
+            if (regno < 0 || regno == RFLAGS_IDX || regno == RSP_IDX ||
+                    regno == RIP_IDX)
                 continue;
             bool found = false;
             for (unsigned i = 0; !found && exclude != nullptr &&
@@ -2577,7 +2581,8 @@ static std::pair<bool, bool> sendPush(FILE *out, int32_t offset, bool before,
         case REGISTER_RSP:
         case REGISTER_EFLAGS:
             scratch = getRegIdx(rscratch);
-            assert(scratch != RSP_IDX && scratch != RFLAGS_IDX);
+            assert(scratch != RSP_IDX && scratch != RFLAGS_IDX &&
+                scratch != RIP_IDX);
             if (scratch < 0)
             {
                 // No available scratch register.  Evict %rax to into stack
@@ -3225,8 +3230,13 @@ unsigned e9frontend::sendCallTrampolineMessage(FILE *out, const char *name,
     const int *rsave = getCallerSaveRegs(clean, state, conditional, args.size());
     int num_rsave = 0;
     Register rscratch = (clean || state? REGISTER_RAX: REGISTER_INVALID);
+    int32_t offset = 0x4000;
     for (int i = 0; rsave[i] >= 0; i++, num_rsave++)
-        sendPush(out, 0, (call != CALL_AFTER), getReg(rsave[i]), rscratch);
+    {
+        sendPush(out, offset, (call != CALL_AFTER), getReg(rsave[i]), rscratch);
+        if (rsave[i] != RSP_IDX && rsave[i] != RIP_IDX)
+            offset += sizeof(int64_t);
+    }
 
     // Load the arguments:
     fputs("\"$loadArgs\",", out);
@@ -3251,7 +3261,11 @@ unsigned e9frontend::sendCallTrampolineMessage(FILE *out, const char *name,
     // Pop all callee-save registers:
     int rmin = (conditional? 1: 0);
     for (int i = num_rsave-1; i >= rmin; i--)
+    {
+        if (rsave[i] == RSP_IDX || rsave[i] == RIP_IDX)
+            continue;
         sendPop(out, preserve_rax, getReg(rsave[i]));
+    }
 
     // If conditional, jump to $instruction if %rax is zero:
     if (conditional)
