@@ -1,0 +1,1 @@
+./test -M true -A 'call[condjump] skip(state,0xa00025a,asm)@patch'

@@ -387,3 +387,81 @@ void rip_to_rsp(void *state_0, const char *_asm)
     }
 }
 
+void rotate(void *state_0, const char *_asm)
+{
+    STATE *state = (STATE *)state_0;
+    fprintf(stderr, "%s [%.16lX:%.16lX:%.16lX:%.16lX:%.16lX:%.16lX:%.16lX:"
+        "%.16lX:%.16lX:%.16lX:%.16lX:%.16lX:%.16lX:%.16lX:%.16lX:]\n", _asm,
+        state->rax, state->rcx, state->rdx, state->rbx, state->rbp,
+        state->rsi, state->rdi, state->r8, state->r9, state->r10,
+        state->r11, state->r12, state->r13, state->r14, state->r15);
+    int64_t tmp = state->rax;
+    state->rax = state->rcx;
+    state->rcx = state->rdx;
+    state->rdx = state->rbx;
+    state->rbx = state->rbp;
+    state->rbp = state->rsi;
+    state->rsi = state->rdi;
+    state->rdi = state->r8;
+    state->r8 = state->r9;
+    state->r9 = state->r10;
+    state->r10 = state->r11;
+    state->r11 = state->r12;
+    state->r12 = state->r13;
+    state->r13 = state->r14;
+    state->r14 = state->r15;
+    state->r15 = tmp;
+}
+
+void trunc32(void *state_0, const char *_asm)
+{
+    STATE *state = (STATE *)state_0;
+    state->rax &= 0xFFFFFFFFull;
+    state->rcx &= 0xFFFFFFFFull;
+    state->rdx &= 0xFFFFFFFFull;
+    state->rbx &= 0xFFFFFFFFull;
+    state->rbp &= 0xFFFFFFFFull;
+    state->rsi &= 0xFFFFFFFFull;
+    state->rdi &= 0xFFFFFFFFull;
+    state->r8  &= 0xFFFFFFFFull;
+    state->r9  &= 0xFFFFFFFFull;
+    state->r10 &= 0xFFFFFFFFull;
+    state->r11 &= 0xFFFFFFFFull;
+    state->r12 &= 0xFFFFFFFFull;
+    state->r13 &= 0xFFFFFFFFull;
+    state->r14 &= 0xFFFFFFFFull;
+    state->r15 &= 0xFFFFFFFFull;
+    fprintf(stderr, "%s [%.8lX:%.8lX:%.8lX:%.8lX:%.8lX:%.8lX:%.8lX:"
+        "%.8lX:%.8lX:%.8lX:%.8lX:%.8lX:%.8lX:%.8lX:%.8lX:]\n", _asm,
+        state->rax, state->rcx, state->rdx, state->rbx, state->rbp,
+        state->rsi, state->rdi, state->r8, state->r9, state->r10,
+        state->r11, state->r12, state->r13, state->r14, state->r15);
+}
+
+const void *skip(void *state_0, intptr_t addr, const char *_asm)
+{
+    STATE *state = (STATE *)state_0;
+    fprintf(stderr, "%s # %%rax=0x%.16lx %%rbx=0x%.16lx\n", _asm,
+        state->rax, state->rbx);
+    if (state->rax == state->rbx)
+    {
+        state->rax++;
+        return (const void *)addr;
+    }
+    return NULL;
+}
+
+const void *next(const void *addr, const void *base, const void *next,
+    const char *_asm)
+{
+    fprintf(stderr, "%p: %s # goto %p\n", addr, _asm, next);
+    return (const void *)((const uint8_t *)base + (intptr_t)next);
+}
+
+const void *stack_overflow(const void *addr, intptr_t *rsp, const char *_asm)
+{
+    *rsp -= 0x1000;
+    fprintf(stderr, "%p: %s # %%rsp=%p\n", addr, _asm, (void *)*rsp);
+    return addr;        // loop
+}
+

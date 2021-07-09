@@ -1,0 +1,5 @@
+0xa000106: push %r15 # %rsp=0xc007000
+0xa000106: push %r15 # %rsp=0xc006000
+0xa000106: push %r15 # %rsp=0xc005000
+0xa000106: push %r15 # %rsp=0xc004000
+Segmentation fault

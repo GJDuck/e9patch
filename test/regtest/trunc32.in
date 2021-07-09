@@ -1,0 +1,1 @@
+./test -M true -A 'call[after] trunc32(state,asm)@patch'

@@ -1,0 +1,4 @@
+./test -M 'mnemonic == (push.*|call.*)' -A 'call[condjump] stack_overflow(addr,&rsp,asm)@patch'
+
+# Induces a stack overflow.
+
