@@ -1628,7 +1628,7 @@ unsigned e9frontend::sendPassthruTrampolineMessage(FILE *out)
 {
     sendMessageHeader(out, "trampoline");
     sendParamHeader(out, "name");
-    sendString(out, "passthru");
+    sendString(out, "$passthru");
     sendSeparator(out);
     sendParamHeader(out, "template");
     putc('[', out);
@@ -1644,7 +1644,7 @@ unsigned e9frontend::sendPrintTrampolineMessage(FILE *out)
 {
     sendMessageHeader(out, "trampoline");
     sendParamHeader(out, "name");
-    sendString(out, "print");
+    sendString(out, "$print");
     sendSeparator(out);
     sendParamHeader(out, "template");
     putc('[', out);
@@ -1706,7 +1706,7 @@ unsigned e9frontend::sendExitTrampolineMessage(FILE *out, int status)
 {
     sendMessageHeader(out, "trampoline");
     sendParamHeader(out, "name");
-    fprintf(out, "\"exit_%d\"", status);
+    fprintf(out, "\"$exit_%d\"", status);
     sendSeparator(out);
     sendParamHeader(out, "template");
     
@@ -1729,7 +1729,7 @@ unsigned e9frontend::sendTrapTrampolineMessage(FILE *out)
 {
     sendMessageHeader(out, "trampoline");
     sendParamHeader(out, "name");
-    sendString(out, "trap");
+    sendString(out, "$trap");
     sendSeparator(out);
     sendParamHeader(out, "template");
     putc('[', out);

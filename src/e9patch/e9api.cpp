@@ -343,7 +343,7 @@ static void parseInstruction(Binary *B, const Message &msg)
  */
 static void parsePatch(Binary *B, const Message &msg)
 {
-    const char *trampoline = nullptr;
+    const Trampoline *T = nullptr;
     off_t offset = 0;
     Metadata *meta = nullptr;
     bool have_offset = false, dup = false;
@@ -352,8 +352,8 @@ static void parsePatch(Binary *B, const Message &msg)
         switch (msg.params[i].name)
         {
             case PARAM_TRAMPOLINE:
-                dup = dup || (trampoline != nullptr);
-                trampoline = msg.params[i].value.string;
+                dup = dup || (T != nullptr);
+                T = msg.params[i].value.trampoline;
                 break;
             case PARAM_OFFSET:
                 dup = dup || have_offset;
@@ -368,7 +368,7 @@ static void parsePatch(Binary *B, const Message &msg)
                 break;
         }
     }
-    if (trampoline == nullptr)
+    if (T == nullptr)
         error("failed to parse \"patch\" message (id=%u); missing "
             "\"trampoline\" parameter", msg.id);
     if (!have_offset)
@@ -385,11 +385,6 @@ static void parsePatch(Binary *B, const Message &msg)
     Instr *I = i->second;
     I->metadata = meta;
 
-    auto j = B->Ts.find(trampoline);
-    if (j == B->Ts.end())
-        error("failed to parse \"patch\" message (id=%u); no matching "
-            "trampoline with name \"%s\"", msg.id, trampoline);
-    const Trampoline *T = j->second;
     queuePatch(B, I, T);
 }
 
@@ -647,12 +642,12 @@ static void parseReserve(Binary *B, const Message &msg)
     if (bytes != nullptr)
     {
         bytes->preload = true;
-        const Alloc *A = allocate(B->allocator, address, address, bytes,
-            nullptr);
+        const Alloc *A = allocate(B->allocator, address, address, B->Ts,
+            bytes, nullptr);
         if (A == nullptr)
             error("failed to reserve address space at address "
                 ADDRESS_FORMAT, ADDRESS(address));
-        length = getTrampolineSize(bytes, nullptr);
+        length = getTrampolineSize(B->Ts, bytes, nullptr);
         debug("reserved address space [prot=%c%c%c, size=%zu, bytes="
             ADDRESS_FORMAT ".." ADDRESS_FORMAT "]",
             (protection & PROT_READ? 'r': '-'),
@@ -699,20 +694,22 @@ static void parseTrampoline(Binary *B, const Message &msg)
         }
     }
     if (name == nullptr)
-        error("failed to parse \"template\" message (id=%u); missing "
+        error("failed to parse \"trampoline\" message (id=%u); missing "
             "\"name\" parameter", msg.id);
+    if (name[0] != '$')
+        error("failed to parse \"trampoline\" message (id=%u); \"name\" "
+            "parameter must begin with a `$', found \"%s\"", msg.id, name);
     if (T == nullptr)
-        error("failed to parse \"template\" message (id=%u); missing "
+        error("failed to parse \"trampoline\" message (id=%u); missing "
             "\"template\" parameter", msg.id);
     if (dup)
-        error("failed to parse \"template\" message (id=%u); duplicate "
+        error("failed to parse \"trampoline\" message (id=%u); duplicate "
             "parameters detected", msg.id);
 
-    auto i = B->Ts.find(name);
-    if (i != B->Ts.end())
-        error("failed to parse \"template\" message (id=%u); a template "
+    auto i = B->Ts.insert(std::make_pair(name, T));
+    if (!i.second)
+        error("failed to parse \"trampoline\" message (id=%u); a trampoline "
             "with name \"%s\" already exists", msg.id, name);
-    B->Ts.insert(std::make_pair(name, T));
 }
 
 /*

@@ -187,6 +187,7 @@ to E9Patch that can be used to patch instructions.
 #### Parameters:
 
 * `"name"`: the name of the trampoline.
+  Valid names must start with the dollar character.
 * `"template"`: the template of the trampoline.
 
 #### Notes:
@@ -207,8 +208,8 @@ any of the following:
 * A byte: represented by an integer *0..255*
 * A macro: represented by a string beginning with a dollar character,
   e.g. `"$asmStr`.
-  Macros are expanded with values provided by the `"patch"` message
-  (see below).
+  Macros are expanded with metadata values provided by the `"patch"` message
+  (see below) or a template from another "trampoline" message.
   There are also some builtin macros (see below).
 * A label: represented by a string beginning with the string `".L"`,
   e.g. `".Llabel"`.
@@ -252,7 +253,7 @@ Several builtin labels are also implicitly defined, including:
             "method": "trampoline",
             "params":
             {
-                "name":"print",
+                "name": "$print",
                 "template": [
                     72, 141, 164, 36, 0, 192, 255, 255,
                     87,
@@ -436,8 +437,8 @@ The `"patch"` message tells E9Patch to patch a given instruction.
 
 * `"offset"`: the file-offset that identifies an instruction previously
     sent via an "instruction" message.
-* `"trampoline"`: the name of a trampoline template sent by a previous
-    "trampoline" message.
+* `"trampoline"`: a trampoline name (sent by a previous "trampoline"
+    message) or a trampoline template.
 * `"metadata"`: a set of key-value pairs mapping macro names to data
     represented in the trampoline template format.
     This metadata will be used to instantiate the trampoline before
@@ -459,7 +460,7 @@ necessary to manage the complex dependencies between patch locations.
             "method": "patch",
             "params":
             {
-                "trampoline": "print",
+                "trampoline": "$print",
                 "metadata":
                 {
                     "$asmStr": "jmp 0x406ac0\n",

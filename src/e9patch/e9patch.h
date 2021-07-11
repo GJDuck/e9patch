@@ -153,12 +153,18 @@ struct Entry
  */
 struct Trampoline
 {
-    const char *name;                   // Name (if applicable)
     int prot:31;                        // Protections.
     int preload:1;                      // Pre-load trampoline?
     unsigned num_entries;               // Number of entries.
-                                        // Entries.
-    Entry entries[];
+    Entry entries[];                    // Entries.
+};
+
+/*
+ * Trampoline comparator.
+ */
+struct TrampolineCmp
+{
+    bool operator()(const Trampoline *a, const Trampoline *b) const;
 };
 
 /*
@@ -167,12 +173,21 @@ struct Trampoline
 extern const Trampoline *evicteeTrampoline;
 
 /*
+ * Metadata entry.
+ */
+struct MetaEntry
+{
+    const char *name;                   // Name.
+    const Trampoline *T;                // Trampoline.
+};
+
+/*
  * Metadata representation.
  */
 struct Metadata
 {
     size_t num_entries;                 // Number of entries.
-    Trampoline *entries[];              // Entries.
+    MetaEntry entries[];                // Entries.
 };
 
 /*

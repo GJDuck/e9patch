@@ -252,11 +252,12 @@ static bool verify(intptr_t lb, intptr_t ub)
  * range [lb..ub].  Returns the allocation, or nullptr on failure.
  */
 const Alloc *allocate(Allocator &allocator, intptr_t lb, intptr_t ub,
-    const Trampoline *T, const Instr *I, bool same_page)
+    const TrampolineSet &Ts, const Trampoline *T, const Instr *I,
+    bool same_page)
 {
     if (!verify(lb, ub + TRAMPOLINE_MAX))
         return nullptr;
-    int r = getTrampolineSize(T, I);
+    int r = getTrampolineSize(Ts, T, I);
     if (r < 0)
         return nullptr;
     size_t size = (size_t)r;

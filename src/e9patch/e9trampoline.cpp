@@ -66,22 +66,27 @@ typedef std::map<const char *, off_t, CStrCmp> LabelSet;
 /*
  * Lookup a macro value.
  */
-static Trampoline *expandMacro(const Metadata *meta, const char *name)
+static const Trampoline *expandMacro(const TrampolineSet &Ts,
+    const Metadata *meta, const char *name)
 {
-    if (meta == nullptr)
-        return nullptr;
-    ssize_t lo = 0, hi = (ssize_t)meta->num_entries-1;
-    while (lo <= hi)
+    if (meta != nullptr)
     {
-        ssize_t mid = (lo + hi) / 2;
-        int cmp = strcmp(name, meta->entries[mid]->name);
-        if (cmp == 0)
-            return meta->entries[mid];
-        else if (cmp < 0)
-            hi = mid - 1;
-        else
-            lo = mid + 1;
+        ssize_t lo = 0, hi = (ssize_t)meta->num_entries-1;
+        while (lo <= hi)
+        {
+            ssize_t mid = (lo + hi) / 2;
+            int cmp = strcmp(name, meta->entries[mid].name);
+            if (cmp == 0)
+                return meta->entries[mid].T;
+            else if (cmp < 0)
+                hi = mid - 1;
+            else
+                lo = mid + 1;
+        }
     }
+    auto i = Ts.find(name);
+    if (i != Ts.end())
+        return i->second;
     return nullptr;
 }
 
@@ -212,8 +217,8 @@ static int buildContinue(const Instr *I, int32_t offset32, Buffer *buf)
  * Calculate trampoline size.
  * Returns (-1) if the trampoline cannot be constructed.
  */
-static int getTrampolineSize(const Trampoline *T, const Instr *I,
-    unsigned depth)
+static int getTrampolineSize(const TrampolineSet &Ts, const Trampoline *T,
+    const Instr *I, unsigned depth)
 {
     if (depth > MACRO_DEPTH_MAX)
         error("failed to get trampoline size; maximum macro expansion depth "
@@ -247,11 +252,12 @@ static int getTrampolineSize(const Trampoline *T, const Instr *I,
                 continue;
             case ENTRY_MACRO:
             {
-                Trampoline *U = expandMacro(I->metadata, entry.macro);
+                const Trampoline *U = expandMacro(Ts, I->metadata,
+                    entry.macro);
                 if (U == nullptr)
                     error("failed to get trampoline size; metadata for macro "
                         "\"%s\" is missing", entry.macro);
-                int r = getTrampolineSize(U, I, depth+1);
+                int r = getTrampolineSize(Ts, U, I, depth+1);
                 if (size < 0)
                     return -1;
                 size += r;
@@ -289,16 +295,17 @@ static int getTrampolineSize(const Trampoline *T, const Instr *I,
 /*
  * Calculate trampoline size.
  */
-int getTrampolineSize(const Trampoline *T, const Instr *I)
+int getTrampolineSize(const TrampolineSet &Ts, const Trampoline *T,
+    const Instr *I)
 {
-    return getTrampolineSize(T, I, /*depth=*/0);
+    return getTrampolineSize(Ts, T, I, /*depth=*/0);
 }
 
 /*
  * Calculate trampoline bounds.
  */
-static size_t getTrampolineBounds(const Trampoline *T, const Instr *I,
-    unsigned depth, size_t size, Bounds &b)
+static size_t getTrampolineBounds(const TrampolineSet &Ts, const Trampoline *T,
+    const Instr *I, unsigned depth, size_t size, Bounds &b)
 {
     if (depth > MACRO_DEPTH_MAX)
         error("failed to get trampoline bounds; maximum macro expansion "
@@ -331,11 +338,12 @@ static size_t getTrampolineBounds(const Trampoline *T, const Instr *I,
                 continue;
             case ENTRY_MACRO:
             {
-                Trampoline *U = expandMacro(I->metadata, entry.macro);
+                const Trampoline *U = expandMacro(Ts, I->metadata,
+                    entry.macro);
                 if (U == nullptr)
                     error("failed to get trampoline bounds; metadata for "
                         "macro \"%s\" is missing", entry.macro);
-                size = getTrampolineBounds(U, I, depth+1, size, b);
+                size = getTrampolineBounds(Ts, U, I, depth+1, size, b);
                 continue;
             }
             case ENTRY_REL8:
@@ -390,20 +398,21 @@ static size_t getTrampolineBounds(const Trampoline *T, const Instr *I,
 /*
  * Calculate trampoline bounds.
  */
-Bounds getTrampolineBounds(const Trampoline *T, const Instr *I)
+Bounds getTrampolineBounds(const TrampolineSet &Ts, const Trampoline *T,
+    const Instr *I)
 {
     Bounds b = {INTPTR_MIN, INTPTR_MAX};
     if (T == evicteeTrampoline)
         return b;
-    getTrampolineBounds(T, I, /*depth=*/0, /*size=*/0, b);
+    getTrampolineBounds(Ts, T, I, /*depth=*/0, /*size=*/0, b);
     return b;
 }
 
 /*
  * Build the set of labels.
  */
-static off_t buildLabelSet(const Trampoline *T, const Instr *I, off_t offset,
-    LabelSet &labels)
+static off_t buildLabelSet(const TrampolineSet &Ts, const Trampoline *T,
+    const Instr *I, off_t offset, LabelSet &labels)
 {
     for (unsigned i = 0; i < T->num_entries; i++)
     {
@@ -439,11 +448,12 @@ static off_t buildLabelSet(const Trampoline *T, const Instr *I, off_t offset,
             }
             case ENTRY_MACRO:
             {
-                Trampoline *U = expandMacro(I->metadata, entry.macro);
+                const Trampoline *U = expandMacro(Ts, I->metadata,
+                    entry.macro);
                 if (U == nullptr)
                     error("failed to build trampoline; metadata for macro "
                         "\"%s\" is missing", entry.macro);
-                offset = buildLabelSet(U, I, offset, labels);
+                offset = buildLabelSet(Ts, U, I, offset, labels);
                 continue;
             }
             case ENTRY_REL8:
@@ -518,8 +528,8 @@ static off_t lookupLabel(const char *label, const Instr *I, int32_t offset32,
 /*
  * Build the trampoline bytes.
  */
-static void buildBytes(const Trampoline *T, const Instr *I, int32_t offset32,
-    const LabelSet &labels, Buffer &buf)
+static void buildBytes(const TrampolineSet &Ts, const Trampoline *T,
+    const Instr *I, int32_t offset32, const LabelSet &labels, Buffer &buf)
 {
     for (unsigned i = 0; i < T->num_entries; i++)
     {
@@ -555,9 +565,10 @@ static void buildBytes(const Trampoline *T, const Instr *I, int32_t offset32,
 
             case ENTRY_MACRO:
             {
-                Trampoline *U = expandMacro(I->metadata, entry.macro);
+                const Trampoline *U = expandMacro(Ts, I->metadata,
+                    entry.macro);
                 assert(U != nullptr);
-                buildBytes(U, I, offset32, labels, buf);
+                buildBytes(Ts, U, I, offset32, labels, buf);
                 continue;
             }
 
@@ -593,8 +604,8 @@ static void buildBytes(const Trampoline *T, const Instr *I, int32_t offset32,
                 {
                     if (rel < INT32_MIN || rel > INT32_MAX)
                         error("failed to build trampoline; rel32 value (%zd) "
-                            "is out-of-range (%zd..%zd)", rel, (ssize_t)INT32_MIN,
-                            INT32_MAX);
+                            "is out-of-range (%zd..%zd)", rel,
+                            (ssize_t)INT32_MIN, INT32_MAX);
                     int32_t rel32 = (int32_t)rel;
                     buf.push((const uint8_t *)&rel32, sizeof(rel32));
                     break;
@@ -642,11 +653,11 @@ static void buildBytes(const Trampoline *T, const Instr *I, int32_t offset32,
 /*
  * Flatten a trampoline into a memory buffer.
  */
-void flattenTrampoline(uint8_t *bytes, size_t size, int32_t offset32,
-    const Trampoline *T, const Instr *I)
+void flattenTrampoline(const TrampolineSet &Ts, uint8_t *bytes, size_t size,
+    int32_t offset32, const Trampoline *T, const Instr *I)
 {
     LabelSet labels;
-    off_t offset = buildLabelSet(T, I, /*offset=*/0, labels);
+    off_t offset = buildLabelSet(Ts, T, I, /*offset=*/0, labels);
     if ((size_t)offset > size)
         error("failed to flatten trampoline for instruction at address 0x%lx; "
             "buffer size (%zu) exceeds the trampoline size (%zu)",
@@ -660,6 +671,83 @@ void flattenTrampoline(uint8_t *bytes, size_t size, int32_t offset32,
     //       is otherwise harmless.
 
     Buffer buf(bytes, offset);
-    buildBytes(T, I, offset32, labels, buf);
+    buildBytes(Ts, T, I, offset32, labels, buf);
+}
+
+/*
+ * Trampoline comparison.
+ */
+bool TrampolineCmp::operator()(const Trampoline *a, const Trampoline *b) const
+{
+    if (a->num_entries != b->num_entries)
+        return (a->num_entries < b->num_entries);
+    for (unsigned i = 0; i < a->num_entries; i++)
+    {
+        const Entry *entry_a = a->entries + i;
+        const Entry *entry_b = b->entries + i;
+        if (entry_a->kind != entry_b->kind)
+            return (entry_a->kind < entry_b->kind);
+        int cmp = 0;
+        switch (entry_a->kind)
+        {
+            case ENTRY_BYTES:
+                if (entry_a->length != entry_b->length)
+                    return (entry_a->length < entry_b->length);
+                cmp = memcmp(entry_a->bytes, entry_b->bytes, entry_a->length);
+                if (cmp != 0)
+                    return (cmp < 0);
+                break;
+            case ENTRY_ZEROES:
+                if (entry_a->length != entry_b->length)
+                    return (entry_a->length < entry_b->length);
+                break;
+            case ENTRY_LABEL:
+                cmp = strcmp(entry_a->label, entry_b->label);
+                if (cmp != 0)
+                    return (cmp < 0);
+                break;
+            case ENTRY_MACRO:
+                cmp = strcmp(entry_a->macro, entry_b->macro);
+                if (cmp != 0)
+                    return (cmp < 0);
+                break;
+            case ENTRY_REL8: case ENTRY_REL32:
+                if (entry_a->use_label != entry_b->use_label)
+                    return (entry_a->use_label < entry_b->use_label);
+                if (entry_a->use_label)
+                {
+                    cmp = strcmp(entry_a->label, entry_b->label);
+                    if (cmp != 0)
+                        return (cmp < 0);
+                }
+                else
+                {
+                    if (entry_a->uint64 != entry_b->uint64)
+                        return (entry_a->uint64 < entry_b->uint64);
+                }
+                break;
+            case ENTRY_INT8:
+                if (entry_a->uint8 != entry_b->uint8)
+                    return (entry_a->uint8 < entry_b->uint8);
+                break;
+            case ENTRY_INT16:
+                if (entry_a->uint16 != entry_b->uint16)
+                    return (entry_a->uint16 < entry_b->uint16);
+                break;
+            case ENTRY_INT32:
+                if (entry_a->uint32 != entry_b->uint32)
+                    return (entry_a->uint32 < entry_b->uint32);
+                break;
+            case ENTRY_INT64:
+                if (entry_a->uint64 != entry_b->uint64)
+                    return (entry_a->uint64 < entry_b->uint64);
+                break;
+            case ENTRY_DEBUG: case ENTRY_INSTRUCTION:
+            case ENTRY_INSTRUCTION_BYTES: case ENTRY_CONTINUE:
+            case ENTRY_TAKEN:
+                break;
+        }
+    }
+    return false;
 }
 

@@ -691,8 +691,9 @@ void optimizeMappings<Key4096>(const Allocator &allocator,
 /*
  * Flatten a trampoline helper.
  */
-void flattenTrampoline(uint8_t *buf, size_t size, intptr_t base, intptr_t end,
-    intptr_t lb, intptr_t ub, const Trampoline *T, const Instr *I)
+void flattenTrampoline(const TrampolineSet &Ts, uint8_t *buf, size_t size,
+    intptr_t base, intptr_t end, intptr_t lb, intptr_t ub, const Trampoline *T,
+    const Instr *I)
 {
     off_t offset = (I == nullptr? 0: lb - I->addr);
     assert(offset >= INT32_MIN);
@@ -703,14 +704,14 @@ void flattenTrampoline(uint8_t *buf, size_t size, intptr_t base, intptr_t end,
     {
         // Common case where the entire trampoline fits into the buffer.
         // There is no need to use temporary memory.
-        flattenTrampoline(buf + (lb - base), (ub - lb), offset32, T, I);
+        flattenTrampoline(Ts, buf + (lb - base), (ub - lb), offset32, T, I);
         return;
     }
 
     // The edge case where only part of the trampoline overlaps with the
     // mapping.  We use a temporary buffer & copy the overlap.
     uint8_t tmp_buf[ub - lb];
-    flattenTrampoline(tmp_buf, (ub - lb), offset32, T, I);
+    flattenTrampoline(Ts, tmp_buf, (ub - lb), offset32, T, I);
     offset = (lb < base? base - lb: 0);
     lb = (lb < base? base: lb);
     ub = (ub > end? end: ub);
@@ -720,7 +721,8 @@ void flattenTrampoline(uint8_t *buf, size_t size, intptr_t base, intptr_t end,
 /*
  * Flatten a mapping into a memory buffer.
  */
-void flattenMapping(uint8_t *buf, const Mapping *mapping, uint8_t fill)
+void flattenMapping(const TrampolineSet &Ts, uint8_t *buf,
+    const Mapping *mapping, uint8_t fill)
 {
     memset(buf, fill, mapping->size);
     
@@ -740,7 +742,8 @@ void flattenMapping(uint8_t *buf, const Mapping *mapping, uint8_t fill)
             if (a->T == nullptr)
                 continue;
 
-            flattenTrampoline(buf, SIZE, BASE, END, a->lb, a->ub, a->T, a->I);
+            flattenTrampoline(Ts, buf, SIZE, BASE, END, a->lb, a->ub,
+                a->T, a->I);
         }
     }
 }

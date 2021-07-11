@@ -36,6 +36,25 @@
 #include "e9trampoline.h"
 
 /*
+ * Bytes cache entry.
+ */
+struct Bytes
+{
+    const uint8_t *bytes;
+    size_t len;
+};
+struct BytesCmp
+{
+    bool operator()(const Bytes &a, const Bytes &b) const
+    {
+        if (a.len != b.len)
+            return (a.len < b.len);
+        int cmp = memcmp(a.bytes, b.bytes, a.len);
+        return (cmp < 0);
+    }
+};
+
+/*
  * We implement our own JSON parser.  Most existing C++ JSON parsers are
  * too general-purpose and too slow for our application.
  */
@@ -128,7 +147,7 @@ static const char *getTokenName(char token)
 /*
  * Duplicate a string.
  */
-static const char *dupString(const char *str, bool shouldCache = true)
+static const char *dupString(const char *str)
 {
     static std::set<const char *, CStrCmp> cache;
     auto i = cache.find(str);
@@ -138,9 +157,63 @@ static const char *dupString(const char *str, bool shouldCache = true)
     char *new_str = strdup(str);
     if (new_str == nullptr)
         error("failed to duplicate string \"%s\": %s", str, strerror(ENOMEM));
-    if (shouldCache)
-        cache.insert(new_str);
+    cache.insert(new_str);
     return new_str;
+}
+
+/*
+ * Duplicate bytes.
+ */
+static std::set<Bytes, BytesCmp> bytes_cache;
+static const uint8_t *dupBytes(const std::vector<uint8_t> &bytes)
+{
+    size_t len = bytes.size();
+    Bytes key = {bytes.data(), len};
+    auto i = bytes_cache.find(key);
+    if (i != bytes_cache.end())
+        return i->bytes;
+
+    uint8_t *new_bytes = new uint8_t[len];
+    memcpy(new_bytes, bytes.data(), len);
+    bytes_cache.insert({new_bytes, len});
+    return new_bytes;
+}
+static const uint8_t *dupBytes(const char *str)
+{
+    size_t len = strlen(str)+1;
+    Bytes key = {(const uint8_t *)str, len};
+    auto i = bytes_cache.find(key);
+    if (i != bytes_cache.end())
+        return i->bytes;
+
+    uint8_t *new_bytes = new uint8_t[len];
+    memcpy(new_bytes, str, len);
+    bytes_cache.insert({new_bytes, len});
+    return new_bytes;
+}
+
+/*
+ * Duplicate trampolines.
+ */
+static Trampoline *dupTrampoline(const std::vector<Entry> &entries)
+{
+    size_t num_entries = entries.size();
+    uint8_t *ptr =
+        new uint8_t[sizeof(Trampoline) + num_entries * sizeof(Entry)];
+    Trampoline *T  = (Trampoline *)ptr;
+    T->prot        = PROT_READ | PROT_EXEC;
+    T->preload     = false;
+    T->num_entries = num_entries;
+    memcpy(T->entries, &entries[0], num_entries * sizeof(Entry));
+
+    static std::set<Trampoline *, TrampolineCmp> cache;
+    auto i = cache.insert(T);
+    if (!i.second)
+    {
+        delete[] ptr;
+        return *i.first;
+    }
+    return T;
 }
 
 /*
@@ -497,13 +570,10 @@ static bool validateParam(Method method, ParamName paramName)
  */
 static Entry makeBytesEntry(std::vector<uint8_t> &bytes)
 {
-    size_t size = bytes.size();
-    uint8_t *bs = new uint8_t[size];
-    memcpy(bs, &bytes[0], size);
     Entry entry;
     entry.kind   = ENTRY_BYTES;
-    entry.length = (unsigned)size;
-    entry.bytes  = bs;
+    entry.length = (unsigned)bytes.size();
+    entry.bytes  = dupBytes(bytes);
     return entry;
 }
 
@@ -650,9 +720,8 @@ type_error:
         case ENTRY_BYTES:
         {
             expectToken(parser, TOKEN_STRING);
-            uint8_t *bs = (uint8_t *)dupString(parser.s, /*cache=*/false);
             entry.length = strlen(parser.s)+1;
-            entry.bytes  = bs;
+            entry.bytes  = dupBytes(parser.s);
             break;
         }
         case ENTRY_ZEROES:
@@ -798,16 +867,7 @@ static Trampoline *parseTrampoline(Parser &parser, bool debug = false)
     if (bytes.size() > 0)
         entries.push_back(makeBytesEntry(bytes));
 
-    size_t num_entries = entries.size();
-    uint8_t *ptr =
-        new uint8_t[sizeof(Trampoline) + num_entries * sizeof(Entry)];
-    Trampoline *T  = (Trampoline *)ptr;
-    T->prot        = PROT_READ | PROT_EXEC;
-    T->preload     = false;
-    T->num_entries = num_entries;
-    memcpy(T->entries, &entries[0], num_entries * sizeof(Entry));
-
-    return T;
+    return dupTrampoline(entries);
 };
 
 /*
@@ -865,7 +925,6 @@ static Metadata *parseMetadata(Parser &parser)
         const char *name = dupString(parser.s);
         expectToken(parser, ':');
         Trampoline *T = parseTrampoline(parser);
-        T->name       = name;
         entries.insert(std::make_pair(name, T));
         token = expectToken2(parser, ',', '}');
         if (token == ',')
@@ -874,12 +933,16 @@ static Metadata *parseMetadata(Parser &parser)
 
     size_t num_entries = entries.size();
     uint8_t *ptr = new uint8_t[sizeof(Metadata) +
-        num_entries * sizeof(Trampoline *)];
+        num_entries * sizeof(MetaEntry)];
     Metadata *meta = (Metadata *)ptr;
     meta->num_entries = num_entries;
     size_t i = 0;
     for (auto pair: entries)
-        meta->entries[i++] = pair.second;
+    {
+        meta->entries[i].name = pair.first;
+        meta->entries[i].T    = pair.second;
+        i++;
+    }
     return meta;
 }
 
@@ -1024,10 +1087,10 @@ static void parseParams(Parser &parser, Message &msg)
                     break;
                 case PARAM_FILENAME:
                 case PARAM_NAME:
-                case PARAM_TRAMPOLINE:
                     expectToken(parser, TOKEN_STRING);
                     value.string = dupString(parser.s);
                     break;
+                case PARAM_TRAMPOLINE:
                 case PARAM_TEMPLATE:
                     value.trampoline = parseTrampoline(parser, /*debug=*/true);
                     break;

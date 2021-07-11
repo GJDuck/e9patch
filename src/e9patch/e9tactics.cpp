@@ -176,8 +176,8 @@ static void undo(Binary &B, Patch *P)
 /*
  * Calculate trampoline bounds.
  */
-static Bounds makeBounds(const Trampoline *T, const Instr *I, const Instr *J,
-    unsigned prefix)
+static Bounds makeBounds(const TrampolineSet &Ts, const Trampoline *T,
+    const Instr *I, const Instr *J, unsigned prefix)
 {
     // Step (1): Calculate the mask to protect overlapping instructions:
     assert(prefix < I->size);
@@ -228,7 +228,7 @@ static Bounds makeBounds(const Trampoline *T, const Instr *I, const Instr *J,
     hi = std::min(hi, addr_hi);
 
     // Step (5): The trampoline itself may have bounds.
-    Bounds b = getTrampolineBounds(T, J);
+    Bounds b = getTrampolineBounds(Ts, T, J);
     lo = std::max(lo, b.lb);
     hi = std::min(hi, b.ub);
 
@@ -265,8 +265,9 @@ static const Alloc *allocatePunnedJump(Binary &B, const Instr *I,
     for (unsigned i = 0; i <= /*sizeof(jmpq)=*/5; i++)
         if (I->patched.state[prefix + i] == STATE_QUEUED)
             return nullptr;
-    auto b = makeBounds(T, I, J, prefix);
-    return allocate(B.allocator, b.lb, b.ub, T, J, !option_mem_multi_page);
+    auto b = makeBounds(B.Ts, T, I, J, prefix);
+    return allocate(B.allocator, b.lb, b.ub, B.Ts, T, J,
+        !option_mem_multi_page);
 }
 
 /*
@@ -758,7 +759,7 @@ bool patch(Binary &B, Instr *I, const Trampoline *T)
     debug("patched instruction 0x%lx [size=%zu, tactic=%s, "
         "trampoline=" ADDRESS_FORMAT ".." ADDRESS_FORMAT "]",
         I->addr, I->size, getTacticName(P->tactic), ADDRESS(I->trampoline),
-            ADDRESS(I->trampoline + getTrampolineSize(T, I)));
+            ADDRESS(I->trampoline + getTrampolineSize(B.Ts, T, I)));
     printf("\33[32m.\33[0m");
     commit(P);
     return true;            // Success!

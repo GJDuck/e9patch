@@ -51,7 +51,8 @@ typedef std::vector<Mapping *> MappingSet;
 
 void buildMappings(const Allocator &allocator, const size_t MAPPING_SIZE,
     MappingSet &mappings);
-void flattenMapping(uint8_t *buf, const Mapping *mapping, uint8_t fill);
+void flattenMapping(const TrampolineSet &Ts, uint8_t *buf,
+    const Mapping *mapping, uint8_t fill);
 void getVirtualBounds(const Mapping *mapping, std::vector<Bounds> &bounds);
 
 template <typename Key>

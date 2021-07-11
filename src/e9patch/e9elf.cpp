@@ -674,7 +674,7 @@ size_t emitElf(const Binary *B, const MappingSet &mappings,
     {
         uint8_t *base = data + size;
         mapping->offset = (off_t)size;
-        flattenMapping(base, mapping, /*int3=*/0xcc);
+        flattenMapping(B->Ts, base, mapping, /*int3=*/0xcc);
         size += mapping->size;
     }
 

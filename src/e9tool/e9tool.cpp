@@ -1428,17 +1428,17 @@ static Action *parseAction(const ELF &elf, const char *str,
     switch (kind)
     {
         case ACTION_PRINT:
-            name = "print";
+            name = "$print";
             break;
         case ACTION_PASSTHRU:
-            name = "passthru";
+            name = "$passthru";
             break;
         case ACTION_TRAP:
-            name = "trap";
+            name = "$trap";
             break;
         case ACTION_CALL:
         {
-            std::string call_name("call_");
+            std::string call_name("$call_");
             call_name += (clean? "clean_": "naked_");
             switch (call)
             {
@@ -1461,14 +1461,14 @@ static Action *parseAction(const ELF &elf, const char *str,
         }
         case ACTION_EXIT:
         {
-            std::string exit_name("exit_");
+            std::string exit_name("$exit_");
             exit_name += std::to_string(status);
             name = strDup(exit_name.c_str());
             break;
         }
         case ACTION_PLUGIN:
         {
-            std::string plugin_name("plugin_");
+            std::string plugin_name("$plugin_");
             plugin_name += filename;
             name = strDup(plugin_name.c_str());
             break;
