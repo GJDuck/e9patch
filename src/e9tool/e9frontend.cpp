@@ -1170,14 +1170,6 @@ struct CallInfo
     CallInfo(const CallInfo &) = delete;
 };
 
-enum TargetKind : uint8_t
-{
-    TARGET_ENTRY,
-    TARGET_DIRECT,
-    TARGET_INDIRECT
-};
-typedef std::map<intptr_t, TargetKind> Targets;
-
 /*
  * ELF file.
  */

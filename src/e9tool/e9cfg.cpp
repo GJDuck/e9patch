@@ -86,10 +86,10 @@ static std::pair<const T *, const T *> getBounds(const uint8_t *lb0,
 }
 
 /*
- * Find the instruction corresponding to the address.  Returns SIZE_MAX if the
+ * Find the instruction corresponding to the address.  Returns a negative index
  * corresponding instruction is not found.
  */
-static size_t findInstr(const Instr *Is, size_t size, intptr_t address)
+ssize_t e9frontend::findInstr(const Instr *Is, size_t size, intptr_t address)
 {
     ssize_t lo = 0, hi = (ssize_t)size-1;
     while (lo <= hi)
@@ -100,9 +100,9 @@ static size_t findInstr(const Instr *Is, size_t size, intptr_t address)
         else if ((intptr_t)Is[mid].address > address)
             hi = mid-1;
         else
-            return (size_t)mid;
+            return mid;
     }
-    return SIZE_MAX;
+    return -1;
 }
 
 /*
@@ -139,7 +139,7 @@ static void CFGCodeAnalysis(const ELF *elf, bool pic, const Instr *Is,
                 // immediate value to be a target if it happens to point to a
                 // valid instruction.
                 target = (intptr_t)I->op[0].imm;
-                if (findInstr(Is, size, target) < size)
+                if (findInstr(Is, size, target) >= 0)
                 {
                     DEBUG(targets, target, "Load  : %p", (void *)target);
                     addTarget(target, TARGET_INDIRECT, targets);
@@ -154,7 +154,7 @@ static void CFGCodeAnalysis(const ELF *elf, bool pic, const Instr *Is,
                 // [HEURISTIC] Similar to the "mov" case but for PIC.
                 target = (intptr_t)I->address + (intptr_t)I->size +
                     (intptr_t)I->op[0].mem.disp;
-                if (findInstr(Is, size, target) < size)
+                if (findInstr(Is, size, target) >= 0)
                 {
                     DEBUG(targets, target, "Load  : %p", (void *)target);
                     addTarget(target, TARGET_INDIRECT, targets);
@@ -245,7 +245,7 @@ static void CFGSectionAnalysis(const ELF *elf, bool pic, const char *name,
         for (const intptr_t *p = bounds.first; p < bounds.second; p++)
         {
             intptr_t target = *p;
-            if (target != 0 && findInstr(Is, size, target) < size)
+            if (target != 0 && findInstr(Is, size, target) >= 0)
             {
                 // "Probably" a jump target.
                 DEBUG(targets, target, "Data  : %p", (void *)target);
@@ -276,7 +276,7 @@ static void CFGSectionAnalysis(const ELF *elf, bool pic, const char *name,
                 {
                     intptr_t offset = (intptr_t)*q;
                     intptr_t target = table + offset;
-                    if (findInstr(Is, size, target) >= size)
+                    if (findInstr(Is, size, target) < 0)
                         break;
                     DEBUG(targets, target, "JmpTbl: %p%+zd = %p",
                         (void *)table, offset, (void *)target);
@@ -299,7 +299,7 @@ static void CFGSectionAnalysis(const ELF *elf, bool pic, const char *name,
                     continue;
                 
                 intptr_t target = *p;
-                if (findInstr(Is, size, target) >= size)
+                if (findInstr(Is, size, target) < 0)
                     continue;
                 DEBUG(targets, target, "Reloc : %p", (void *)target);
                 addTarget(target, TARGET_INDIRECT, targets);
@@ -343,7 +343,7 @@ static void CFGDataAnalysis(const ELF *elf, bool pic, const Instr *Is,
 /*
  * Analyze the given ELF binary for potential jump targets.
  */
-void CFGAnalysis(const ELF *elf, const Instr *Is, size_t size,
+void e9frontend::CFGAnalysis(const ELF *elf, const Instr *Is, size_t size,
     Targets &targets)
 {
     bool pic = false;
@@ -371,13 +371,13 @@ void CFGAnalysis(const ELF *elf, const Instr *Is, size_t size,
         TargetKind kind = entry.second;
 
         // Find the corresponding instruction:
-        size_t i = findInstr(Is, size, target);
-        if (i >= size)
+        ssize_t i = findInstr(Is, size, target);
+        if (i < 0)
             continue;
 
         // Skip any NOPs/INTs/UDs:
         InstrInfo I0, *I = &I0;
-        for (; i < size; i++)
+        for (; i < (ssize_t)size; i++)
         {
             getInstrInfo(elf, Is + i, I);
             bool stop = false;
@@ -394,11 +394,11 @@ void CFGAnalysis(const ELF *elf, const Instr *Is, size_t size,
             }
             if (stop)
                 break;
-            if (i+1 < size &&
+            if (i+1 < (ssize_t)size &&
                     (intptr_t)Is[i+1].address != I->address + I->size)
                 i = SIZE_MAX;
         }
-        if (i >= size)
+        if (i >= (ssize_t)size)
             continue;   // No target found.
         
         // Add target:

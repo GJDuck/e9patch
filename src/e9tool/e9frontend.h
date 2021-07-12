@@ -2275,6 +2275,17 @@ struct Argument
 };
 
 /*
+ * Jump/call targets.
+ */
+enum TargetKind : uint8_t
+{
+    TARGET_ENTRY,
+    TARGET_DIRECT,
+    TARGET_INDIRECT
+};
+typedef std::map<intptr_t, TargetKind> Targets;
+
+/*
  * Low-level functions that send fragments of JSONRPC messages:
  */
 extern void sendMessageHeader(FILE *out, const char *method);
@@ -2339,6 +2350,9 @@ extern const PLTInfo &getELFPLTInfo(const ELF *elf);
  */
 extern void getInstrInfo(const ELF *elf, const Instr *I, InstrInfo *info,
     void *raw = nullptr);
+extern ssize_t findInstr(const Instr *Is, size_t size, intptr_t address);
+extern void CFGAnalysis(const ELF *elf, const Instr *Is, size_t size,
+    Targets &targets);
 extern intptr_t getSymbol(const ELF *elf, const char *symbol);
 extern void NO_RETURN error(const char *msg, ...);
 extern void warning(const char *msg, ...);
