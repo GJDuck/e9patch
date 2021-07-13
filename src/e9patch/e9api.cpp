@@ -165,7 +165,8 @@ static void queuePatch(Binary *B, Instr *I, const Trampoline *T)
 
     PatchEntry entry(I, T);
     B->Q.push_front(entry);
-    queueFlush(B, I->addr);
+    if (!option_batch)
+        queueFlush(B, I->addr);
 }
 
 /*

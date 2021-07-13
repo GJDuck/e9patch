@@ -408,6 +408,7 @@ struct Binary
  */
 extern bool option_is_tty;
 extern bool option_debug;
+extern bool option_batch;
 extern unsigned option_Ojump_elim;
 extern unsigned option_Ojump_elim_size;
 extern bool option_Ojump_peephole;

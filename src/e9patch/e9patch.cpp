@@ -31,6 +31,7 @@
  */
 bool option_is_tty              = false;
 bool option_debug               = false;
+bool option_batch               = false;
 bool option_tactic_B1           = true;
 bool option_tactic_B2           = true;
 bool option_tactic_T1           = true;
@@ -202,6 +203,10 @@ static void usage(FILE *stream, const char *progname)
         "\t\tfaster code to be emitted, but may break transparency.\n"
         "\t\tDefault: false (disabled)\n"
         "\n"
+        "\t--batch[=false]\n"
+        "\t\tRewrite the binary in one batch rather than incrementally.\n"
+        "\t\tDefault: false (disabled)\n"
+        "\n"
         "\t--debug\n"
         "\t\tEnable debug log messages.\n"
         "\n"
@@ -288,6 +293,7 @@ static void usage(FILE *stream, const char *progname)
  */
 enum Option
 {
+    OPTION_BATCH,
     OPTION_DEBUG,
     OPTION_HELP,
     OPTION_INPUT,
@@ -331,6 +337,7 @@ void parseOptions(int argc, char * const argv[], bool api)
         {"Ojump-peephole-2",   opt_arg, nullptr, OPTION_OJUMP_PEEPHOLE_2},
         {"Oorder-trampolines", opt_arg, nullptr, OPTION_OORDER_TRAMPOLINES},
         {"Oscratch-stack",     opt_arg, nullptr, OPTION_OSCRATCH_STACK},
+        {"batch",              opt_arg, nullptr, OPTION_BATCH},
         {"debug",              no_arg,  nullptr, OPTION_DEBUG},
         {"help",               no_arg,  nullptr, OPTION_HELP},
         {"input",              req_arg, nullptr, OPTION_INPUT},
@@ -374,6 +381,9 @@ void parseOptions(int argc, char * const argv[], bool api)
         }
         switch (opt)
         {
+            case OPTION_BATCH:
+                option_batch = parseBoolOptArg("--batch", optarg);
+                break;
             case OPTION_DEBUG:
                 option_debug = true;
                 break;
