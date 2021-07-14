@@ -2534,7 +2534,6 @@ int main(int argc, char **argv)
             options.push_back("-Ojump-elim=0");
             options.push_back("-Ojump-elim-size=0");
             options.push_back("-Ojump-peephole=false");
-            options.push_back("-Ojump-peephole-2=false");
             options.push_back("-Oorder-trampolines=false");
             options.push_back("-Oscratch-stack=false");
             options.push_back("--mem-granularity=64");
@@ -2544,7 +2543,6 @@ int main(int argc, char **argv)
             options.push_back("-Ojump-elim-size=0");
             options.push_back("-Oorder-trampolines=false");
             options.push_back("-Ojump-peephole=true");
-            options.push_back("-Ojump-peephole-2=true");
             options.push_back("-Oscratch-stack=true");
             options.push_back("--mem-granularity=128");
             break;
@@ -2553,7 +2551,6 @@ int main(int argc, char **argv)
             options.push_back("-Ojump-elim-size=64");
             options.push_back("-Oorder-trampolines=true");
             options.push_back("-Ojump-peephole=true");
-            options.push_back("-Ojump-peephole-2=true");
             options.push_back("-Oscratch-stack=true");
             options.push_back("--mem-granularity=128");
             break;
@@ -2562,7 +2559,6 @@ int main(int argc, char **argv)
             options.push_back("-Ojump-elim-size=512");
             options.push_back("-Oorder-trampolines=true");
             options.push_back("-Ojump-peephole=true");
-            options.push_back("-Ojump-peephole-2=true");
             options.push_back("-Oscratch-stack=true");
             options.push_back("--mem-granularity=4096");
             break;
@@ -2570,7 +2566,6 @@ int main(int argc, char **argv)
             options.push_back("-Ojump-elim=0");
             options.push_back("-Ojump-elim-size=0");
             options.push_back("-Ojump-peephole=true");
-            options.push_back("-Ojump-peephole-2=true");
             options.push_back("-Oorder-trampolines=true");
             options.push_back("-Oscratch-stack=true");
             options.push_back("--mem-granularity=4096");

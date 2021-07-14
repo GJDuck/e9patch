@@ -23,11 +23,10 @@
 
 #define TRAMPOLINE_MAX      4096
 
-int getTrampolineSize(const TrampolineSet &Ts, const Trampoline *T,
+int getTrampolineSize(const Binary *B, const Trampoline *T, const Instr *I);
+Bounds getTrampolineBounds(const Binary *B, const Trampoline *T,
     const Instr *I);
-Bounds getTrampolineBounds(const TrampolineSet &Ts, const Trampoline *T,
-    const Instr *I);
-void flattenTrampoline(const TrampolineSet &Ts, uint8_t *buf, size_t,
+void flattenTrampoline(const Binary *B, uint8_t *buf, size_t size,
     int32_t offset32, const Trampoline *T, const Instr *I);
 
 #endif

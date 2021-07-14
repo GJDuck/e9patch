@@ -691,7 +691,7 @@ void optimizeMappings<Key4096>(const Allocator &allocator,
 /*
  * Flatten a trampoline helper.
  */
-void flattenTrampoline(const TrampolineSet &Ts, uint8_t *buf, size_t size,
+void flattenTrampoline(const Binary *B, uint8_t *buf, size_t size,
     intptr_t base, intptr_t end, intptr_t lb, intptr_t ub, const Trampoline *T,
     const Instr *I)
 {
@@ -704,14 +704,14 @@ void flattenTrampoline(const TrampolineSet &Ts, uint8_t *buf, size_t size,
     {
         // Common case where the entire trampoline fits into the buffer.
         // There is no need to use temporary memory.
-        flattenTrampoline(Ts, buf + (lb - base), (ub - lb), offset32, T, I);
+        flattenTrampoline(B, buf + (lb - base), (ub - lb), offset32, T, I);
         return;
     }
 
     // The edge case where only part of the trampoline overlaps with the
     // mapping.  We use a temporary buffer & copy the overlap.
     uint8_t tmp_buf[ub - lb];
-    flattenTrampoline(Ts, tmp_buf, (ub - lb), offset32, T, I);
+    flattenTrampoline(B, tmp_buf, (ub - lb), offset32, T, I);
     offset = (lb < base? base - lb: 0);
     lb = (lb < base? base: lb);
     ub = (ub > end? end: ub);
@@ -721,8 +721,8 @@ void flattenTrampoline(const TrampolineSet &Ts, uint8_t *buf, size_t size,
 /*
  * Flatten a mapping into a memory buffer.
  */
-void flattenMapping(const TrampolineSet &Ts, uint8_t *buf,
-    const Mapping *mapping, uint8_t fill)
+void flattenMapping(const Binary *B, uint8_t *buf, const Mapping *mapping,
+    uint8_t fill)
 {
     memset(buf, fill, mapping->size);
     
@@ -742,7 +742,7 @@ void flattenMapping(const TrampolineSet &Ts, uint8_t *buf,
             if (a->T == nullptr)
                 continue;
 
-            flattenTrampoline(Ts, buf, SIZE, BASE, END, a->lb, a->ub,
+            flattenTrampoline(B, buf, SIZE, BASE, END, a->lb, a->ub,
                 a->T, a->I);
         }
     }

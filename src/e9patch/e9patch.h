@@ -394,6 +394,9 @@ struct Binary
     intptr_t cursor;                    // Patching cursor.
     PatchQueue Q;                       // Instructions queued for patching.
 
+    off_t diff = 0;                     // Offset/address difference.
+                                        // Used for optimization only.
+
     InstrSet Is;                        // All (known) instructions.
     TrampolineSet Ts;                   // All current trampoline templates.
     
@@ -404,6 +407,11 @@ struct Binary
 };
 
 /*
+ * Binary helpers.
+ */
+extern Instr *findInstr(const Binary *B, intptr_t addr);
+
+/*
  * Global options.
  */
 extern bool option_is_tty;
@@ -412,7 +420,6 @@ extern bool option_batch;
 extern unsigned option_Ojump_elim;
 extern unsigned option_Ojump_elim_size;
 extern bool option_Ojump_peephole;
-extern bool option_Ojump_peephole_2;
 extern bool option_Oorder_trampolines;
 extern bool option_Oscratch_stack;
 extern bool option_tactic_B1;

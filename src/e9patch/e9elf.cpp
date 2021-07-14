@@ -68,9 +68,14 @@ typedef std::vector<Refactor> RefactorSet;
 /*
  * Parse the ELF file & reserve any occupied address space.
  */
-void parseElf(Allocator &allocator, const char *filename, uint8_t *data,
-    size_t size, Mode mode, ElfInfo &info)
+void parseElf(Binary *B)
 {
+    const char *filename = B->filename;
+    uint8_t *data = B->patched.bytes;
+    size_t size = B->size;
+    Mode mode = B->mode;
+    ElfInfo &info = B->elf;
+
     if (size < sizeof(Elf64_Ehdr))
         error("failed to parse ELF EHDR from file \"%s\"; file is too small",
             filename);
@@ -112,7 +117,7 @@ void parseElf(Allocator &allocator, const char *filename, uint8_t *data,
             if (mode == MODE_SHARED_OBJECT)
                 error("failed to parse ELF file \"%s\": file is an "
                     "executable and not a shared object", filename);
-            if (!reserve(allocator, 0x0, 0x10000))
+            if (!reserve(B, 0x0, 0x10000))
                 error("failed to reserve low-address range");
             break;
         }
@@ -129,7 +134,7 @@ void parseElf(Allocator &allocator, const char *filename, uint8_t *data,
         // Only PIEs can use the negative address range.  Other PIC such
         // as shared objects cannot use this range since the dynamic
         // linker tends to use it for other libraries.
-        if (!reserve(allocator, RELATIVE_ADDRESS_MIN, 0x0))
+        if (!reserve(B, RELATIVE_ADDRESS_MIN, 0x0))
             error("failed to reserve negative-address range");
     }
 
@@ -144,7 +149,7 @@ void parseElf(Allocator &allocator, const char *filename, uint8_t *data,
             {
                 intptr_t vstart = (intptr_t)phdr->p_vaddr;
                 intptr_t vend   = vstart + phdr->p_memsz;
-                if (!reserve(allocator, vstart, vend))
+                if (!reserve(B, vstart, vend))
                     error("failed to reserve address space range %p..%p",
                         vstart, vend);
                 break;
@@ -674,7 +679,7 @@ size_t emitElf(const Binary *B, const MappingSet &mappings,
     {
         uint8_t *base = data + size;
         mapping->offset = (off_t)size;
-        flattenMapping(B->Ts, base, mapping, /*int3=*/0xcc);
+        flattenMapping(B, base, mapping, /*int3=*/0xcc);
         size += mapping->size;
     }
 

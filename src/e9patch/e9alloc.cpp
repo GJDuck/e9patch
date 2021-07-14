@@ -251,13 +251,13 @@ static bool verify(intptr_t lb, intptr_t ub)
  * Allocates a chunk of virtual address space of size `size` and within the
  * range [lb..ub].  Returns the allocation, or nullptr on failure.
  */
-const Alloc *allocate(Allocator &allocator, intptr_t lb, intptr_t ub,
-    const TrampolineSet &Ts, const Trampoline *T, const Instr *I,
-    bool same_page)
+const Alloc *allocate(Binary *B, intptr_t lb, intptr_t ub,
+    const Trampoline *T, const Instr *I, bool same_page)
 {
+    Allocator &allocator = B->allocator;
     if (!verify(lb, ub + TRAMPOLINE_MAX))
         return nullptr;
-    int r = getTrampolineSize(Ts, T, I);
+    int r = getTrampolineSize(B, T, I);
     if (r < 0)
         return nullptr;
     size_t size = (size_t)r;
@@ -285,8 +285,9 @@ const Alloc *allocate(Allocator &allocator, intptr_t lb, intptr_t ub,
  * Reserves a chunk of the virtual address space spanning the range [lb..ub].
  * Returns `true` on success, `false` on failure.
  */
-bool reserve(Allocator &allocator, intptr_t lb, intptr_t ub)
+bool reserve(Binary *B, intptr_t lb, intptr_t ub)
 {
+    Allocator &allocator = B->allocator;
     if (!verify(lb, ub))
         return false;
     lb -= (lb % PAGE_SIZE);
@@ -310,8 +311,9 @@ bool reserve(Allocator &allocator, intptr_t lb, intptr_t ub)
 /*
  * Deallocate an existing allocation.
  */
-void deallocate(Allocator &allocator, const Alloc *a)
+void deallocate(Binary *B, const Alloc *a)
 {
+    Allocator &allocator = B->allocator;
     if (a == nullptr)
         return;
     Node *n = (Node *)(a);

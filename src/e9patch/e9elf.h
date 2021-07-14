@@ -25,8 +25,7 @@
 #include "e9mapping.h"
 #include "e9patch.h"
 
-void parseElf(Allocator &allocator, const char *filename, uint8_t *data,
-    size_t size, Mode mode, ElfInfo &info);
+void parseElf(Binary *B);
 size_t emitElf(const Binary *B, const MappingSet &mappings,
     size_t mapping_size);
 

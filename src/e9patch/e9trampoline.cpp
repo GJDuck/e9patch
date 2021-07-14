@@ -1,6 +1,6 @@
 /*
  * e9trampoline.cpp
- * Copyright (C) 2020 National University of Singapore
+ * Copyright (C) 2021 National University of Singapore
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -66,7 +66,7 @@ typedef std::map<const char *, off_t, CStrCmp> LabelSet;
 /*
  * Lookup a macro value.
  */
-static const Trampoline *expandMacro(const TrampolineSet &Ts,
+static const Trampoline *expandMacro(const Binary *B,
     const Metadata *meta, const char *name)
 {
     if (meta != nullptr)
@@ -84,8 +84,8 @@ static const Trampoline *expandMacro(const TrampolineSet &Ts,
                 lo = mid + 1;
         }
     }
-    auto i = Ts.find(name);
-    if (i != Ts.end())
+    auto i = B->Ts.find(name);
+    if (i != B->Ts.end())
         return i->second;
     return nullptr;
 }
@@ -141,7 +141,8 @@ static int buildJump(off_t offset, const Instr *J, Buffer *buf)
  * other jumps to unrelated trampolines).  This saves a jump and a lot of
  * overhead (since CPUs like locality).
  */
-static int buildContinue(const Instr *I, int32_t offset32, Buffer *buf)
+static int buildContinue(const Binary *B, const Instr *I, int32_t offset32,
+    Buffer *buf)
 {
     // Lookahead to find the next unconditional CFT instruction.
     const Instr *J = I;
@@ -197,7 +198,33 @@ static int buildContinue(const Instr *I, int32_t offset32, Buffer *buf)
             break;
         }
         if (buf != nullptr)
+        {
+            if (option_Ojump_peephole && len == /*sizeof(jcc rel32)=*/6)
+            {
+                // As per above, if conditional jump target is itself a jump,
+                // then jump directly to the target's target.
+                intptr_t addr = J->addr + offset32 + (r - s);
+                intptr_t target = getJccTarget(addr, buf->bytes + buf->i, len);
+                Instr *K = findInstr(B, target);
+                if (K != nullptr)
+                {
+                    target = K->trampoline;
+                    target = (target != INTPTR_MIN? target:
+                        getJumpTarget(K->addr, K->patched.bytes, K->size));
+                    if (target != INTPTR_MIN)
+                    {
+                        off_t offset = (off_t)target - (off_t)(addr + len);
+                        if (offset >= INT32_MIN && offset <= INT32_MAX)
+                        {
+                            int32_t rel32 = (int32_t)offset;
+                            memcpy(buf->bytes + buf->i + len - sizeof(rel32),
+                                &rel32, sizeof(rel32));
+                        }
+                    }
+                }
+            }
             buf->i += (unsigned)len;
+        }
         s += J->size;
         r += (unsigned)len;
     }
@@ -217,7 +244,7 @@ static int buildContinue(const Instr *I, int32_t offset32, Buffer *buf)
  * Calculate trampoline size.
  * Returns (-1) if the trampoline cannot be constructed.
  */
-static int getTrampolineSize(const TrampolineSet &Ts, const Trampoline *T,
+static int getTrampolineSize(const Binary *B, const Trampoline *T,
     const Instr *I, unsigned depth)
 {
     if (depth > MACRO_DEPTH_MAX)
@@ -252,12 +279,12 @@ static int getTrampolineSize(const TrampolineSet &Ts, const Trampoline *T,
                 continue;
             case ENTRY_MACRO:
             {
-                const Trampoline *U = expandMacro(Ts, I->metadata,
+                const Trampoline *U = expandMacro(B, I->metadata,
                     entry.macro);
                 if (U == nullptr)
                     error("failed to get trampoline size; metadata for macro "
                         "\"%s\" is missing", entry.macro);
-                int r = getTrampolineSize(Ts, U, I, depth+1);
+                int r = getTrampolineSize(B, U, I, depth+1);
                 if (size < 0)
                     return -1;
                 size += r;
@@ -282,7 +309,7 @@ static int getTrampolineSize(const TrampolineSet &Ts, const Trampoline *T,
                 size += I->size;
                 continue;
             case ENTRY_CONTINUE:
-                size += buildContinue(I, /*offset=*/0, nullptr);
+                size += buildContinue(B, I, /*offset=*/0, nullptr);
                 continue;
             case ENTRY_TAKEN:
                 size += /*sizeof(jmpq)=*/5;
@@ -295,16 +322,16 @@ static int getTrampolineSize(const TrampolineSet &Ts, const Trampoline *T,
 /*
  * Calculate trampoline size.
  */
-int getTrampolineSize(const TrampolineSet &Ts, const Trampoline *T,
+int getTrampolineSize(const Binary *B, const Trampoline *T,
     const Instr *I)
 {
-    return getTrampolineSize(Ts, T, I, /*depth=*/0);
+    return getTrampolineSize(B, T, I, /*depth=*/0);
 }
 
 /*
  * Calculate trampoline bounds.
  */
-static size_t getTrampolineBounds(const TrampolineSet &Ts, const Trampoline *T,
+static size_t getTrampolineBounds(const Binary *B, const Trampoline *T,
     const Instr *I, unsigned depth, size_t size, Bounds &b)
 {
     if (depth > MACRO_DEPTH_MAX)
@@ -338,12 +365,12 @@ static size_t getTrampolineBounds(const TrampolineSet &Ts, const Trampoline *T,
                 continue;
             case ENTRY_MACRO:
             {
-                const Trampoline *U = expandMacro(Ts, I->metadata,
+                const Trampoline *U = expandMacro(B, I->metadata,
                     entry.macro);
                 if (U == nullptr)
                     error("failed to get trampoline bounds; metadata for "
                         "macro \"%s\" is missing", entry.macro);
-                size = getTrampolineBounds(Ts, U, I, depth+1, size, b);
+                size = getTrampolineBounds(B, U, I, depth+1, size, b);
                 continue;
             }
             case ENTRY_REL8:
@@ -385,7 +412,7 @@ static size_t getTrampolineBounds(const TrampolineSet &Ts, const Trampoline *T,
                 size += I->size;
                 continue;
             case ENTRY_CONTINUE:
-                size += buildContinue(I, /*offset=*/0, nullptr);
+                size += buildContinue(B, I, /*offset=*/0, nullptr);
                 continue;
             case ENTRY_TAKEN:
                 size += /*sizeof(jmpq)=*/5;
@@ -398,20 +425,20 @@ static size_t getTrampolineBounds(const TrampolineSet &Ts, const Trampoline *T,
 /*
  * Calculate trampoline bounds.
  */
-Bounds getTrampolineBounds(const TrampolineSet &Ts, const Trampoline *T,
+Bounds getTrampolineBounds(const Binary *B, const Trampoline *T,
     const Instr *I)
 {
     Bounds b = {INTPTR_MIN, INTPTR_MAX};
     if (T == evicteeTrampoline)
         return b;
-    getTrampolineBounds(Ts, T, I, /*depth=*/0, /*size=*/0, b);
+    getTrampolineBounds(B, T, I, /*depth=*/0, /*size=*/0, b);
     return b;
 }
 
 /*
  * Build the set of labels.
  */
-static off_t buildLabelSet(const TrampolineSet &Ts, const Trampoline *T,
+static off_t buildLabelSet(const Binary *B, const Trampoline *T,
     const Instr *I, off_t offset, LabelSet &labels)
 {
     for (unsigned i = 0; i < T->num_entries; i++)
@@ -448,12 +475,12 @@ static off_t buildLabelSet(const TrampolineSet &Ts, const Trampoline *T,
             }
             case ENTRY_MACRO:
             {
-                const Trampoline *U = expandMacro(Ts, I->metadata,
+                const Trampoline *U = expandMacro(B, I->metadata,
                     entry.macro);
                 if (U == nullptr)
                     error("failed to build trampoline; metadata for macro "
                         "\"%s\" is missing", entry.macro);
-                offset = buildLabelSet(Ts, U, I, offset, labels);
+                offset = buildLabelSet(B, U, I, offset, labels);
                 continue;
             }
             case ENTRY_REL8:
@@ -470,7 +497,7 @@ static off_t buildLabelSet(const TrampolineSet &Ts, const Trampoline *T,
                 offset += I->size;
                 continue;
             case ENTRY_CONTINUE:
-                offset += buildContinue(I, /*offset=*/0, nullptr);
+                offset += buildContinue(B, I, /*offset=*/0, nullptr);
                 continue;
             case ENTRY_TAKEN:
                 offset += /*sizeof(jmpq)=*/5;
@@ -528,7 +555,7 @@ static off_t lookupLabel(const char *label, const Instr *I, int32_t offset32,
 /*
  * Build the trampoline bytes.
  */
-static void buildBytes(const TrampolineSet &Ts, const Trampoline *T,
+static void buildBytes(const Binary *B, const Trampoline *T,
     const Instr *I, int32_t offset32, const LabelSet &labels, Buffer &buf)
 {
     for (unsigned i = 0; i < T->num_entries; i++)
@@ -565,10 +592,10 @@ static void buildBytes(const TrampolineSet &Ts, const Trampoline *T,
 
             case ENTRY_MACRO:
             {
-                const Trampoline *U = expandMacro(Ts, I->metadata,
+                const Trampoline *U = expandMacro(B, I->metadata,
                     entry.macro);
                 assert(U != nullptr);
-                buildBytes(Ts, U, I, offset32, labels, buf);
+                buildBytes(B, U, I, offset32, labels, buf);
                 continue;
             }
 
@@ -625,7 +652,7 @@ static void buildBytes(const TrampolineSet &Ts, const Trampoline *T,
                 break;
         
             case ENTRY_CONTINUE:
-                (void)buildContinue(I, offset32 + buf.size(), &buf);
+                (void)buildContinue(B, I, offset32 + buf.size(), &buf);
                 break;
 
             case ENTRY_TAKEN:
@@ -653,11 +680,11 @@ static void buildBytes(const TrampolineSet &Ts, const Trampoline *T,
 /*
  * Flatten a trampoline into a memory buffer.
  */
-void flattenTrampoline(const TrampolineSet &Ts, uint8_t *bytes, size_t size,
+void flattenTrampoline(const Binary *B, uint8_t *bytes, size_t size,
     int32_t offset32, const Trampoline *T, const Instr *I)
 {
     LabelSet labels;
-    off_t offset = buildLabelSet(Ts, T, I, /*offset=*/0, labels);
+    off_t offset = buildLabelSet(B, T, I, /*offset=*/0, labels);
     if ((size_t)offset > size)
         error("failed to flatten trampoline for instruction at address 0x%lx; "
             "buffer size (%zu) exceeds the trampoline size (%zu)",
@@ -671,7 +698,7 @@ void flattenTrampoline(const TrampolineSet &Ts, uint8_t *bytes, size_t size,
     //       is otherwise harmless.
 
     Buffer buf(bytes, offset);
-    buildBytes(Ts, T, I, offset32, labels, buf);
+    buildBytes(B, T, I, offset32, labels, buf);
 }
 
 /*

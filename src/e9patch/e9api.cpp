@@ -45,6 +45,7 @@ void insertInstruction(Binary *B, Instr *I)
         error("failed to insert instruction at offset (+%zu), another "
             "instruction already exists at that offset", I->offset);
     InstrSet::iterator i = result.first;
+    B->diff = (off_t)I->addr - (off_t)I->offset;
 
     // Find and validate successor and predecessor instructions:
     ++i;
@@ -241,8 +242,7 @@ mmap_failed:
     B->patched.size  = size;
 
     // Parse the mmaped ELF file:
-    parseElf(B->allocator, B->filename, B->patched.bytes, B->size, B->mode,
-        B->elf);
+    parseElf(B);
 
     // Map the file (unmodified):
     ptr = mmap(ptr, size, PROT_READ, MAP_SHARED, fd, 0);
@@ -390,14 +390,30 @@ static void parsePatch(Binary *B, const Message &msg)
 }
 
 /*
+ * Find the instruction at the given address.
+ */
+Instr *findInstr(const Binary *B, intptr_t addr)
+{
+    if (addr <= 0)
+        return nullptr;
+    off_t offset = addr - B->diff;
+    auto i = B->Is.find(offset);
+    if (i == B->Is.end())
+        return nullptr;
+    Instr *I = i->second;
+    if (I->addr != addr)
+        return nullptr;
+    return I;
+}
+
+/*
  * Optimize CFT instructions that target patched instructions trampolines.
  * We can instead jump directly to the trampoline if possible.
  */
-static void optimizePeephole2(Binary *B)
+static void optimizePeephole(Binary *B)
 {
     for (const auto &entry: B->Is)
     {
-        off_t offset = entry.first;
         Instr *I = entry.second;
         if (I->trampoline != INTPTR_MIN)
             continue;
@@ -433,12 +449,8 @@ static void optimizePeephole2(Binary *B)
 
         int32_t rel32 = *(int32_t *)(I->original.bytes + (jcc? 2: 1));
         intptr_t target = I->addr + (intptr_t)I->size + (intptr_t)rel32;
-        offset += (off_t)I->size + (off_t)rel32;
-        auto i = B->Is.find(offset);
-        if (i == B->Is.end())
-            continue;
-        Instr *J = i->second;
-        if (J->addr != target || J->trampoline == INTPTR_MIN)
+        Instr *J = findInstr(B, target);
+        if (J == nullptr || J->trampoline == INTPTR_MIN)
             continue;
         intptr_t diff = J->trampoline - (I->addr + (intptr_t)I->size);
         if (diff < INT32_MIN || diff > INT32_MAX)
@@ -485,8 +497,8 @@ static void parseEmit(Binary *B, const Message &msg)
     putchar('\n');
 
     // Post-processing optimizations:
-    if (option_Ojump_peephole_2)
-        optimizePeephole2(B);
+    if (option_Ojump_peephole)
+        optimizePeephole(B);
 
     // Create and optimize the mappings:
     MappingSet mappings;
@@ -643,12 +655,11 @@ static void parseReserve(Binary *B, const Message &msg)
     if (bytes != nullptr)
     {
         bytes->preload = true;
-        const Alloc *A = allocate(B->allocator, address, address, B->Ts,
-            bytes, nullptr);
+        const Alloc *A = allocate(B, address, address, bytes, nullptr);
         if (A == nullptr)
             error("failed to reserve address space at address "
                 ADDRESS_FORMAT, ADDRESS(address));
-        length = getTrampolineSize(B->Ts, bytes, nullptr);
+        length = getTrampolineSize(B, bytes, nullptr);
         debug("reserved address space [prot=%c%c%c, size=%zu, bytes="
             ADDRESS_FORMAT ".." ADDRESS_FORMAT "]",
             (protection & PROT_READ? 'r': '-'),
@@ -658,7 +669,7 @@ static void parseReserve(Binary *B, const Message &msg)
     }
     if (have_length)
     {
-        if (!reserve(B->allocator, address, address + length))
+        if (!reserve(B, address, address + length))
             error("failed to reserve address space at address "
                 ADDRESS_FORMAT, ADDRESS(address));
         debug("reserved address space [prot=%c%c%c, size=%zu, range="

@@ -23,11 +23,10 @@
 
 #include "e9patch.h"
 
-const Alloc *allocate(Allocator &allocator, intptr_t lb, intptr_t ub,
-    const TrampolineSet &Ts, const Trampoline *T, const Instr *I,
-    bool same_page = false);
-bool reserve(Allocator &allocator, intptr_t lb, intptr_t ub);
-void deallocate(Allocator &allocator, const Alloc *a);
+const Alloc *allocate(Binary *B, intptr_t lb, intptr_t ub,
+    const Trampoline *T, const Instr *I, bool same_page = false);
+bool reserve(Binary *B, intptr_t lb, intptr_t ub);
+void deallocate(Binary *B, const Alloc *a);
 
 #define RELATIVE_ADDRESS_MAX        0x1FFFFFFFFFFFF000ll
 #define RELATIVE_ADDRESS_MIN        (-0x1FFFFFFFFFFFF000ll)

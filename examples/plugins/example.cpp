@@ -139,7 +139,7 @@ extern void *e9_plugin_init_v1(FILE *out, const ELF *elf)
     code << 0xcc << ',';
     code << 0xeb << ",{\"rel8\":\".Lcont\"}";
 
-    sendTrampolineMessage(out, "cflimit", code.str().c_str());
+    sendTrampolineMessage(out, "$cflimit", code.str().c_str());
 
     return nullptr;
 }
@@ -196,6 +196,6 @@ extern void e9_plugin_patch_v1(FILE *out, const ELF *elf, const Instr *Is,
     metadata[1].data = nullptr;
 
     // Send a "patch" E9Patch API message.
-    sendPatchMessage(out, "cflimit", Is[idx].offset, metadata);
+    sendPatchMessage(out, "$cflimit", Is[idx].offset, metadata);
 }
 
