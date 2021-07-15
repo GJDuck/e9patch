@@ -136,6 +136,7 @@
 #define rmdir               __hide__rmdir
 #define link                __hide__link
 #define unlink              __hide__unlink
+#define readlink            __hide__readlink
 #define gettimeofday        __hide__gettimeofday
 #define getrlimit           __hide__getrlimit
 #define getrusage           __hide__getrusage
@@ -303,6 +304,7 @@
 #undef rmdir
 #undef link
 #undef unlink
+#undef readlink
 #undef gettimeofday
 #undef getrlimit
 #undef getrusage
@@ -780,6 +782,11 @@ static int link(const char *oldpath, const char *newpath)
 static int unlink(const char *pathname)
 {
     return (int)syscall(SYS_unlink, pathname);
+}
+
+static ssize_t readlink(const char *pathname, char *buf, size_t bufsiz)
+{
+    return (ssize_t)syscall(SYS_readlink, pathname, buf, bufsiz);
 }
 
 static int gettimeofday(struct timeval *tv, struct timezone *tz)
