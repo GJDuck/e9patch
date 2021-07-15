@@ -417,22 +417,23 @@ static void optimizePeephole(Binary *B)
         Instr *I = entry.second;
         if (I->trampoline != INTPTR_MIN)
             continue;
-        if (I->size != /*sizeof(jmpq/call rel32)=*/5 &&
-                I->size != /*sizeof(jcc rel32)=*/6)
-            continue;
         bool jcc = false;
         switch (I->original.bytes[0])
         {
             case 0xE8: case 0xE9:
+                if (I->size != /*sizeof(jmpq/call rel32)=*/5)
+                    continue;
                 break;
             case 0x0F:
+                if (I->size != /*sizeof(jcc rel32)=*/6)
+                    continue;
+                jcc = true;
                 switch (I->original.bytes[1])
                 {
                     case 0x80: case 0x81: case 0x82: case 0x83: case 0x84:
                     case 0x85: case 0x86: case 0x87: case 0x88: case 0x89:
                     case 0x8A: case 0x8B: case 0x8C: case 0x8D: case 0x8E:
                     case 0x8F:
-                        jcc = true;
                         break;
                     default:
                         continue;
