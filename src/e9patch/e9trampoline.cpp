@@ -143,7 +143,7 @@ static int buildJump(const Binary *B, off_t offset, const Instr *J, Buffer *buf)
  *
  * Note this is heavily optimized.  The Naive way would be to simply use a
  * single jmpq to the next instruction (as per the paper).  However, a far
- * better approach is to clone a "postscript" containing the succeeding
+ * better approach is to clone an "epilogue" containing the succeeding
  * instruction sequence up to and including the next control-flow-transfer
  * (CFT) instruction (including other jumps to unrelated trampolines).  This
  * saves a jump and a lot of overhead (since CPUs like locality).
@@ -151,7 +151,7 @@ static int buildJump(const Binary *B, off_t offset, const Instr *J, Buffer *buf)
 static int buildContinue(const Binary *B, const Instr *I, int32_t offset32,
     bool last, Buffer *buf)
 {
-    // Determine the postscript by finding the next unconditional CFT.
+    // Determine the epilogue by finding the next unconditional CFT.
     const Instr *J = I;
     unsigned i = 0;
     bool cft = false;
@@ -178,7 +178,7 @@ static int buildContinue(const Binary *B, const Instr *I, int32_t offset32,
         return buildJump(B, offset32 - (off_t)I->size, K, buf);
     }
 
-    // Build the postscript:
+    // Build the epilogue:
     J = I->next;
     int s = I->size, r = 0;
     unsigned save = (buf == nullptr? 0: buf->i);
