@@ -11,6 +11,7 @@ E9PATCH_OBJS=\
     src/e9patch/e9json.o \
     src/e9patch/e9mapping.o \
     src/e9patch/e9patch.o \
+    src/e9patch/e9optimize.o \
     src/e9patch/e9tactics.o \
     src/e9patch/e9trampoline.o \
     src/e9patch/e9x86_64.o

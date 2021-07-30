@@ -1,6 +1,6 @@
 /*
  * e9trampoline.h
- * Copyright (C) 2020 National University of Singapore
+ * Copyright (C) 2021 National University of Singapore
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -24,9 +24,13 @@
 #define TRAMPOLINE_MAX      4096
 
 int getTrampolineSize(const Binary *B, const Trampoline *T, const Instr *I);
+int getTrampolinePrologueSize(const Binary *B, const Instr *I);
 Bounds getTrampolineBounds(const Binary *B, const Trampoline *T,
     const Instr *I);
+void calcEntryPoints(Binary *B, const Trampoline *T, const Instr *I,
+    int32_t offset32);
 void flattenTrampoline(const Binary *B, uint8_t *buf, size_t size,
-    int32_t offset32, const Trampoline *T, const Instr *I);
+    uint8_t fill, int32_t offset32, int32_t entry32, const Trampoline *T,
+    const Instr *I);
 
 #endif

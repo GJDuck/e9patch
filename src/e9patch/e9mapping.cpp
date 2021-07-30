@@ -1,6 +1,6 @@
 /*
  * e9mapping.cpp
- * Copyright (C) 2020 National University of Singapore
+ * Copyright (C) 2021 National University of Singapore
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -692,26 +692,27 @@ void optimizeMappings<Key4096>(const Allocator &allocator,
  * Flatten a trampoline helper.
  */
 void flattenTrampoline(const Binary *B, uint8_t *buf, size_t size,
-    intptr_t base, intptr_t end, intptr_t lb, intptr_t ub, const Trampoline *T,
-    const Instr *I)
+    uint8_t fill, intptr_t base, intptr_t end, intptr_t lb, intptr_t ub,
+    unsigned entry, const Trampoline *T, const Instr *I)
 {
     off_t offset = (I == nullptr? 0: lb - I->addr);
-    assert(offset >= INT32_MIN);
-    assert(offset <= INT32_MAX);
+    assert(offset >= INT32_MIN && offset <= INT32_MAX);
     int32_t offset32 = (int32_t)offset;
+    int32_t entry32  = offset32 + (int32_t)entry;
 
     if (lb >= base && ub <= end)
     {
         // Common case where the entire trampoline fits into the buffer.
         // There is no need to use temporary memory.
-        flattenTrampoline(B, buf + (lb - base), (ub - lb), offset32, T, I);
+        flattenTrampoline(B, buf + (lb - base), (ub - lb), fill, offset32,
+            entry32, T, I);
         return;
     }
 
     // The edge case where only part of the trampoline overlaps with the
     // mapping.  We use a temporary buffer & copy the overlap.
     uint8_t tmp_buf[ub - lb];
-    flattenTrampoline(B, tmp_buf, (ub - lb), offset32, T, I);
+    flattenTrampoline(B, tmp_buf, (ub - lb), fill, offset32, entry32, T, I);
     offset = (lb < base? base - lb: 0);
     lb = (lb < base? base: lb);
     ub = (ub > end? end: ub);
@@ -742,8 +743,8 @@ void flattenMapping(const Binary *B, uint8_t *buf, const Mapping *mapping,
             if (a->T == nullptr)
                 continue;
 
-            flattenTrampoline(B, buf, SIZE, BASE, END, a->lb, a->ub,
-                a->T, a->I);
+            flattenTrampoline(B, buf, SIZE, fill, BASE, END, a->lb, a->ub,
+                a->entry, a->T, a->I);
         }
     }
 }

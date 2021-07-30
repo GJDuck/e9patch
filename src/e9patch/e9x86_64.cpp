@@ -32,6 +32,21 @@
  * disassembler.
  */
 
+/*
+ * Control-Flow-Transfer information.
+ */
+struct CFTInfo
+{
+    bool call;
+    bool ret;
+    bool jmp;
+    bool jcc;
+    intptr_t target;
+};
+
+/*
+ * Instruction encoding.
+ */
 enum Encoding
 {
     ENCODING_SINGLE_BYTE,
@@ -640,52 +655,83 @@ unsigned getInstrPCRelativeIndex(const uint8_t *bytes, unsigned size)
 }
 
 /*
- * If the instruction is a jump, return the target address, else return
- * INTPTR_MIN.
+ * Get information about a Control-Flow-Transfer instruction.
  */
-static intptr_t getJumpTarget(intptr_t addr, const uint8_t *bytes,
-    unsigned size, bool &conditional)
+static bool getCFTInfo(intptr_t addr, const uint8_t *bytes, unsigned size,
+    CFTInfo *CFT)
 {
-    conditional = false;
+    CFT->call = CFT->ret = CFT->jmp = CFT->jcc = false;
+    CFT->target = INTPTR_MIN;
+
     uint8_t rex = 0;
     bool addr32 = false;
     int i = decodePrefix(bytes, size, rex, addr32);
     if (i < 0)
-        return INTPTR_MIN;
+        return false;
     Encoding encoding = ENCODING_SINGLE_BYTE;
     uint8_t opcode;
     i = decodeOpcode(bytes, size, i, encoding, opcode);
     if (i < 0)
-        return INTPTR_MIN;
+        return false;
     switch (encoding)
     {
         case ENCODING_SINGLE_BYTE:
         {
             switch (opcode)
             {
+                case 0xC3:          // RET
+                    if (size - i != 0)
+                        return false;
+                    CFT->ret = true;
+                    return true;
                 case 0xE3:          // JRCXZ
                 case 0x70: case 0x71: case 0x72: case 0x73: case 0x74:
                 case 0x75: case 0x76: case 0x77: case 0x78: case 0x79:
                 case 0x7A: case 0x7B: case 0x7C: case 0x7D: case 0x7E:
                 case 0x7F:          // Jcc pcrel8
-                    conditional = true;
-                    // Fallthrough:
                 case 0xEB:          // JMP pcrel8
                 {
                     if (size - i != sizeof(int8_t))
-                        return INTPTR_MIN;
+                        return false;
+                    CFT->jcc = (opcode != 0xEB);
+                    CFT->jmp = (opcode == 0xEB);
                     int8_t pcrel8 = (int8_t)bytes[i];
-                    return addr + i + sizeof(int8_t) + (intptr_t)pcrel8;
+                    CFT->target = addr + i + sizeof(int8_t) + (intptr_t)pcrel8;
+                    return true;
                 }
-                case 0xE9:
+                case 0xE8:          // CALL pcrel32
+                case 0xE9:          // JMP  pcrel32
                 {
                     if (size - i != sizeof(int32_t))
-                        return INTPTR_MIN;
+                        return false;
+                    CFT->jmp  = (opcode == 0xE9);
+                    CFT->call = (opcode == 0xE8);
                     int32_t pcrel32 = *(const int32_t *)(bytes + i);
-                    return addr + i + sizeof(int32_t) + (intptr_t)pcrel32;
+                    CFT->target =
+                        addr + i + sizeof(int32_t) + (intptr_t)pcrel32;
+                    return true;
+                }
+                case 0xFF:
+                {
+                    // TODO: Accurate size check?
+                    if (size - i < 1)
+                        return false;
+                    uint8_t modRM = bytes[i];
+                    uint8_t op    = (modRM & 0x38) >> 3;
+                    switch (op)
+                    {
+                        case 0x02:      // CALL r/m32/m64
+                            CFT->call = true;
+                            return true;
+                        case 0x04:      // JMP r/m32/m64
+                            CFT->jmp = true;
+                            return true;
+                        default:
+                            return false;
+                    }
                 }
                 default:
-                    return INTPTR_MIN;
+                    return false;
             }
             break;
         }
@@ -698,107 +744,61 @@ static intptr_t getJumpTarget(intptr_t addr, const uint8_t *bytes,
                 case 0x8A: case 0x8B: case 0x8C: case 0x8D: case 0x8E:
                 case 0x8F:          // Jcc pcrel32
                 {
-                    conditional = true;
                     if (size - i != sizeof(int32_t))
-                        return INTPTR_MIN;
-                    int32_t pcrel32 = *(const int32_t *)(bytes + i);
-                    return addr + i + sizeof(int32_t) + (intptr_t)pcrel32;
-                }
-                default:
-                    break;
-            }
-            break;
-        }
-        default:
-            break;
-    }
-    return INTPTR_MIN;
-}
-
-/*
- * Get unconditional jump target, or return INTPTR_MIN.
- */
-intptr_t getJumpTarget(intptr_t addr, const uint8_t *bytes, unsigned size)
-{
-    bool conditional = false;
-    intptr_t target = getJumpTarget(addr, bytes, size, conditional);
-    return (conditional? INTPTR_MIN: target);
-}
-
-/*
- * Get conditional jump target, or return INTPTR_MIN.
- */
-intptr_t getJccTarget(intptr_t addr, const uint8_t *bytes, unsigned size)
-{
-    bool conditional = false;
-    intptr_t target = getJumpTarget(addr, bytes, size, conditional);
-    return (conditional? target: INTPTR_MIN);
-}
-
-/*
- * Returns true if the instruction is an unconditional control-flow transfer.
- * Can be an under-approximation.
- */
-bool isUnconditionalControlFlowTransfer(const uint8_t *bytes, unsigned size)
-{
-    uint8_t rex = 0;
-    bool addr32 = false;
-    int i = decodePrefix(bytes, size, rex, addr32);
-    if (i < 0)
-        return false;
-    Encoding encoding = ENCODING_SINGLE_BYTE;
-    uint8_t opcode;
-    i = decodeOpcode(bytes, size, i, encoding, opcode);
-    if (i < 0)
-        return false;
-    switch (encoding)
-    {
-        case ENCODING_SINGLE_BYTE:
-        {
-            switch (opcode)
-            {
-                case 0xC3:  // RET
-                    return (size - i == 0);
-                case 0xE8:  // CALL rel32
-                    return (size - i == sizeof(int32_t));
-                case 0xE9:  // JMP rel32
-                    return (size - i == sizeof(int32_t));
-                case 0xEB:  // JMP rel8
-                    return (size - i == sizeof(int8_t));
-                case 0xFF:
-                {
-                    if (size - i < 1)
                         return false;
-                    uint8_t modRM = bytes[i];
-                    uint8_t op  = (modRM & 0x38) >> 3;
-                    switch (op)
-                    {
-                        case 0x02:      // CALL r/m32/m64
-                            return true;
-                        case 0x04:      // JMP r/m32/m64
-                            return true;
-                        default:
-                            return false;
-                    }
+                    CFT->jcc = true;
+                    int32_t pcrel32 = *(const int32_t *)(bytes + i);
+                    CFT->target =
+                        addr + i + sizeof(int32_t) + (intptr_t)pcrel32;
+                    return true;
                 }
                 default:
                     return false;
             }
             break;
-        }
-        case ENCODING_TWO_BYTES_0F:
-        {
-            switch (opcode)
-            {
-                case 0x0B:  // UNDEF
-                    return (size - i == 0);
-                default:
-                    return false;
-            }
         }
         default:
             break;
     }
     return false;
+}
+
+/*
+ * Returns true iff the instruction is a control-flow-transfer.
+ */
+bool isCFT(const uint8_t *bytes, unsigned size, int flags)
+{
+    CFTInfo CFT;
+    if (!getCFTInfo(0x0, bytes, size, &CFT))
+        return false;
+    if ((flags & CFT_CALL) != 0 && CFT.call)
+        return true;
+    if ((flags & CFT_RET) != 0 && CFT.ret)
+        return true;
+    if ((flags & CFT_JMP) != 0 && CFT.jmp)
+        return true;
+    if ((flags & CFT_JCC) != 0 && CFT.jcc)
+        return true;
+    return false;
+}
+
+/*
+ * Returns the control-flow-transfer target if known, else INTPTR_MIN.
+ */
+intptr_t getCFTTarget(intptr_t addr, const uint8_t *bytes, unsigned size,
+    int flags)
+{
+    CFTInfo CFT;
+    if (!getCFTInfo(addr, bytes, size, &CFT))
+        return INTPTR_MIN;
+    if (CFT.target == INTPTR_MIN)
+        return INTPTR_MIN;
+    if ((flags & CFT_CALL) != 0 && CFT.call)
+        return CFT.target;
+    if ((flags & CFT_JMP) != 0 && CFT.jmp)
+        return CFT.target;
+    if ((flags & CFT_JCC) != 0 && CFT.jcc)
+        return CFT.target;
+    return INTPTR_MIN;
 }
 

@@ -2150,6 +2150,9 @@ static void usage(FILE *stream, const char *progname)
         "\t\tSpecifies the path to the output file.  The default filename is\n"
         "\t\t\"a.out\".\n"
         "\n"
+        "\t--seed=SEED\n"
+        "\t\tSet SEED to be the random number seed.\n"
+        "\n"
         "\t--shared\n"
         "\t\tTreat the input file as a shared library, even if it appears to\n"
         "\t\tbe an executable.  By default, the input file will only be\n"
@@ -2195,6 +2198,7 @@ enum Option
     OPTION_NO_WARNINGS,
     OPTION_OPTION,
     OPTION_OUTPUT,
+    OPTION_SEED,
     OPTION_SHARED,
     OPTION_STATIC_LOADER,
     OPTION_SYNTAX,
@@ -2247,6 +2251,7 @@ int main(int argc, char **argv)
         {"no-warnings",   no_arg,  nullptr, OPTION_NO_WARNINGS},
         {"option",        req_arg, nullptr, OPTION_OPTION},
         {"output",        req_arg, nullptr, OPTION_OUTPUT},
+        {"seed",          req_arg, nullptr, OPTION_SEED},
         {"shared",        no_arg,  nullptr, OPTION_SHARED},
         {"static-loader", no_arg,  nullptr, OPTION_STATIC_LOADER},
         {"syntax",        req_arg, nullptr, OPTION_SYNTAX},
@@ -2265,6 +2270,7 @@ int main(int argc, char **argv)
     std::vector<std::string> option_match;
     std::vector<ActionEntry> option_actions;
     std::vector<std::string> option_exclude;
+    srand(0xe9e9e9e9);
     while (true)
     {
         int idx;
@@ -2350,6 +2356,18 @@ int main(int argc, char **argv)
             case OPTION_NO_WARNINGS:
                 option_no_warnings = true;
                 break;
+            case OPTION_SEED:
+            {
+                errno = 0;
+                char *end = nullptr;
+                unsigned long r = strtoul(optarg, &end, 0);
+                if (errno != 0 || end == optarg ||
+                        (end != nullptr && *end != '\0') || r > UINT32_MAX)
+                    error("bad value \"%s\" for `--seed' options; "
+                        "expected an integer 0..%u", optarg, UINT32_MAX);
+                srand((unsigned)r);
+                break;
+            }
             case OPTION_SHARED:
                 option_shared = true;
                 break;
@@ -2373,7 +2391,7 @@ int main(int argc, char **argv)
                 unsigned long r = strtoul(optarg, &end, 0);
                 if (errno != 0 || end == optarg ||
                         (end != nullptr && *end != '\0') || r > INTPTR_MAX)
-                    error("bad value for \"%s\" for `--trap' option; "
+                    error("bad value \"%s\" for `--trap' option; "
                         "expected an address", optarg);
                 option_trap.insert(r);
                 break;
@@ -2403,7 +2421,6 @@ int main(int argc, char **argv)
     if (option_shared && option_executable)
         error("failed to parse command-line arguments; both the `--shared' "
             "and `--executable' options cannot be used at the same time");
-    srand(0xe9e9e9e9);
 
     /*
      * Parse the ELF file.
@@ -2531,42 +2548,53 @@ int main(int argc, char **argv)
     switch (option_optimization_level)
     {
         case '0':
-            options.push_back("-Ojump-elim=0");
-            options.push_back("-Ojump-elim-size=0");
-            options.push_back("-Ojump-peephole=false");
-            options.push_back("-Oorder-trampolines=false");
+            options.push_back("-Oprologue=0");
+            options.push_back("-Oprologue-size=0");
+            options.push_back("-Oepilogue=0");
+            options.push_back("-Oepilogue-size=0");
+            options.push_back("-Opeephole=false");
+            options.push_back("-Oorder=false");
             options.push_back("-Oscratch-stack=false");
             options.push_back("--mem-granularity=64");
             break;
         case '1':
-            options.push_back("-Ojump-elim=0");
-            options.push_back("-Ojump-elim-size=0");
-            options.push_back("-Oorder-trampolines=false");
-            options.push_back("-Ojump-peephole=true");
+            options.push_back("-Oprologue=0");
+            options.push_back("-Oprologue-size=0");
+            options.push_back("-Oepilogue=8");
+            options.push_back("-Oepilogue-size=16");
+            options.push_back("-Oorder=false");
+            options.push_back("-Opeephole=true");
             options.push_back("-Oscratch-stack=true");
             options.push_back("--mem-granularity=128");
             break;
         case '2':
-            options.push_back("-Ojump-elim=32");
-            options.push_back("-Ojump-elim-size=64");
-            options.push_back("-Oorder-trampolines=true");
-            options.push_back("-Ojump-peephole=true");
+            options.push_back("-Oprologue=0");
+            options.push_back("-Oprologue-size=0");
+            options.push_back("-Oepilogue=32");
+            options.push_back("-Oepilogue-size=64");
+            options.push_back("-Oorder=true");
+            options.push_back("-Opeephole=true");
             options.push_back("-Oscratch-stack=true");
             options.push_back("--mem-granularity=128");
             break;
         case '3':
-            options.push_back("-Ojump-elim=64");
-            options.push_back("-Ojump-elim-size=512");
-            options.push_back("-Oorder-trampolines=true");
-            options.push_back("-Ojump-peephole=true");
+            options.push_back("--batch");
+            options.push_back("-Oprologue=64");
+            options.push_back("-Oprologue-size=512");
+            options.push_back("-Oepilogue=64");
+            options.push_back("-Oepilogue-size=512");
+            options.push_back("-Oorder=true");
+            options.push_back("-Opeephole=true");
             options.push_back("-Oscratch-stack=true");
             options.push_back("--mem-granularity=4096");
             break;
         case 's':
-            options.push_back("-Ojump-elim=0");
-            options.push_back("-Ojump-elim-size=0");
-            options.push_back("-Ojump-peephole=true");
-            options.push_back("-Oorder-trampolines=true");
+            options.push_back("-Oprologue=0");
+            options.push_back("-Oprologue-size=0");
+            options.push_back("-Oepilogue=0");
+            options.push_back("-Oepilogue-size=0");
+            options.push_back("-Opeephole=true");
+            options.push_back("-Oorder=true");
             options.push_back("-Oscratch-stack=true");
             options.push_back("--mem-granularity=4096");
             break;
@@ -2764,7 +2792,7 @@ int main(int argc, char **argv)
             case '2': case '3': case 's':
                 if (!Is[i].emitted && Is[i].jump)
                 {
-                    // Always emits jump/calls for -Ojump-peephole-2
+                    // Always emits jump/calls for -Opeephole
                     Is[i].emitted = true;
                     sendInstructionMessage(backend.out, Is[i].address,
                         Is[i].size, Is[i].offset);

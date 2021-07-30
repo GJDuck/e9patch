@@ -1,6 +1,6 @@
 /*
- * e9x86_64.h
- * Copyright (C) 2020 National University of Singapore
+ * e9optimize.h
+ * Copyright (C) 2021 National University of Singapore
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -16,23 +16,16 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#ifndef __E9X86_64_H
-#define __E9X86_64_H
+#ifndef __E9OPTIMIZE_H
+#define __E9OPTIMIZE_H
 
-#include <cstdint>
+#include "e9patch.h"
 
-int relocateInstr(intptr_t addr, int32_t offset32, const uint8_t *bytes,
-    unsigned size, bool pic, uint8_t *new_bytes, bool relax = false);
-unsigned getInstrPCRelativeIndex(const uint8_t *bytes, unsigned size);
-
-#define CFT_CALL    0x01
-#define CFT_RET     0x02
-#define CFT_JMP     0x04
-#define CFT_JCC     0x08
-#define CFT_ANY     0xFF
-
-bool isCFT(const uint8_t *bytes, unsigned size, int flags);
-intptr_t getCFTTarget(intptr_t addr, const uint8_t *bytes, unsigned size,
-    int flags);
+void buildEntrySet(Binary *B);
+const Instr *getTrampolinePrologueStart(const EntrySet &Es, const Instr *I);
+intptr_t getTrampolineEntry(const EntrySet &Es, const Instr *I);
+void setTrampolineEntry(EntrySet &Es, const Instr *I, intptr_t addr);
+void optimizeJump(const Binary *B, intptr_t addr, uint8_t *bytes, size_t size);
+void optimizeAllJumps(Binary *B);
 
 #endif

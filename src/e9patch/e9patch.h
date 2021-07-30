@@ -87,7 +87,15 @@ struct Buffer
             memcpy(bytes + i, data, len);
         i += len;
     }
-    
+
+    void push(uint8_t b, unsigned len)
+    {
+        assert(i + len <= max);
+        if (bytes != nullptr)
+            memset(bytes + i, b, len);
+        i += len;
+    }
+ 
     size_t size()
     {
         return (size_t)i;
@@ -195,16 +203,17 @@ struct Metadata
  */
 struct Instr
 {
-    const size_t offset:48;             // The instruction offset
+    const size_t offset:46;             // The instruction offset
     const size_t size:4;                // The instruction size (bytes)
     const size_t pcrel32_idx:4;         // 32bit PC-relative imm idx (or 0)
     const size_t pcrel8_idx:4;          // 8bit PC-relative imm idx (or 0)
     const size_t pic:1;                 // PIC? (stored here for convenience)
     size_t       debug:1;               // Debug trampoline?
-    size_t       evicted:1;             // The instruction evicted?
+    size_t       patch:1;               // Will patch instruction?
+    size_t       is_patched:1;          // Is the instruction patched?
+    size_t       is_evicted:1;          // Is the instruction evicted?
     size_t       no_optimize:1;         // Disable -Ojump-elim?
     const intptr_t addr;                // The address of the instruction
-    intptr_t trampoline = INTPTR_MIN;   // The address of any trampoline
 
     const struct Original
     {
@@ -234,11 +243,11 @@ struct Instr
 
     Instr(off_t offset, intptr_t addr, size_t size, const uint8_t *original,
             uint8_t *bytes, uint8_t *state,  size_t pcrel32_idx,
-            size_t pcrel8_idx, bool pic, bool debug) :
+            size_t pcrel8_idx, bool pic) :
         offset((size_t)offset), addr(addr), size(size), original(original),
         patched(bytes, state), pcrel32_idx(pcrel32_idx),
-        pcrel8_idx(pcrel8_idx), pic(pic), debug(debug), evicted(false),
-        no_optimize(false)
+        pcrel8_idx(pcrel8_idx), pic(pic), debug(false), patch(false),
+        is_evicted(false), no_optimize(false), is_patched(false)
     {
         ;
     }
@@ -253,6 +262,7 @@ struct Alloc
     intptr_t ub;                // Allocation upper bound
     const Instr *I;             // Instruction.
     const Trampoline *T;        // Trampoline.
+    unsigned entry;             // Entry offset.
 };
 
 /*
@@ -366,6 +376,18 @@ struct PatchEntry
 };
 
 /*
+ * Trampoline entry point information.
+ */
+struct EntryPoint
+{
+    const Instr *I;                     // The to-be-patched instruction.
+    intptr_t entry;                     // Trampoline entry address.
+    bool target8;                       // Is 8bit relative jump target?
+    bool target32;                      // Is 32bit relative jump target?
+};
+typedef std::map<intptr_t, EntryPoint> EntrySet;
+
+/*
  * Binary representation.
  */
 typedef std::map<off_t, Instr *> InstrSet;
@@ -399,7 +421,7 @@ struct Binary
 
     InstrSet Is;                        // All (known) instructions.
     TrampolineSet Ts;                   // All current trampoline templates.
-    
+    EntrySet Es;                        // All trampoline entry points.
     Allocator allocator;                // Virtual address allocation.
 
     InitSet inits;                      // Initialization functions.
@@ -417,10 +439,12 @@ extern Instr *findInstr(const Binary *B, intptr_t addr);
 extern bool option_is_tty;
 extern bool option_debug;
 extern bool option_batch;
-extern unsigned option_Ojump_elim;
-extern unsigned option_Ojump_elim_size;
-extern bool option_Ojump_peephole;
-extern bool option_Oorder_trampolines;
+extern unsigned option_Oepilogue;
+extern unsigned option_Oepilogue_size;
+extern bool option_Oorder;
+extern bool option_Opeephole;
+extern unsigned option_Oprologue;
+extern unsigned option_Oprologue_size;
 extern bool option_Oscratch_stack;
 extern bool option_tactic_B1;
 extern bool option_tactic_B2;

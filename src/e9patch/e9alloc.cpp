@@ -108,8 +108,9 @@ static Node *alloc()
     if (n == nullptr)
         error("failed to allocate %zu bytes for interval tree node: %s",
             sizeof(Node), strerror(ENOMEM));
-    n->alloc.T = nullptr;
-    n->alloc.I = nullptr;
+    n->alloc.T     = nullptr;
+    n->alloc.I     = nullptr;
+    n->alloc.entry = 0;
     return n;
 }
 
@@ -257,15 +258,17 @@ const Alloc *allocate(Binary *B, intptr_t lb, intptr_t ub,
     Allocator &allocator = B->allocator;
     if (!verify(lb, ub + TRAMPOLINE_MAX))
         return nullptr;
-    int r = getTrampolineSize(B, T, I);
-    if (r < 0)
+    int presize = getTrampolinePrologueSize(B, I);
+    int tmpsize = getTrampolineSize(B, T, I);
+    if (tmpsize < 0)
         return nullptr;
-    size_t size = (size_t)r;
-    ub += size;
+    lb -= (intptr_t)presize;
+    ub += (intptr_t)tmpsize;
+    size_t size = (size_t)presize + (size_t)tmpsize;
     uint32_t flags = (same_page? FLAG_SAME_PAGE: 0);
     Node *n = nullptr;
     const intptr_t target = 0x70000000;
-    if (option_Oorder_trampolines && ub > target)
+    if (option_Oorder && ub > target)
         n = insert(allocator.tree.root, lb, target, size, flags | FLAG_RIGHT);
     if (n == nullptr)
         n = insert(allocator.tree.root, lb, ub, size, flags);
@@ -276,8 +279,9 @@ const Alloc *allocate(Binary *B, intptr_t lb, intptr_t ub,
     rebalanceInsert(&allocator.tree, n);
 
     Alloc *A = &n->alloc;
-    A->T = T;
-    A->I = I;
+    A->T     = T;
+    A->I     = I;
+    A->entry = (unsigned)presize;
     return A;
 }
 

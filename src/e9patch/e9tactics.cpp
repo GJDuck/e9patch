@@ -1,6 +1,6 @@
 /*
  * e9tactics.cpp
- * Copyright (C) 2020 National University of Singapore
+ * Copyright (C) 2021 National University of Singapore
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -22,6 +22,7 @@
 #include <cstring>
 
 #include "e9alloc.h"
+#include "e9optimize.h"
 #include "e9patch.h"
 #include "e9tactics.h"
 #include "e9trampoline.h"
@@ -58,31 +59,30 @@ enum Tactic
  */
 struct Patch
 {
-    const Alloc * const A;              // Virtual address space allocation.
+    const Alloc *A;                     // Virtual address space allocation.
     Instr * const I;                    // Instruction.
     Tactic tactic;                      // Tactic used.
-    uint32_t version = 0;               // Tactic version (mutation).
     const struct Original
     {
-        intptr_t trampoline;            // Original trampoline address.
+        bool is_patched;                // Original is_patched?
         uint8_t state[PATCH_MAX];       // Original state bytes.
         uint8_t bytes[PATCH_MAX];       // Original data bytes.
 
-        Original(const uint8_t *state0, const uint8_t *bytes0,
-            intptr_t trampoline) : trampoline(trampoline)
+        Original(const Instr *I) : is_patched(I->is_patched)
         {
-            memcpy(state, state0, PATCH_MAX);
-            memcpy(bytes, bytes0, PATCH_MAX);
+            memcpy(state, I->patched.state, PATCH_MAX);
+            memcpy(bytes, I->patched.bytes, PATCH_MAX);
         }
     } original;
-    Patch *next = nullptr;             // Next dependent patch.
+    Patch *next = nullptr;              // Next dependent patch.
 
     Patch(Instr *I, Tactic t, const Alloc *A = nullptr) :
-        A(A), I(I), tactic(t),
-        original(I->patched.state, I->patched.bytes, I->trampoline)
+        A(A), I(I), tactic(t), original(I)
     {
+        // TODO: fix stateful update in constructor
+        I->is_patched = true;
         if (A != nullptr && A->T == evicteeTrampoline)
-            I->evicted = true;
+            I->is_evicted = true;
     }
 };
 
@@ -122,7 +122,7 @@ static Instr *successor(const Instr *I)
 /*
  * Commit a patch.
  */
-static void commit(Patch *P)
+static void commit(Binary &B, Patch *P)
 {
     switch (P->tactic)
     {
@@ -145,6 +145,14 @@ static void commit(Patch *P)
 
     while (P != nullptr)
     {
+        if (P->A != nullptr)
+        {
+            setTrampolineEntry(B.Es, P->I, P->A->lb + P->A->entry);
+            off_t offset = P->A->lb - P->I->addr;
+            assert(offset >= INT32_MIN && offset <= INT32_MAX);
+            calcEntryPoints(&B, P->A->T, P->I, (int32_t)offset);
+        }
+
         // Delete the P (we do not need it anymore)
         Patch *Q = P;
         P = P->next;
@@ -159,8 +167,8 @@ static void undo(Binary &B, Patch *P)
 {
     while (P != nullptr)
     {
-        P->I->evicted    = false;
-        P->I->trampoline = P->original.trampoline;
+        P->I->is_patched = P->original.is_patched;
+        P->I->is_evicted = false;
         for (unsigned i = 0; i < PATCH_MAX; i++)
         {
             P->I->patched.state[i] = P->original.state[i];
@@ -305,7 +313,8 @@ static void patchJump(Patch *P, unsigned offset)
     assert(offset < P->I->size);
     assert(P->A != nullptr);
      
-    intptr_t diff = P->A->lb - (P->I->addr + offset + JMP_SIZE);
+    intptr_t diff = (P->A->lb + P->A->entry) -
+        (P->I->addr + offset + JMP_SIZE);
     assert(diff >= INT32_MIN && diff <= INT32_MAX);
     int32_t rel32 = (int32_t)diff;
     
@@ -390,7 +399,6 @@ static Patch *tactic_B1(Binary &B, Instr *I, const Trampoline *T,
     if (A == nullptr)
         return nullptr;
     Patch *P = new Patch(I, tactic, A);
-    I->trampoline = A->lb;
     patchJump(P, /*offset=*/0);
     patchUnused(P, /*offset=sizeof(jmpq)=*/5);
     return P;
@@ -408,7 +416,6 @@ static Patch *tactic_B2(Binary &B, Instr *I, const Trampoline *T,
     if (A == nullptr)
         return nullptr;
     Patch *P = new Patch(I, tactic, A);
-    I->trampoline = A->lb;
     patchJump(P, /*offset=*/0);
     return P;
 }
@@ -431,7 +438,6 @@ static Patch *tactic_T1(Binary &B, Instr *I, const Trampoline *T,
         if (A != nullptr)
         {
             Patch *P = new Patch(I, tactic, A);
-            I->trampoline = A->lb;
             patchJumpPrefix(P, prefix);
             patchJump(P, prefix);
             return P;
@@ -525,7 +531,6 @@ static Patch *tactic_T3b(Binary &B, Instr *I, const Trampoline *T)
         case STATE_INSTRUCTION:
         case STATE_FREE:
         {
-            // TODO: factor this code out...
             A = allocatePunnedJump(B, J, i, I, T);
             if (A == nullptr)
             {
@@ -537,6 +542,7 @@ static Patch *tactic_T3b(Binary &B, Instr *I, const Trampoline *T)
             if (state == STATE_FREE)
             {
                 // J is already patched. so we are done.
+                P->A = nullptr;
                 break;
             }
             
@@ -554,6 +560,7 @@ static Patch *tactic_T3b(Binary &B, Instr *I, const Trampoline *T)
                 return nullptr;
             }
             Q->next = P;
+            P->A = nullptr;
             P = Q;
             break;
         }
@@ -567,8 +574,7 @@ static Patch *tactic_T3b(Binary &B, Instr *I, const Trampoline *T)
     }
 
     assert(A != nullptr);
-    Patch *Q = new Patch(I, TACTIC_T3);
-    I->trampoline = A->lb;
+    Patch *Q = new Patch(I, TACTIC_T3, A);
     assert(I->patched.state[0] == STATE_INSTRUCTION);
     I->patched.state[0] = STATE_PATCHED;
     I->patched.bytes[0] = /*short jmp opcode=*/0xEB;
@@ -676,6 +682,7 @@ static Patch *tactic_T3(Binary &B, Instr *I, const Trampoline *T)
                     if (state == STATE_FREE)
                     {
                         // J is already patched. so we are done.
+                        P->A = nullptr;
                         continue;
                     }
                     
@@ -693,6 +700,7 @@ static Patch *tactic_T3(Binary &B, Instr *I, const Trampoline *T)
                         continue;
                     }
                     Q->next = P;
+                    P->A = nullptr;
                     P = Q;
                     continue;
                 }
@@ -710,8 +718,7 @@ static Patch *tactic_T3(Binary &B, Instr *I, const Trampoline *T)
 
     // Step (3): Insert a short jump to the trampoline jump:
     assert(A != nullptr);
-    Patch *Q = new Patch(I, TACTIC_T3);
-    I->trampoline = A->lb;
+    Patch *Q = new Patch(I, TACTIC_T3, A);
     patchShortJump(Q, addr);
     patchUnused(Q, /*sizeof(short jmp)=*/2);
     Q->next = P;
@@ -755,12 +762,21 @@ bool patch(Binary &B, Instr *I, const Trampoline *T)
         return false;       // Failed :(
     }
 
-    debug("patched instruction 0x%lx [size=%zu, tactic=%s, "
-        "trampoline=" ADDRESS_FORMAT ".." ADDRESS_FORMAT "]",
-        I->addr, I->size, getTacticName(P->tactic), ADDRESS(I->trampoline),
-            ADDRESS(I->trampoline + getTrampolineSize(&B, T, I)));
+    commit(B, P);
+    if (option_debug)
+    {
+        intptr_t entry = getTrampolineEntry(B.Es, I);
+        intptr_t lb    = entry - getTrampolinePrologueSize(&B, I);
+        intptr_t ub    = entry + getTrampolineSize(&B, T, I);
+        debug("patched instruction 0x%lx [size=%zu, tactic=%s, "
+            "entry=" ADDRESS_FORMAT ", "
+            "trampoline=" ADDRESS_FORMAT ".." ADDRESS_FORMAT ", "
+            "offset=%zd]",
+            I->addr, I->size, getTacticName(P->tactic), 
+            ADDRESS(entry), ADDRESS(lb), ADDRESS(ub),
+            (ssize_t)(entry - lb));
+    }
     printf("\33[32m.\33[0m");
-    commit(P);
     return true;            // Success!
 }
 

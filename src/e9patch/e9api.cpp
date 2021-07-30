@@ -1,6 +1,6 @@
 /*
  * e9api.cpp
- * Copyright (C) 2020 National University of Singapore
+ * Copyright (C) 2021 National University of Singapore
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -29,6 +29,7 @@
 
 #include "e9elf.h"
 #include "e9emit.h"
+#include "e9optimize.h"
 #include "e9patch.h"
 #include "e9json.h"
 #include "e9tactics.h"
@@ -335,7 +336,7 @@ static void parseInstruction(Binary *B, const Message &msg)
     }
     Instr *I = new Instr(offset, address, length, B->original.bytes + offset,
         B->patched.bytes + offset, B->patched.state + offset, pcrel32_idx,
-        pcrel8_idx, B->elf.pic, /*debug=*/false);
+        pcrel8_idx, B->elf.pic);
     insertInstruction(B, I);
 }
 
@@ -384,81 +385,14 @@ static void parsePatch(Binary *B, const Message &msg)
         error("failed to parse \"patch\" message (id=%u); no matching "
             "instruction at offset (%zd)", msg.id, offset);
     Instr *I = i->second;
+    if (I->patch)
+        error("failed to parse \"patch\" message (id=%u); instruction "
+            "at address (0x%lx) is already queued for patching", msg.id,
+            I->addr);
+    I->patch    = true;
     I->metadata = meta;
 
     queuePatch(B, I, T);
-}
-
-/*
- * Find the instruction at the given address.
- */
-Instr *findInstr(const Binary *B, intptr_t addr)
-{
-    if (addr <= 0)
-        return nullptr;
-    off_t offset = addr - B->diff;
-    auto i = B->Is.find(offset);
-    if (i == B->Is.end())
-        return nullptr;
-    Instr *I = i->second;
-    if (I->addr != addr)
-        return nullptr;
-    return I;
-}
-
-/*
- * Optimize CFT instructions that target patched instructions trampolines.
- * We can instead jump directly to the trampoline if possible.
- */
-static void optimizePeephole(Binary *B)
-{
-    for (const auto &entry: B->Is)
-    {
-        Instr *I = entry.second;
-        if (I->trampoline != INTPTR_MIN)
-            continue;
-        bool jcc = false;
-        switch (I->original.bytes[0])
-        {
-            case 0xE8: case 0xE9:
-                if (I->size != /*sizeof(jmpq/call rel32)=*/5)
-                    continue;
-                break;
-            case 0x0F:
-                if (I->size != /*sizeof(jcc rel32)=*/6)
-                    continue;
-                jcc = true;
-                switch (I->original.bytes[1])
-                {
-                    case 0x80: case 0x81: case 0x82: case 0x83: case 0x84:
-                    case 0x85: case 0x86: case 0x87: case 0x88: case 0x89:
-                    case 0x8A: case 0x8B: case 0x8C: case 0x8D: case 0x8E:
-                    case 0x8F:
-                        break;
-                    default:
-                        continue;
-                }
-                break;
-            default:
-                continue;
-        }
-        bool ok = true;
-        for (size_t i = 0; ok && i < I->size; i++)
-            ok = (I->patched.state[i] == STATE_INSTRUCTION);
-        if (!ok)
-            continue;
-
-        int32_t rel32 = *(int32_t *)(I->original.bytes + (jcc? 2: 1));
-        intptr_t target = I->addr + (intptr_t)I->size + (intptr_t)rel32;
-        Instr *J = findInstr(B, target);
-        if (J == nullptr || J->trampoline == INTPTR_MIN)
-            continue;
-        intptr_t diff = J->trampoline - (I->addr + (intptr_t)I->size);
-        if (diff < INT32_MIN || diff > INT32_MAX)
-            continue;
-        int32_t diff32 = (int32_t)diff;
-        *(int32_t *)(I->patched.bytes + (jcc? 2: 1)) = diff32;
-    }
 }
 
 /*
@@ -493,13 +427,15 @@ static void parseEmit(Binary *B, const Message &msg)
         error("failed to parse \"emit\" message (id=%u); duplicate "
             "parameters detected");
 
+    // Build trampoline entry set.
+    buildEntrySet(B);
+
     // Flush the queue:
     queueFlush(B, INTPTR_MIN);
     putchar('\n');
 
     // Post-processing optimizations:
-    if (option_Ojump_peephole)
-        optimizePeephole(B);
+    optimizeAllJumps(B);
 
     // Create and optimize the mappings:
     MappingSet mappings;

@@ -29,30 +29,32 @@
 /*
  * Global options.
  */
-bool option_is_tty              = false;
-bool option_debug               = false;
-bool option_batch               = false;
-bool option_tactic_B1           = true;
-bool option_tactic_B2           = true;
-bool option_tactic_T1           = true;
-bool option_tactic_T2           = true;
-bool option_tactic_T3           = true;
-bool option_tactic_backward_T3  = true;
-unsigned option_Ojump_elim      = 0;
-unsigned option_Ojump_elim_size = 64;
-bool option_Ojump_peephole      = true;
-bool option_Oorder_trampolines  = false;
-bool option_Oscratch_stack      = false;
-size_t option_mem_granularity   = 64;
-intptr_t option_mem_lb          = -0x100000000;
-intptr_t option_mem_ub          =  0x200000000;
-intptr_t option_mem_loader      =  0x20e9e9000;
-size_t option_mem_mapping_size  = PAGE_SIZE;
-bool option_mem_multi_page      = true;
-bool option_static_loader       = false;
+bool option_is_tty             = false;
+bool option_debug              = false;
+bool option_batch              = false;
+bool option_tactic_B1          = true;
+bool option_tactic_B2          = true;
+bool option_tactic_T1          = true;
+bool option_tactic_T2          = true;
+bool option_tactic_T3          = true;
+bool option_tactic_backward_T3 = true;
+unsigned option_Oepilogue      = 0;
+unsigned option_Oepilogue_size = 64;
+bool option_Oorder             = false;
+bool option_Opeephole          = true;
+unsigned option_Oprologue      = 0;
+unsigned option_Oprologue_size = 64;
+bool option_Oscratch_stack     = false;
+size_t option_mem_granularity  = 64;
+intptr_t option_mem_lb         = -0x100000000;
+intptr_t option_mem_ub         =  0x200000000;
+intptr_t option_mem_loader     =  0x20e9e9000;
+size_t option_mem_mapping_size = PAGE_SIZE;
+bool option_mem_multi_page     = true;
+bool option_static_loader      = false;
 std::set<intptr_t> option_trap;
-bool option_trap_all            = false;
-bool option_trap_entry          = false;
+bool option_trap_all           = false;
+bool option_trap_entry         = false;
 static std::string option_input("-");
 static std::string option_output("-");
 
@@ -173,25 +175,33 @@ static void usage(FILE *stream, const char *progname)
     fprintf(stream, "usage: %s [OPTIONS]\n\n"
         "OPTIONS:\n"
         "\n"
-        "\t-Ojump-elim=N\n"
-        "\t\tAttempt to eliminate jump-from-trampolines by cloning up to N\n"
-        "\t\tinstructions.  A higher N means a more aggressive optimization.\n"
-        "\t\tN=0 effectively disables the optimization.\n"
+        "\t-Oepilogue=N\n"
+        "\t\tAppend a epilogue of up to N instructions to the end of each\n"
+        "\t\ttrampoline.  This may enhance -Opeephole.\n"
         "\t\tDefault: 0 (disabled)\n"
         "\n"
-        "\t-Ojump-elim-size=N\n"
-        "\t\tAdditionally limits -Ojump-elim to N instruction bytes.\n"
+        "\t-Oepilogue-size=N\n"
+        "\t\tAdditionally limits -Oepilogue to N instruction bytes.\n"
         "\t\tDefault: 64\n"
         "\n"
-        "\t-Ojump-peephole[=false]\n"
+        "\t-Oorder[=false]\n"
+        "\t\tEnables [disables] the ordering of trampolines with respect\n"
+        "\t\tto the original instruction ordering (as much as is possible).\n"
+        "\t\tThis may enhance -Opeephole.\n"
+        "\t\tDefault: false (disabled)\n"
+        "\n"
+        "\t-Opeephole[=false]\n"
         "\t\tEnables [disables] jump peephole optimization.\n"
         "\t\tDefault: true (enabled)\n"
         "\n"
-        "\t-Oorder-trampolines[=false]\n"
-        "\t\tEnables [disables] the ordering of trampolines with respect\n"
-        "\t\tto the original instruction ordering (as much as is possible).\n"
-        "\t\tThis can boost -Ojump-peephole.\n"
-        "\t\tDefault: false (disabled)\n"
+        "\t-Oprologue=N\n"
+        "\t\tPrepend a prologue of up to N instructions to the start of each\n"
+        "\t\ttrampoline.  This may enhance -Opeephole.  Requires --batch.\n"
+        "\t\tDefault: 0 (disabled)\n"
+        "\n"
+        "\t-Oprologue-size=N\n"
+        "\t\tAdditionally limits -Oprologue to N instruction bytes.\n"
+        "\t\tDefault: 64\n"
         "\n"
         "\t-Oscratch-stack[=false]\n"
         "\t\tAllow the stack to be used as scratch space.  This allows\n"
@@ -298,10 +308,12 @@ enum Option
     OPTION_MEM_MAPPING_SIZE,
     OPTION_MEM_MULTI_PAGE,
     OPTION_MEM_UB,
-    OPTION_OJUMP_ELIM,
-    OPTION_OJUMP_ELIM_SIZE,
-    OPTION_OJUMP_PEEPHOLE,
-    OPTION_OORDER_TRAMPOLINES,
+    OPTION_OEPILOGUE,
+    OPTION_OEPILOGUE_SIZE,
+    OPTION_OORDER,
+    OPTION_OPEEPHOLE,
+    OPTION_OPROLOGUE,
+    OPTION_OPROLOGUE_SIZE,
     OPTION_OSCRATCH_STACK,
     OPTION_OUTPUT,
     OPTION_STATIC_LOADER,
@@ -325,10 +337,12 @@ void parseOptions(int argc, char * const argv[], bool api)
               no_arg  = no_argument;
     static const struct option long_options[] =
     {
-        {"Ojump-elim",         req_arg, nullptr, OPTION_OJUMP_ELIM},
-        {"Ojump-elim-size",    req_arg, nullptr, OPTION_OJUMP_ELIM_SIZE},
-        {"Ojump-peephole",     opt_arg, nullptr, OPTION_OJUMP_PEEPHOLE},
-        {"Oorder-trampolines", opt_arg, nullptr, OPTION_OORDER_TRAMPOLINES},
+        {"Oepilogue",          req_arg, nullptr, OPTION_OEPILOGUE},
+        {"Oepilogue-size",     req_arg, nullptr, OPTION_OEPILOGUE_SIZE},
+        {"Oorder",             opt_arg, nullptr, OPTION_OORDER},
+        {"Opeephole",          opt_arg, nullptr, OPTION_OPEEPHOLE},
+        {"Oprologue",          req_arg, nullptr, OPTION_OPROLOGUE},
+        {"Oprologue-size",     req_arg, nullptr, OPTION_OPROLOGUE_SIZE},
         {"Oscratch-stack",     opt_arg, nullptr, OPTION_OSCRATCH_STACK},
         {"batch",              opt_arg, nullptr, OPTION_BATCH},
         {"debug",              no_arg,  nullptr, OPTION_DEBUG},
@@ -388,22 +402,29 @@ void parseOptions(int argc, char * const argv[], bool api)
             case OPTION_INPUT:
                 option_input = optarg;
                 break;
-            case OPTION_OJUMP_ELIM:
-                option_Ojump_elim =
-                    (unsigned)parseIntOptArg("-Ojump-elim", optarg, 0, 64);
+            case OPTION_OEPILOGUE:
+                option_Oepilogue =
+                    (unsigned)parseIntOptArg("-Oepilogue", optarg, 0, 64);
                 break;
-            case OPTION_OJUMP_ELIM_SIZE:
-                option_Ojump_elim_size =
-                    (unsigned)parseIntOptArg("-Ojump-elim-size", optarg, 0,
+            case OPTION_OEPILOGUE_SIZE:
+                option_Oepilogue_size =
+                    (unsigned)parseIntOptArg("-Oepilogue-size", optarg, 0,
                         512);
                 break;
-            case OPTION_OJUMP_PEEPHOLE:
-                option_Ojump_peephole =
-                    parseBoolOptArg("-Ojump-peephole", optarg);
+            case OPTION_OORDER:
+                option_Oorder = parseBoolOptArg("-Oorder", optarg);
                 break;
-            case OPTION_OORDER_TRAMPOLINES:
-                option_Oorder_trampolines =
-                    parseBoolOptArg("-Oorder-trampolines", optarg);
+            case OPTION_OPEEPHOLE:
+                option_Opeephole = parseBoolOptArg("-Opeephole", optarg);
+                break;
+            case OPTION_OPROLOGUE:
+                option_Oprologue =
+                    (unsigned)parseIntOptArg("-Oprologue", optarg, 0, 64);
+                break;
+            case OPTION_OPROLOGUE_SIZE:
+                option_Oprologue_size =
+                    (unsigned)parseIntOptArg("-Oprologue-size", optarg, 0,
+                        512);
                 break;
             case OPTION_OSCRATCH_STACK:
                 option_Oscratch_stack =

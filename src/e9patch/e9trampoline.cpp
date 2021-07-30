@@ -25,11 +25,37 @@
 #include <sys/mman.h>
 
 #include "e9alloc.h"
+#include "e9optimize.h"
 #include "e9patch.h"
 #include "e9trampoline.h"
 #include "e9x86_64.h"
 
 #define MACRO_DEPTH_MAX             128
+
+/*
+ * The general structure of a trampoline is as follows:
+ *
+ *      +--------------+--------------+--------------+
+ *      |              |              |              |
+ *      |   PROLOGUE   |  TRAMPOLINE  |   EPILOGUE   |
+ *      |              |              |              |
+ *      +--------------+--------------+--------------+
+ *
+ * Where:
+ *      - PROLOGUE: are relocated instructions from *before* the patched
+ *        instruction.  The prologue essentially serves as a "landing pad" for
+ *        the -Opeephole optimization.
+ *      - TRAMPOLINE: this is the original "user" trampoline.
+ *      - EPILOGUE: are relocated instructions from *after* the patched
+ *        instruction.  The epilogue attempts to avoid jumping back to the
+ *        main program immediately, and instead waits for some other
+ *        control-flow-transfer to do it for "free".  The epilogue is built as
+ *        part of the builtin "$continue" macro.
+ *
+ * Ultimately, the prologue/epilogue aim reduce the number of jumps the
+ * patched binary uses, which can translated into a significant performance
+ * gain.
+ */
 
 /*
  * Evictee trampoline template.
@@ -93,41 +119,22 @@ static const Trampoline *expandMacro(const Binary *B,
 /*
  * Build a jump instruction from a trampoline back to the main code.
  */
-static int buildJump(off_t offset, const Instr *J, Buffer *buf)
+static int buildJump(const Binary *B, off_t offset, const Instr *J, Buffer *buf)
 {
-    if (buf != nullptr)
+    if (buf == nullptr)
+        return /*sizeof(jmpq)=*/5;
+
+    int32_t rel32 = (int32_t)-(offset + /*sizeof(jmpq)=*/5);
+    uint8_t *bytes = buf->bytes + buf->i;
+    buf->push(/*jmpq opcode=*/0xE9);
+    buf->push((const uint8_t *)&rel32, sizeof(rel32));
+
+    if (option_Opeephole && J != nullptr)
     {
-        offset = -(offset + /*sizeof(jmpq)=*/5);
-
-        // If the target (J) is itself a jump, we can skip the target and
-        // jump directly to the target's target...
-        if (option_Ojump_peephole && J != nullptr)
-        {
-            intptr_t target = J->trampoline;
-            target = (target != INTPTR_MIN? target:
-                getJumpTarget(J->addr, J->patched.bytes, J->size));
-            if (target != INTPTR_MIN)
-            {
-                off_t offset_target = offset + (target - J->addr);
-                if (offset_target >= INT32_MIN && offset_target <= INT32_MAX)
-                    offset = offset_target;
-            }
-        }
-
-        int32_t rel32 = (int32_t)offset;
-        if (option_Ojump_peephole && rel32 == 0)
-        {
-            // If we do not jump anywhere then just use a NOP:
-            // nopl 0x0(%rax,%rax,1)
-            buf->push(0x0F); buf->push(0x1F); buf->push(0x44);
-            buf->push(0x00); buf->push(0x00);
-        }
-        else
-        {
-            buf->push(/*jmpq opcode=*/0xE9);
-            buf->push((const uint8_t *)&rel32, sizeof(rel32));
-        }
+        intptr_t addr = J->addr + offset;
+        optimizeJump(B, addr, bytes, /*sizeof(jmpq)=*/5);
     }
+
     return /*sizeof(jmpq)=*/5;
 }
 
@@ -136,30 +143,30 @@ static int buildJump(off_t offset, const Instr *J, Buffer *buf)
  *
  * Note this is heavily optimized.  The Naive way would be to simply use a
  * single jmpq to the next instruction (as per the paper).  However, a far
- * better approach is to clone the succeeding instruction sequence up to and
- * including the next control-flow-transfer (CFT) instruction (including
- * other jumps to unrelated trampolines).  This saves a jump and a lot of
- * overhead (since CPUs like locality).
+ * better approach is to clone a "postscript" containing the succeeding
+ * instruction sequence up to and including the next control-flow-transfer
+ * (CFT) instruction (including other jumps to unrelated trampolines).  This
+ * saves a jump and a lot of overhead (since CPUs like locality).
  */
 static int buildContinue(const Binary *B, const Instr *I, int32_t offset32,
-    Buffer *buf)
+    bool last, Buffer *buf)
 {
-    // Lookahead to find the next unconditional CFT instruction.
+    // Determine the postscript by finding the next unconditional CFT.
     const Instr *J = I;
     unsigned i = 0;
     bool cft = false;
     unsigned size = 0;
-    while (!cft && !I->no_optimize && i < option_Ojump_elim &&
-        size < option_Ojump_elim_size)
+    while (!cft && !I->no_optimize && i < option_Oepilogue &&
+        size < option_Oepilogue_size && last)
     {
         const Instr *K = J->next;
         if (K == nullptr || J->addr + J->size != K->addr)
             break;
         J = K;
         i++;
-        cft = (J->trampoline != INTPTR_MIN && !J->evicted);
+        cft = (J->is_patched && !J->is_evicted);
         cft = cft ||
-            isUnconditionalControlFlowTransfer(J->original.bytes, J->size);
+            isCFT(J->original.bytes, J->size, CFT_CALL | CFT_RET | CFT_JMP);
         size += J->size;
     }
 
@@ -168,20 +175,20 @@ static int buildContinue(const Binary *B, const Instr *I, int32_t offset32,
     if (!cft)
     {
         // Optimization cannot be applied --> jump to next instruction.
-        return buildJump(offset32 - (off_t)I->size, K, buf);
+        return buildJump(B, offset32 - (off_t)I->size, K, buf);
     }
 
-    // Relocate all instructions up-to-and-including the CFT
+    // Build the postscript:
     J = I->next;
     int s = I->size, r = 0;
     unsigned save = (buf == nullptr? 0: buf->i);
     bool ok = true;
     for (unsigned j = 0; j < i; j++, J = J->next)
     {
-        if (J->trampoline != INTPTR_MIN && !J->evicted)
+        if (J->is_patched && !J->is_evicted)
         {
             assert(j == i-1);
-            r += buildJump((off_t)offset32 + (off_t)(r - s), J, buf);
+            r += buildJump(B, (off_t)offset32 + (off_t)(r - s), J, buf);
             break;
         }
 
@@ -199,30 +206,9 @@ static int buildContinue(const Binary *B, const Instr *I, int32_t offset32,
         }
         if (buf != nullptr)
         {
-            if (option_Ojump_peephole && len == /*sizeof(jcc rel32)=*/6)
-            {
-                // As per above, if conditional jump target is itself a jump,
-                // then jump directly to the target's target.
-                intptr_t addr = J->addr + offset32 + (r - s);
-                intptr_t target = getJccTarget(addr, buf->bytes + buf->i, len);
-                Instr *K = findInstr(B, target);
-                if (K != nullptr)
-                {
-                    target = K->trampoline;
-                    target = (target != INTPTR_MIN? target:
-                        getJumpTarget(K->addr, K->patched.bytes, K->size));
-                    if (target != INTPTR_MIN)
-                    {
-                        off_t offset = (off_t)target - (off_t)(addr + len);
-                        if (offset >= INT32_MIN && offset <= INT32_MAX)
-                        {
-                            int32_t rel32 = (int32_t)offset;
-                            memcpy(buf->bytes + buf->i + len - sizeof(rel32),
-                                &rel32, sizeof(rel32));
-                        }
-                    }
-                }
-            }
+            if (option_Opeephole)
+                optimizeJump(B, J->addr + offset32 + (r - s),
+                    buf->bytes + buf->i, len);
             buf->i += (unsigned)len;
         }
         s += J->size;
@@ -234,10 +220,82 @@ static int buildContinue(const Binary *B, const Instr *I, int32_t offset32,
         // Failed to apply optimization --> jump to next instruction.
         if (buf != nullptr)
             buf->i = save;
-        return buildJump(offset32 - (off_t)I->size, K, buf);
+        return buildJump(B, offset32 - (off_t)I->size, K, buf);
     }
 
     return r;
+}
+
+/*
+ * Build a trampoline prologue, which may include instructions before the
+ * patched instruction.  The trampoline prologue allows other instructions
+ * to jump to the trampoline "early", without having to go back to the main
+ * program.  The code is somewhat similar to buildContinue().
+ */
+static int buildPrologue(const Binary *B, const Instr *I, int32_t offset32,
+    Buffer *buf)
+{
+    const Instr *J = getTrampolinePrologueStart(B->Es, I);
+    if (J == nullptr || J == I)
+        return 0;
+
+    int r = 0; 
+    unsigned start = (buf == nullptr? 0: buf->i);
+    bool relax = (offset32 == 0x0);
+    for (; J != I; J = J->next)
+    {
+        int len = 0;
+        int diff = (int)(I->addr - J->addr);
+        if (buf != nullptr)
+            len = relocateInstr(J->addr, diff + offset32 + r,
+                J->original.bytes, J->size, J->pic, buf->bytes + buf->i);
+        else
+            len = relocateInstr(J->addr, /*offset=*/0x0, J->original.bytes,
+                J->size, J->pic, nullptr, relax);
+        if (len < 0)
+        {
+            r = 0;
+            buf->i = start;
+            break;
+        }
+        if (buf != nullptr)
+        {
+            if (option_Opeephole)
+                optimizeJump(B, J->addr + diff + offset32 + r,
+                    buf->bytes + buf->i, len);
+            buf->i += (unsigned)len;
+        }
+        r += len;
+    }
+
+    return r;
+}
+
+/*
+ * Calculate the trampoline entry points based on the prologue (if exists).
+ */
+static void calcPrologueTargets(Binary *B, const Instr *I, int32_t offset32)
+{
+    const Instr *J = getTrampolinePrologueStart(B->Es, I);
+    if (J == nullptr || J == I)
+        return;
+
+    int r = 0;
+    std::vector<std::pair<const Instr *, intptr_t>> entries;
+    for (; J != I; J = J->next)
+    {
+        int len = relocateInstr(J->addr, /*offset=*/0x0, J->original.bytes,
+                J->size, J->pic, nullptr, /*relax=*/true);
+        if (len < 0)
+            return;
+        int diff = (int)(I->addr - J->addr);
+        intptr_t entry = J->addr + diff + offset32 + r;
+        entries.push_back({J, entry});
+        r += len;
+    }
+
+    for (const auto &entry: entries)
+        setTrampolineEntry(B->Es, entry.first, entry.second);
 }
 
 /*
@@ -309,7 +367,8 @@ static int getTrampolineSize(const Binary *B, const Trampoline *T,
                 size += I->size;
                 continue;
             case ENTRY_CONTINUE:
-                size += buildContinue(B, I, /*offset=*/0, nullptr);
+                size += buildContinue(B, I, /*offset=*/0, 
+                    (i+1 == T->num_entries), nullptr);
                 continue;
             case ENTRY_TAKEN:
                 size += /*sizeof(jmpq)=*/5;
@@ -326,6 +385,16 @@ int getTrampolineSize(const Binary *B, const Trampoline *T,
     const Instr *I)
 {
     return getTrampolineSize(B, T, I, /*depth=*/0);
+}
+
+/*
+ * Calculate trampoline prologue size.
+ */
+int getTrampolinePrologueSize(const Binary *B, const Instr *I)
+{
+    if (I == nullptr)
+        return 0;
+    return buildPrologue(B, I, /*offset=*/0, nullptr);
 }
 
 /*
@@ -412,7 +481,8 @@ static size_t getTrampolineBounds(const Binary *B, const Trampoline *T,
                 size += I->size;
                 continue;
             case ENTRY_CONTINUE:
-                size += buildContinue(B, I, /*offset=*/0, nullptr);
+                size += buildContinue(B, I, /*offset=*/0,
+                    (i+1 == T->num_entries), nullptr);
                 continue;
             case ENTRY_TAKEN:
                 size += /*sizeof(jmpq)=*/5;
@@ -433,6 +503,15 @@ Bounds getTrampolineBounds(const Binary *B, const Trampoline *T,
         return b;
     getTrampolineBounds(B, T, I, /*depth=*/0, /*size=*/0, b);
     return b;
+}
+
+/*
+ * Calculate trampoline entry points.
+ */
+void calcEntryPoints(Binary *B, const Trampoline *T, const Instr *I,
+    int32_t offset32)
+{
+    calcPrologueTargets(B, I, offset32);
 }
 
 /*
@@ -497,7 +576,8 @@ static off_t buildLabelSet(const Binary *B, const Trampoline *T,
                 offset += I->size;
                 continue;
             case ENTRY_CONTINUE:
-                offset += buildContinue(B, I, /*offset=*/0, nullptr);
+                offset += buildContinue(B, I, /*offset=*/0,
+                    (i+1 == T->num_entries), nullptr);
                 continue;
             case ENTRY_TAKEN:
                 offset += /*sizeof(jmpq)=*/5;
@@ -533,8 +613,8 @@ static off_t lookupLabel(const char *label, const Instr *I, int32_t offset32,
             {
                 if (I == nullptr)
                     return 0;
-                intptr_t target = getJccTarget(I->addr, I->original.bytes,
-                    I->size);
+                intptr_t target = getCFTTarget(I->addr, I->original.bytes,
+                    I->size, CFT_JCC);
                 if (target == INTPTR_MIN)
                     error("failed to build trampoline; instruction at address "
                         "0x%lx is not a conditional branch (as required by "
@@ -556,7 +636,7 @@ static off_t lookupLabel(const char *label, const Instr *I, int32_t offset32,
  * Build the trampoline bytes.
  */
 static void buildBytes(const Binary *B, const Trampoline *T,
-    const Instr *I, int32_t offset32, const LabelSet &labels, Buffer &buf)
+    const Instr *I, int32_t entry32, const LabelSet &labels, Buffer &buf)
 {
     for (unsigned i = 0; i < T->num_entries; i++)
     {
@@ -595,7 +675,7 @@ static void buildBytes(const Binary *B, const Trampoline *T,
                 const Trampoline *U = expandMacro(B, I->metadata,
                     entry.macro);
                 assert(U != nullptr);
-                buildBytes(B, U, I, offset32, labels, buf);
+                buildBytes(B, U, I, entry32, labels, buf);
                 continue;
             }
 
@@ -605,14 +685,14 @@ static void buildBytes(const Binary *B, const Trampoline *T,
                 off_t rel = 0;
                 if (entry.use_label)
                 {
-                    rel = lookupLabel(entry.label, I, offset32, labels);
+                    rel = lookupLabel(entry.label, I, entry32, labels);
                     rel = rel - (buf.size() +
                         (entry.kind == ENTRY_REL8? sizeof(int8_t):
                                                    sizeof(int32_t)));
                 }
                 else
                 {
-                    intptr_t addr = I->addr + (intptr_t)offset32 +
+                    intptr_t addr = I->addr + (intptr_t)entry32 +
                         buf.size() +
                         (entry.kind == ENTRY_REL8? sizeof(int8_t):
                                                    sizeof(int32_t));
@@ -642,7 +722,7 @@ static void buildBytes(const Binary *B, const Trampoline *T,
 
             case ENTRY_INSTRUCTION:
             {
-                buf.i += relocateInstr(I->addr, offset32 + buf.size(),
+                buf.i += relocateInstr(I->addr, entry32 + buf.size(),
                     I->original.bytes, I->size, I->pic, buf.bytes + buf.i);
                 continue;
             }
@@ -652,18 +732,19 @@ static void buildBytes(const Binary *B, const Trampoline *T,
                 break;
         
             case ENTRY_CONTINUE:
-                (void)buildContinue(B, I, offset32 + buf.size(), &buf);
+                (void)buildContinue(B, I, entry32 + buf.size(),
+                    (i+1 == T->num_entries), &buf);
                 break;
 
             case ENTRY_TAKEN:
             {
-                intptr_t target = getJccTarget(I->addr, I->original.bytes,
-                    I->size);
+                intptr_t target = getCFTTarget(I->addr, I->original.bytes,
+                    I->size, CFT_JCC);
                 if (target == INTPTR_MIN)
                     error("failed to build trampoline; instruction at address "
                         "0x%lx is not a conditional branch (as required by "
                         "\"$taken\")", I->addr);
-                off_t rel = (off_t)offset32 + buf.size() + /*sizeof(jmpq)=*/5;
+                off_t rel = (off_t)entry32 + buf.size() + /*sizeof(jmpq)=*/5;
                 rel = -rel + (target - I->addr);
 
                 buf.push(/*jmpq opcode=*/0xE9);
@@ -681,24 +762,42 @@ static void buildBytes(const Binary *B, const Trampoline *T,
  * Flatten a trampoline into a memory buffer.
  */
 void flattenTrampoline(const Binary *B, uint8_t *bytes, size_t size,
-    int32_t offset32, const Trampoline *T, const Instr *I)
+    uint8_t fill, int32_t offset32, int32_t entry32, const Trampoline *T,
+    const Instr *I)
 {
+    // Note: it is possible for actual size to be smaller than the `size'.
+    //       This occurs when the trampoline size was calculated under the
+    //       assumption that instructions can be relocated, however the
+    //       assumption fails when real offsets are used (after the trampoline
+    //       has been placed).  This wastes a few bytes but is otherwise
+    //       harmless.
+
     LabelSet labels;
     off_t offset = buildLabelSet(B, T, I, /*offset=*/0, labels);
+
     if ((size_t)offset > size)
         error("failed to flatten trampoline for instruction at address 0x%lx; "
             "buffer size (%zu) exceeds the trampoline size (%zu)",
             I->addr, (size_t)offset, size);
 
-    // Note: it is possible for the offset to be smaller than the size.
-    //       This occurs when the trampoline size was calculated under the
-    //       assumption that instructions can be relocated for -Ojump-delay,
-    //       however the assumption fails when real offsets are used
-    //       (after the trampoline is placed).  This wastes a few bytes but
-    //       is otherwise harmless.
+    int presize = entry32 - offset32;
+    if (presize > 0)
+    {
+        Buffer buf(bytes, presize);
+        (void)buildPrologue(B, I, offset32, &buf);
+        assert(buf.size() == (size_t)presize || buf.size() == 0);
+        if (buf.size() == 0)
+            buf.push(fill, presize);
+    }
 
-    Buffer buf(bytes, offset);
-    buildBytes(B, T, I, offset32, labels, buf);
+    bytes += presize;
+    size  -= presize;
+    {
+        Buffer buf(bytes, size);
+        buildBytes(B, T, I, entry32, labels, buf);
+        assert(buf.i <= size);
+        buf.push(fill, size - buf.i);
+    }
 }
 
 /*
