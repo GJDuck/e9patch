@@ -45,7 +45,7 @@ bool option_Opeephole          = true;
 unsigned option_Oprologue      = 0;
 unsigned option_Oprologue_size = 64;
 bool option_Oscratch_stack     = false;
-size_t option_mem_granularity  = 64;
+size_t option_mem_granularity  = 128;
 intptr_t option_mem_lb         = -0x100000000;
 intptr_t option_mem_ub         =  0x200000000;
 intptr_t option_mem_loader     =  0x20e9e9000;
@@ -229,8 +229,8 @@ static void usage(FILE *stream, const char *progname)
         "\t\tgrouping memory optimization.  Higher values result in\n"
         "\t\thigher CPU+memory usage during rewriting, but also smaller\n"
         "\t\toutput binary files (i.e., better compression).  Here, SIZE\n"
-        "\t\tmust be one of {64,128,4096}.\n"
-        "\t\tDefault: 64\n"
+        "\t\tmust be one of {128,4096}.\n"
+        "\t\tDefault: 128\n"
         "\n"
         "\t--mem-lb=LB\n"
         "\t\tSet LB to be the minimum allowable trampoline address.\n"
@@ -477,12 +477,12 @@ void parseOptions(int argc, char * const argv[], bool api)
                     optarg, INTPTR_MIN, INTPTR_MAX);
                 switch (option_mem_granularity)
                 {
-                    case 64: case 128: case 4096:
+                    case 128: case 4096:
                         break;
                     default:
                         error("failed to parse argument \"%s\" for the "
                             "`--mem-granularity' option; granularity size "
-                            "must be one of {64,128,4096}", optarg);
+                            "must be one of {128,4096}", optarg);
                 }
                 break;
             case OPTION_MEM_LB:

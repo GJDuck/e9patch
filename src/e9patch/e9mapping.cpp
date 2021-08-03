@@ -53,11 +53,6 @@ size_t size<Key128>(Key128 key)
 {
     return 8 * sizeof(key);
 }
-template <>
-size_t size<Key64>(Key64 key)
-{
-    return 8 * sizeof(key);
-}
 
 /*
  * Trailing zero count.
@@ -83,11 +78,6 @@ unsigned tzcount<Key128>(Key128 key)
     uint64_t hi = (uint64_t)(key >> 64);
     return (lo == 0? __builtin_ctzll(hi) + 64:
                      __builtin_ctzll(lo));
-}
-template <>
-unsigned tzcount<Key64>(Key64 key)
-{
-    return __builtin_ctzll(key);
 }
 
 /*
@@ -116,13 +106,6 @@ void bitstring<Key128>(Key128 key, std::string &str)
         str += buf;
         key >>= 64;
     }
-}
-template <>
-void bitstring<Key64>(Key64 key, std::string &str)
-{
-    char buf[32];
-    snprintf(buf, sizeof(buf)-1, "%.16lX", (uint64_t)key);
-    str += buf;
 }
 
 /*
@@ -379,13 +362,6 @@ unsigned index<Key128>(Radix::Node<Key128> *node, Key128 key)
 {
     size_t shift = BRANCH_BITS * node->shift;
     Key128 BRANCH_MASK = BRANCH_MAX - 1;
-    return (unsigned)((key & (BRANCH_MASK << shift)) >> shift);
-}
-template <>
-unsigned index<Key64>(Radix::Node<Key64> *node, Key64 key)
-{
-    size_t shift = BRANCH_BITS * node->shift;
-    Key64 BRANCH_MASK = BRANCH_MAX - 1;
     return (unsigned)((key & (BRANCH_MASK << shift)) >> shift);
 }
 
@@ -674,9 +650,6 @@ void optimizeMappings(const Allocator &allocator, const size_t MAPPING_SIZE,
     for (auto mapping: mappings)
         shrinkMapping(mapping);
 }
-template
-void optimizeMappings<Key64>(const Allocator &allocator,
-    const size_t MAPPING_SIZE,MappingSet &mappings);
 template
 void optimizeMappings<Key128>(const Allocator &allocator,
     const size_t MAPPING_SIZE,MappingSet &mappings);

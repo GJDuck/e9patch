@@ -2555,7 +2555,7 @@ int main(int argc, char **argv)
             options.push_back("-Opeephole=false");
             options.push_back("-Oorder=false");
             options.push_back("-Oscratch-stack=false");
-            options.push_back("--mem-granularity=64");
+            options.push_back("--mem-granularity=128");
             break;
         case '1':
             options.push_back("-Oprologue=0");
