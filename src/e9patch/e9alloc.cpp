@@ -267,7 +267,7 @@ const Alloc *allocate(Binary *B, intptr_t lb, intptr_t ub,
     size_t size = (size_t)presize + (size_t)tmpsize;
     uint32_t flags = (same_page? FLAG_SAME_PAGE: 0);
     Node *n = nullptr;
-    const intptr_t target = 0x70000000;
+    const intptr_t target = 0x70C00000;
     if (option_Oorder && ub > target)
         n = insert(allocator.tree.root, lb, target, size, flags | FLAG_RIGHT);
     if (n == nullptr)
