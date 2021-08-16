@@ -16,8 +16,12 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include <string>
+
+#include <cerrno>
 #include <cstdio>
 #include <cstdlib>
+#include <ctime>
 
 #include <getopt.h>
 #include <unistd.h>
