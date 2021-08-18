@@ -2132,6 +2132,10 @@ static void usage(FILE *stream, const char *progname)
         "\t--no-warnings\n"
         "\t\tDo not print warning messages.\n"
         "\n"
+        "\t--plt\n"
+        "\t\tEnable the disassembly/rewriting of the .plt/.plt.got sections.\n"
+        "\t\tThese sections are excluded by default.\n"
+        "\n"
         "\t-O0, -O1, -O2, -O3, -Os\n"
         "\t\tSet the optimization level.  Here:\n"
         "\n"
@@ -2196,6 +2200,7 @@ enum Option
     OPTION_HELP,
     OPTION_MATCH,
     OPTION_NO_WARNINGS,
+    OPTION_PLT,
     OPTION_OPTION,
     OPTION_OUTPUT,
     OPTION_SEED,
@@ -2249,6 +2254,7 @@ int main(int argc, char **argv)
         {"help",          no_arg,  nullptr, OPTION_HELP},
         {"match",         req_arg, nullptr, OPTION_MATCH},
         {"no-warnings",   no_arg,  nullptr, OPTION_NO_WARNINGS},
+        {"plt",           no_arg,  nullptr, OPTION_PLT},
         {"option",        req_arg, nullptr, OPTION_OPTION},
         {"output",        req_arg, nullptr, OPTION_OUTPUT},
         {"seed",          req_arg, nullptr, OPTION_SEED},
@@ -2262,6 +2268,7 @@ int main(int argc, char **argv)
     option_is_tty = isatty(STDERR_FILENO);
     std::vector<const char *> option_options;
     unsigned option_compression_level = 9;
+    bool option_plt = false;
     char option_optimization_level = '2';
     bool option_executable = false, option_shared = false,
         option_static_loader = false;
@@ -2337,6 +2344,9 @@ int main(int argc, char **argv)
                 option_match.emplace_back(match);
                 break;
             }
+            case OPTION_PLT:
+                option_plt = true;
+                break;
             case OPTION_OUTPUT:
             case 'o':
                 option_output = optarg;
@@ -2697,6 +2707,10 @@ int main(int argc, char **argv)
     for (const auto *shdr: elf.exes)
     {
         const char *section   = elf.strs + shdr->sh_name;
+        if (!option_plt &&
+                (strcmp(section, ".plt") == 0 ||
+                 strcmp(section, ".plt.got") == 0))
+            continue;   // Exclude .plt/,plt.got by default
         size_t section_size   = (size_t)shdr->sh_size;
         off_t section_offset  = (off_t)shdr->sh_offset;
         intptr_t section_addr = (intptr_t)shdr->sh_addr;
