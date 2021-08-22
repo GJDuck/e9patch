@@ -334,7 +334,9 @@ struct Allocator
 struct ElfInfo
 {
     Elf64_Ehdr *ehdr;               // EHDR (Elf header)
-    Elf64_Phdr *phdr_note;          // PHDR PT_NOTE to be used for loader.
+    Elf64_Phdr *phdr_note;          // PHDR PT_NOTE (used for loader?).
+    Elf64_Phdr *phdr_gnu_relro;     // PHDR PT_GNU_RELRO (used for loader?).
+    Elf64_Phdr *phdr_gnu_stack;     // PHDR PT_GNU_STACK (used for loader?).
     Elf64_Phdr *phdr_dynamic;       // PHDR PT_DYNAMIC else nullptr.
     bool pic;                       // Position independent?
 };
@@ -452,6 +454,7 @@ extern bool option_tactic_T1;
 extern bool option_tactic_T2;
 extern bool option_tactic_T3;
 extern bool option_tactic_backward_T3;
+extern int option_phdr_loader;
 extern bool option_static_loader;
 extern std::set<intptr_t> option_trap;
 extern bool option_trap_all;

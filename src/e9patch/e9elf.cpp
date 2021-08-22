@@ -139,7 +139,8 @@ void parseElf(Binary *B)
     }
 
     Elf64_Phdr *phdrs = (Elf64_Phdr *)(data + ehdr->e_phoff);
-    Elf64_Phdr *phdr_note = nullptr, *phdr_dynamic = nullptr;
+    Elf64_Phdr *phdr_note = nullptr, *phdr_gnu_relro = nullptr,
+        *phdr_gnu_stack = nullptr, *phdr_dynamic = nullptr;
     for (unsigned i = 0; i < ehdr->e_phnum; i++)
     {
         Elf64_Phdr *phdr = phdrs + i;
@@ -160,19 +161,24 @@ void parseElf(Binary *B)
             case PT_NOTE:
                 phdr_note = phdr;
                 break;
+            case PT_GNU_RELRO:
+                phdr_gnu_relro = phdr;
+                break;
+            case PT_GNU_STACK:
+                phdr_gnu_stack = phdr;
+                break;
         }
     }
-    if (phdr_note == nullptr)
-        error("failed to parse ELF file \"%s\"; missing PT_NOTE segment",
-            filename);
     if (phdr_dynamic != nullptr &&
             phdr_dynamic->p_offset + phdr_dynamic->p_memsz > size)
         error("failed to parse ELF file \"%s\": invalid dynamic section",
             filename);
-    info.ehdr         = ehdr;
-    info.phdr_note    = phdr_note;
-    info.phdr_dynamic = phdr_dynamic;
-    info.pic          = pic;
+    info.ehdr           = ehdr;
+    info.phdr_note      = phdr_note;
+    info.phdr_gnu_relro = phdr_gnu_relro;
+    info.phdr_gnu_stack = phdr_gnu_stack;
+    info.phdr_dynamic   = phdr_dynamic;
+    info.pic            = pic;
 }
 
 /*
@@ -733,9 +739,29 @@ size_t emitElf(const Binary *B, const MappingSet &mappings,
 
     // Step (6): Modify the PHDR to load the loader.
     // NOTE: Currently we use the well-known and easy-to-implement PT_NOTE
-    //       injection method to load the loader.  Some alternative methods
-    //       may also work, but are not yet implemented.
-    phdr           = B->elf.phdr_note;
+    //       (or PT_GNU_*) injection method to load the loader.  Some
+    //       alternative methods may also work, but are not yet implemented.
+    const char *phdr_str = "PT_NOTE, PT_GNU_RELRO, or PT_GNU_STACK";
+    switch (option_phdr_loader)
+    {
+        case PT_NOTE:
+            phdr_str = "PT_NOTE";
+            phdr = B->elf.phdr_note; break;
+        case PT_GNU_RELRO:
+            phdr_str = "PT_GNU_RELRO";
+            phdr = B->elf.phdr_gnu_relro; break;
+        case PT_GNU_STACK:
+            phdr_str = "PT_GNU_STACK";
+            phdr = B->elf.phdr_gnu_stack; break;
+        default:
+            phdr = B->elf.phdr_note;
+            phdr = (phdr == nullptr? B->elf.phdr_gnu_relro: phdr);
+            phdr = (phdr == nullptr? B->elf.phdr_gnu_stack: phdr);
+            break;
+    }
+    if (phdr == nullptr)
+        error("failed to replace PHDR entry; missing %s segment",
+            phdr_str);
     phdr->p_type   = PT_LOAD;
     phdr->p_flags  = PF_X | PF_R;
     phdr->p_offset = loader_offset;

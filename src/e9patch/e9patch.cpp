@@ -55,6 +55,7 @@ intptr_t option_mem_ub         =  0x200000000;
 intptr_t option_mem_loader     =  0x20e9e9000;
 size_t option_mem_mapping_size = PAGE_SIZE;
 bool option_mem_multi_page     = true;
+int option_phdr_loader         = -1;
 bool option_static_loader      = false;
 std::set<intptr_t> option_trap;
 bool option_trap_all           = false;
@@ -260,6 +261,16 @@ static void usage(FILE *stream, const char *progname)
         "\t\tEnable [disable] trampolines that cross page boundaries.\n"
         "\t\tDefault: true (enabled)\n"
         "\n"
+        "\t--phdr-loader=PHDR\n"
+        "\t\tOverwrite the corresponding PHDR to load the loader.  Valid\n"
+        "\t\tvalues are \"note\", \"relro\", and \"stack\" for PT_NOTE, "
+            "PT_RELRO\n"
+        "\t\tand PT_GNU_STACK respectively, or \"any\" to select any of the\n"
+        "\t\tabove values.  Note that selecting any value other than "
+            "\"note\"\n"
+        "\t\tmay relax the memory permissions in the patched binary.\n"
+        "\t\tDefault: note\n"
+        "\n"
         "\t--static-loader[=false]\n"
         "\t\tEnable [disable] the static loading of patched pages.  By\n"
         "\t\tdefault, patched pages are loaded dynamically during program\n"
@@ -320,6 +331,7 @@ enum Option
     OPTION_OPROLOGUE_SIZE,
     OPTION_OSCRATCH_STACK,
     OPTION_OUTPUT,
+    OPTION_PHDR_LOADER,
     OPTION_STATIC_LOADER,
     OPTION_TACTIC_B1,
     OPTION_TACTIC_B2,
@@ -359,6 +371,7 @@ void parseOptions(int argc, char * const argv[], bool api)
         {"mem-multi-page",     opt_arg, nullptr, OPTION_MEM_MULTI_PAGE},
         {"mem-ub",             req_arg, nullptr, OPTION_MEM_UB},
         {"output",             req_arg, nullptr, OPTION_OUTPUT},
+        {"phdr-loader",        req_arg, nullptr, OPTION_PHDR_LOADER},
         {"static-loader",      no_arg,  nullptr, OPTION_STATIC_LOADER},
         {"tactic-B1",          opt_arg, nullptr, OPTION_TACTIC_B1},
         {"tactic-B2",          opt_arg, nullptr, OPTION_TACTIC_B2},
@@ -471,6 +484,20 @@ void parseOptions(int argc, char * const argv[], bool api)
                 break;
             case OPTION_TRAP_ENTRY:
                 option_trap_entry = parseBoolOptArg("--trap-entry", optarg);
+                break;
+            case OPTION_PHDR_LOADER:
+                if (strcmp(optarg, "any") == 0)
+                    option_phdr_loader = -1;
+                else if (strcmp(optarg, "relro") == 0)
+                    option_phdr_loader = PT_GNU_RELRO;
+                else if (strcmp(optarg, "stack") == 0)
+                    option_phdr_loader = PT_GNU_STACK;
+                else if (strcmp(optarg, "note") == 0)
+                    option_phdr_loader = PT_NOTE;
+                else
+                    error("failed to parse argument \"%s\" for the "
+                        "`--phdr-loader' option; argument must be one of "
+                        "{note,relro,stack,any}", optarg);
                 break;
             case OPTION_STATIC_LOADER:
                 option_static_loader =
