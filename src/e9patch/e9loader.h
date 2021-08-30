@@ -19,9 +19,33 @@
 #ifndef __E9LOADER_H
 #define __E9LOADER_H
 
-/*
- * Loader entry offset.
- */
-#define LOADER_OFFSET           sizeof(void *)
+#define E9_FLAG_EXE                 0x1
+
+struct e9_map_s
+{
+    int32_t  addr;                  // Address (/ PAGE_SIZE)
+    uint32_t offset;                // Offset  (/ PAGE_SIZE)
+    uint32_t size:20;               // Size    (/ PAGE_SIZE)
+    uint32_t __reserved:8;          // Reserved
+    uint32_t r:1;                   // Read?
+    uint32_t w:1;                   // Write?
+    uint32_t x:1;                   // Execute?
+    uint32_t abs:1;                 // Absolute?
+};
+
+struct e9_config_s
+{
+    char     magic[8];              // "E9PATCH\0"
+    uint32_t flags;                 // Flags
+    uint32_t size;                  // Loader total size
+    intptr_t base;                  // Loader base address
+    intptr_t entry;                 // Real entry point
+    intptr_t dynamic;               // DYNAMIC, or 0x0
+    intptr_t mmap;                  // mmap(), or 0x0
+    uint32_t num_maps[2];           // # Mappings
+    uint32_t maps[2];               // Mappings offset
+    uint32_t num_inits;             // # Init functions
+    uint32_t inits;                 // Init functions offset
+};
 
 #endif

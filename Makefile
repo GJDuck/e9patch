@@ -52,11 +52,11 @@ tool.debug: e9tool.o
         -Wl,--export-dynamic -ldl
 
 loader:
-	$(CXX) -std=c++11 -Wall -fno-stack-protector -fpie -Os -c \
-        src/e9patch/e9loader.cpp
-	$(CXX) -nostdlib -o e9loader.out e9loader.o -Wl,--entry=_entry
-	objcopy --dump-section .text=e9loader.bin e9loader.out
-	xxd -i e9loader.bin > src/e9patch/e9loader.c
+	$(CXX) -std=c++11 -Wall -fno-stack-protector -Wno-unused-function -fPIC \
+        -mno-mmx -mno-sse -mno-avx -mno-avx2 -mno-avx512f -msoft-float \
+        -Os -c src/e9patch/e9loader_elf.cpp
+	$(CXX) -pie -nostdlib -o e9loader_elf.bin e9loader_elf.o -T e9loader.ld
+	xxd -i e9loader_elf.bin > src/e9patch/e9loader_elf.c
 
 src/e9patch/e9alloc.o: CXXFLAGS += -Wno-unused-function
 

@@ -38,7 +38,7 @@
 #include "e9patch.h"
 
 static const
-#include "e9loader.c"
+#include "e9loader_elf.c"
 
 /*
  * Patch refactoring for the dynamic loader.
@@ -247,416 +247,39 @@ static size_t emitRefactoredPatch(const uint8_t *original, uint8_t *data,
 }
 
 /*
- * Emit a mmap() system call.
+ * Emit a mapping.
  */
-static size_t emitLoaderMmap(uint8_t *data, bool pic, intptr_t addr,
-    size_t len, size_t prev_len, int prot, int prev_prot, off_t offset,
-    off_t prev_offset, bool user_mmap = false)
+static size_t emitLoaderMap(uint8_t *data, intptr_t addr, size_t len,
+    off_t offset, bool r, bool w, bool x, intptr_t *ub)
 {
-    // The e9loader is assumed to have:
-    // (1) placed the fd into %r8
-    // (2) placed (PROT_EXEC | PROT_READ) into %rdx
-    // (3) placed (MAP_PRIVATE | MAP_FIXED) into %r10
-    // (4) for PIC, placed the base address into %r12
-    size_t size = 0;
-
-    // Step (1): Load the address into %rdi
-    bool absolute = IS_ABSOLUTE(addr);
+    bool abs = IS_ABSOLUTE(addr);
+    if (ub != nullptr && !abs)
+        *ub = std::max(*ub, addr);
     addr = BASE_ADDRESS(addr);
-    if (addr >= 0 && addr <= INT32_MAX)
-    {
-        // mov $addr32,%edi
-        int32_t addr32 = (int32_t)addr;
-        data[size++] = 0xbf;
-        memcpy(data + size, &addr32, sizeof(addr32));
-        size += sizeof(addr32);
-    }
-    else
-    {
-        // movabs $addr,%rdi
-        data[size++] = 0x48; data[size++] = 0xbf;
-        memcpy(data + size, &addr, sizeof(addr));
-        size += sizeof(addr);
-    }
-    if (pic && !absolute)
-    {
-        // addq %r12,%rdi
-        data[size++] = 0x4c; data[size++] = 0x01; data[size++] = 0xe7;
-    }
-    
-    // Step (2): Load the length into %rsi
-    assert(len <= INT32_MAX);
-    if (len != prev_len)
-    {
-        // mov $len32,%esi
-        int32_t len32 = (int32_t)len;
-        data[size++] = 0xbe;
-        memcpy(data + size, &len32, sizeof(len32));
-        size += sizeof(len32);
-    }
 
-    // Step (3): Load the protections into %rdx
-    if (prot != prev_prot)
-    {
-        // mov $prot,%edx
-        int32_t prot32 = (int32_t)prot;
-        data[size++] = 0xba;
-        memcpy(data + size, &prot32, sizeof(prot32));
-        size += sizeof(prot32);
-    }
- 
-    // Step (4): Load the offset into %r9
-    if (offset != prev_offset)
-    {
-        if (offset <= INT32_MAX)
-        {
-            // mov $offset32,%r9d
-            int32_t offset32 = (int32_t)offset;
-            data[size++] = 0x41; data[size++] = 0xb9;
-            memcpy(data + size, &offset32, sizeof(offset32));
-            size += sizeof(offset32);
-        }
-        else
-        {
-            // movabs $offset,%r9
-            data[size++] = 0x49; data[size++] = 0xb9;
-            memcpy(data + size, &offset, sizeof(offset));
-            size += sizeof(offset);
-        }
-    }
-
-    // Step (5): Execute the system call (or user mmap call).
-    if (!user_mmap)
-    {
-        // mov %r13d,%eax  # mov SYS_MMAP into %rax
-        data[size++] = 0x44; data[size++] = 0x89; data[size++] = 0xe8;
-
-        // syscall
-        data[size++] = 0x0f; data[size++] = 0x05; 
-    }
-    else
-    {
-        // call *%r15
-        data[size++] = 0x41; data[size++] = 0xff; data[size++] = 0xd7;
-    }
-
-    // Step (6): Check for error.
-    {
-        // cmp %rdi,%rax
-        data[size++] = 0x48; data[size++] = 0x39; data[size++] = 0xf8;
-
-        // je .Lskip
-        data[size++] = 0x74; data[size++] = 0x03;
-
-        // jmpq *%r14
-        data[size++] = 0x41; data[size++] = 0xff; data[size++] = 0xe6;
-
-        // .Lskip:
-    }
-
-    const size_t MIN_SIZE = (pic? 21: 18);
-    if (size <= MIN_SIZE)
-        fputs("\33[36m0\33[0m", stdout);
-    else
-        putchar((size - MIN_SIZE < 10?
-                '0' + (size - MIN_SIZE):
-                'A' + (size - MIN_SIZE)));
-
-    return size;
-}
-
-/*
- * Load a pointer into register.
- */
-static size_t emitLoadPtrIntoReg(uint8_t *data, bool pic, intptr_t ptr,
-    int reg)
-{
     size_t size = 0;
-    if (ptr < 0)
-    {
-        // xor %reg32,%reg32
-        data[size++] = 0x31; data[size++] = 0xc0 + 0x9 * reg;
-        return size;
-    }
-    bool absolute = IS_ABSOLUTE(ptr);
-    ptr = BASE_ADDRESS(ptr);
-    if (ptr <= INT32_MAX)
-    {
-        // mov $ptr32,%reg32
-        int32_t ptr32 = (int32_t)ptr;
-        data[size++] = 0xb8 + reg;
-        memcpy(data + size, &ptr32, sizeof(ptr32));
-        size += sizeof(ptr32);
-    }
-    else
-    {
-        // movabs $ptr,%reg
-        data[size++] = 0x48; data[size++] = 0xb8 + reg;
-        memcpy(data + size, &ptr, sizeof(ptr));
-        size += sizeof(ptr);
-    }
-    if (pic && !absolute)
-    {
-        // addq %r12,%reg
-        data[size++] = 0x4c; data[size++] = 0x01; data[size++] = 0xe0 + reg;
-    }
-    return size;
-}
+    struct e9_map_s *map = (struct e9_map_s *)data;
+    size += sizeof(struct e9_map_s);
 
-/*
- * Emit the loader.
- */
-static size_t emitLoader(const RefactorSet &refactors,
-    const MappingSet &mappings, uint8_t *data, intptr_t base, intptr_t entry,
-    intptr_t dynamic, bool pic, const InitSet &inits, intptr_t mmap, Mode mode)
-{
-    /*
-     * Stage #1
-     */
+    addr   /= (intptr_t)PAGE_SIZE;
+    len    /= PAGE_SIZE;
+    offset /= PAGE_SIZE;
 
-    // Step (1): Emit the loader entry:
-    memcpy(data, e9loader_bin, e9loader_bin_len);
-    memcpy(data, &base, sizeof(base));
-    assert(data[sizeof(base)] == 0x90);
-    if (option_trap_entry)
-        data[sizeof(base)] = 0xcc;      // nop ---> int3
-    size_t size = e9loader_bin_len;
+    if (addr < INT32_MIN || addr > INT32_MAX)
+        error("mapping address (" ADDRESS_FORMAT ") %sflow detected",
+            ADDRESS(addr), (addr < 0? "under": "over"));
+    if (len >= (1 << 21))
+        error("mapping size (%zu) overflow detected", len);
+    if (offset > UINT32_MAX)
+        error("mapping offset (%+zd) overflow detected", offset);
 
-    /*
-     * Stage #2
-     */
-
-    // Step (1): Setup mmap() prot/flags parameters.
-    int32_t prot = PROT_READ | PROT_EXEC, flags = MAP_PRIVATE | MAP_FIXED;
-
-    // mov $prot,%edx
-    data[size++] = 0xba;
-    memcpy(data + size, &prot, sizeof(prot));
-    size += sizeof(prot);
-
-    // mov $flags,%r10d
-    data[size++] = 0x41; data[size++] = 0xba;
-    memcpy(data + size, &flags, sizeof(flags));
-    size += sizeof(flags);
-
-    size_t mmap_idx = 0;
-    if (mmap != INTPTR_MIN)
-    {
-        // lea mmap(%rip),%r15
-        data[size++] = 0x4c; data[size++] = 0x8d; data[size++] = 0x3d;
-        data[size++] = 0x00; data[size++] = 0x00; data[size++] = 0x00;
-        data[size++] = 0x00;
-        mmap_idx = size;
-    }
-
-    // Step (2): Emit calls to mmap() that load trampoline pages:
-    off_t prev_offset = -1;
-    size_t prev_len   = SIZE_MAX;
-    int prev_prot     = prot;
-    std::vector<Bounds> bounds;
-    intptr_t ub       = INTPTR_MIN;
-    for (int preload = 1; preload >= false; preload--)
-    {
-        for (auto mapping: mappings)
-        {
-            if (preload == false)
-                stat_num_physical_bytes += mapping->size;
-            off_t offset_0  = mapping->offset;
-            for (; mapping != nullptr; mapping = mapping->merged)
-            {
-                if (mapping->preload != (bool)preload)
-                    continue;
-                bounds.clear();
-                getVirtualBounds(mapping, bounds);
-                for (const auto b: bounds)
-                {
-                    if (!IS_ABSOLUTE(mapping->base))
-                        ub = std::max(ub, mapping->base + b.ub);
-                    intptr_t base = mapping->base + b.lb;
-                    size_t len    = b.ub - b.lb;
-                    off_t offset  = offset_0 + b.lb;
-                    int prot      = mapping->prot;
-                    debug("load trampoline: mmap(" ADDRESS_FORMAT ", %zu, "
-                        "%s%s%s0, MAP_FIXED | MAP_PRIVATE, fd, +%zd)",
-                        ADDRESS(base), len,
-                        (prot & PROT_READ? "PROT_READ | ": ""),
-                        (prot & PROT_WRITE? "PROT_WRITE | ": ""),
-                        (prot & PROT_EXEC? "PROT_EXEC | ": ""), offset);
-                    stat_num_virtual_bytes += len;
-                    size += emitLoaderMmap(data + size, pic, base, len,
-                        prev_len, prot, prev_prot, offset, prev_offset,
-                        (!preload && mmap != INTPTR_MIN));
-                    prev_len    = len;
-                    prev_offset = offset;
-                    prev_prot   = prot;
-                }
-            }
-        }
-    }
-    if (ub > base)
-    {
-        // This error may occur if the front-end changes `--mem-loader'
-        // mid-way through the patching process.  It is easiest to detect
-        // the error here than earlier.
-        error("loader base address (0x%lx) (see `--mem-loader') must not "
-            "exceed maximum mapping address (0x%lx) (see `--mem-ub')",
-            base, ub);
-    }
-    for (const auto &refactor: refactors)
-    {
-        intptr_t base = refactor.addr;
-        size_t len    = refactor.size;
-        off_t offset  = refactor.patched.offset;
-        int prot      = PROT_READ | PROT_EXEC;
-        debug("load refactoring: mmap(" ADDRESS_FORMAT ", %zu, %s%s%s0, "
-            "MAP_FIXED | MAP_PRIVATE, fd, +%zd)",
-            ADDRESS(base), len,
-            (prot & PROT_READ? "PROT_READ | ": ""),
-            (prot & PROT_WRITE? "PROT_WRITE | ": ""),
-            (prot & PROT_EXEC? "PROT_EXEC | ": ""), offset);
-        size += emitLoaderMmap(data + size, pic, base, len, prev_len, prot,
-            prev_prot, offset, prev_offset);
-        prev_len    = len;
-        prev_offset = offset;
-        prev_prot   = prot;
-    }
-
-    // Step (3): Close the fd:
-    const uint8_t close_fd[] =
-    {
-        0x4c, 0x89, 0xc7,               // movq %r8,%rdi
-        0xb8,                           // mov $SYS_CLOSE,%eax
-            0x03, 0x00, 0x00, 0x00,
-        0x0f, 0x05,                     // syscall (close)
-    };
-    memcpy(data + size, close_fd, sizeof(close_fd));
-    size += sizeof(close_fd);
-
-    // Step (4): Call the initialization routines (if any):
-    for (auto init: inits)
-    {
-        size += emitLoadPtrIntoReg(data + size, pic, init, /*rax=*/0);
-        switch (mode)
-        {
-            case MODE_EXECUTABLE:
-            {
-                // Load argc, argv, and envp into %rdi, %rsi, and %rdx
-                const uint8_t restore_args[] =
-                {
-                    0x48, 0x8b, 0x7c, 0x24, 0x60,   // mov 0x60(%rsp),%rdi
-                    0x48, 0x8d, 0x74, 0x24, 0x68,   // lea 0x68(%rsp),%rsi
-                    0x48, 0x8d, 0x54, 0xfe, 0x08,   // lea 0x8(%rsi,%rdi,8),%rdx
-                };
-                memcpy(data + size, restore_args, sizeof(restore_args));
-                size += sizeof(restore_args);
-                size += emitLoadPtrIntoReg(data + size, pic, dynamic,
-                    /*rcx=*/1);
-                break;
-            }
-            case MODE_SHARED_OBJECT:
-            {
-                const uint8_t zero_args[] =
-                {
-                    0x31, 0xff,                     // xor %edi,%edi
-                    0x31, 0xf6,                     // xor %esi,%esi
-                    0x31, 0xd2,                     // xor %edx,%edx
-                    0x31, 0xc9,                     // xor %ecx,%ecx
-                };
-                memcpy(data + size, zero_args, sizeof(zero_args));
-                size += sizeof(zero_args);
-                break;
-            }
-        }
- 
-        // callq *%rax
-        data[size++] = 0xff; data[size++] = 0xd0;
-    }
-
-    // Step (5): Setup jump to the real program/library entry address.
-    size += emitLoadPtrIntoReg(data + size, pic, entry, /*rax=*/0);
-
-    // Step (6): Restore the register state (saved by loader entry):
-    const uint8_t restore_state[] =
-    {
-        0x5f,                           // popq %rdi
-        0x5e,                           // popq %rsi
-        0x5a,                           // popq %rdx
-        0x59,                           // popq %rcx
-        0x41, 0x58,                     // popq %r8
-        0x41, 0x59,                     // popq %r9
-        0x41, 0x5a,                     // popq %r10
-        0x41, 0x5b,                     // popq %r11
-        0x41, 0x5c,                     // popq %r12
-        0x41, 0x5d,                     // popq %r13
-        0x41, 0x5e,                     // popq %r14
-        0x41, 0x5f,                     // popq %r15
-    };
-    memcpy(data + size, restore_state, sizeof(restore_state));
-    size += sizeof(restore_state);
-
-    // Step (7): Jump to real entry address:
-    // jmpq *rax
-    data[size++] = 0xff; data[size++] = 0xe0;
-
-    /*
-     * Stage #3 (mmap wrapper)
-     */
-
-    // Emit the user-mmap wrapper (if necessary).
-    if (mmap != INTPTR_MIN)
-    {
-        int32_t diff32 = size - mmap_idx;
-        memcpy(data + mmap_idx - sizeof(int32_t), &diff32, sizeof(diff32));
-
-        // This wrapper function translates from the syscall ABI into the
-        // SYSV ABI, and preserves the necessary registers.
-
-        // mov %r10, %rcx
-        data[size++] = 0x4c; data[size++] = 0x89; data[size++] = 0xd1;
-
-        // push scratch registers that we care about
-        data[size++] = 0x57;                        // pushq %rdi
-        data[size++] = 0x56;                        // pushq %rsi
-        data[size++] = 0x52;                        // pushq %rdx
-        data[size++] = 0x41; data[size++] = 0x50;   // pushq %r8
-        data[size++] = 0x41; data[size++] = 0x51;   // pushq %r9
-        data[size++] = 0x41; data[size++] = 0x52;   // pushq %r10
-
-        if (mmap >= 0 && mmap <= INT32_MAX)
-        {
-            // mov $mmap32,%eax
-            int32_t mmap32 = (int32_t)mmap;
-            data[size++] = 0xb8;
-            memcpy(data + size, &mmap32, sizeof(mmap32));
-            size += sizeof(mmap32);
-        }
-        else
-        {
-            // movabs $mmap,%rax
-            data[size++] = 0x48; data[size++] = 0xb8;
-            memcpy(data + size, &mmap, sizeof(mmap));
-            size += sizeof(mmap);
-        }
-        if (pic && !IS_ABSOLUTE(mmap))
-        {
-            // addq %r12,%rax
-            data[size++] = 0x4c; data[size++] = 0x01; data[size++] = 0xe0;
-        }
-
-        // call *%rax
-        data[size++] = 0xff; data[size++] = 0xd0;
-
-        // pop scratch registers
-        data[size++] = 0x41; data[size++] = 0x5a;      // popq %r10
-        data[size++] = 0x41; data[size++] = 0x59;      // popq %r9
-        data[size++] = 0x41; data[size++] = 0x58;      // popq %r8
-        data[size++] = 0x5a;                           // popq %rdx
-        data[size++] = 0x5e;                           // popq %rsi
-        data[size++] = 0x5f;                           // popq %rdi
-
-        // retq
-        data[size++] = 0xc3;
-    }
+    map->addr   = (int32_t)addr;
+    map->offset = (uint32_t)offset;
+    map->size   = (uint16_t)len;
+    map->r      = (r? 1: 0);
+    map->w      = (w? 1: 0);
+    map->x      = (x? 1: 0);
+    map->abs    = (abs? 1: 0);
 
     return size;
 }
@@ -672,16 +295,16 @@ size_t emitElf(const Binary *B, const MappingSet &mappings,
 
     // Step (1): Round-up to nearest page boundary (zero-fill)
     stat_input_file_size = size;
-    size = (size % PAGE_SIZE == 0?
-        size: size + PAGE_SIZE - (size % PAGE_SIZE));
+    size = (size % PAGE_SIZE == 0? size:
+        size + PAGE_SIZE - (size % PAGE_SIZE));
 
     // Step (2): Refactor the patching (if necessary):
     RefactorSet refactors;
     size += emitRefactoredPatch(B->original.bytes, data, size, mapping_size,
         B->Is, refactors);
-    
+ 
     // Step (3): Emit all mappings:
-    for (auto mapping: mappings)
+    for (auto *mapping: mappings)
     {
         uint8_t *base = data + size;
         mapping->offset = (off_t)size;
@@ -689,19 +312,130 @@ size_t emitElf(const Binary *B, const MappingSet &mappings,
         size += mapping->size;
     }
 
-    // Step (4): Modify the entry address.
-    intptr_t old_entry = 0;
+    // Step (4): Emit the loader:
+    size = (size % PAGE_SIZE == 0? size:
+        size + PAGE_SIZE - (size % PAGE_SIZE));
+    struct e9_config_s *config = (struct e9_config_s *)(data + size);
+    size_t config_offset = size;
+    size += sizeof(struct e9_config_s);
+    const char magic[]   = "E9PATCH";
+    memcpy(config->magic, magic, sizeof(magic));
+    config->base = option_mem_loader;
+    if (B->mmap != INTPTR_MIN)
+        config->mmap = B->mmap;
+
+    config->inits = (uint32_t)(size - config_offset);
+    for (auto init: B->inits)
+    {
+        memcpy(data + size, &init, sizeof(init));
+        size += sizeof(init);
+        config->num_inits++;
+    }
+    std::vector<Bounds> bounds;
+    intptr_t ub = INTPTR_MIN;
+    for (unsigned i = 0; i < 2; i++)
+    {
+        config->maps[i] = (uint32_t)(size - config_offset);
+        bool preload = (i == 0);
+        for (auto *mapping: mappings)
+        {
+            if (preload)
+                stat_num_physical_bytes += mapping->size;
+            off_t offset_0 = mapping->offset;
+            for (; mapping != nullptr; mapping = mapping->merged)
+            {
+                if (mapping->preload != preload)
+                    continue;
+                bounds.clear();
+                getVirtualBounds(mapping, bounds);
+                bool r = ((mapping->prot & PROT_READ) != 0);
+                bool w = ((mapping->prot & PROT_WRITE) != 0);
+                bool x = ((mapping->prot & PROT_EXEC) != 0);
+                for (const auto b: bounds)
+                {
+                    intptr_t base = mapping->base + b.lb;
+                    size_t len    = b.ub - b.lb;
+                    off_t offset  = offset_0 + b.lb;
+
+                    debug("load trampoline: mmap(" ADDRESS_FORMAT ", %zu, "
+                        "%s%s%s0, MAP_FIXED | MAP_PRIVATE, fd, +%zd)",
+                        ADDRESS(base), len,
+                        (r? "PROT_READ | ": ""),
+                        (w? "PROT_WRITE | ": ""),
+                        (x? "PROT_EXEC | ": ""), offset_0);
+                    stat_num_virtual_bytes += len;
+
+                    size += emitLoaderMap(data + size, base, len, offset,
+                        r, w, x, &ub);
+                    config->num_maps[i]++;
+                }
+            }
+        }
+    }
+    if (ub > option_mem_loader)
+    {
+        // This error may occur if the front-end changes `--mem-loader'
+        // mid-way through the patching process.  It is easiest to detect
+        // the error here than earlier.
+        error("loader base address (0x%lx) (see `--mem-loader') must not "
+            "exceed maximum mapping address (0x%lx) (see `--mem-ub')",
+            option_mem_loader, ub);
+    }
+    for (const auto &refactor: refactors)
+    {
+        debug("load refactoring: mmap(" ADDRESS_FORMAT ", %zu, "
+            "PROT_READ | PROT_WRITE | 0, MAP_FIXED | MAP_PRIVATE, fd, +%zd)",
+            ADDRESS(refactor.addr), refactor.size, refactor.patched.offset);
+        size += emitLoaderMap(data + size, refactor.addr, refactor.size,
+            refactor.patched.offset, /*r=*/true, /*w=*/false, /*x=*/true,
+            nullptr);
+        config->num_maps[1]++;
+    }
+    intptr_t entry = (option_mem_loader + (size - config_offset));
+    if (option_trap_entry)
+        data[size++] = /*int3=*/0xCC;
+    switch (B->mode)
+    {
+        case MODE_EXECUTABLE:
+            // mov (%rsp),%rdi
+            // lea 0x8(%rsp),%rsi
+            data[size++] = 0x48; data[size++] = 0x8B; data[size++] = 0x3C;
+            data[size++] = 0x24;
+            data[size++] = 0x48; data[size++] = 0x8D; data[size++] = 0x74;
+            data[size++] = 0x24; data[size++] = 0x08;
+            break;
+        case MODE_SHARED_OBJECT:
+            // xorq %edi, %edi
+            // xorq %esi, %esi
+            data[size++] = 0x31; data[size++] = 0xFF;
+            data[size++] = 0x31; data[size++] = 0xF6;
+            break;
+    }
+    // lea config(%rip), %rdx
+    data[size++] = 0x48; data[size++] = 0x8D; data[size++] = 0x15;
+    int32_t config_rel32 =
+        -(int32_t)((size + sizeof(int32_t)) - config_offset);
+    memcpy(data + size, &config_rel32, sizeof(config_rel32));
+    size += sizeof(config_rel32);
+    memcpy(data + size, e9loader_elf_bin, sizeof(e9loader_elf_bin));
+    size += sizeof(e9loader_elf_bin);
+    size_t config_size = size - config_offset;
+    config->size = (uint32_t)(config_size % PAGE_SIZE == 0? config_size:
+        config_size + PAGE_SIZE - (config_size % PAGE_SIZE));
+
+    // Step (5): Modify the entry address.
     Elf64_Phdr *phdr = B->elf.phdr_dynamic;
     intptr_t dynamic = -1;
     if (phdr != nullptr)
-        dynamic = (intptr_t)phdr->p_vaddr;
+        config->dynamic = dynamic = (intptr_t)phdr->p_vaddr;
     switch (B->mode)
     {
         case MODE_EXECUTABLE:
         {
             Elf64_Ehdr *ehdr = B->elf.ehdr;
-            old_entry     = (intptr_t)B->elf.ehdr->e_entry;
-            ehdr->e_entry = (Elf64_Addr)option_mem_loader + LOADER_OFFSET;
+            config->entry = (intptr_t)B->elf.ehdr->e_entry;
+            ehdr->e_entry = (Elf64_Addr)entry;
+            config->flags |= E9_FLAG_EXE;
             break;
         }
         case MODE_SHARED_OBJECT:
@@ -719,9 +453,8 @@ size_t emitElf(const Binary *B, const MappingSet &mappings,
                 if (dynamic[i].d_tag == DT_INIT)
                 {
                     found = true;
-                    old_entry = (intptr_t)dynamic[i].d_un.d_ptr;
-                    dynamic[i].d_un.d_ptr = (Elf64_Addr)option_mem_loader +
-                        LOADER_OFFSET;
+                    config->entry = (intptr_t)dynamic[i].d_un.d_ptr;
+                    dynamic[i].d_un.d_ptr = (Elf64_Addr)entry;
                 }
             }
             if (!found)
@@ -729,13 +462,6 @@ size_t emitElf(const Binary *B, const MappingSet &mappings,
             break;
         }
     }
-
-    // Step (5): Emit the loader:
-    off_t loader_offset = (off_t)size;
-    size_t loader_size  = emitLoader(refactors, mappings, data + size,
-        option_mem_loader, old_entry, dynamic, B->elf.pic, B->inits, B->mmap,
-        B->mode);
-    size += loader_size;
 
     // Step (6): Modify the PHDR to load the loader.
     // NOTE: Currently we use the well-known and easy-to-implement PT_NOTE
@@ -764,11 +490,11 @@ size_t emitElf(const Binary *B, const MappingSet &mappings,
             phdr_str);
     phdr->p_type   = PT_LOAD;
     phdr->p_flags  = PF_X | PF_R;
-    phdr->p_offset = loader_offset;
+    phdr->p_offset = config_offset;
     phdr->p_vaddr  = (Elf64_Addr)option_mem_loader;
     phdr->p_paddr  = (Elf64_Addr)nullptr;
-    phdr->p_filesz = loader_size;
-    phdr->p_memsz  = loader_size;
+    phdr->p_filesz = config_size;
+    phdr->p_memsz  = config_size;
     phdr->p_align  = PAGE_SIZE;
 
     stat_output_file_size = size;

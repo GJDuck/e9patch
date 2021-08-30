@@ -526,7 +526,12 @@ void parseOptions(int argc, char * const argv[], bool api)
                 break;
             case OPTION_MEM_LOADER:
                 option_mem_loader = parseIntOptArg("--mem-loader", optarg, 0x0,
-                    INTPTR_MAX);
+                    0x800000000);
+                if (option_mem_loader % PAGE_SIZE != 0)
+                    error("failed to parse argument \"%s\" for the "
+                        "`--mem-loader' option; the loader base address "
+                        "must be a multiple of the page size (%d)", optarg,
+                        PAGE_SIZE);
                 break;
             case OPTION_MEM_MAPPING_SIZE:
                 option_mem_mapping_size = parseIntOptArg("--mem-mapping-size",
