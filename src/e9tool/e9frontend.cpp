@@ -2148,6 +2148,211 @@ ELF *e9frontend::parseELF(const char *filename, intptr_t base)
 }
 
 /*
+ * Parse a PE file.
+ * XXX: This is a temporary hack necessary in order to test Windows PE exes.
+ */
+typedef struct _IMAGE_FILE_HEADER
+{
+      uint16_t Machine;
+      uint16_t NumberOfSections;
+      uint32_t TimeDateStamp;
+      uint32_t PointerToSymbolTable;
+      uint32_t NumberOfSymbols;
+      uint16_t SizeOfOptionalHeader;
+      uint16_t Characteristics;
+} IMAGE_FILE_HEADER, *PIMAGE_FILE_HEADER;
+#define IMAGE_FILE_MACHINE_AMD64 0x8664
+typedef struct _IMAGE_DATA_DIRECTORY
+{
+      uint32_t VirtualAddress;
+      uint32_t Size;
+} IMAGE_DATA_DIRECTORY, *PIMAGE_DATA_DIRECTORY;
+typedef struct _IMAGE_OPTIONAL_HEADER64
+{
+    uint16_t Magic;
+    uint8_t  MajorLinkerVersion;
+    uint8_t  MinorLinkerVersion;
+    uint32_t SizeOfCode;
+    uint32_t SizeOfInitializedData;
+    uint32_t SizeOfUninitializedData;
+    uint32_t AddressOfEntryPoint;
+    uint32_t BaseOfCode;
+    uint64_t ImageBase;
+    uint32_t SectionAlignment;
+    uint32_t FileAlignment;
+    uint16_t MajorOperatingSystemVersion;
+    uint16_t MinorOperatingSystemVersion;
+    uint16_t MajorImageVersion;
+    uint16_t MinorImageVersion;
+    uint16_t MajorSubsystemVersion;
+    uint16_t MinorSubsystemVersion;
+    uint32_t Win32VersionValue;
+    uint32_t SizeOfImage;
+    uint32_t SizeOfHeaders;
+    uint32_t CheckSum;
+    uint16_t Subsystem;
+    uint16_t DllCharacteristics;
+    uint64_t SizeOfStackReserve;
+    uint64_t SizeOfStackCommit;
+    uint64_t SizeOfHeapReserve;
+    uint64_t SizeOfHeapCommit;
+    uint32_t LoaderFlags;
+    uint32_t NumberOfRvaAndSizes;
+    IMAGE_DATA_DIRECTORY DataDirectory[];
+} IMAGE_OPTIONAL_HEADER64, *PIMAGE_OPTIONAL_HEADER64;
+typedef struct _IMAGE_SECTION_HEADER
+{
+    char Name[8];
+    union
+    {
+        uint32_t PhysicalAddress;
+        uint32_t VirtualSize;
+    };
+    uint32_t VirtualAddress;
+    uint32_t SizeOfRawData;
+    uint32_t PointerToRawData;
+    uint32_t PointerToRelocations;
+    uint32_t PointerToLinenumbers;
+    uint16_t NumberOfRelocations;
+    uint16_t NumberOfLinenumbers;
+    uint32_t Characteristics;
+} IMAGE_SECTION_HEADER, *PIMAGE_SECTION_HEADER;
+#define IMAGE_SCN_MEM_EXECUTE   0x20000000
+#define IMAGE_SCN_MEM_READ      0x40000000
+#define IMAGE_SCN_MEM_SHARED    0x10000000
+#define IMAGE_SCN_CNT_CODE      0x00000020
+ELF *e9frontend::parsePE(const char *filename)
+{
+    int fd = open(filename, O_RDONLY, 0);
+    if (fd < 0)
+        error("failed to open file \"%s\" for reading: %s", filename,
+            strerror(errno));
+
+    struct stat stat;
+    if (fstat(fd, &stat) != 0)
+        error("failed to get statistics for file \"%s\": %s", filename,
+            strerror(errno));
+
+    size_t size = (size_t)stat.st_size;
+    void *ptr = mmap(NULL, size, MAP_SHARED, PROT_READ, fd, 0);
+    if (ptr == MAP_FAILED)
+        error("failed to map file \"%s\" into memory: %s", filename,
+            strerror(errno));
+    close(fd);
+    const uint8_t *data = (const uint8_t *)ptr;
+
+    if (size < 0x3c + sizeof(uint32_t))
+        error("failed to parse PE file \"%s\"; file size (%zu) is too small "
+            "for MS-DOS header", filename, size);
+    if (data[0] != 'M' || data[1] != 'Z')
+        error("failed to parse PE file \"%s\"; invalid MS-DOS stub header "
+            "magic number, expected \"MZ\"", filename);
+    uint32_t pe_offset = *(const uint32_t *)(data + 0x3c);
+    const size_t pe_hdr_size = sizeof(uint32_t) + sizeof(IMAGE_FILE_HEADER) +
+        sizeof(IMAGE_OPTIONAL_HEADER64);
+    if (pe_offset < 0x3c + sizeof(uint32_t) || pe_offset + pe_hdr_size > size)
+        error("failed to parse PE file \"%s\"; file size (%zu) is too small"
+            "for PE header(s)", filename, size);
+    if (data[pe_offset] != 'P' ||
+            data[pe_offset+1] != 'E' ||
+            data[pe_offset+2] != 0x0 ||
+            data[pe_offset+3] != 0x0)
+        error("failed to parse PE file \"%s\"; invalid PE signature, "
+            "expected \"PE\\0\\0\"", filename);
+    PIMAGE_FILE_HEADER file_hdr =
+        (PIMAGE_FILE_HEADER)(data + pe_offset + sizeof(uint32_t));
+    if (file_hdr->Machine != IMAGE_FILE_MACHINE_AMD64)
+        error("failed to parse PE file \"%s\"; invalid machine (0x%x), "
+            "expected x86_64 (0x%x)", filename, file_hdr->Machine,
+            IMAGE_FILE_MACHINE_AMD64);
+    if (file_hdr->SizeOfOptionalHeader < sizeof(IMAGE_OPTIONAL_HEADER64))
+        error("failed to parse PE file \"%s\"; invalid optional header "
+            "size (%zu), expected (>=%zu)", filename,
+            file_hdr->SizeOfOptionalHeader,
+            sizeof(IMAGE_OPTIONAL_HEADER64));
+    PIMAGE_OPTIONAL_HEADER64 opt_hdr =
+        (PIMAGE_OPTIONAL_HEADER64)(file_hdr + 1);
+    static const uint16_t PE64_MAGIC = 0x020b;
+    if (opt_hdr->Magic != PE64_MAGIC)
+        error("failed to parse PE file \"%s\"; invalid magic number (0x%x), "
+            "expected PE64 (0x%x)", opt_hdr->Magic, PE64_MAGIC);
+    uint32_t file_align = opt_hdr->FileAlignment;
+    if (file_align < 512)
+        error("failed to parse PE file \"%s\"; invalid file alignment (%u), "
+            "expected (>=512)", file_align, filename);
+    PIMAGE_SECTION_HEADER shdrs =
+        (PIMAGE_SECTION_HEADER)&opt_hdr->DataDirectory[
+            opt_hdr->NumberOfRvaAndSizes];
+    PIMAGE_SECTION_HEADER shdrs_end = shdrs + file_hdr->NumberOfSections;
+    uint8_t *shdrs_end8 = (uint8_t *)shdrs_end;
+    size_t shdrs_size   = shdrs_end8 - data;
+    size_t shdrs_size_1 = (shdrs_size + file_align) - (shdrs_size % file_align);
+    if (shdrs_size_1 > size)
+        error("failed to parse PE file \"%s\"; invalid section header size "
+            "(%zu), expected (<=%zu)", filename, shdrs_size_1, size);
+    if (shdrs_size_1 - shdrs_size < 2 * sizeof(IMAGE_SECTION_HEADER))
+        error("failed to parse PE file \"%s\"; no free space in section "
+            "header (NYI)");
+
+	std::map<off_t, const Elf64_Shdr *> exes;
+    std::string strtab;
+    for (uint16_t i = 0; i < file_hdr->NumberOfSections; i++)
+    {
+        PIMAGE_SECTION_HEADER shdr = shdrs + i;
+        if ((shdr->Characteristics & IMAGE_SCN_MEM_EXECUTE) == 0 ||
+                (shdr->Characteristics & IMAGE_SCN_CNT_CODE) == 0)
+            continue;
+        fprintf(stderr, "SECTION \"%s\"\n", shdr->Name);
+        off_t offset  = (off_t)shdr->PointerToRawData;
+        intptr_t addr =
+            (intptr_t)opt_hdr->ImageBase + (intptr_t)shdr->VirtualAddress;
+        size_t size   = (size_t)shdr->VirtualSize;
+        Elf64_Shdr *elf_shdr = new Elf64_Shdr;
+        
+        elf_shdr->sh_name      = strtab.size();
+        elf_shdr->sh_type      = SHT_PROGBITS;
+        elf_shdr->sh_flags     = SHF_ALLOC | SHF_EXECINSTR;
+        elf_shdr->sh_addr      = addr;
+        elf_shdr->sh_offset    = offset;
+        elf_shdr->sh_size      = size;
+        elf_shdr->sh_link      = 0;
+        elf_shdr->sh_info      = 0;
+        elf_shdr->sh_addralign = PAGE_SIZE;
+        elf_shdr->sh_entsize   = 0;
+
+        strtab += shdr->Name;
+        strtab += '\0';
+
+        exes.insert({offset, elf_shdr});
+    }
+ 
+    ELF *elf = new ELF;
+    elf->filename       = strDup(filename);
+    elf->data           = data;
+    elf->size           = size;
+    elf->base           = (intptr_t)opt_hdr->ImageBase;
+    elf->end            = elf->base + (intptr_t)opt_hdr->SizeOfImage;;
+    elf->strs           = (char *)malloc(strtab.size());
+    elf->phdrs          = nullptr;
+    elf->phnum          = 0;
+    elf->pie            = false;
+    elf->dso            = false;
+    elf->reloc          = false;
+//    elf->sections.swap(sections);
+//    elf->dynsyms.swap(dynsyms);
+//    elf->syms.swap(syms);
+//    elf->got.swap(got);
+//    elf->plt.swap(plt);
+    elf->exes.reserve(exes.size());
+    for (const auto &entry: exes)
+        elf->exes.push_back(entry.second);
+
+    memcpy((void *)elf->strs, strtab.c_str(), strtab.size());
+
+    return elf;
+}
+
+/*
  * Free an ELF file object.
  */
 void freeELF(ELF *elf)

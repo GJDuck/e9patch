@@ -1134,14 +1134,16 @@ static void parseParams(Parser &parser, Message &msg)
                     break;
                 case PARAM_MODE:
                     expectToken(parser, TOKEN_STRING);
-                    if (strcmp(parser.s, "exe") == 0)
-                        value.integer = (intptr_t)MODE_EXECUTABLE;
-                    else if (strcmp(parser.s, "dso") == 0)
-                        value.integer = (intptr_t)MODE_SHARED_OBJECT;
+                    if (strcmp(parser.s, "elf.exe") == 0)
+                        value.integer = (intptr_t)MODE_ELF_EXECUTABLE;
+                    else if (strcmp(parser.s, "elf.dso") == 0)
+                        value.integer = (intptr_t)MODE_ELF_SHARED_OBJECT;
+                    else if (strcmp(parser.s, "pe.exe") == 0)
+                        value.integer = (intptr_t)MODE_PE_EXECUTABLE;
                     else
                         parse_error(parser, "failed to parse mode string "
-                            "\"%s\"; expected one of {\"exe\", \"dso\"}",
-                            parser.s);
+                            "\"%s\"; expected one of {\"elf.exe\", "
+                            "\"elf.dso\", \"pe.exe\"}", parser.s);
                     break;
                 case PARAM_UNKNOWN:
                     parseAndDiscardObject(parser);

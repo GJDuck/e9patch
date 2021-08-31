@@ -635,10 +635,20 @@ int realMain(int argc, char **argv)
     bool approx = (stat_num_total != stat_num_patched &&
         strcmp(percent, "100.00") == 0);
 
+    const char *mode_str = "???";
+    switch (B->mode)
+    {
+        case MODE_ELF_EXECUTABLE:
+            mode_str = "Linux ELF executable"; break;
+        case MODE_ELF_SHARED_OBJECT:
+            mode_str = "Linux ELF dynamic shared object"; break;
+        case MODE_PE_EXECUTABLE:
+            mode_str = "Windows PE executable"; break;
+    }
+
     printf("\n\n-----------------------------------------------\n");
     printf("input_binary          = %s\n", B->filename);
-    printf("input_mode            = %s\n",
-        (B->mode == MODE_EXECUTABLE?  "EXECUTABLE": "SHARED_OBJECT"));
+    printf("input_mode            = %s\n", mode_str);
     printf("num_patched           = %zu / %zu (%s%s%%)\n",
         stat_num_patched, stat_num_total, (approx? "~": ""),
         percent);

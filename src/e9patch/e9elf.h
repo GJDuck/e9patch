@@ -29,4 +29,8 @@ void parseElf(Binary *B);
 size_t emitElf(const Binary *B, const MappingSet &mappings,
     size_t mapping_size);
 
+void parsePE(Binary *B);
+size_t emitPE(const Binary *B, const MappingSet &mappings,
+    size_t mapping_size);
+
 #endif

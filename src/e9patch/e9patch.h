@@ -342,12 +342,32 @@ struct ElfInfo
 };
 
 /*
+ * The (minimal) PE info needed for rewriting.
+ */
+struct _IMAGE_FILE_HEADER;
+struct _IMAGE_OPTIONAL_HEADER64;
+struct _IMAGE_SECTION_HEADER;
+typedef struct _IMAGE_FILE_HEADER IMAGE_FILE_HEADER, *PIMAGE_FILE_HEADER;
+typedef struct _IMAGE_OPTIONAL_HEADER64 IMAGE_OPTIONAL_HEADER64,
+    *PIMAGE_OPTIONAL_HEADER64;
+typedef struct _IMAGE_SECTION_HEADER
+    IMAGE_SECTION_HEADER, *PIMAGE_SECTION_HEADER;
+struct PEInfo
+{
+    PIMAGE_FILE_HEADER file_hdr;        // PE file header.
+    PIMAGE_OPTIONAL_HEADER64 opt_hdr;   // PE optional header.
+    PIMAGE_SECTION_HEADER free_shdr;    // A free PE section header.
+};
+#define WINDOWS_VIRTUAL_ALLOC_SIZE      ((size_t)0x10000ull)    // 64KB
+
+/*
  * Supported binary modes.
  */
 enum Mode 
 {
-    MODE_EXECUTABLE,                    // Binary is an executable.
-    MODE_SHARED_OBJECT                  // Binary is a shared object.
+    MODE_ELF_EXECUTABLE,                // Binary is an ELF executable.
+    MODE_ELF_SHARED_OBJECT,             // Binary is an ELF shared object.
+    MODE_PE_EXECUTABLE,                 // Binary is a PE executable.
 };
 
 /*
@@ -400,7 +420,11 @@ struct Binary
 {
     const char *filename;               // The binary's path.
     size_t size;                        // The binary's size.
-    ElfInfo elf;                        // ELF information.
+    union
+    {
+        ElfInfo elf;                    // ELF information.
+        PEInfo pe;                      // PE information.
+    };
     Mode mode;                          // Binary mode.
 
     struct

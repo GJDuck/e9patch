@@ -2439,7 +2439,7 @@ int main(int argc, char **argv)
     bool exe = (option_executable? true:
                (option_shared? false: !isLibraryFilename(filename)));
     filename = findBinary(filename, exe, /*dot=*/true);
-    ELF &elf = *parseELF(filename, 0x0);
+    ELF &elf = *parsePE(filename);     // XXX
 
     /*
      * Patch the match/action pairs.
@@ -2535,15 +2535,17 @@ int main(int argc, char **argv)
     /*
      * Send binary message.
      */
-    const char *mode = 
-        (option_executable? "exe":
-        (option_shared?     "dso":
-        (elf.dso? "dso": "exe")));
+    const char *mode = "pe.exe";        // XXX
+//        (option_executable? "exe":
+//        (option_shared?     "dso":
+//        (elf.dso? "dso": "exe")));
     sendBinaryMessage(backend.out, mode, filename);
  
     /*
      * Send options message.
      */
+    if (option_compression_level > 5)
+        option_compression_level = 5;   // XXX
     const char *mapping_size[10] = {"2097152", "1048576", "524288", "262144",
         "131072", "65536", "32768", "16384", "8192", "4096"};
     if (option_compression_level != 9)

@@ -114,7 +114,7 @@ void parseElf(Binary *B)
     {
         case ET_EXEC:
         {
-            if (mode == MODE_SHARED_OBJECT)
+            if (mode == MODE_ELF_SHARED_OBJECT)
                 error("failed to parse ELF file \"%s\": file is an "
                     "executable and not a shared object", filename);
             if (!reserve(B, 0x0, 0x10000))
@@ -123,7 +123,7 @@ void parseElf(Binary *B)
         }
         case ET_DYN:
             pic = true;
-            pie = (mode == MODE_EXECUTABLE);
+            pie = (mode == MODE_ELF_EXECUTABLE);
             break;
         default:
             error("failed to parse ELF file \"%s\"; file is not executable",
@@ -347,7 +347,7 @@ size_t emitElf(const Binary *B, const MappingSet &mappings,
                 if (mapping->preload != preload)
                     continue;
                 bounds.clear();
-                getVirtualBounds(mapping, bounds);
+                getVirtualBounds(mapping, PAGE_SIZE, bounds);
                 bool r = ((mapping->prot & PROT_READ) != 0);
                 bool w = ((mapping->prot & PROT_WRITE) != 0);
                 bool x = ((mapping->prot & PROT_EXEC) != 0);
@@ -396,7 +396,7 @@ size_t emitElf(const Binary *B, const MappingSet &mappings,
         data[size++] = /*int3=*/0xCC;
     switch (B->mode)
     {
-        case MODE_EXECUTABLE:
+        case MODE_ELF_EXECUTABLE:
             // mov (%rsp),%rdi
             // lea 0x8(%rsp),%rsi
             data[size++] = 0x48; data[size++] = 0x8B; data[size++] = 0x3C;
@@ -404,12 +404,14 @@ size_t emitElf(const Binary *B, const MappingSet &mappings,
             data[size++] = 0x48; data[size++] = 0x8D; data[size++] = 0x74;
             data[size++] = 0x24; data[size++] = 0x08;
             break;
-        case MODE_SHARED_OBJECT:
+        case MODE_ELF_SHARED_OBJECT:
             // xorq %edi, %edi
             // xorq %esi, %esi
             data[size++] = 0x31; data[size++] = 0xFF;
             data[size++] = 0x31; data[size++] = 0xF6;
             break;
+        default:
+            error("invalid mode");
     }
     // lea config(%rip), %rdx
     data[size++] = 0x48; data[size++] = 0x8D; data[size++] = 0x15;
@@ -430,7 +432,7 @@ size_t emitElf(const Binary *B, const MappingSet &mappings,
         config->dynamic = dynamic = (intptr_t)phdr->p_vaddr;
     switch (B->mode)
     {
-        case MODE_EXECUTABLE:
+        case MODE_ELF_EXECUTABLE:
         {
             Elf64_Ehdr *ehdr = B->elf.ehdr;
             config->entry = (intptr_t)B->elf.ehdr->e_entry;
@@ -438,7 +440,7 @@ size_t emitElf(const Binary *B, const MappingSet &mappings,
             config->flags |= E9_FLAG_EXE;
             break;
         }
-        case MODE_SHARED_OBJECT:
+        case MODE_ELF_SHARED_OBJECT:
         {
             if (phdr == nullptr)
                 error("failed to replace DT_INIT entry; missing PT_DYNAMIC "
@@ -461,6 +463,8 @@ size_t emitElf(const Binary *B, const MappingSet &mappings,
                 error("failed to replace DT_INIT entry; entry was not found");
             break;
         }
+        default:
+            error("invalid mode");
     }
 
     // Step (6): Modify the PHDR to load the loader.
@@ -500,4 +504,6 @@ size_t emitElf(const Binary *B, const MappingSet &mappings,
     stat_output_file_size = size;
     return size;
 }
+
+#include "e9pe.cpp"
 

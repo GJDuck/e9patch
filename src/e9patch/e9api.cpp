@@ -177,7 +177,7 @@ static void queuePatch(Binary *B, Instr *I, const Trampoline *T)
 static Binary *parseBinary(const Message &msg)
 {
     const char *filename = nullptr;
-    Mode mode = MODE_EXECUTABLE;
+    Mode mode = MODE_ELF_EXECUTABLE;
     bool have_mode = false, dup = false;
     for (unsigned i = 0; i < msg.num_params; i++)
     {
@@ -243,7 +243,15 @@ mmap_failed:
     B->patched.size  = size;
 
     // Parse the mmaped ELF file:
-    parseElf(B);
+    switch (B->mode)
+    {
+        case MODE_ELF_EXECUTABLE: case MODE_ELF_SHARED_OBJECT:
+            parseElf(B);
+            break;
+        case MODE_PE_EXECUTABLE:
+            parsePE(B);
+            break;
+    }
 
     // Map the file (unmodified):
     ptr = mmap(ptr, size, PROT_READ, MAP_SHARED, fd, 0);
@@ -440,22 +448,33 @@ static void parseEmit(Binary *B, const Message &msg)
     // Create and optimize the mappings:
     MappingSet mappings;
     buildMappings(B->allocator, option_mem_mapping_size, mappings);
+    size_t granularity = (B->mode != MODE_PE_EXECUTABLE? PAGE_SIZE:
+        WINDOWS_VIRTUAL_ALLOC_SIZE);
     switch (option_mem_granularity)
     {
         case 128:
             optimizeMappings<Key128>(B->allocator, option_mem_mapping_size,
-                mappings);
+                granularity, mappings);
             break;
         case 4096:
             optimizeMappings<Key4096>(B->allocator, option_mem_mapping_size,
-                mappings);
+                granularity, mappings);
             break;
         default:
-            error("unimplemented granularity (%zu)", option_mem_granularity);
+            error("unimplemented granularity (%zu)",
+                option_mem_granularity);
     }
 
     // Create the patched binary:
-    B->patched.size = emitElf(B, mappings, option_mem_mapping_size);
+    switch (B->mode)
+    {
+        case MODE_ELF_EXECUTABLE: case MODE_ELF_SHARED_OBJECT:
+            B->patched.size = emitElf(B, mappings, option_mem_mapping_size);
+            break;
+        case MODE_PE_EXECUTABLE:
+            B->patched.size = emitPE(B, mappings, option_mem_mapping_size);
+            break;
+    }
 
     // Emit the result:
     switch (format)

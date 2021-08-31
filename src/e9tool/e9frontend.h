@@ -2326,6 +2326,7 @@ extern unsigned sendTrampolineMessage(FILE *out, const char *name,
  * ELF functions.
  */
 extern ELF *parseELF(const char *filename, intptr_t base);
+extern ELF *parsePE(const char *filename);
 extern void freeELF(ELF *elf);
 extern ElfType getELFType(const ELF *elf);
 extern const char *getELFFilename(const ELF *elf);

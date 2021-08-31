@@ -51,16 +51,24 @@ tool.debug: e9tool.o
 	$(CXX) $(CXXFLAGS) e9tool.o -o e9tool libZydis.a \
         -Wl,--export-dynamic -ldl
 
-loader:
+loader_elf:
 	$(CXX) -std=c++11 -Wall -fno-stack-protector -Wno-unused-function -fPIC \
         -mno-mmx -mno-sse -mno-avx -mno-avx2 -mno-avx512f -msoft-float \
         -Os -c src/e9patch/e9loader_elf.cpp
 	$(CXX) -pie -nostdlib -o e9loader_elf.bin e9loader_elf.o -T e9loader.ld
 	xxd -i e9loader_elf.bin > src/e9patch/e9loader_elf.c
 
+loader_pe:
+	$(CXX) -std=c++11 -Wall -fno-stack-protector -Wno-unused-function -fPIC \
+        -mabi=ms -fshort-wchar \
+        -mno-mmx -mno-sse -mno-avx -mno-avx2 -mno-avx512f -msoft-float \
+        -Os -c src/e9patch/e9loader_pe.cpp
+	$(CXX) -pie -nostdlib -o e9loader_pe.bin e9loader_pe.o -T e9loader.ld
+	xxd -i e9loader_pe.bin > src/e9patch/e9loader_pe.c
+
 src/e9patch/e9alloc.o: CXXFLAGS += -Wno-unused-function
 
-src/e9patch/e9elf.o: loader
+src/e9patch/e9elf.o: loader_elf loader_pe
 
 clean:
 	rm -rf $(E9PATCH_OBJS) e9tool.o e9patch e9tool a.out \
