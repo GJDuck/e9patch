@@ -349,7 +349,7 @@ void e9frontend::CFGAnalysis(const ELF *elf, const Instr *Is, size_t size,
     bool pic = false;
     switch (getELFType(elf))
     {
-        case ELFTYPE_DSO: case ELFTYPE_PIE:
+        case BINARY_TYPE_ELF_DSO: case BINARY_TYPE_ELF_PIE:
             pic = true;
             break;
         default:

@@ -1514,7 +1514,7 @@ static Metadata *buildMetadata(const ELF *elf, const Action *action,
             bool before = (action->call != CALL_AFTER);
             bool conditional = (action->call == CALL_CONDITIONAL ||
                                 action->call == CALL_CONDITIONAL_JUMP);
-            bool pic = (getELFType(elf) != ELFTYPE_EXEC);
+            bool pic = (getELFType(elf) != BINARY_TYPE_ELF_EXE);
             CallInfo info(action->clean, state, conditional,
                 action->args.size(), before, pic);
             TypeSig sig = TYPESIG_EMPTY;

@@ -356,6 +356,7 @@ struct PEInfo
 {
     PIMAGE_FILE_HEADER file_hdr;        // PE file header.
     PIMAGE_OPTIONAL_HEADER64 opt_hdr;   // PE optional header.
+    PIMAGE_SECTION_HEADER shdr;         // All PE section headers.
     PIMAGE_SECTION_HEADER free_shdr;    // A free PE section header.
 };
 #define WINDOWS_VIRTUAL_ALLOC_SIZE      ((size_t)0x10000ull)    // 64KB

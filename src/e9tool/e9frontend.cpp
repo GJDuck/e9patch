@@ -5,7 +5,7 @@
  * |  __/\__, | || (_) | (_) | |
  *  \___|  /_/ \__\___/ \___/|_|
  *  
- * Copyright (C) 2020 National University of Singapore
+ * Copyright (C) 2021 National University of Singapore
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -1207,8 +1207,7 @@ namespace e9frontend
         // PLT
         PLTInfo plt;
 
-        bool pie;                       // PIE?
-        bool dso;                       // Shared object?
+        BinaryType type;                // Binary type.
         bool reloc;                     // Needs relocation?
  
         Targets targets;                // Jump/Call targets [optional]
@@ -2124,6 +2123,10 @@ ELF *e9frontend::parseELF(const char *filename, intptr_t base)
             dynstr_tab, /*entry_size=*/8, plt);
     }
 
+    BinaryType type = BINARY_TYPE_ELF_EXE;
+    type = (pic && exe?  BINARY_TYPE_ELF_PIE: type);
+    type = (pic && !exe? BINARY_TYPE_ELF_DSO: type);
+
     ELF *elf = new ELF;
     elf->filename       = strDup(filename);
     elf->data           = data;
@@ -2133,8 +2136,7 @@ ELF *e9frontend::parseELF(const char *filename, intptr_t base)
     elf->strs           = strtab;
     elf->phdrs          = phdrs;
     elf->phnum          = phnum;
-    elf->pie            = (pic && exe);
-    elf->dso            = (pic && !exe);
+    elf->type           = type;
     elf->reloc          = reloc;
     elf->sections.swap(sections);
     elf->dynsyms.swap(dynsyms);
@@ -2148,8 +2150,7 @@ ELF *e9frontend::parseELF(const char *filename, intptr_t base)
 }
 
 /*
- * Parse a PE file.
- * XXX: This is a temporary hack necessary in order to test Windows PE exes.
+ * Parse a PE file into an ELF structure.
  */
 typedef struct _IMAGE_FILE_HEADER
 {
@@ -2219,6 +2220,7 @@ typedef struct _IMAGE_SECTION_HEADER
 } IMAGE_SECTION_HEADER, *PIMAGE_SECTION_HEADER;
 #define IMAGE_SCN_MEM_EXECUTE   0x20000000
 #define IMAGE_SCN_MEM_READ      0x40000000
+#define IMAGE_SCN_MEM_WRITE     0x80000000
 #define IMAGE_SCN_MEM_SHARED    0x10000000
 #define IMAGE_SCN_CNT_CODE      0x00000020
 ELF *e9frontend::parsePE(const char *filename)
@@ -2259,7 +2261,7 @@ ELF *e9frontend::parsePE(const char *filename)
             data[pe_offset+3] != 0x0)
         error("failed to parse PE file \"%s\"; invalid PE signature, "
             "expected \"PE\\0\\0\"", filename);
-    PIMAGE_FILE_HEADER file_hdr =
+    const IMAGE_FILE_HEADER *file_hdr =
         (PIMAGE_FILE_HEADER)(data + pe_offset + sizeof(uint32_t));
     if (file_hdr->Machine != IMAGE_FILE_MACHINE_AMD64)
         error("failed to parse PE file \"%s\"; invalid machine (0x%x), "
@@ -2270,7 +2272,7 @@ ELF *e9frontend::parsePE(const char *filename)
             "size (%zu), expected (>=%zu)", filename,
             file_hdr->SizeOfOptionalHeader,
             sizeof(IMAGE_OPTIONAL_HEADER64));
-    PIMAGE_OPTIONAL_HEADER64 opt_hdr =
+    const IMAGE_OPTIONAL_HEADER64 *opt_hdr =
         (PIMAGE_OPTIONAL_HEADER64)(file_hdr + 1);
     static const uint16_t PE64_MAGIC = 0x020b;
     if (opt_hdr->Magic != PE64_MAGIC)
@@ -2280,38 +2282,35 @@ ELF *e9frontend::parsePE(const char *filename)
     if (file_align < 512)
         error("failed to parse PE file \"%s\"; invalid file alignment (%u), "
             "expected (>=512)", file_align, filename);
-    PIMAGE_SECTION_HEADER shdrs =
+    const IMAGE_SECTION_HEADER *shdrs =
         (PIMAGE_SECTION_HEADER)&opt_hdr->DataDirectory[
             opt_hdr->NumberOfRvaAndSizes];
-    PIMAGE_SECTION_HEADER shdrs_end = shdrs + file_hdr->NumberOfSections;
-    uint8_t *shdrs_end8 = (uint8_t *)shdrs_end;
-    size_t shdrs_size   = shdrs_end8 - data;
-    size_t shdrs_size_1 = (shdrs_size + file_align) - (shdrs_size % file_align);
-    if (shdrs_size_1 > size)
-        error("failed to parse PE file \"%s\"; invalid section header size "
-            "(%zu), expected (<=%zu)", filename, shdrs_size_1, size);
-    if (shdrs_size_1 - shdrs_size < 2 * sizeof(IMAGE_SECTION_HEADER))
-        error("failed to parse PE file \"%s\"; no free space in section "
-            "header (NYI)");
 
-	std::map<off_t, const Elf64_Shdr *> exes;
+    /*
+     * Find all sections.
+     */
+    SectionInfo sections;
+    std::map<off_t, const Elf64_Shdr *> exes;
     std::string strtab;
     for (uint16_t i = 0; i < file_hdr->NumberOfSections; i++)
     {
-        PIMAGE_SECTION_HEADER shdr = shdrs + i;
-        if ((shdr->Characteristics & IMAGE_SCN_MEM_EXECUTE) == 0 ||
-                (shdr->Characteristics & IMAGE_SCN_CNT_CODE) == 0)
-            continue;
-        fprintf(stderr, "SECTION \"%s\"\n", shdr->Name);
+        const IMAGE_SECTION_HEADER *shdr = shdrs + i;
         off_t offset  = (off_t)shdr->PointerToRawData;
         intptr_t addr =
             (intptr_t)opt_hdr->ImageBase + (intptr_t)shdr->VirtualAddress;
         size_t size   = (size_t)shdr->VirtualSize;
         Elf64_Shdr *elf_shdr = new Elf64_Shdr;
-        
+
+        uint64_t flags = 0;
+        if (offset != 0)
+            flags |= SHF_ALLOC;
+        if ((shdr->Characteristics & IMAGE_SCN_MEM_WRITE) != 0)
+            flags |= SHF_WRITE;
+        if ((shdr->Characteristics & IMAGE_SCN_MEM_EXECUTE) != 0)
+            flags |= SHF_EXECINSTR;
         elf_shdr->sh_name      = strtab.size();
         elf_shdr->sh_type      = SHT_PROGBITS;
-        elf_shdr->sh_flags     = SHF_ALLOC | SHF_EXECINSTR;
+        elf_shdr->sh_flags     = flags;
         elf_shdr->sh_addr      = addr;
         elf_shdr->sh_offset    = offset;
         elf_shdr->sh_size      = size;
@@ -2320,36 +2319,58 @@ ELF *e9frontend::parsePE(const char *filename)
         elf_shdr->sh_addralign = PAGE_SIZE;
         elf_shdr->sh_entsize   = 0;
 
+        const char *name = shdr->Name;
         strtab += shdr->Name;
         strtab += '\0';
 
-        exes.insert({offset, elf_shdr});
+        sections.insert({name, elf_shdr});
+        if ((shdr->Characteristics & IMAGE_SCN_MEM_EXECUTE) != 0 &&
+                (shdr->Characteristics & IMAGE_SCN_CNT_CODE) != 0)
+            exes.insert({offset, elf_shdr});
     }
- 
+
     ELF *elf = new ELF;
     elf->filename       = strDup(filename);
     elf->data           = data;
     elf->size           = size;
     elf->base           = (intptr_t)opt_hdr->ImageBase;
     elf->end            = elf->base + (intptr_t)opt_hdr->SizeOfImage;;
-    elf->strs           = (char *)malloc(strtab.size());
+    elf->strs           = new char[strtab.size()];
     elf->phdrs          = nullptr;
     elf->phnum          = 0;
-    elf->pie            = false;
-    elf->dso            = false;
+    elf->type           = BINARY_TYPE_PE_EXE;
     elf->reloc          = false;
-//    elf->sections.swap(sections);
-//    elf->dynsyms.swap(dynsyms);
-//    elf->syms.swap(syms);
-//    elf->got.swap(got);
-//    elf->plt.swap(plt);
+    elf->sections.swap(sections);
     elf->exes.reserve(exes.size());
     for (const auto &entry: exes)
         elf->exes.push_back(entry.second);
-
     memcpy((void *)elf->strs, strtab.c_str(), strtab.size());
 
     return elf;
+}
+
+/*
+ * Parse a binary.
+ */
+ELF *e9frontend::parseBinary(const char *filename, intptr_t base)
+{
+    int fd = open(filename, O_RDONLY, 0);
+    if (fd < 0)
+        error("failed to open file \"%s\" for reading: %s", filename,
+            strerror(errno));
+    char c;
+    if (read(fd, &c, sizeof(char)) != 1)
+        error("failed to read file \"%s\": %s", filename, strerror(errno));
+    close(fd);
+ 
+    switch (c)
+    {
+        case 'E':
+        default:
+            return parseELF(filename, base);
+        case 'M':
+            return parsePE(filename);
+    }
 }
 
 /*
@@ -2357,6 +2378,17 @@ ELF *e9frontend::parsePE(const char *filename)
  */
 void freeELF(ELF *elf)
 {
+    switch (elf->type)
+    {
+        case BINARY_TYPE_PE_DLL: case BINARY_TYPE_PE_EXE:
+            // For Windows PE, the ELF objects are allocated by `new':
+            for (auto &entry: elf->sections)
+                delete entry.second;
+            delete elf->strs;
+            break;
+        default:
+            break;
+    }
     free((void *)elf->filename);
     munmap((void *)elf->data, elf->size);
     delete elf;
@@ -2365,14 +2397,9 @@ void freeELF(ELF *elf)
 /*
  * ELF getters.
  */
-e9frontend::ElfType e9frontend::getELFType(const ELF *elf)
+e9frontend::BinaryType e9frontend::getELFType(const ELF *elf)
 {
-    if (elf->dso)
-        return ELFTYPE_DSO;
-    else if (elf->pie)
-        return ELFTYPE_PIE;
-    else
-        return ELFTYPE_EXEC;
+    return elf->type;
 }
 const char *e9frontend::getELFFilename(const ELF *elf)
 {
@@ -2506,7 +2533,7 @@ void e9frontend::sendELFFileMessage(FILE *out, const ELF *ptr, bool absolute)
     /*
      * Sanity checks.
      */
-    if (!elf.pie)
+    if (elf.type != BINARY_TYPE_ELF_PIE)
         error("failed to embed ELF file \"%s\"; file is not a dynamic "
             "executable", elf.filename);
     if (elf.reloc)

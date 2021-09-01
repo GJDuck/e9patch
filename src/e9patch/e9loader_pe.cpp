@@ -242,9 +242,14 @@ asm (
     ".globl _entry\n"
     ".type _entry,@function\n"
     "_entry:\n"
+    "\tpushq %rcx\n"
+    "\tpushq %rdx\n"
+    "\tpushq %r8\n"
     "\tmov %gs:0x60,%rcx\n"
-    "\tpush %rcx\n"
+    "\tmov %r9, %rdx\n"
     "\tcallq e9loader\n"
+    "\tpop %r8\n"
+    "\tpop %rdx\n"
     "\tpop %rcx\n"
     "\tjmpq *%rax\n"
 );
@@ -284,6 +289,15 @@ static int e9strcmp(const char *s1, const char *s2)
  */
 void *e9loader(PEB *peb, const struct e9_config_s *config)
 {
+    // Step (0): Sanity checks & initialization:
+    const uint8_t *loader_base = (const uint8_t *)config;
+    const uint8_t *image_base  = loader_base - config->base;
+    void *entry = (void *)(image_base + config->entry);
+    static bool inited = false;
+    if (inited)     // Enforce single execution:
+        return entry;
+    inited = true;
+
     // Step (1): Parse the PEB/LDR for kernel32.dll and our image path:
     PEB_LDR_DATA* ldr = peb->Ldr;
     LIST_ENTRY *curr = ldr->InMemoryOrderModuleList.Flink;
@@ -333,7 +347,7 @@ void *e9loader(PEB *peb, const struct e9_config_s *config)
     if (LoadLibrary == NULL || GetProcAddress == NULL)
         e9panic();
 
-    // Step (2): Get critical functions necessary for output:
+    // Step (3): Get critical functions necessary for output:
     void *handle = (void *)kernel32;
     attach_console_t AttachConsole =
         (attach_console_t)GetProcAddress(handle, "AttachConsole");
@@ -348,14 +362,11 @@ void *e9loader(PEB *peb, const struct e9_config_s *config)
     if (WriteConsole == NULL)
         e9panic();
 
-    // Step (3): Sanity checks & initialization:
     if (config->magic[0] != 'E' || config->magic[1] != '9' ||
             config->magic[2] != 'P' || config->magic[3] != 'A' ||
             config->magic[4] != 'T' || config->magic[5] != 'C' ||
             config->magic[6] != 'H' || config->magic[7] != '\0')
         e9error("missing \"E9PATCH\" magic number");
-    const uint8_t *loader_base = (const uint8_t *)config;
-    const uint8_t *image_base  = loader_base - config->base;
 
     // Step (4): Get functions necessary for loader:
     get_last_error_t GetLastError =
@@ -434,10 +445,7 @@ void *e9loader(PEB *peb, const struct e9_config_s *config)
     }
 
     // Step (6): Return the entry point:
-    void *entry = (void *)(image_base + config->entry);
-
     e9debug("entry=%p", entry);
-
     return entry;
 }
 

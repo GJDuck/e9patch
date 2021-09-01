@@ -89,11 +89,23 @@ struct _IMAGE_SECTION_HEADER
     uint32_t Characteristics;
 };
 
+typedef struct _IMAGE_TLS_DIRECTORY64
+{
+      uint64_t StartAddressOfRawData;
+      uint64_t EndAddressOfRawData;
+      uint64_t AddressOfIndex;
+      uint64_t AddressOfCallBacks;
+      int32_t SizeOfZeroFill;
+      int32_t Characteristics;
+} IMAGE_TLS_DIRECTORY64, *PIMAGE_TLS_DIRECTORY64;
+
 #define IMAGE_SCN_MEM_EXECUTE   0x20000000
 #define IMAGE_SCN_MEM_READ      0x40000000
+#define IMAGE_SCN_MEM_WRITE     0x80000000
 #define IMAGE_SCN_MEM_SHARED    0x10000000
 
 #define IMAGE_DIRECTORY_ENTRY_BASERELOC 5
+#define IMAGE_DIRECTORY_ENTRY_TLS       9
 #define IMAGE_DLLCHARACTERISTICS_DYNAMIC_BASE 0x0040
 #define IMAGE_FILE_RELOCS_STRIPPED 0x0001
 
@@ -163,16 +175,48 @@ void parsePE(Binary *B)
         error("failed to parse PE file \"%s\"; no free space in section "
             "header (NYI)");
 
+    // The lower 4GB of the address space in Windows is "polluted", so reserve
+    // it.  TODO: This breaks MinGW binaries
+    if (!reserve(B, RELATIVE_ADDRESS_MIN, 0x100000000))
+        error("failed to reserve low-address range");
+
+    // Reserve the address space occupied by the image itself.  We also
+    // reserve ~1MB space for the loader in advance.
     intptr_t lb = (intptr_t)opt_hdr->ImageBase;
     intptr_t ub = lb + (intptr_t)opt_hdr->SizeOfImage;
     lb -= lb % WINDOWS_VIRTUAL_ALLOC_SIZE;
+    ub += 16 * WINDOWS_VIRTUAL_ALLOC_SIZE;  // Reserve space for the loader.
     ub  = ALIGN(ub, WINDOWS_VIRTUAL_ALLOC_SIZE);
     if (!reserve(B, lb, ub))
         error("failed to reserve image range [0x%lx..0x%lx]", lb, ub);
 
     info.file_hdr  = file_hdr;
     info.opt_hdr   = opt_hdr;
+    info.shdr      = shdr;
     info.free_shdr = shdr + file_hdr->NumberOfSections;
+}
+
+/*
+ * Find data.
+ */
+static uint8_t *findData(const Binary *B, uint32_t addr)
+{
+    if (addr == 0x0)
+        return nullptr;
+
+    PIMAGE_FILE_HEADER file_hdr = B->pe.file_hdr;
+    PIMAGE_SECTION_HEADER shdr  = B->pe.shdr;
+    for (uint16_t i = 0; i < file_hdr->NumberOfSections; i++)
+    {
+        if (addr >= shdr[i].VirtualAddress &&
+                addr < shdr[i].VirtualAddress + shdr[i].VirtualSize)
+        {
+            uint32_t offset = shdr[i].PointerToRawData +
+                (addr - shdr[i].VirtualAddress);
+            return B->patched.bytes + offset;
+        }
+    }
+    return nullptr;
 }
 
 /*
@@ -209,7 +253,6 @@ size_t emitPE(const Binary *B, const MappingSet &mappings, size_t mapping_size)
     const char magic[]   = "E9PATCH";
     memcpy(config->magic, magic, sizeof(magic));
     config->base  = (intptr_t)size_of_image;
-    config->entry = (intptr_t)opt_hdr->AddressOfEntryPoint;
 
     std::vector<Bounds> bounds;
     config->maps[1] = (uint32_t)(size - config_offset);
@@ -247,12 +290,28 @@ size_t emitPE(const Binary *B, const MappingSet &mappings, size_t mapping_size)
     }
 
     uint32_t addr_of_entry = size_of_image + (uint32_t)(size - config_offset);
-    opt_hdr->AddressOfEntryPoint = addr_of_entry;
+    PIMAGE_TLS_DIRECTORY64 tls = (PIMAGE_TLS_DIRECTORY64)findData(B,
+        opt_hdr->DataDirectory[IMAGE_DIRECTORY_ENTRY_TLS].VirtualAddress);
+    intptr_t *callbacks =(tls != nullptr?
+        (intptr_t *)findData(B, tls->AddressOfCallBacks): nullptr);
+    if (callbacks != nullptr && callbacks[0] != 0x0)
+    {
+        // This PE file uses TLS callbacks, which are called before the entry
+        // point.  Thus we inject the loader here:
+        config->entry = callbacks[0];
+        callbacks[0]  = (intptr_t)opt_hdr->ImageBase + (intptr_t)addr_of_entry;
+    }
+    else
+    {
+        // Otherwise, just replace entry point:
+        config->entry = (intptr_t)opt_hdr->AddressOfEntryPoint;
+        opt_hdr->AddressOfEntryPoint = addr_of_entry;
+    }
 
     if (option_trap_entry)
         data[size++] = /*int3=*/0xCC;
-    // lea config(%rip), %rdx
-    data[size++] = 0x48; data[size++] = 0x8D; data[size++] = 0x15;
+    // lea config(%rip), %r9
+    data[size++] = 0x4c; data[size++] = 0x8D; data[size++] = 0x0D;
     int32_t config_rel32 =
         -(int32_t)((size + sizeof(int32_t)) - config_offset);
     memcpy(data + size, &config_rel32, sizeof(config_rel32));
@@ -280,7 +339,7 @@ size_t emitPE(const Binary *B, const MappingSet &mappings, size_t mapping_size)
     shdr->SizeOfRawData    = loader_disk_size;
     shdr->PointerToRawData = (uint32_t)loader_offset;
     shdr->Characteristics  = IMAGE_SCN_MEM_EXECUTE | IMAGE_SCN_MEM_READ |
-        IMAGE_SCN_MEM_SHARED;
+        IMAGE_SCN_MEM_WRITE | IMAGE_SCN_MEM_SHARED;
 
     uint32_t virtual_size = ALIGN(loader_virtual_size, section_align);
     size_of_image += virtual_size;

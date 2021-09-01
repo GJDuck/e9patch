@@ -55,13 +55,15 @@ typedef std::map<const char *, intptr_t, CStrCmp> GOTInfo;
 typedef std::map<const char *, intptr_t, CStrCmp> PLTInfo;
 
 /*
- * ELF file type.
+ * Binary file type.
  */
-enum ElfType
+enum BinaryType
 {
-    ELFTYPE_DSO,                    // Shared object
-    ELFTYPE_PIE,                    // Position-independent Executable
-    ELFTYPE_EXEC,                   // Executable
+    BINARY_TYPE_ELF_DSO,            // Linux ELF Shared object
+    BINARY_TYPE_ELF_PIE,            // Linux ELF PIE Executable
+    BINARY_TYPE_ELF_EXE,            // Linux ELF non-PIE Executable
+    BINARY_TYPE_PE_DLL,             // Windows PE DLL
+    BINARY_TYPE_PE_EXE,             // Windows PE Executable
 };
 struct ELF;
 
@@ -2325,10 +2327,11 @@ extern unsigned sendTrampolineMessage(FILE *out, const char *name,
 /*
  * ELF functions.
  */
-extern ELF *parseELF(const char *filename, intptr_t base);
+extern ELF *parseELF(const char *filename, intptr_t base = 0x0);
 extern ELF *parsePE(const char *filename);
+extern ELF *parseBinary(const char *filename, intptr_t base = 0x0);
 extern void freeELF(ELF *elf);
-extern ElfType getELFType(const ELF *elf);
+extern BinaryType getELFType(const ELF *elf);
 extern const char *getELFFilename(const ELF *elf);
 extern const uint8_t *getELFData(const ELF *elf);
 extern size_t getELFDataSize(const ELF *elf);
