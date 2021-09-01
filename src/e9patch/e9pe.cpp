@@ -292,9 +292,10 @@ size_t emitPE(const Binary *B, const MappingSet &mappings, size_t mapping_size)
     uint32_t addr_of_entry = size_of_image + (uint32_t)(size - config_offset);
     PIMAGE_TLS_DIRECTORY64 tls = (PIMAGE_TLS_DIRECTORY64)findData(B,
         opt_hdr->DataDirectory[IMAGE_DIRECTORY_ENTRY_TLS].VirtualAddress);
-    intptr_t *callbacks =(tls != nullptr?
+    intptr_t *callbacks = (tls != nullptr?
         (intptr_t *)findData(B, tls->AddressOfCallBacks): nullptr);
-    if (callbacks != nullptr && callbacks[0] != 0x0)
+    bool use_tls = (callbacks != nullptr && callbacks[0] != 0x0);
+    if (use_tls)
     {
         // This PE file uses TLS callbacks, which are called before the entry
         // point.  Thus we inject the loader here:
@@ -310,6 +311,14 @@ size_t emitPE(const Binary *B, const MappingSet &mappings, size_t mapping_size)
 
     if (option_trap_entry)
         data[size++] = /*int3=*/0xCC;
+    if (!use_tls)
+    {
+        // mov $DLL_PROCESS_ATTACH, %edx
+        data[size++] = 0xBA;
+        int32_t one32 = /*DLL_PROCESS_ATTACH=*/1;
+        memcpy(data + size, &one32, sizeof(one32));
+        size += sizeof(one32);
+    }
     // lea config(%rip), %r9
     data[size++] = 0x4c; data[size++] = 0x8D; data[size++] = 0x0D;
     int32_t config_rel32 =
@@ -339,7 +348,7 @@ size_t emitPE(const Binary *B, const MappingSet &mappings, size_t mapping_size)
     shdr->SizeOfRawData    = loader_disk_size;
     shdr->PointerToRawData = (uint32_t)loader_offset;
     shdr->Characteristics  = IMAGE_SCN_MEM_EXECUTE | IMAGE_SCN_MEM_READ |
-        IMAGE_SCN_MEM_WRITE | IMAGE_SCN_MEM_SHARED;
+        IMAGE_SCN_MEM_SHARED;
 
     uint32_t virtual_size = ALIGN(loader_virtual_size, section_align);
     size_of_image += virtual_size;

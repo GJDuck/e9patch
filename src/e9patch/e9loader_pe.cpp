@@ -172,7 +172,9 @@ typedef void *(*create_file_mapping_t)(void *file, void *sec, int32_t prot,
     int32_t min, int32_t max, const char *name);
 typedef void *(*map_view_of_file_ex_t)(void *mapping, int32_t access,
     int32_t hi, int32_t lo, size_t size, void *base);
+typedef int (*close_handle_t)(void *handle);
 
+#define DLL_PROCESS_ATTACH      1
 #define STD_ERROR_HANDLE        (-12)
 #define INVALID_HANDLE_VALUE    ((void *)(-1))
 
@@ -232,7 +234,8 @@ static NO_INLINE void e9debug_impl(void *stderr, write_console_t WriteConsole,
 
 extern "C"
 {
-    void *e9loader(PEB *peb, const struct e9_config_s *config);
+    void *e9loader(PEB *peb, const struct e9_config_s *config,
+        int32_t reason);
 }
 
 asm (
@@ -246,6 +249,7 @@ asm (
     "\tpushq %rdx\n"
     "\tpushq %r8\n"
     "\tmov %gs:0x60,%rcx\n"
+    "\tmov %edx, %r8d\n"
     "\tmov %r9, %rdx\n"
     "\tcallq e9loader\n"
     "\tpop %r8\n"
@@ -287,16 +291,14 @@ static int e9strcmp(const char *s1, const char *s2)
 /*
  * Main loader code.
  */
-void *e9loader(PEB *peb, const struct e9_config_s *config)
+void *e9loader(PEB *peb, const struct e9_config_s *config, int32_t reason)
 {
     // Step (0): Sanity checks & initialization:
     const uint8_t *loader_base = (const uint8_t *)config;
     const uint8_t *image_base  = loader_base - config->base;
     void *entry = (void *)(image_base + config->entry);
-    static bool inited = false;
-    if (inited)     // Enforce single execution:
-        return entry;
-    inited = true;
+    if (reason != DLL_PROCESS_ATTACH)
+        return entry;   // Enforce single execution
 
     // Step (1): Parse the PEB/LDR for kernel32.dll and our image path:
     PEB_LDR_DATA* ldr = peb->Ldr;
@@ -388,6 +390,11 @@ void *e9loader(PEB *peb, const struct e9_config_s *config)
     if (MapViewOfFileEx == NULL)
         e9error("GetProcAddress(name=\"%s\") failed (error=%d)",
             "MapViewOfFileEx", GetLastError());
+    close_handle_t CloseHandle =
+        (close_handle_t)GetProcAddress(handle, "CloseHandle");
+    if (CloseHandle == NULL)
+        e9error("GetProcAddress(name=\"%s\") failed (error=%d)",
+            "CloseHandle", GetLastError());
 
     // Step (5): Load the trampoline code:
 #define GENERIC_READ            0x80000000
@@ -443,6 +450,12 @@ void *e9loader(PEB *peb, const struct e9_config_s *config)
                 (maps[i].r? 'r': '-'), (maps[i].w? 'w': '-'),
                 (maps[i].x? 'x': '-'), GetLastError());
     }
+    if (!CloseHandle(file))
+        e9error("failed to close %s handle (error=%d)", "file",
+            GetLastError());
+    if (!CloseHandle(mapping))
+        e9error("failed to close %s handle (error=%d)", "mapping",
+            GetLastError());
 
     // Step (6): Return the entry point:
     e9debug("entry=%p", entry);
