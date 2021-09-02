@@ -52,7 +52,7 @@ static bool option_cfg          = false;
 static bool option_trap_all     = false;
 static bool option_intel_syntax = false;
 static std::string option_format("binary");
-static std::string option_output("a.out");
+static std::string option_output("");
 
 #include "e9plugin.h"
 #include "e9frontend.cpp"
@@ -2152,7 +2152,8 @@ static void usage(FILE *stream, const char *progname)
         "\n"
         "\t--output FILE, -o FILE\n"
         "\t\tSpecifies the path to the output file.  The default filename is\n"
-        "\t\t\"a.out\".\n"
+        "\t\tone of {\"a.out\", \"a.so\", \"a.exe\", \"a.dll\"}, depending on\n"
+        "\t\tthe input binary type.\n"
         "\n"
         "\t--seed=SEED\n"
         "\t\tSet SEED to be the random number seed.\n"
@@ -2501,6 +2502,21 @@ int main(int argc, char **argv)
     /*
      * The ELF file seems OK, spawn and initialize the e9patch backend.
      */
+    if (option_output == "")
+    {
+        // Choose a default name:
+        switch (elf.type)
+        {
+            case BINARY_TYPE_ELF_DSO:
+                option_output = "a.so"; break;
+            case BINARY_TYPE_ELF_PIE: case BINARY_TYPE_ELF_EXE:
+                option_output = "a.out"; break;
+            case BINARY_TYPE_PE_EXE:
+                option_output = "a.exe"; break;
+            case BINARY_TYPE_PE_DLL:
+                option_output = "a.dll"; break;
+        }
+    }
     Backend backend;
     std::vector<const char *> options;
     if (option_format == "json")
@@ -2572,7 +2588,7 @@ int main(int argc, char **argv)
         options.push_back(mapping_size[option_compression_level]);
     }
     if (option_static_loader)
-        options.push_back("--static-loader");
+        options.push_back("--loader-static");
     if (option_trap_all)
         options.push_back("--trap-all");
     switch (option_optimization_level)

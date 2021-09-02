@@ -59,6 +59,26 @@ struct CStrCmp
 };
 
 /*
+ * Addresses.
+ */
+#define RELATIVE_ADDRESS_MAX        0x1FFFFFFFFFFFF000ll
+#define RELATIVE_ADDRESS_MIN        (-0x1FFFFFFFFFFFF000ll)
+
+#define ABSOLUTE_ADDRESS_MAX        0x7FFFFFFFFFFFF000ll
+#define ABSOLUTE_ADDRESS_MIN        0x4000000000001000ll
+
+#define RELATIVE_ADDRESS(p)         (p)
+#define ABSOLUTE_ADDRESS(p)         ((p)+0x6000000000000000)
+
+#define IS_RELATIVE(p)              \
+    ((p) >= RELATIVE_ADDRESS_MIN && (p) <= RELATIVE_ADDRESS_MAX)
+#define IS_ABSOLUTE(p)              \
+    ((p) >= ABSOLUTE_ADDRESS_MIN && (p) <= ABSOLUTE_ADDRESS_MAX)
+
+#define BASE_ADDRESS(p)             \
+    (IS_ABSOLUTE(p)? (p)-0x6000000000000000: (p))
+
+/*
  * Buffer.
  */
 struct Buffer
@@ -479,17 +499,20 @@ extern bool option_tactic_T1;
 extern bool option_tactic_T2;
 extern bool option_tactic_T3;
 extern bool option_tactic_backward_T3;
-extern int option_phdr_loader;
-extern bool option_static_loader;
+extern intptr_t option_loader_base;
+extern int option_loader_phdr;
+extern bool option_loader_static;
 extern std::set<intptr_t> option_trap;
 extern bool option_trap_all;
 extern bool option_trap_entry;
 extern size_t option_mem_granularity;
-extern intptr_t option_mem_loader;
 extern size_t option_mem_mapping_size;
 extern bool option_mem_multi_page;
 extern intptr_t option_mem_lb;
 extern intptr_t option_mem_ub;
+extern bool option_loader_base_set;
+extern bool option_loader_phdr_set;
+extern bool option_loader_static_set;
 
 /*
  * Global statistics.

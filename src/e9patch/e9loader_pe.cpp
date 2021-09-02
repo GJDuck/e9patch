@@ -245,16 +245,22 @@ asm (
     ".globl _entry\n"
     ".type _entry,@function\n"
     "_entry:\n"
-    "\tpushq %rcx\n"
+    // %r9 = pointer to config.
+
+    "\tpushq %rcx\n"            // Save DllMain() args
     "\tpushq %rdx\n"
     "\tpushq %r8\n"
-    "\tmov %gs:0x60,%rcx\n"
+
+    "\tmov %gs:0x60,%rcx\n"     // Call e9loader()
     "\tmov %edx, %r8d\n"
     "\tmov %r9, %rdx\n"
     "\tcallq e9loader\n"
-    "\tpop %r8\n"
+    // %rax = real entry point.
+
+    "\tpop %r8\n"               // Restore DllMain() args
     "\tpop %rdx\n"
     "\tpop %rcx\n"
+
     "\tjmpq *%rax\n"
 );
 

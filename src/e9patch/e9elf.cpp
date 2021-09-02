@@ -192,7 +192,7 @@ static size_t emitRefactoredPatch(const uint8_t *original, uint8_t *data,
     size_t size, size_t mapping_size, const InstrSet &Is,
     RefactorSet &refactors)
 {
-    if (option_static_loader)
+    if (option_loader_static)
         return 0;
 
     assert(size % PAGE_SIZE == 0);
@@ -320,7 +320,7 @@ size_t emitElf(const Binary *B, const MappingSet &mappings,
     size += sizeof(struct e9_config_s);
     const char magic[]   = "E9PATCH";
     memcpy(config->magic, magic, sizeof(magic));
-    config->base = option_mem_loader;
+    config->base = option_loader_base;
     if (B->mmap != INTPTR_MIN)
         config->mmap = B->mmap;
 
@@ -372,14 +372,14 @@ size_t emitElf(const Binary *B, const MappingSet &mappings,
             }
         }
     }
-    if (ub > option_mem_loader)
+    if (ub > option_loader_base)
     {
-        // This error may occur if the front-end changes `--mem-loader'
+        // This error may occur if the front-end changes `--loader-base'
         // mid-way through the patching process.  It is easiest to detect
         // the error here than earlier.
-        error("loader base address (0x%lx) (see `--mem-loader') must not "
+        error("loader base address (0x%lx) (see `--loader-base') must not "
             "exceed maximum mapping address (0x%lx) (see `--mem-ub')",
-            option_mem_loader, ub);
+            option_loader_base, ub);
     }
     for (const auto &refactor: refactors)
     {
@@ -391,7 +391,7 @@ size_t emitElf(const Binary *B, const MappingSet &mappings,
             nullptr);
         config->num_maps[1]++;
     }
-    intptr_t entry = (option_mem_loader + (size - config_offset));
+    intptr_t entry = (option_loader_base + (size - config_offset));
     if (option_trap_entry)
         data[size++] = /*int3=*/0xCC;
     switch (B->mode)
@@ -472,7 +472,7 @@ size_t emitElf(const Binary *B, const MappingSet &mappings,
     //       (or PT_GNU_*) injection method to load the loader.  Some
     //       alternative methods may also work, but are not yet implemented.
     const char *phdr_str = "PT_NOTE, PT_GNU_RELRO, or PT_GNU_STACK";
-    switch (option_phdr_loader)
+    switch (option_loader_phdr)
     {
         case PT_NOTE:
             phdr_str = "PT_NOTE";
@@ -495,7 +495,7 @@ size_t emitElf(const Binary *B, const MappingSet &mappings,
     phdr->p_type   = PT_LOAD;
     phdr->p_flags  = PF_X | PF_R;
     phdr->p_offset = config_offset;
-    phdr->p_vaddr  = (Elf64_Addr)option_mem_loader;
+    phdr->p_vaddr  = (Elf64_Addr)option_loader_base;
     phdr->p_paddr  = (Elf64_Addr)nullptr;
     phdr->p_filesz = config_size;
     phdr->p_memsz  = config_size;

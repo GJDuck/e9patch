@@ -28,21 +28,4 @@ const Alloc *allocate(Binary *B, intptr_t lb, intptr_t ub,
 bool reserve(Binary *B, intptr_t lb, intptr_t ub);
 void deallocate(Binary *B, const Alloc *a);
 
-#define RELATIVE_ADDRESS_MAX        0x1FFFFFFFFFFFF000ll
-#define RELATIVE_ADDRESS_MIN        (-0x1FFFFFFFFFFFF000ll)
-
-#define ABSOLUTE_ADDRESS_MAX        0x7FFFFFFFFFFFF000ll
-#define ABSOLUTE_ADDRESS_MIN        0x4000000000001000ll
-
-#define RELATIVE_ADDRESS(p)         (p)
-#define ABSOLUTE_ADDRESS(p)         ((p)+0x6000000000000000)
-
-#define IS_RELATIVE(p)              \
-    ((p) >= RELATIVE_ADDRESS_MIN && (p) <= RELATIVE_ADDRESS_MAX)
-#define IS_ABSOLUTE(p)              \
-    ((p) >= ABSOLUTE_ADDRESS_MIN && (p) <= ABSOLUTE_ADDRESS_MAX)
-
-#define BASE_ADDRESS(p)             \
-    (IS_ABSOLUTE(p)? (p)-0x6000000000000000: (p))
-
 #endif

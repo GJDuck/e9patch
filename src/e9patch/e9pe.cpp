@@ -293,13 +293,14 @@ size_t emitPE(const Binary *B, const MappingSet &mappings, size_t mapping_size)
     PIMAGE_TLS_DIRECTORY64 tls = (PIMAGE_TLS_DIRECTORY64)findData(B,
         opt_hdr->DataDirectory[IMAGE_DIRECTORY_ENTRY_TLS].VirtualAddress);
     intptr_t *callbacks = (tls != nullptr?
-        (intptr_t *)findData(B, tls->AddressOfCallBacks): nullptr);
+        (intptr_t *)findData(B, tls->AddressOfCallBacks - opt_hdr->ImageBase):
+        nullptr);
     bool use_tls = (callbacks != nullptr && callbacks[0] != 0x0);
     if (use_tls)
     {
         // This PE file uses TLS callbacks, which are called before the entry
         // point.  Thus we inject the loader here:
-        config->entry = callbacks[0];
+        config->entry = (intptr_t)callbacks[0] - (intptr_t)opt_hdr->ImageBase;
         callbacks[0]  = (intptr_t)opt_hdr->ImageBase + (intptr_t)addr_of_entry;
     }
     else
@@ -370,6 +371,14 @@ size_t emitPE(const Binary *B, const MappingSet &mappings, size_t mapping_size)
     file_hdr->Characteristics |= IMAGE_FILE_RELOCS_STRIPPED;
 
     stat_output_file_size = size;
+
+    if (option_loader_base_set)
+        warning("ignoring `--loader-base' option for Windows PE binary");
+    if (option_loader_phdr_set)
+        warning("ignoring `--loader-phdr' option for Windows PE binary");
+    if (option_loader_static_set)
+        warning("ignoring `--loader-static' option for Windows PE binary");
+
     return size;
 }
 

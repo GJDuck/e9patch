@@ -49,19 +49,22 @@ bool option_Opeephole          = true;
 unsigned option_Oprologue      = 0;
 unsigned option_Oprologue_size = 64;
 bool option_Oscratch_stack     = false;
+intptr_t option_loader_base    = 0x20e9e9000;
+int option_loader_phdr         = -1;
+bool option_loader_static      = false;
 size_t option_mem_granularity  = 128;
-intptr_t option_mem_lb         = -0x100000000;
-intptr_t option_mem_ub         =  0x200000000;
-intptr_t option_mem_loader     =  0x20e9e9000;
+intptr_t option_mem_lb         = RELATIVE_ADDRESS_MIN;
+intptr_t option_mem_ub         = RELATIVE_ADDRESS_MAX;
 size_t option_mem_mapping_size = PAGE_SIZE;
 bool option_mem_multi_page     = true;
-int option_phdr_loader         = -1;
-bool option_static_loader      = false;
 std::set<intptr_t> option_trap;
 bool option_trap_all           = false;
 bool option_trap_entry         = false;
 static std::string option_input("-");
 static std::string option_output("-");
+bool option_loader_base_set    = false;
+bool option_loader_phdr_set    = false;
+bool option_loader_static_set  = false;
 
 /*
  * Global statistics.
@@ -229,6 +232,30 @@ static void usage(FILE *stream, const char *progname)
         "\t--output FILE, -o FILE\n"
         "\t\tWrite output to FILE instead of stdout.\n"
         "\n"
+        "\t--loader-base=ADDR\n"
+        "\t\tSet ADDR to be the base address of the program loader.\n"
+        "\t\tOnly relevant for ELF binaries.\n"
+        "\t\tDefault: 0x20e9e9000\n"
+        "\n"
+        "\t--loader-phdr=PHDR\n"
+        "\t\tOverwrite the corresponding PHDR to load the loader.  Valid\n"
+        "\t\tvalues are \"note\", \"relro\", and \"stack\" for PT_NOTE, "
+            "PT_RELRO\n"
+        "\t\tand PT_GNU_STACK respectively, or \"any\" to select any of the\n"
+        "\t\tabove values.  Note that selecting any value other than "
+            "\"note\"\n"
+        "\t\tmay relax the memory permissions in the patched binary.\n"
+        "\t\tOnly relevant for ELF binaries.\n"
+        "\t\tDefault: note\n"
+        "\n"
+        "\t--loader-static[=false]\n"
+        "\t\tEnable [disable] the static loading of patched pages.  By\n"
+        "\t\tdefault, patched pages are loaded dynamically during program\n"
+        "\t\tinitialization (this is more reliable for complex binaries).\n"
+        "\t\tHowever, this can also bloat patched binary size.\n"
+        "\t\tOnly relevant for ELF binaries.\n"
+        "\t\tDefault: false (disabled)\n"
+        "\n"
         "\t--mem-granularity=SIZE\n"
         "\t\tSet SIZE to be the granularity used for the physical page\n"
         "\t\tgrouping memory optimization.  Higher values result in\n"
@@ -239,16 +266,9 @@ static void usage(FILE *stream, const char *progname)
         "\n"
         "\t--mem-lb=LB\n"
         "\t\tSet LB to be the minimum allowable trampoline address.\n"
-        "\t\tDefault: -0x100000000\n"
         "\n"
         "\t--mem-ub=UB\n"
         "\t\tSet UB to be the maximum allowable trampoline address.\n"
-        "\t\tDefault: 0x200000000\n"
-        "\n"
-        "\t--mem-loader=ADDR\n"
-        "\t\tSet ADDR to be the base address of the program loader.\n"
-        "\t\tThe ADDR must be >= the `--mem-ub=UB' value.\n"
-        "\t\tDefault: 0x20e9e9000\n"
         "\n"
         "\t--mem-mapping-size=SIZE\n"
         "\t\tSet the mapping size to SIZE which must be a power-of-two\n"
@@ -260,23 +280,6 @@ static void usage(FILE *stream, const char *progname)
         "\t--mem-multi-page[=false]\n"
         "\t\tEnable [disable] trampolines that cross page boundaries.\n"
         "\t\tDefault: true (enabled)\n"
-        "\n"
-        "\t--phdr-loader=PHDR\n"
-        "\t\tOverwrite the corresponding PHDR to load the loader.  Valid\n"
-        "\t\tvalues are \"note\", \"relro\", and \"stack\" for PT_NOTE, "
-            "PT_RELRO\n"
-        "\t\tand PT_GNU_STACK respectively, or \"any\" to select any of the\n"
-        "\t\tabove values.  Note that selecting any value other than "
-            "\"note\"\n"
-        "\t\tmay relax the memory permissions in the patched binary.\n"
-        "\t\tDefault: note\n"
-        "\n"
-        "\t--static-loader[=false]\n"
-        "\t\tEnable [disable] the static loading of patched pages.  By\n"
-        "\t\tdefault, patched pages are loaded dynamically during program\n"
-        "\t\tinitialization (this is more reliable for complex binaries).\n"
-        "\t\tHowever, this can also bloat patched binary size.\n"
-        "\t\tDefault: false (disabled)\n"
         "\n"
         "\t--tactic-B1[=false]\n"
         "\t--tactic-B2[=false]\n"
@@ -317,9 +320,11 @@ enum Option
     OPTION_DEBUG,
     OPTION_HELP,
     OPTION_INPUT,
+    OPTION_LOADER_BASE,
+    OPTION_LOADER_PHDR,
+    OPTION_LOADER_STATIC,
     OPTION_MEM_GRANULARITY,
     OPTION_MEM_LB,
-    OPTION_MEM_LOADER,
     OPTION_MEM_MAPPING_SIZE,
     OPTION_MEM_MULTI_PAGE,
     OPTION_MEM_UB,
@@ -331,8 +336,6 @@ enum Option
     OPTION_OPROLOGUE_SIZE,
     OPTION_OSCRATCH_STACK,
     OPTION_OUTPUT,
-    OPTION_PHDR_LOADER,
-    OPTION_STATIC_LOADER,
     OPTION_TACTIC_B1,
     OPTION_TACTIC_B2,
     OPTION_TACTIC_T1,
@@ -364,15 +367,15 @@ void parseOptions(int argc, char * const argv[], bool api)
         {"debug",              no_arg,  nullptr, OPTION_DEBUG},
         {"help",               no_arg,  nullptr, OPTION_HELP},
         {"input",              req_arg, nullptr, OPTION_INPUT},
+        {"loader-base",        req_arg, nullptr, OPTION_LOADER_BASE},
+        {"loader-phdr",        req_arg, nullptr, OPTION_LOADER_PHDR},
+        {"loader-static",      opt_arg, nullptr, OPTION_LOADER_STATIC},
         {"mem-granularity",    req_arg, nullptr, OPTION_MEM_GRANULARITY},
         {"mem-lb",             req_arg, nullptr, OPTION_MEM_LB},
-        {"mem-loader",         req_arg, nullptr, OPTION_MEM_LOADER},
         {"mem-mapping-size",   req_arg, nullptr, OPTION_MEM_MAPPING_SIZE},
         {"mem-multi-page",     opt_arg, nullptr, OPTION_MEM_MULTI_PAGE},
         {"mem-ub",             req_arg, nullptr, OPTION_MEM_UB},
         {"output",             req_arg, nullptr, OPTION_OUTPUT},
-        {"phdr-loader",        req_arg, nullptr, OPTION_PHDR_LOADER},
-        {"static-loader",      no_arg,  nullptr, OPTION_STATIC_LOADER},
         {"tactic-B1",          opt_arg, nullptr, OPTION_TACTIC_B1},
         {"tactic-B2",          opt_arg, nullptr, OPTION_TACTIC_B2},
         {"tactic-T1",          opt_arg, nullptr, OPTION_TACTIC_T1},
@@ -485,23 +488,35 @@ void parseOptions(int argc, char * const argv[], bool api)
             case OPTION_TRAP_ENTRY:
                 option_trap_entry = parseBoolOptArg("--trap-entry", optarg);
                 break;
-            case OPTION_PHDR_LOADER:
+            case OPTION_LOADER_BASE:
+                option_loader_base_set = true;
+                option_loader_base = parseIntOptArg("--loader-base", optarg,
+                    0x0, 0x800000000);
+                if (option_loader_base % PAGE_SIZE != 0)
+                    error("failed to parse argument \"%s\" for the "
+                        "`--loader-base' option; the loader base address "
+                        "must be a multiple of the page size (%d)", optarg,
+                        PAGE_SIZE);
+                break;
+            case OPTION_LOADER_PHDR:
+                option_loader_phdr_set = true;
                 if (strcmp(optarg, "any") == 0)
-                    option_phdr_loader = -1;
+                    option_loader_phdr = -1;
                 else if (strcmp(optarg, "relro") == 0)
-                    option_phdr_loader = PT_GNU_RELRO;
+                    option_loader_phdr = PT_GNU_RELRO;
                 else if (strcmp(optarg, "stack") == 0)
-                    option_phdr_loader = PT_GNU_STACK;
+                    option_loader_phdr = PT_GNU_STACK;
                 else if (strcmp(optarg, "note") == 0)
-                    option_phdr_loader = PT_NOTE;
+                    option_loader_phdr = PT_NOTE;
                 else
                     error("failed to parse argument \"%s\" for the "
-                        "`--phdr-loader' option; argument must be one of "
+                        "`--loader-phdr' option; argument must be one of "
                         "{note,relro,stack,any}", optarg);
                 break;
-            case OPTION_STATIC_LOADER:
-                option_static_loader =
-                    parseBoolOptArg("--static-loader", optarg);
+            case OPTION_LOADER_STATIC:
+                option_loader_static_set = true;
+                option_loader_static =
+                    parseBoolOptArg("--loader-static", optarg);
                 break;
             case OPTION_MEM_GRANULARITY:
                 option_mem_granularity = parseIntOptArg("--mem-granularity",
@@ -518,20 +533,11 @@ void parseOptions(int argc, char * const argv[], bool api)
                 break;
             case OPTION_MEM_LB:
                 option_mem_lb = parseIntOptArg("--mem-lb", optarg,
-                    -0x100000000, 0x200000000);
+                    RELATIVE_ADDRESS_MIN, RELATIVE_ADDRESS_MAX);
                 break;
             case OPTION_MEM_UB:
                 option_mem_ub = parseIntOptArg("--mem-ub", optarg,
-                    -0x100000000, 0x200000000);
-                break;
-            case OPTION_MEM_LOADER:
-                option_mem_loader = parseIntOptArg("--mem-loader", optarg, 0x0,
-                    0x800000000);
-                if (option_mem_loader % PAGE_SIZE != 0)
-                    error("failed to parse argument \"%s\" for the "
-                        "`--mem-loader' option; the loader base address "
-                        "must be a multiple of the page size (%d)", optarg,
-                        PAGE_SIZE);
+                    RELATIVE_ADDRESS_MIN, RELATIVE_ADDRESS_MAX);
                 break;
             case OPTION_MEM_MAPPING_SIZE:
                 option_mem_mapping_size = parseIntOptArg("--mem-mapping-size",
@@ -560,10 +566,6 @@ void parseOptions(int argc, char * const argv[], bool api)
         error("failed to parse command-line options; extraneous non-option "
             "argument \"%s\", try `--help' for more information",
             argv[optind]);
-    if (option_mem_loader < option_mem_ub)
-        error("failed to set `--mem-loader' to address 0x%lx; the address "
-            "value must be >= the `--mem-ub' bound (0x%lx)",
-            option_mem_loader, option_mem_ub);
 }
 
 /*
