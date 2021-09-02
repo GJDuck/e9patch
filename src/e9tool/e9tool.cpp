@@ -2730,7 +2730,7 @@ int main(int argc, char **argv)
     if (have_passthru)
         sendPassthruTrampolineMessage(backend.out);
     if (have_print)
-        sendPrintTrampolineMessage(backend.out);
+        sendPrintTrampolineMessage(backend.out, elf.type);
     if (have_trap)
         sendTrapTrampolineMessage(backend.out);
 

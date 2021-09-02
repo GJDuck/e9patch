@@ -1631,7 +1631,8 @@ unsigned e9frontend::sendPassthruTrampolineMessage(FILE *out)
 /*
  * Send a "print" "trampoline" message.
  */
-unsigned e9frontend::sendPrintTrampolineMessage(FILE *out)
+unsigned e9frontend::sendPrintTrampolineMessage(FILE *out,
+    e9frontend::BinaryType type)
 {
     sendMessageHeader(out, "trampoline");
     sendParamHeader(out, "name");
@@ -1641,45 +1642,151 @@ unsigned e9frontend::sendPrintTrampolineMessage(FILE *out)
     putc('[', out);
 
     /*
-     * Print instrumentation works by setting up a SYS_write system call that
+     * Print instrumentation works by setting up a "write" system call that
      * prints a string representation of the instruction to stderr.  The
      * string representation is past via macros defined by the "patch"
      * message.
      */
+    switch (type)
+    {
+        case BINARY_TYPE_ELF_DSO: case BINARY_TYPE_ELF_EXE:
+        case BINARY_TYPE_ELF_PIE:
+            // lea -0x4000(%rsp),%rsp
+            // push %rdi
+            // push %rsi
+            // push %rax
+            // push %rcx
+            // push %rdx
+            // push %r11
+            fprintf(out, "%u,%u,%u,%u,{\"int32\":%d},",
+                0x48, 0x8d, 0xa4, 0x24, -0x4000);
+            fprintf(out, "%u,", 0x57);
+            fprintf(out, "%u,", 0x56);
+            fprintf(out, "%u,", 0x50);
+            fprintf(out, "%u,", 0x51);
+            fprintf(out, "%u,", 0x52);
+            fprintf(out, "%u,%u,", 0x41, 0x53);
 
-    // Save registers we intend to use:
-    fprintf(out, "%u,%u,%u,%u,{\"int32\":%d},",     // lea -0x4000(%rsp),%rsp
-        0x48, 0x8d, 0xa4, 0x24, -0x4000);
-    fprintf(out, "%u,", 0x57);                      // push %rdi
-    fprintf(out, "%u,", 0x56);                      // push %rsi
-    fprintf(out, "%u,", 0x50);                      // push %rax
-    fprintf(out, "%u,", 0x51);                      // push %rcx
-    fprintf(out, "%u,", 0x52);                      // push %rdx
-    fprintf(out, "%u,%u,", 0x41, 0x53);             // push %r11
+            // leaq .Lstring(%rip), %rsi
+            // mov $strlen,%edx
+            // mov $0x2,%edi        # stderr
+            // mov $0x1,%eax        # SYS_write
+            fprintf(out, "%u,%u,%u,{\"rel32\":\".Lstring\"},",
+                0x48, 0x8d, 0x35);
+            fprintf(out, "%u,\"$asmStrLen\",", 0xba);
+            fprintf(out, "%u,{\"int32\":%d},",
+                0xbf, 0x02);
+            fprintf(out, "%u,{\"int32\":%d},",
+                0xb8, 0x01);
 
-    // Set-up the arguments to the SYS_write system call:
-    fprintf(out, "%u,%u,%u,", 0x48, 0x8d, 0x35);    // leaq .Lstring(%rip), %rsi
-    fprintf(out, "{\"rel32\":\".Lstring\"},");
-    fprintf(out, "%u,", 0xba);                      // mov $strlen,%edx
-    fprintf(out, "\"$asmStrLen\",");
-    fprintf(out, "%u,%u,%u,%u,%u,",                 // mov $0x2,%edi
-        0xbf, 0x02, 0x00, 0x00, 0x00);
-    fprintf(out, "%u,%u,%u,%u,%u,",                 // mov $0x1,%eax
-        0xb8, 0x01, 0x00, 0x00, 0x00);
+            // syscall
+            fprintf(out, "%u,%u", 0x0f, 0x05);
 
-    // Execute the system call:
-    fprintf(out, "%u,%u", 0x0f, 0x05);              // syscall 
+            // pop %r11
+            // pop %rdx
+            // pop %rcx
+            // pop %rax
+            // pop %rsi
+            // pop %rdi
+            // lea 0x4000(%rsp),%rsp
+            fprintf(out, ",%u,%u", 0x41, 0x5b);
+            fprintf(out, ",%u", 0x5a);
+            fprintf(out, ",%u", 0x59);
+            fprintf(out, ",%u", 0x58);
+            fprintf(out, ",%u", 0x5e);
+            fprintf(out, ",%u", 0x5f);
+            fprintf(out, ",%u,%u,%u,%u,{\"int32\":%d}",
+                0x48, 0x8d, 0xa4, 0x24, 0x4000);
 
-    // Restore the saved registers:
-    fprintf(out, ",%u,%u", 0x41, 0x5b);             // pop %r11
-    fprintf(out, ",%u", 0x5a);                      // pop %rdx
-    fprintf(out, ",%u", 0x59);                      // pop %rcx
-    fprintf(out, ",%u", 0x58);                      // pop %rax
-    fprintf(out, ",%u", 0x5e);                      // pop %rsi
-    fprintf(out, ",%u", 0x5f);                      // pop %rdi
-    fprintf(out, ",%u,%u,%u,%u,{\"int32\":%d}",     // lea 0x4000(%rsp),%rsp
-        0x48, 0x8d, 0xa4, 0x24, 0x4000);
-    
+            break;
+
+        case BINARY_TYPE_PE_EXE: case BINARY_TYPE_PE_DLL:
+
+            // lea -0x1000(%rsp),%rsp
+            // push %rcx
+            // push %rdx
+            // push %r8
+            // push %r9
+            // push %rax
+            // push %r11
+            fprintf(out, "%u,%u,%u,%u,{\"int32\":%d},",
+                0x48, 0x8d, 0xa4, 0x24, -0x1000);
+            fprintf(out, "%u,", 0x51);
+            fprintf(out, "%u,", 0x52);
+            fprintf(out, "%u,%u,", 0x41, 0x50);
+            fprintf(out, "%u,%u,", 0x41, 0x51);
+            fprintf(out, "%u,", 0x50);
+            fprintf(out, "%u,%u,", 0x41, 0x53);
+
+            // mov %gs:0x60,%rax        # PEB
+            // mov 0x20(%rax),%rax      # PEB->ProcessParameter
+            // mov 0x30(%rax),%r10      # FileHandle=StdErrorHandle
+            // mov $0x0,%edx            # Event = NULL
+            // mov %edx,%r8d            # ApcRoutine = NULL
+            // mov %edx,%r9d            # ApcContext = NULL
+            // push %rdx                # Key = NULL
+            // push %rdx                # ByteOffset = NULL
+            // mov $strlen,%eax
+            // push %rax                # Length=asmStrLen
+            // leaq .Lstring(%rip),%rax
+            // push %rax                # Buffer=asmStr
+            // lea 0x78(%rsp),%rax
+            // push %rax                # IoStatusBlock=...
+            // lea -0x28(%rsp),%rsp
+            fprintf(out, "%u,%u,%u,%u,%u,{\"int32\":%d},",
+                0x65, 0x48, 0x8b, 0x04, 0x25, 0x60);
+            fprintf(out, "%u,%u,%u,{\"int8\":%d},",
+                0x48, 0x8b, 0x40, 0x20);
+            fprintf(out, "%u,%u,%u,{\"int8\":%d},",
+                0x4c, 0x8b, 0x50, 0x30);
+            fprintf(out, "%u,\{\"int32\":%d},",
+                0xba, 0x0);
+            fprintf(out, "%u,%u,%u,",
+                0x41, 0x89, 0xd0);
+            fprintf(out, "%u,%u,%u,",
+                0x41, 0x89, 0xd1);
+            fprintf(out, "%u,", 0x52);
+            fprintf(out, "%u,", 0x52);
+            fprintf(out, "%u,\"$asmStrLen\",",
+                0xb8);
+            fprintf(out, "%u,", 0x50);
+            fprintf(out, "%u,%u,%u,{\"rel32\":\".Lstring\"},",
+                0x48, 0x8d, 0x05);
+            fprintf(out, "%u,", 0x50);
+            fprintf(out, "%u,%u,%u,%u,{\"int8\":%d},",
+                0x48, 0x8d, 0x44, 0x24, 0x78);
+            fprintf(out, "%u,", 0x50);
+            fprintf(out, "%u,%u,%u,%u,{\"int8\":%d},",
+                0x48, 0x8d, 0x64, 0x24, -0x28);
+
+            // mov $0x8,%eax            # 0x8 = NtWriteFile
+            // syscall
+            fprintf(out, "%u,{\"int32\":%d},",
+                0xb8, 0x8);
+            fprintf(out, "%u,%u", 0x0f, 0x05);
+
+            // lea 0x50(%rsp),%rsp
+            // pop %r11
+            // pop %rax
+            // pop %r9
+            // pop %r8
+            // pop %rdx
+            // pop %rcx
+            // lea 0x1000(%rsp),%rsp
+            fprintf(out, ",%u,%u,%u,%u,{\"int8\":%d}",
+                0x48, 0x8d, 0x64, 0x24, 0x50);
+            fprintf(out, ",%u,%u", 0x41, 0x5b);
+            fprintf(out, ",%u", 0x58);
+            fprintf(out, ",%u,%u", 0x41, 0x59);
+            fprintf(out, ",%u,%u", 0x41, 0x58);
+            fprintf(out, ",%u", 0x5a);
+            fprintf(out, ",%u", 0x59);
+            fprintf(out, ",%u,%u,%u,%u,{\"int32\":%d}",
+                0x48, 0x8d, 0xa4, 0x24, 0x1000);
+
+            break;
+    }
+
     // Execute the displaced instruction, and return from the trampoline:
     fprintf(out, ",\"$instruction\",\"$continue\"");
     
