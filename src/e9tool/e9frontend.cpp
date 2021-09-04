@@ -2384,11 +2384,7 @@ ELF *e9frontend::parsePE(const char *filename)
     static const uint16_t PE64_MAGIC = 0x020b;
     if (opt_hdr->Magic != PE64_MAGIC)
         error("failed to parse PE file \"%s\"; invalid magic number (0x%x), "
-            "expected PE64 (0x%x)", opt_hdr->Magic, PE64_MAGIC);
-    uint32_t file_align = opt_hdr->FileAlignment;
-    if (file_align < 512)
-        error("failed to parse PE file \"%s\"; invalid file alignment (%u), "
-            "expected (>=512)", file_align, filename);
+            "expected PE64 (0x%x)", filename, opt_hdr->Magic, PE64_MAGIC);
     const IMAGE_SECTION_HEADER *shdrs =
         (PIMAGE_SECTION_HEADER)&opt_hdr->DataDirectory[
             opt_hdr->NumberOfRvaAndSizes];
@@ -2403,8 +2399,7 @@ ELF *e9frontend::parsePE(const char *filename)
     {
         const IMAGE_SECTION_HEADER *shdr = shdrs + i;
         off_t offset  = (off_t)shdr->PointerToRawData;
-        intptr_t addr =
-            (intptr_t)opt_hdr->ImageBase + (intptr_t)shdr->VirtualAddress;
+        intptr_t addr = (intptr_t)shdr->VirtualAddress;
         size_t size   = (size_t)shdr->VirtualSize;
         Elf64_Shdr *elf_shdr = new Elf64_Shdr;
 

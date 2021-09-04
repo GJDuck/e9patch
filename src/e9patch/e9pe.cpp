@@ -156,11 +156,21 @@ void parsePE(Binary *B)
     static const uint16_t PE64_MAGIC = 0x020b;
     if (opt_hdr->Magic != PE64_MAGIC)
         error("failed to parse PE file \"%s\"; invalid magic number (0x%x), "
-            "expected PE64 (0x%x)", opt_hdr->Magic, PE64_MAGIC);
+            "expected PE64 (0x%x)", filename, opt_hdr->Magic, PE64_MAGIC);
     uint32_t file_align = opt_hdr->FileAlignment;
     if (file_align < 512)
         error("failed to parse PE file \"%s\"; invalid file alignment (%u), "
-            "expected (>=512)", file_align, filename);
+            "expected (>=512)", filename, file_align);
+    uint64_t image_base = opt_hdr->ImageBase;
+    if (image_base % WINDOWS_VIRTUAL_ALLOC_SIZE != 0)
+        error("failed to parse PE file \"%s\"; invalid image base (0x%lx), "
+            "expected a multiple of virtual allocation granularity (%u)",
+            filename, image_base, WINDOWS_VIRTUAL_ALLOC_SIZE);
+    uint64_t image_base_min = 0x180000000;
+    if (image_base < image_base_min)
+        error("failed to parse PE file \"%s\"; not-yet-implemented image "
+            "base (0x%lx), must be (>=0x%lx)", filename, image_base,
+            image_base_min);
     PIMAGE_SECTION_HEADER shdr =
         (PIMAGE_SECTION_HEADER)&opt_hdr->DataDirectory[
             opt_hdr->NumberOfRvaAndSizes];
@@ -172,23 +182,21 @@ void parsePE(Binary *B)
         error("failed to parse PE file \"%s\"; invalid section header size "
             "(%zu), expected (<=%zu)", filename, shdr_size_1, size);
     if (shdr_size_1 - shdr_size < 2 * sizeof(IMAGE_SECTION_HEADER))
-        error("failed to parse PE file \"%s\"; no free space in section "
-            "header (NYI)");
+        error("failed to parse PE file \"%s\"; not-yet-implemented section "
+            "headers, no free space", filename);
 
-    // The lower 4GB of the address space in Windows is "polluted", so reserve
-    // it.  TODO: This breaks MinGW binaries
-    if (!reserve(B, RELATIVE_ADDRESS_MIN, 0x100000000))
-        error("failed to reserve low-address range");
-
-    // Reserve the address space occupied by the image itself.  We also
-    // reserve ~1MB space for the loader in advance.
-    intptr_t lb = (intptr_t)opt_hdr->ImageBase;
+    // Reserve the address space occupied by the image itself:
+    intptr_t lb = (intptr_t)image_base;
     intptr_t ub = lb + (intptr_t)opt_hdr->SizeOfImage;
-    lb -= lb % WINDOWS_VIRTUAL_ALLOC_SIZE;
     ub += 16 * WINDOWS_VIRTUAL_ALLOC_SIZE;  // Reserve space for the loader.
     ub  = ALIGN(ub, WINDOWS_VIRTUAL_ALLOC_SIZE);
+    ub -= lb; lb = 0x0;                     // Make relative.
     if (!reserve(B, lb, ub))
         error("failed to reserve image range [0x%lx..0x%lx]", lb, ub);
+
+    // The lower 4GB of the address space in Windows is "polluted":
+    if (!reserve(B, ABSOLUTE_ADDRESS_MIN, ABSOLUTE_ADDRESS(0x100000000)))
+        error("failed to reserve low-address range");
 
     info.file_hdr  = file_hdr;
     info.opt_hdr   = opt_hdr;
@@ -258,7 +266,6 @@ size_t emitPE(const Binary *B, const MappingSet &mappings, size_t mapping_size)
     config->maps[1] = (uint32_t)(size - config_offset);
     for (auto mapping: mappings)
     {
-        // XXX: TODO: refactor!
         stat_num_physical_bytes += mapping->size;
         off_t offset_0 = mapping->offset;
         for (; mapping != nullptr; mapping = mapping->merged)
@@ -274,12 +281,10 @@ size_t emitPE(const Binary *B, const MappingSet &mappings, size_t mapping_size)
                 size_t len    = b.ub - b.lb;
                 off_t offset  = offset_0 + b.lb;
 
-                debug("load trampoline: mmap(" ADDRESS_FORMAT ", %zu, "
-                    "%s%s%s0, MAP_FIXED | MAP_PRIVATE, fd, +%zd)",
-                    ADDRESS(base), len,
-                    (r? "PROT_READ | ": ""),
-                    (w? "PROT_WRITE | ": ""),
-                    (x? "PROT_EXEC | ": ""), offset_0);
+                debug("load trampoline: MapViewOfFileEx(addr=" ADDRESS_FORMAT
+                    ",size=%zu,offset=+%zu,prot=%c%c%c)",
+                    ADDRESS(base), len, offset_0, (r? 'r': '-'),
+                    (w? 'w': '-'), (x? 'x': '-'));
                 stat_num_virtual_bytes += len;
 
                 size += emitLoaderMap(data + size, base, len, offset,

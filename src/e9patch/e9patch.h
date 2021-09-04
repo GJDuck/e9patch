@@ -358,7 +358,6 @@ struct ElfInfo
     Elf64_Phdr *phdr_gnu_relro;     // PHDR PT_GNU_RELRO (used for loader?).
     Elf64_Phdr *phdr_gnu_stack;     // PHDR PT_GNU_STACK (used for loader?).
     Elf64_Phdr *phdr_dynamic;       // PHDR PT_DYNAMIC else nullptr.
-    bool pic;                       // Position independent?
 };
 
 /*
@@ -447,6 +446,7 @@ struct Binary
         PEInfo pe;                      // PE information.
     };
     Mode mode;                          // Binary mode.
+    bool pic;                           // Position independent?
 
     struct
     {

@@ -2570,16 +2570,6 @@ int main(int argc, char **argv)
     /*
      * Send options message.
      */
-    switch (elf.type)
-    {
-        case BINARY_TYPE_PE_EXE: case BINARY_TYPE_PE_DLL:
-            // Windows mapping granularity is 64KB, so adjust accordingly:
-            if (option_compression_level > 5)
-                option_compression_level = 5;
-            break;
-        default:
-            break;
-    }
     const char *mapping_size[10] = {"2097152", "1048576", "524288", "262144",
         "131072", "65536", "32768", "16384", "8192", "4096"};
     if (option_compression_level != 9)
@@ -2621,7 +2611,7 @@ int main(int argc, char **argv)
             options.push_back("-Oorder=true");
             options.push_back("-Opeephole=true");
             options.push_back("-Oscratch-stack=true");
-            options.push_back("--mem-granularity=128");
+            options.push_back("--mem-granularity=4096");
             break;
         case '3':
             options.push_back("--batch");

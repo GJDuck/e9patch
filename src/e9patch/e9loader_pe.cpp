@@ -426,14 +426,15 @@ void *e9loader(PEB *peb, const struct e9_config_s *config, int32_t reason)
 #define FILE_MAP_COPY           0x0001
 #define FILE_MAP_READ           0x0004
 #define FILE_MAP_EXECUTE        0x0020
-
     const struct e9_map_s *maps =
         (const struct e9_map_s *)(loader_base + config->maps[1]);
     for (uint32_t i = 0; i < config->num_maps[1]; i++)
     {
+        const uint8_t*addr = (maps[i].abs? (const uint8_t *)NULL: image_base);
+        addr += (intptr_t)maps[i].addr * PAGE_SIZE;
         off_t offset = (off_t)maps[i].offset * PAGE_SIZE;
-        size_t len   = (size_t)maps[i].size * PAGE_SIZE;
-        void *addr   = (void *)((intptr_t)maps[i].addr * PAGE_SIZE);
+        size_t len = (size_t)maps[i].size * PAGE_SIZE;
+
         int32_t prot = 0x0;
         if (maps[i].w)
             prot |= FILE_MAP_COPY;
@@ -449,7 +450,7 @@ void *e9loader(PEB *peb, const struct e9_config_s *config, int32_t reason)
         int32_t offset_lo = (int32_t)offset,
                 offset_hi = (int32_t)(offset >> 32);
         void *result = MapViewOfFileEx(mapping, prot, offset_hi, offset_lo,
-            len, addr);
+            len, (void *)addr);
         if (result == NULL)
             e9error("MapViewOfFileEx(addr=%p,size=%U,offset=+%U,prot=%c%c%c) "
                 "failed (error=%d)", addr, len, offset,

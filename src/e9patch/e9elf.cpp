@@ -68,7 +68,7 @@ typedef std::vector<Refactor> RefactorSet;
 /*
  * Parse the ELF file & reserve any occupied address space.
  */
-void parseElf(Binary *B)
+bool parseElf(Binary *B)
 {
     const char *filename = B->filename;
     uint8_t *data = B->patched.bytes;
@@ -178,7 +178,8 @@ void parseElf(Binary *B)
     info.phdr_gnu_relro = phdr_gnu_relro;
     info.phdr_gnu_stack = phdr_gnu_stack;
     info.phdr_dynamic   = phdr_dynamic;
-    info.pic            = pic;
+
+    return pic;
 }
 
 /*
@@ -357,12 +358,10 @@ size_t emitElf(const Binary *B, const MappingSet &mappings,
                     size_t len    = b.ub - b.lb;
                     off_t offset  = offset_0 + b.lb;
 
-                    debug("load trampoline: mmap(" ADDRESS_FORMAT ", %zu, "
-                        "%s%s%s0, MAP_FIXED | MAP_PRIVATE, fd, +%zd)",
-                        ADDRESS(base), len,
-                        (r? "PROT_READ | ": ""),
-                        (w? "PROT_WRITE | ": ""),
-                        (x? "PROT_EXEC | ": ""), offset_0);
+                    debug("load trampoline: mmap(addr=" ADDRESS_FORMAT
+                        ",size=%zu,offset=+%zu,prot=%c%c%c)",
+                        ADDRESS(base), len, offset_0, (r? 'r': '-'),
+                        (w? 'w': '-'), (x? 'x': '-'));
                     stat_num_virtual_bytes += len;
 
                     size += emitLoaderMap(data + size, base, len, offset,

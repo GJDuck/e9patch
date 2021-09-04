@@ -87,13 +87,24 @@ template <typename Key>
 static void bitstring(Key key, std::string &str)
 {
     Key mask = 0xFFFFFFFFFFFFFFFFull;
-    for (unsigned i = 0; i < size(key); i += 64)
+    for (unsigned i = 0; i < size(key); i += 2 * 64)
     {
-        uint64_t key64 = (key & mask).to_ullong();
-        char buf[32];
-        snprintf(buf, sizeof(buf)-1, "%.16lX", key64);
-        str += buf;
-        key >>= 64;
+        const char digs[] = "0123456789ABCDEF";
+        size_t count = 0;
+        for (unsigned j = 0; j < 2; j++)
+        {
+            uint64_t key64 = (key & mask).to_ullong();
+            count += __builtin_popcountll(key64);
+            key >>= 64;
+        }
+        switch (count)
+        {
+            case 0: case 1:
+                break;
+            default:
+                count = 1 + (count - 2) / 9; break;
+        }
+        str += digs[count];
     }
 }
 template <>
