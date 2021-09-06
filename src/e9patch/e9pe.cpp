@@ -16,6 +16,18 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include <cstdint>
+
+#include <sys/mman.h>
+
+#include "e9alloc.h"
+#include "e9elf.h"
+#include "e9loader.h"
+#include "e9mapping.h"
+#include "e9patch.h"
+#include "e9pe.h"
+
+static const
 #include "e9loader_pe.c"
 
 struct _IMAGE_FILE_HEADER

@@ -31,6 +31,7 @@
 #include "e9emit.h"
 #include "e9optimize.h"
 #include "e9patch.h"
+#include "e9pe.h"
 #include "e9json.h"
 #include "e9tactics.h"
 #include "e9x86_64.h"

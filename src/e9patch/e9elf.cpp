@@ -250,8 +250,8 @@ static size_t emitRefactoredPatch(const uint8_t *original, uint8_t *data,
 /*
  * Emit a mapping.
  */
-static size_t emitLoaderMap(uint8_t *data, intptr_t addr, size_t len,
-    off_t offset, bool r, bool w, bool x, intptr_t *ub)
+size_t emitLoaderMap(uint8_t *data, intptr_t addr, size_t len, off_t offset,
+    bool r, bool w, bool x, intptr_t *ub)
 {
     bool abs = IS_ABSOLUTE(addr);
     if (ub != nullptr && !abs)
@@ -503,6 +503,4 @@ size_t emitElf(const Binary *B, const MappingSet &mappings,
     stat_output_file_size = size;
     return size;
 }
-
-#include "e9pe.cpp"
 

@@ -1,5 +1,5 @@
 /*
- * e9elf.h
+ * e9pe.h
  * Copyright (C) 2020 National University of Singapore
  *
  * This program is free software: you can redistribute it and/or modify
@@ -16,20 +16,15 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#ifndef __E9ELF_H
-#define __E9ELF_H
-
-#include <cstdint>
+#ifndef __E9PE_H
+#define __E9PE_H
 
 #include "e9alloc.h"
 #include "e9mapping.h"
 #include "e9patch.h"
 
-bool parseElf(Binary *B);
-size_t emitElf(const Binary *B, const MappingSet &mappings,
+void parsePE(Binary *B);
+size_t emitPE(const Binary *B, const MappingSet &mappings,
     size_t mapping_size);
-
-size_t emitLoaderMap(uint8_t *data, intptr_t addr, size_t len, off_t offset,
-    bool r, bool w, bool x, intptr_t *ub);
 
 #endif

@@ -474,10 +474,12 @@ void *e9loader(PEB *peb, const struct e9_config_s *config, int32_t reason)
             prot |= FILE_MAP_READ;
         prot |= (maps[i].x? FILE_MAP_EXECUTE: 0x0);
 
+#if 0
         e9debug("MapViewOfFileEx(addr=%p,size=%U,offset=+%U,prot=%c%c%c)",
             addr, len, offset,
             (maps[i].r? 'r': '-'), (maps[i].w? 'w': '-'),
             (maps[i].x? 'x': '-'));
+#endif
 
         int32_t offset_lo = (int32_t)offset,
                 offset_hi = (int32_t)(offset >> 32);
@@ -517,14 +519,9 @@ void *e9loader(PEB *peb, const struct e9_config_s *config, int32_t reason)
     {
         uint8_t *base = (uint8_t *)config;
         uint32_t old_prot;
-        if (!VirtualProtect(base, config->size, PAGE_EXECUTE_READ, &old_prot))
-            e9debug("VirtualProtect failed (error=%d)", GetLastError());
+        (void)VirtualProtect(base, config->size, PAGE_EXECUTE_READ, &old_prot);
     }
-    e9debug("NtReadFile  = %p", win64->nt_read_file);
-    e9debug("NtWriteFile = %p", win64->nt_write_file);
     
-    // Step (6): Return the entry point:
-    e9debug("entry=%p", entry);
     return entry;
 }
 

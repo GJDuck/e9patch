@@ -2328,7 +2328,7 @@ extern unsigned sendTrampolineMessage(FILE *out, const char *name,
  * ELF functions.
  */
 extern ELF *parseELF(const char *filename, intptr_t base = 0x0);
-extern ELF *parsePE(const char *filename);
+extern ELF *parsePE(const char *filename);  // See note
 extern ELF *parseBinary(const char *filename, intptr_t base = 0x0);
 extern void freeELF(ELF *elf);
 extern BinaryType getELFType(const ELF *elf);
@@ -2348,6 +2348,10 @@ extern const SymbolInfo &getELFDynSymInfo(const ELF *elf);
 extern const SymbolInfo &getELFSymInfo(const ELF *elf);
 extern const GOTInfo &getELFGOTInfo(const ELF *elf);
 extern const PLTInfo &getELFPLTInfo(const ELF *elf);
+
+// Note: Windows PE files are parsed as "pseudo-ELF" files.  This saves having
+//       to rewrite/redesign large parts of E9Tool.  This will likely change
+//       in future.
 
 /*
  * Misc. functions:
