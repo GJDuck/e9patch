@@ -152,15 +152,29 @@ typedef std::map<Symbol, intptr_t> Symbols;
 /*
  * Get argument register index.
  */
-static int getArgRegIdx(int argno)
+static int getArgRegIdx(bool sysv, int argno)
 {
-    if (argno <= R9_IDX)
-        return argno;
-    if (argno == RFLAGS_IDX)
-        return R10_IDX;
-    if (argno == RAX_IDX)
-        return R11_IDX;
-    return -1;
+    switch (argno)
+    {
+        case 0:
+            return (sysv? RDI_IDX: RCX_IDX);
+        case 1:
+            return (sysv? RSI_IDX: RDX_IDX);
+        case 2:
+            return (sysv? RDX_IDX: R8_IDX);
+        case 3:
+            return (sysv? RCX_IDX: R9_IDX);
+        case 4:
+            return (sysv? R8_IDX: R10_IDX);
+        case 5:
+            return (sysv? R9_IDX: R11_IDX);
+        case 6:
+            return (sysv? R10_IDX: -1);
+        case 7:
+            return (sysv? R11_IDX: -1);
+        default:
+            return -1;
+    }
 }
 
 /*
@@ -802,34 +816,56 @@ static const char *getRegName(Register reg)
 /*
  * Get all callee-save registers.
  */
-static const int *getCallerSaveRegs(bool clean, bool state, bool conditional,
-    size_t num_args)
+static const int *getCallerSaveRegs(bool sysv, bool clean, bool state,
+    bool conditional, size_t num_args)
 {
+    // If "state", then we must save the entire register state:
     static const int state_save[] =
     {
         RAX_IDX, RCX_IDX, RDX_IDX, RBX_IDX, RBP_IDX, RSI_IDX, RDI_IDX, R8_IDX,
         R9_IDX, R10_IDX, R11_IDX, R12_IDX, R13_IDX, R14_IDX, R15_IDX,
         RFLAGS_IDX, RSP_IDX, RIP_IDX, -1
     };
-    static const int clean_save[] =
+    if (state)
+        return state_save;
+ 
+    // For clean calls, we must save all caller save registers according
+    // to the corresponding ABI.  Notes:
+    // - To support `conditional', %rcx must be saved first.
+    // - %rax must be saved before %rflags.
+    static const int clean_sysv_save[] =
     {
         RCX_IDX, RAX_IDX, RFLAGS_IDX, R11_IDX, R10_IDX, R9_IDX, R8_IDX,
         RDX_IDX, RSI_IDX, RDI_IDX, -1
     };
-    static const int naked_save[] =
+    static const int clean_win64_save[] =
+    {
+        RCX_IDX, RAX_IDX, RFLAGS_IDX, R11_IDX, R10_IDX, R9_IDX, R8_IDX,
+        RDX_IDX, -1
+    };
+    const int *clean_save = (sysv? clean_sysv_save: clean_win64_save);
+    if (clean)
+        return clean_save;
+
+    // For `naked' calls, we only save the number of registers actually used
+    // by args.
+    static const int naked_sysv_save[] =
     {
         R11_IDX, R10_IDX, R9_IDX, R8_IDX, RCX_IDX, RDX_IDX, RSI_IDX, RDI_IDX,
         -1
     };
-    if (state)
-        return state_save;
-    else if (clean)
-        return clean_save;
-    else if (!conditional)
-        return naked_save + (8 - num_args);
-    else
+    static const int naked_win64_save[] =
     {
-        // If conditional, %rax must be the first register:
+        R11_IDX, R10_IDX, R9_IDX, R8_IDX, RDX_IDX, RCX_IDX, -1
+    };
+    const int *naked_save = (sysv? naked_sysv_save: naked_win64_save);
+    unsigned naked_len    = (sysv? 8: 6);
+    if (!conditional)
+        return naked_save + (naked_len - num_args);
+
+    // For `conditional+naked' calls. %rax must be saved first:
+    if (sysv)
+    {
         static const int conditional_save[][10] =
         {
             {RAX_IDX, -1},
@@ -843,6 +879,20 @@ static const int *getCallerSaveRegs(bool clean, bool state, bool conditional,
                 RDI_IDX, -1},
             {RAX_IDX, R11_IDX, R10_IDX, R9_IDX, R8_IDX, RCX_IDX, RDX_IDX,
                 RSI_IDX, RDI_IDX, -1},
+        };
+        return conditional_save[num_args];
+    }
+    else
+    {
+        static const int conditional_save[][10] =
+        {
+            {RAX_IDX, -1},
+            {RAX_IDX, RCX_IDX, -1},
+            {RAX_IDX, RDX_IDX, RCX_IDX, -1},
+            {RAX_IDX, R8_IDX, RDX_IDX, RCX_IDX, -1},
+            {RAX_IDX, R9_IDX, R8_IDX, RDX_IDX, RCX_IDX, -1},
+            {RAX_IDX, R10_IDX, R9_IDX, R8_IDX, RDX_IDX, RCX_IDX, -1},
+            {RAX_IDX, R11_IDX, R10_IDX, R9_IDX, R8_IDX, RDX_IDX, RCX_IDX, -1},
         };
         return conditional_save[num_args];
     }
@@ -1151,9 +1201,9 @@ struct CallInfo
     /*
      * Constructor.
      */
-    CallInfo(bool clean, bool state,  bool conditional, size_t num_args,
-             bool before, bool pic) :
-        rsave(getCallerSaveRegs(clean, state, conditional, num_args)),
+    CallInfo(bool sysv, bool clean, bool state,  bool conditional,
+            size_t num_args, bool before, bool pic) :
+        rsave(getCallerSaveRegs(sysv, clean, state, conditional, num_args)),
         before(before), pic(pic)
     {
         for (unsigned i = 0; rsave[i] >= 0; i++)
@@ -3530,7 +3580,8 @@ static void sendLeaFromStackToR64(FILE *out, int32_t offset, int regno)
  * Send a call ELF trampoline.
  */
 unsigned e9frontend::sendCallTrampolineMessage(FILE *out, const char *name,
-    const std::vector<Argument> &args, bool clean, CallKind call)
+    const std::vector<Argument> &args, BinaryType type, bool clean,
+    CallKind call)
 {
     bool state = false;
     for (const auto &arg: args)
@@ -3540,6 +3591,15 @@ unsigned e9frontend::sendCallTrampolineMessage(FILE *out, const char *name,
             state = true;
             break;
         }
+    }
+    bool sysv = true;
+    switch (type)
+    {
+        case BINARY_TYPE_PE_EXE: case BINARY_TYPE_PE_DLL:
+            sysv = false;
+            break;
+        default:
+            break;
     }
 
     sendMessageHeader(out, "trampoline");
@@ -3563,7 +3623,8 @@ unsigned e9frontend::sendCallTrampolineMessage(FILE *out, const char *name,
     // Push all caller-save registers:
     bool conditional = (call == CALL_CONDITIONAL ||
                         call == CALL_CONDITIONAL_JUMP);
-    const int *rsave = getCallerSaveRegs(clean, state, conditional, args.size());
+    const int *rsave = getCallerSaveRegs(sysv, clean, state, conditional,
+        args.size());
     int num_rsave = 0;
     Register rscratch = (clean || state? REGISTER_RAX: REGISTER_INVALID);
     int32_t offset = 0x4000;
@@ -3576,11 +3637,23 @@ unsigned e9frontend::sendCallTrampolineMessage(FILE *out, const char *name,
 
     // Load the arguments:
     fputs("\"$loadArgs\",", out);
+    if (!sysv)
+    {
+        // lea -0x20(%rsp),%rsp         # MS ABI red-zone
+        fprintf(out, "%u,%u,%u,%u,{\"int8\":%d},",
+            0x48, 0x8d, 0x64, 0x24, -0x20);
+    }
 
     // Call the function:
     fprintf(out, "%u,\"$function\",", 0xe8);        // callq function
 
     // Restore the state:
+    if (!sysv)
+    {
+        // lea 0x20(%rsp),%rsp          # MS ABI red-zone
+        fprintf(out, "%u,%u,%u,%u,{\"int8\":%d},",
+            0x48, 0x8d, 0x64, 0x24, 0x20);
+    }
     fputs("\"$restoreState\",", out);
     
     // If clean & conditional & !state, store result in %rcx, else in %rax

@@ -2319,7 +2319,7 @@ extern unsigned sendPrintTrampolineMessage(FILE *out, BinaryType type);
 extern unsigned sendTrapTrampolineMessage(FILE *out);
 extern unsigned sendExitTrampolineMessage(FILE *out, int status);
 extern unsigned sendCallTrampolineMessage(FILE *out, const char *name,
-    const std::vector<Argument> &args, bool clean = true, 
+    const std::vector<Argument> &args, BinaryType type, bool clean = true, 
     CallKind call = CALL_BEFORE);
 extern unsigned sendTrampolineMessage(FILE *out, const char *name,
     const char *template_);

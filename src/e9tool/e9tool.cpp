@@ -2708,7 +2708,7 @@ int main(int argc, char **argv)
                 if (j == have_call.end())
                 {
                     sendCallTrampolineMessage(backend.out, action->name,
-                        action->args, action->clean, action->call);
+                        action->args, elf.type, action->clean, action->call);
                     have_call.insert(action->name);
                 }
                 break;
