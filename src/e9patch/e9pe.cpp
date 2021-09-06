@@ -202,6 +202,7 @@ void parsePE(Binary *B)
     info.opt_hdr   = opt_hdr;
     info.shdr      = shdr;
     info.free_shdr = shdr + file_hdr->NumberOfSections;
+    info.win64     = opt_hdr->SizeOfImage + sizeof(struct e9_config_s);
 }
 
 /*
@@ -293,6 +294,9 @@ size_t emitPE(const Binary *B, const MappingSet &mappings, size_t mapping_size)
             }
         }
     }
+    size_t win64_size = config_offset + sizeof(struct e9_config_s) +
+        sizeof(struct e9_win64_s);
+    size = (size < win64_size? win64_size: size);
 
     uint32_t addr_of_entry = size_of_image + (uint32_t)(size - config_offset);
     PIMAGE_TLS_DIRECTORY64 tls = (PIMAGE_TLS_DIRECTORY64)findData(B,
@@ -354,7 +358,7 @@ size_t emitPE(const Binary *B, const MappingSet &mappings, size_t mapping_size)
     shdr->SizeOfRawData    = loader_disk_size;
     shdr->PointerToRawData = (uint32_t)loader_offset;
     shdr->Characteristics  = IMAGE_SCN_MEM_EXECUTE | IMAGE_SCN_MEM_READ |
-        IMAGE_SCN_MEM_SHARED;
+        IMAGE_SCN_MEM_WRITE;
 
     uint32_t virtual_size = ALIGN(loader_virtual_size, section_align);
     size_of_image += virtual_size;

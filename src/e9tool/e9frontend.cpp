@@ -1703,24 +1703,29 @@ unsigned e9frontend::sendPrintTrampolineMessage(FILE *out,
         case BINARY_TYPE_PE_EXE: case BINARY_TYPE_PE_DLL:
 
             // lea -0x1000(%rsp),%rsp
+            // push %rax
+            // seto %al
+            // lahf
+            // push %rax
             // push %rcx
             // push %rdx
             // push %r8
             // push %r9
-            // push %rax
+            // push %r10
             // push %r11
             fprintf(out, "%u,%u,%u,%u,{\"int32\":%d},",
                 0x48, 0x8d, 0xa4, 0x24, -0x1000);
+            fprintf(out, "%u,", 0x50);
+            fprintf(out, "%u,%u,%u,", 0x0f, 0x90, 0xc0);
+            fprintf(out, "%u,", 0x9f);
+            fprintf(out, "%u,", 0x50);
             fprintf(out, "%u,", 0x51);
             fprintf(out, "%u,", 0x52);
             fprintf(out, "%u,%u,", 0x41, 0x50);
             fprintf(out, "%u,%u,", 0x41, 0x51);
-            fprintf(out, "%u,", 0x50);
+            fprintf(out, "%u,%u,", 0x41, 0x52);
             fprintf(out, "%u,%u,", 0x41, 0x53);
 
-            // mov %gs:0x60,%rax        # PEB
-            // mov 0x20(%rax),%rax      # PEB->ProcessParameter
-            // mov 0x30(%rax),%r10      # FileHandle=StdErrorHandle
             // mov $0x0,%edx            # Event = NULL
             // mov %edx,%r8d            # ApcRoutine = NULL
             // mov %edx,%r9d            # ApcContext = NULL
@@ -1732,13 +1737,10 @@ unsigned e9frontend::sendPrintTrampolineMessage(FILE *out,
             // push %rax                # Buffer=asmStr
             // lea 0x78(%rsp),%rax
             // push %rax                # IoStatusBlock=...
-            // lea -0x28(%rsp),%rsp
-            fprintf(out, "%u,%u,%u,%u,%u,{\"int32\":%d},",
-                0x65, 0x48, 0x8b, 0x04, 0x25, 0x60);
-            fprintf(out, "%u,%u,%u,{\"int8\":%d},",
-                0x48, 0x8b, 0x40, 0x20);
-            fprintf(out, "%u,%u,%u,{\"int8\":%d},",
-                0x4c, 0x8b, 0x50, 0x30);
+            // lea -0x20(%rsp),%rsp
+            // leaq .Lwin64(%rip),%rax  # win64 struct
+            // mov 0x30(%rax),%rcx      # FileHandle=StdErrorHandle
+            // callq *0x40(%rax)        # call NtWriteFile
             fprintf(out, "%u,\{\"int32\":%d},",
                 0xba, 0x0);
             fprintf(out, "%u,%u,%u,",
@@ -1757,30 +1759,38 @@ unsigned e9frontend::sendPrintTrampolineMessage(FILE *out,
                 0x48, 0x8d, 0x44, 0x24, 0x78);
             fprintf(out, "%u,", 0x50);
             fprintf(out, "%u,%u,%u,%u,{\"int8\":%d},",
-                0x48, 0x8d, 0x64, 0x24, -0x28);
+                0x48, 0x8d, 0x64, 0x24, -0x20);
+            fprintf(out, "%u,%u,%u,{\"rel32\":\".Lwin64\"},",
+                0x48, 0x8d, 0x05);
+            fprintf(out, "%u,%u,%u,{\"int8\":%d},",
+                0x48, 0x8b, 0x48, 0x30);
+            fprintf(out, "%u,%u,{\"int8\":%d}",
+                0xff, 0x50, 0x40);
 
-            // mov $0x8,%eax            # 0x8 = NtWriteFile
-            // syscall
-            fprintf(out, "%u,{\"int32\":%d},",
-                0xb8, 0x8);
-            fprintf(out, "%u,%u", 0x0f, 0x05);
-
-            // lea 0x50(%rsp),%rsp
+            // lea 0x48(%rsp),%rsp
             // pop %r11
-            // pop %rax
+            // pop %r10
             // pop %r9
             // pop %r8
             // pop %rdx
             // pop %rcx
+            // pop %rax
+            // add $0x7f,%al
+            // sahf
+            // pop %rax
             // lea 0x1000(%rsp),%rsp
             fprintf(out, ",%u,%u,%u,%u,{\"int8\":%d}",
-                0x48, 0x8d, 0x64, 0x24, 0x50);
+                0x48, 0x8d, 0x64, 0x24, 0x48);
             fprintf(out, ",%u,%u", 0x41, 0x5b);
-            fprintf(out, ",%u", 0x58);
+            fprintf(out, ",%u,%u", 0x41, 0x5a);
             fprintf(out, ",%u,%u", 0x41, 0x59);
             fprintf(out, ",%u,%u", 0x41, 0x58);
             fprintf(out, ",%u", 0x5a);
             fprintf(out, ",%u", 0x59);
+            fprintf(out, ",%u", 0x58);
+            fprintf(out, ",%u,%u", 0x04, 0x7f);
+            fprintf(out, ",%u", 0x9e);
+            fprintf(out, ",%u", 0x58);
             fprintf(out, ",%u,%u,%u,%u,{\"int32\":%d}",
                 0x48, 0x8d, 0xa4, 0x24, 0x1000);
 

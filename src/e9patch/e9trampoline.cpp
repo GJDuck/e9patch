@@ -398,6 +398,51 @@ int getTrampolinePrologueSize(const Binary *B, const Instr *I)
 }
 
 /*
+ * Get the address of a "builtin" label, or INTPTR_MIN.
+ */
+static intptr_t getBuiltinLabelAddress(const Binary *B, const Instr *I,
+    const char *label)
+{
+    if (label[0] != '.' && label[1] != 'L')
+        return INTPTR_MIN;
+
+    // Check for "builtin" labels:
+    switch (label[2])
+    {
+        case 'c':
+            if (strcmp(label, ".Lcontinue") == 0)
+                return (intptr_t)I->addr + (intptr_t)I->size;
+            break;
+        case 'i':
+            if (strcmp(label, ".Linstruction") == 0)
+                return (intptr_t)I->addr;
+            break;
+        case 't':
+            if (strcmp(label, ".Ltaken") == 0)
+            {
+                intptr_t target = getCFTTarget(I->addr, I->original.bytes,
+                    I->size, CFT_JCC);
+                if (target == INTPTR_MIN)
+                    error("failed to build trampoline; instruction at address "
+                        "0x%lx is not a conditional branch (as required by "
+                        "\".Ltaken\")", I->addr);
+                return target;
+            }
+            break;
+        case 'w':
+            if (strcmp(label, ".Lwin64") == 0)
+            {
+                if (B->mode != MODE_PE_EXECUTABLE)
+                    error("failed to build trampoline; binary is not a "
+                        "PE executable (as required by \".Lwin64\")");
+                return (intptr_t)B->pe.win64;
+            }
+            break;
+    }
+    return INTPTR_MIN;
+}
+
+/*
  * Calculate trampoline bounds.
  */
 static size_t getTrampolineBounds(const Binary *B, const Trampoline *T,
@@ -442,29 +487,21 @@ static size_t getTrampolineBounds(const Binary *B, const Trampoline *T,
                 size = getTrampolineBounds(B, U, I, depth+1, size, b);
                 continue;
             }
-            case ENTRY_REL8:
+            case ENTRY_REL8: case ENTRY_REL32:
             {
-                size += sizeof(int8_t);
-                if (!entry.use_label)
+                size += (entry.kind == ENTRY_REL8?
+                    sizeof(int8_t): sizeof(int32_t));
+                intptr_t addr = INTPTR_MIN;
+                if (entry.use_label)
+                    addr = getBuiltinLabelAddress(B, I, entry.label);
+                else
+                    addr = (intptr_t)entry.uint64;
+                if (addr != INTPTR_MIN)
                 {
-                    intptr_t lb = (intptr_t)entry.uint64 + (INT8_MIN + 1);
-                    intptr_t ub = (intptr_t)entry.uint64 + (INT8_MAX - 1);
-                    lb -= size;
-                    ub -= size;
-                    b.lb = std::max(b.lb, lb);
-                    b.ub = std::min(b.ub, ub);
-                }
-                continue;
-            }
-            case ENTRY_REL32:
-            {
-                size += sizeof(int32_t);
-                if (!entry.use_label)
-                {
-                    intptr_t lb = (intptr_t)entry.uint64 + (INT32_MIN + 1);
-                    intptr_t ub = (intptr_t)entry.uint64 + (INT32_MAX - 1);
-                    lb -= size;
-                    ub -= size;
+                    intptr_t lb = addr - size + 1 +
+                        (entry.kind == ENTRY_REL8? INT8_MIN: INT32_MIN);
+                    intptr_t ub = addr - size - 1 +
+                        (entry.kind == ENTRY_REL8? INT8_MAX: INT32_MAX);
                     b.lb = std::max(b.lb, lb);
                     b.ub = std::min(b.ub, ub);
                 }
@@ -590,39 +627,18 @@ static off_t buildLabelSet(const Binary *B, const Trampoline *T,
 /*
  * Lookup a label value.
  */
-static off_t lookupLabel(const char *label, const Instr *I, int32_t offset32,
-    const LabelSet &labels)
+static off_t lookupLabel(const Binary *B, const char *label, const Instr *I,
+    int32_t offset32, const LabelSet &labels)
 {
     if (label[0] != '.' && label[1] != 'L')
         error("failed to build trampoline; unknown prefix for \"%s\" label",
             label);
 
-    // Check for "builtin" labels:
-    switch (label[2])
+    intptr_t addr = getBuiltinLabelAddress(B, I, label);
+    if (addr != INTPTR_MIN)
     {
-        case 'c':
-            if (strcmp(label, ".Lcontinue") == 0)
-                return (I == nullptr? 0: (off_t)I->size - (off_t)offset32);
-            break;
-        case 'i':
-            if (strcmp(label, ".Linstruction") == 0)
-                return -(off_t)offset32;
-            break;
-        case 't':
-            if (strcmp(label, ".Ltaken") == 0)
-            {
-                if (I == nullptr)
-                    return 0;
-                intptr_t target = getCFTTarget(I->addr, I->original.bytes,
-                    I->size, CFT_JCC);
-                if (target == INTPTR_MIN)
-                    error("failed to build trampoline; instruction at address "
-                        "0x%lx is not a conditional branch (as required by "
-                        "\".Ltaken\")", I->addr);
-                off_t offset = (off_t)offset32 + (I->addr - target);
-                return offset;
-            }
-            break;
+        off_t offset = (addr - I->addr) - (off_t)offset32;
+        return offset;
     }
 
     // Check for user labels:
@@ -685,7 +701,7 @@ static void buildBytes(const Binary *B, const Trampoline *T,
                 off_t rel = 0;
                 if (entry.use_label)
                 {
-                    rel = lookupLabel(entry.label, I, entry32, labels);
+                    rel = lookupLabel(B, entry.label, I, entry32, labels);
                     rel = rel - (buf.size() +
                         (entry.kind == ENTRY_REL8? sizeof(int8_t):
                                                    sizeof(int32_t)));

@@ -72,6 +72,20 @@ typedef struct _LDR_DATA_TABLE_ENTRY
     uint64_t       TimeDateStamp;
 } LDR_DATA_TABLE_ENTRY, *PLDR_DATA_TABLE_ENTRY;
 
+typedef struct _RTL_USER_PROCESS_PARAMETERS
+{
+    uint32_t MaximumLength;
+    uint32_t Length;
+    uint32_t Flags;
+    uint32_t DebugFlags;
+    void    *ConsoleHandle;
+    uint32_t ConsoleFlags;
+    void    *StdInputHandle;
+    void    *StdOutputHandle;
+    void    *StdErrorHandle;
+    // ...etc.
+} RTL_USER_PROCESS_PARAMETERS, *PRTL_USER_PROCESS_PARAMETERS;
+
 typedef struct _PEB
 {
     uint8_t       Reserved1[2];
@@ -80,7 +94,7 @@ typedef struct _PEB
     void         *Reserved3[1];
     void         *ImageBaseAddress;
     PPEB_LDR_DATA Ldr;
-    void         *ProcessParameters;
+    PRTL_USER_PROCESS_PARAMETERS ProcessParameters;
     void         *SubSystemData;
     void         *ProcessHeap;
     uint8_t       Reserved4[88];
@@ -160,7 +174,7 @@ typedef struct _IMAGE_EXPORT_DIRECTORY
 } IMAGE_EXPORT_DIRECTORY, *PIMAGE_EXPORT_DIRECTORY;
 
 typedef void *(*load_library_t)(const char *lib);
-typedef void *(*get_proc_address_t)(void *module, const char *name);
+typedef void *(*get_proc_address_t)(const void *module, const char *name);
 typedef int32_t *(*get_last_error_t)(void);
 typedef int (*attach_console_t)(int32_t pid);
 typedef void *(*get_std_handle_t)(int32_t handle);
@@ -173,6 +187,8 @@ typedef void *(*create_file_mapping_t)(void *file, void *sec, int32_t prot,
 typedef void *(*map_view_of_file_ex_t)(void *mapping, int32_t access,
     int32_t hi, int32_t lo, size_t size, void *base);
 typedef int (*close_handle_t)(void *handle);
+typedef int (*virtual_protect_t)(void *addr, size_t size, uint32_t prot,
+    uint32_t *old_prot);
 
 #define DLL_PROCESS_ATTACH      1
 #define STD_ERROR_HANDLE        (-12)
@@ -295,6 +311,42 @@ static int e9strcmp(const char *s1, const char *s2)
 }
 
 /*
+ * Find a function from a DLL (a.k.a. GetProcAddress).
+ */
+static NO_INLINE const void *e9get(const uint8_t *dll, const char *target)
+{
+    if (dll == NULL)
+        return NULL;
+
+    uint32_t pe_offset = *(const uint32_t *)(dll + 0x3c);
+    const IMAGE_FILE_HEADER *file_hdr =
+        (PIMAGE_FILE_HEADER)(dll + pe_offset + sizeof(uint32_t));
+    const IMAGE_OPTIONAL_HEADER64 *opt_hdr =
+        (PIMAGE_OPTIONAL_HEADER64)(file_hdr + 1);
+    const IMAGE_EXPORT_DIRECTORY *exports = (PIMAGE_EXPORT_DIRECTORY)(dll +
+        opt_hdr->DataDirectory[IMAGE_DIRECTORY_ENTRY_EXPORT].VirtualAddress);
+
+    const uint32_t *names = (uint32_t *)(dll + exports->AddressOfNames);
+    const uint32_t *funcs = (uint32_t *)(dll + exports->AddressOfFunctions);
+    uint32_t num_names    = exports->NumberOfNames;
+
+    int32_t lo = 0, hi = (int32_t)(num_names - 1);
+    while (lo <= hi)
+    {
+        int32_t mid = (lo + hi) / 2;
+        const char *name = (const char *)(dll + names[mid]);
+        int cmp = e9strcmp(target, name);
+        if (cmp < 0)
+            lo = mid + 1;
+        else if (cmp > 0)
+            hi = mid - 1;
+        else
+            return (const void *)(dll + funcs[mid]);
+    }
+    return NULL;
+}
+
+/*
  * Main loader code.
  */
 void *e9loader(PEB *peb, const struct e9_config_s *config, int32_t reason)
@@ -309,11 +361,11 @@ void *e9loader(PEB *peb, const struct e9_config_s *config, int32_t reason)
     // Step (1): Parse the PEB/LDR for kernel32.dll and our image path:
     PEB_LDR_DATA* ldr = peb->Ldr;
     LIST_ENTRY *curr = ldr->InMemoryOrderModuleList.Flink;
-    const uint8_t *kernel32 = NULL;
+    const uint8_t *kernel32 = NULL, *user32 = NULL, *ntdll = NULL;
     const wchar_t *self = NULL;
 
     while (curr != NULL && curr != &ldr->InMemoryOrderModuleList &&
-            (kernel32 == NULL || self == NULL))
+            (kernel32 == NULL || self == NULL || user32 == NULL))
     {
         const LDR_DATA_TABLE_ENTRY* entry =
             CONTAINING_RECORD(curr, LDR_DATA_TABLE_ENTRY, InMemoryOrderLinks);
@@ -323,50 +375,30 @@ void *e9loader(PEB *peb, const struct e9_config_s *config, int32_t reason)
         name++;     // BaseDllName immediately follows FullDllName
         if (e9wcscasecmp(name->Buffer, L"kernel32.dll") == 0)
             kernel32 = (const uint8_t *)entry->DllBase;
+        else if (e9wcscasecmp(name->Buffer, L"ntdll.dll") == 0)
+            ntdll = (const uint8_t *)entry->DllBase;
+        else if (e9wcscasecmp(name->Buffer, L"user32.dll") == 0)
+            user32 = (const uint8_t *)entry->DllBase;
         curr = curr->Flink;
     }
     if (kernel32 == NULL || self == NULL)
         e9panic();
 
-    // Step (2): Parse the kernel32.dll image for GetProcAddress:
-    uint32_t pe_offset = *(const uint32_t *)(kernel32 + 0x3c);
-    PIMAGE_FILE_HEADER hdr =
-        (PIMAGE_FILE_HEADER)(kernel32 + pe_offset + sizeof(uint32_t));
-    PIMAGE_OPTIONAL_HEADER64 ohdr =
-        (PIMAGE_OPTIONAL_HEADER64)(hdr + 1);
-    PIMAGE_EXPORT_DIRECTORY exports = (PIMAGE_EXPORT_DIRECTORY)
-        (kernel32 +
-            ohdr->DataDirectory[IMAGE_DIRECTORY_ENTRY_EXPORT].VirtualAddress);
-    const uint32_t *names = (uint32_t *)(kernel32 + exports->AddressOfNames);
-    const uint32_t *funcs =
-        (uint32_t *)(kernel32 + exports->AddressOfFunctions);
-    load_library_t LoadLibrary = NULL;
-    get_proc_address_t GetProcAddress = NULL;
-    unsigned num_names = exports->NumberOfNames;
-    for (unsigned i = 0; i < num_names &&
-            (LoadLibrary == NULL || GetProcAddress == NULL); i++)
-    {
-        const char *name = (const char *)(kernel32 + names[i]);
-        if (e9strcmp(name, "LoadLibraryA") == 0)
-            LoadLibrary = (load_library_t)(kernel32 + funcs[i]);
-        else if (e9strcmp(name, "GetProcAddress") == 0)
-            GetProcAddress = (get_proc_address_t)(kernel32 + funcs[i]);
-    }
-    if (LoadLibrary == NULL || GetProcAddress == NULL)
+    // Step (2): Get critical functions necessary for output:
+    get_proc_address_t GetProcAddress =
+        (get_proc_address_t)e9get(kernel32, "GetProcAddress");
+    if (GetProcAddress == NULL)
         e9panic();
-
-    // Step (3): Get critical functions necessary for output:
-    void *handle = (void *)kernel32;
     attach_console_t AttachConsole =
-        (attach_console_t)GetProcAddress(handle, "AttachConsole");
+        (attach_console_t)GetProcAddress(kernel32, "AttachConsole");
     get_std_handle_t GetStdHandle =
-        (get_std_handle_t)GetProcAddress(handle, "GetStdHandle");
+        (get_std_handle_t)GetProcAddress(kernel32, "GetStdHandle");
     if (AttachConsole == NULL || GetStdHandle == NULL)
         e9panic();
     (void)AttachConsole(-1);
     void *stderr = GetStdHandle(STD_ERROR_HANDLE);
     write_console_t WriteConsole =
-        (write_console_t)GetProcAddress(handle, "WriteConsoleA");
+        (write_console_t)GetProcAddress(kernel32, "WriteConsoleA");
     if (WriteConsole == NULL)
         e9panic();
 
@@ -376,33 +408,33 @@ void *e9loader(PEB *peb, const struct e9_config_s *config, int32_t reason)
             config->magic[6] != 'H' || config->magic[7] != '\0')
         e9error("missing \"E9PATCH\" magic number");
 
-    // Step (4): Get functions necessary for loader:
+    // Step (3): Get functions necessary for loader:
     get_last_error_t GetLastError =
-        (get_last_error_t)GetProcAddress(handle, "GetLastError");
+        (get_last_error_t)GetProcAddress(kernel32, "GetLastError");
     if (GetLastError == NULL)
         e9error("GetProcAddress(name=\"GetLastError\") failed");
     create_file_t CreateFile =
-        (create_file_t)GetProcAddress(handle, "CreateFileW");
+        (create_file_t)GetProcAddress(kernel32, "CreateFileW");
     if (CreateFile == NULL)
         e9error("GetProcAddress(name=\"%s\") failed (error=%d)", "CreateFileW",
             GetLastError());
     create_file_mapping_t CreateFileMapping =
-        (create_file_mapping_t)GetProcAddress(handle, "CreateFileMappingA");
+        (create_file_mapping_t)GetProcAddress(kernel32, "CreateFileMappingA");
     if (CreateFileMapping == NULL)
         e9error("GetProcAddress(name=\"%s\") failed (error=%d)",
             "CreateFileMappingA", GetLastError());
     map_view_of_file_ex_t MapViewOfFileEx =
-        (map_view_of_file_ex_t)GetProcAddress(handle, "MapViewOfFileEx");
+        (map_view_of_file_ex_t)GetProcAddress(kernel32, "MapViewOfFileEx");
     if (MapViewOfFileEx == NULL)
         e9error("GetProcAddress(name=\"%s\") failed (error=%d)",
             "MapViewOfFileEx", GetLastError());
     close_handle_t CloseHandle =
-        (close_handle_t)GetProcAddress(handle, "CloseHandle");
+        (close_handle_t)GetProcAddress(kernel32, "CloseHandle");
     if (CloseHandle == NULL)
         e9error("GetProcAddress(name=\"%s\") failed (error=%d)",
             "CloseHandle", GetLastError());
 
-    // Step (5): Load the trampoline code:
+    // Step (4): Load the trampoline code:
 #define GENERIC_READ            0x80000000
 #define GENERIC_EXECUTE         0x20000000
 #define OPEN_EXISTING           3
@@ -464,6 +496,33 @@ void *e9loader(PEB *peb, const struct e9_config_s *config, int32_t reason)
         e9error("failed to close %s handle (error=%d)", "mapping",
             GetLastError());
 
+    // Step (5): Setup the platform-specific data:
+    PRTL_USER_PROCESS_PARAMETERS params = peb->ProcessParameters;
+    struct e9_win64_s *win64 = (struct e9_win64_s *)config->data;
+    win64->get           = (e9_get_t)GetProcAddress;
+    win64->ntdll         = (intptr_t)ntdll;
+    win64->kernel32      = (intptr_t)kernel32;
+    win64->user32        = (intptr_t)user32;
+    win64->stdin         = (intptr_t)params->StdInputHandle;
+    win64->stdout        = (intptr_t)params->StdOutputHandle;
+    win64->stderr        = (intptr_t)params->StdErrorHandle;
+    win64->nt_read_file  =
+        (e9_nt_read_file_t)GetProcAddress(ntdll, "NtReadFile");
+    win64->nt_write_file =
+        (e9_nt_write_file_t)GetProcAddress(ntdll, "NtWriteFile");
+    
+    virtual_protect_t VirtualProtect =
+        (virtual_protect_t)GetProcAddress(kernel32, "VirtualProtect");
+    if (VirtualProtect != NULL)
+    {
+        uint8_t *base = (uint8_t *)config;
+        uint32_t old_prot;
+        if (!VirtualProtect(base, config->size, PAGE_EXECUTE_READ, &old_prot))
+            e9debug("VirtualProtect failed (error=%d)", GetLastError());
+    }
+    e9debug("NtReadFile  = %p", win64->nt_read_file);
+    e9debug("NtWriteFile = %p", win64->nt_write_file);
+    
     // Step (6): Return the entry point:
     e9debug("entry=%p", entry);
     return entry;
