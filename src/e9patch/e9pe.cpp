@@ -166,7 +166,7 @@ void parsePE(Binary *B)
         error("failed to parse PE file \"%s\"; invalid image base (0x%lx), "
             "expected a multiple of virtual allocation granularity (%u)",
             filename, image_base, WINDOWS_VIRTUAL_ALLOC_SIZE);
-    uint64_t image_base_min = 0x180000000;
+    uint64_t image_base_min = 0x100000000;
     if (image_base < image_base_min)
         error("failed to parse PE file \"%s\"; not-yet-implemented image "
             "base (0x%lx), must be (>=0x%lx)", filename, image_base,
@@ -194,8 +194,8 @@ void parsePE(Binary *B)
     if (!reserve(B, lb, ub))
         error("failed to reserve image range [0x%lx..0x%lx]", lb, ub);
 
-    // The lower 4GB of the address space in Windows is "polluted":
-    if (!reserve(B, ABSOLUTE_ADDRESS_MIN, ABSOLUTE_ADDRESS(0x100000000)))
+    // The lower part of the address space in Windows is "polluted":
+    if (!reserve(B, ABSOLUTE_ADDRESS_MIN, ABSOLUTE_ADDRESS(0x80000000)))
         error("failed to reserve low-address range");
 
     info.file_hdr  = file_hdr;
