@@ -509,11 +509,13 @@ extern bool option_trap_entry;
 extern size_t option_mem_granularity;
 extern size_t option_mem_mapping_size;
 extern bool option_mem_multi_page;
+extern intptr_t option_mem_rebase;
 extern intptr_t option_mem_lb;
 extern intptr_t option_mem_ub;
 extern bool option_loader_base_set;
 extern bool option_loader_phdr_set;
 extern bool option_loader_static_set;
+extern bool option_mem_rebase_set;
 
 /*
  * Global statistics.

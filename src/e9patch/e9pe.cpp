@@ -103,13 +103,20 @@ struct _IMAGE_SECTION_HEADER
 
 typedef struct _IMAGE_TLS_DIRECTORY64
 {
-      uint64_t StartAddressOfRawData;
-      uint64_t EndAddressOfRawData;
-      uint64_t AddressOfIndex;
-      uint64_t AddressOfCallBacks;
-      int32_t SizeOfZeroFill;
-      int32_t Characteristics;
+    uint64_t StartAddressOfRawData;
+    uint64_t EndAddressOfRawData;
+    uint64_t AddressOfIndex;
+    uint64_t AddressOfCallBacks;
+    int32_t SizeOfZeroFill;
+    int32_t Characteristics;
 } IMAGE_TLS_DIRECTORY64, *PIMAGE_TLS_DIRECTORY64;
+
+typedef struct _IMAGE_BASE_RELOCATION
+{
+    uint32_t VirtualAddress;
+    uint32_t SizeOfBlock;
+    uint16_t TypeOffset[];
+} IMAGE_BASE_RELOCATION, *PIMAGE_BASE_RELOCATION;
 
 #define IMAGE_SCN_MEM_EXECUTE   0x20000000
 #define IMAGE_SCN_MEM_READ      0x40000000
@@ -123,6 +130,17 @@ typedef struct _IMAGE_TLS_DIRECTORY64
 
 #define ALIGN(x, y)             \
     ((x) % (y) == 0? (x): (x) + (y) - ((x) % (y)))
+
+/*
+ * Simple string hash function.
+ */
+uint64_t hash(const char *s)
+{
+	uint64_t h = 777799777ull;
+	while (*s)
+	    h = (3333331ull * h) ^ (0xe9e9ea1bull * (uint64_t)*s++);
+	return h;
+}
 
 /*
  * Parse a Windows PE executable.
@@ -178,11 +196,16 @@ void parsePE(Binary *B)
         error("failed to parse PE file \"%s\"; invalid image base (0x%lx), "
             "expected a multiple of virtual allocation granularity (%u)",
             filename, image_base, WINDOWS_VIRTUAL_ALLOC_SIZE);
+    bool have_relocs =
+        (opt_hdr->DllCharacteristics & IMAGE_DLLCHARACTERISTICS_DYNAMIC_BASE)
+            != 0;
     uint64_t image_base_min = 0x100000000;
-    if (image_base < image_base_min)
-        error("failed to parse PE file \"%s\"; not-yet-implemented image "
-            "base (0x%lx), must be (>=0x%lx)", filename, image_base,
-            image_base_min);
+    if ((option_mem_rebase == 0 || !have_relocs) &&
+            image_base < image_base_min)
+        error("failed to parse PE file \"%s\"; image base (0x%lx) must be "
+            "(>=0x%lx)%s", filename, image_base, image_base_min,
+            (have_relocs? " (hint: see the `--mem-rebase' option)":
+                ", but relocations are stripped"));
     PIMAGE_SECTION_HEADER shdr =
         (PIMAGE_SECTION_HEADER)&opt_hdr->DataDirectory[
             opt_hdr->NumberOfRvaAndSizes];
@@ -224,7 +247,6 @@ static uint8_t *findData(const Binary *B, uint32_t addr)
 {
     if (addr == 0x0)
         return nullptr;
-
     PIMAGE_FILE_HEADER file_hdr = B->pe.file_hdr;
     PIMAGE_SECTION_HEADER shdr  = B->pe.shdr;
     for (uint16_t i = 0; i < file_hdr->NumberOfSections; i++)
@@ -386,12 +408,74 @@ size_t emitPE(const Binary *B, const MappingSet &mappings, size_t mapping_size)
      * Windows ASLR depends on text relocations, which is not compatible with
      * static binary rewriting.  Thus, it must be disabled...
      */
+    bool have_relocs =
+        (opt_hdr->DllCharacteristics & IMAGE_DLLCHARACTERISTICS_DYNAMIC_BASE)
+            != 0;
+    uint32_t relocs =
+        opt_hdr->DataDirectory[IMAGE_DIRECTORY_ENTRY_BASERELOC].VirtualAddress;
+    uint32_t relocs_size =
+        opt_hdr->DataDirectory[IMAGE_DIRECTORY_ENTRY_BASERELOC].Size;
     opt_hdr->DllCharacteristics &= ~IMAGE_DLLCHARACTERISTICS_DYNAMIC_BASE;
     opt_hdr->DataDirectory[IMAGE_DIRECTORY_ENTRY_BASERELOC].VirtualAddress = 0;
     opt_hdr->DataDirectory[IMAGE_DIRECTORY_ENTRY_BASERELOC].Size = 0;
     file_hdr->Characteristics |= IMAGE_FILE_RELOCS_STRIPPED;
 
-    stat_output_file_size = size;
+    /*
+     * Rebase the exectuable (if necessary).
+     */
+    const uint8_t *relocs_base = findData(B, relocs);
+    intptr_t rebase_delta = 0;
+    switch (option_mem_rebase)
+    {
+        case -1:
+        {
+            // Auto rebase
+            uint64_t lo = 0x100000000000ull, hi = 0xB00000000000ull;
+            uint64_t base = hash(B->filename) % (hi - lo) + lo;
+            base -= base % mapping_align;
+			rebase_delta = (intptr_t)base - (intptr_t)opt_hdr->ImageBase;
+            break;
+        }
+        case 0:
+            // No rebase
+            break;
+        default:
+            rebase_delta = option_mem_rebase - (intptr_t)opt_hdr->ImageBase;
+            break;
+    }
+    if (rebase_delta != 0 && !have_relocs)
+        warning("unable to apply `--mem-rebase' option to Windows PE binary "
+            "\"%s\"; relocation information has been stripped", B->filename);
+    uint32_t bytes = 0;
+    while (rebase_delta != 0 && have_relocs &&
+            bytes <= relocs_size - sizeof(IMAGE_BASE_RELOCATION))
+    {
+        const IMAGE_BASE_RELOCATION *block =
+            (const IMAGE_BASE_RELOCATION *)(relocs_base + bytes);
+        if (block->SizeOfBlock < sizeof(IMAGE_BASE_RELOCATION) ||
+                bytes + block->SizeOfBlock > relocs_size)
+            error("invalid base relocation block size (%zu)",
+                block->SizeOfBlock);
+        bytes += block->SizeOfBlock;
+
+        uint8_t *block_base = findData(B, block->VirtualAddress);
+        uint32_t num_entries =
+            (block->SizeOfBlock - sizeof(IMAGE_BASE_RELOCATION)) /
+                sizeof(block->TypeOffset[0]);
+        for (uint32_t i = 0; i < num_entries; i++)
+        {
+            uint16_t type   = (block->TypeOffset[i] >> 12) & 0xF;
+            uint16_t offset = (block->TypeOffset[i] & 0xFFF);
+            if (type == 0x0)
+                continue;
+            if (type != 0xa)
+                error("base relocation type (0x%x) is not-yet-implemented",
+                    type);
+            intptr_t *ptr = (intptr_t *)(block_base + offset);
+            *ptr += rebase_delta;
+        }
+    }
+    opt_hdr->ImageBase += rebase_delta;
 
     if (option_loader_base_set)
         warning("ignoring `--loader-base' option for Windows PE binary");
@@ -399,7 +483,7 @@ size_t emitPE(const Binary *B, const MappingSet &mappings, size_t mapping_size)
         warning("ignoring `--loader-phdr' option for Windows PE binary");
     if (option_loader_static_set)
         warning("ignoring `--loader-static' option for Windows PE binary");
-
+    stat_output_file_size = size;
     return size;
 }
 

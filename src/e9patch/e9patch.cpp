@@ -57,6 +57,7 @@ intptr_t option_mem_lb         = RELATIVE_ADDRESS_MIN;
 intptr_t option_mem_ub         = RELATIVE_ADDRESS_MAX;
 size_t option_mem_mapping_size = PAGE_SIZE;
 bool option_mem_multi_page     = true;
+intptr_t option_mem_rebase     = 0x0;
 std::set<intptr_t> option_trap;
 bool option_trap_all           = false;
 bool option_trap_entry         = false;
@@ -65,6 +66,7 @@ static std::string option_output("-");
 bool option_loader_base_set    = false;
 bool option_loader_phdr_set    = false;
 bool option_loader_static_set  = false;
+bool option_mem_rebase_set     = false;
 
 /*
  * Global statistics.
@@ -140,7 +142,7 @@ void debugImpl(const char *msg, ...)
  * Parse an integer from an optarg.
  */
 static intptr_t parseIntOptArg(const char *option, const char *optarg,
-    intptr_t lb, intptr_t ub)
+    intptr_t lb, intptr_t ub, bool hex = false)
 {
     const char *optarg_0 = optarg;
     bool neg = (optarg[0] == '-');
@@ -155,8 +157,18 @@ static intptr_t parseIntOptArg(const char *option, const char *optarg,
     r = (neg? -r: r);
     if (errno != 0 || end == optarg ||
             (end != nullptr && *end != '\0') || r < lb || r > ub)
-        error("failed to parse argument \"%s\" for the `%s' option; "
-            "expected a number %zd..%zd", option, optarg_0, lb, ub);
+    {
+        if (!hex)
+            error("failed to parse argument \"%s\" for the `%s' option; "
+                "expected a number within the range %zd..%zd", option,
+                optarg_0, lb, ub);
+        else
+            error("failed to parse argument \"%s\" for the `%s' option; "
+                "expected a number within the range %s0x%lx..%s0x%lx",
+                option, optarg_0,
+                (lb < 0? "-": ""), std::abs(lb),
+                (ub < 0? "-": ""), std::abs(ub));
+    }
     return r;
 }
 
@@ -281,6 +293,13 @@ static void usage(FILE *stream, const char *progname)
         "\t\tEnable [disable] trampolines that cross page boundaries.\n"
         "\t\tDefault: true (enabled)\n"
         "\n"
+        "\t--mem-rebase[=ADDR]\n"
+        "\t\tRebase the binary to the absolute address ADDR.  Only\n"
+        "\t\trelevant for Windows PE binaries.  The special value \"auto\"\n"
+        "\t\twill cause a suitable base address to be chose automatically.\n"
+        "\t\tThe special value \"none\" leaves the original base intact.\n"
+        "\t\tDefault: none (disabled)\n"
+        "\n"
         "\t--tactic-B1[=false]\n"
         "\t--tactic-B2[=false]\n"
         "\t--tactic-T1[=false]\n"
@@ -327,6 +346,7 @@ enum Option
     OPTION_MEM_LB,
     OPTION_MEM_MAPPING_SIZE,
     OPTION_MEM_MULTI_PAGE,
+    OPTION_MEM_REBASE,
     OPTION_MEM_UB,
     OPTION_OEPILOGUE,
     OPTION_OEPILOGUE_SIZE,
@@ -374,6 +394,7 @@ void parseOptions(int argc, char * const argv[], bool api)
         {"mem-lb",             req_arg, nullptr, OPTION_MEM_LB},
         {"mem-mapping-size",   req_arg, nullptr, OPTION_MEM_MAPPING_SIZE},
         {"mem-multi-page",     opt_arg, nullptr, OPTION_MEM_MULTI_PAGE},
+        {"mem-rebase",         req_arg, nullptr, OPTION_MEM_REBASE},
         {"mem-ub",             req_arg, nullptr, OPTION_MEM_UB},
         {"output",             req_arg, nullptr, OPTION_OUTPUT},
         {"tactic-B1",          opt_arg, nullptr, OPTION_TACTIC_B1},
@@ -480,7 +501,7 @@ void parseOptions(int argc, char * const argv[], bool api)
                 break;
             case OPTION_TRAP:
                 option_trap.insert(parseIntOptArg("--trap", optarg, 0,
-                    INTPTR_MAX));
+                    INTPTR_MAX, /*hex=*/true));
                 break;
             case OPTION_TRAP_ALL:
                 option_trap_all = parseBoolOptArg("--trap-all", optarg);
@@ -491,7 +512,7 @@ void parseOptions(int argc, char * const argv[], bool api)
             case OPTION_LOADER_BASE:
                 option_loader_base_set = true;
                 option_loader_base = parseIntOptArg("--loader-base", optarg,
-                    0x0, 0x800000000);
+                    0x0, 0x800000000, /*hex=*/true);
                 if (option_loader_base % PAGE_SIZE != 0)
                     error("failed to parse argument \"%s\" for the "
                         "`--loader-base' option; the loader base address "
@@ -533,11 +554,11 @@ void parseOptions(int argc, char * const argv[], bool api)
                 break;
             case OPTION_MEM_LB:
                 option_mem_lb = parseIntOptArg("--mem-lb", optarg,
-                    RELATIVE_ADDRESS_MIN, RELATIVE_ADDRESS_MAX);
+                    RELATIVE_ADDRESS_MIN, RELATIVE_ADDRESS_MAX, /*hex=*/true);
                 break;
             case OPTION_MEM_UB:
                 option_mem_ub = parseIntOptArg("--mem-ub", optarg,
-                    RELATIVE_ADDRESS_MIN, RELATIVE_ADDRESS_MAX);
+                    RELATIVE_ADDRESS_MIN, RELATIVE_ADDRESS_MAX, /*hex=*/true);
                 break;
             case OPTION_MEM_MAPPING_SIZE:
                 option_mem_mapping_size = parseIntOptArg("--mem-mapping-size",
@@ -556,6 +577,16 @@ void parseOptions(int argc, char * const argv[], bool api)
             case OPTION_MEM_MULTI_PAGE:
                 option_mem_multi_page =
                     parseBoolOptArg("--mem-multi-page", optarg);
+                break;
+            case OPTION_MEM_REBASE:
+                option_mem_rebase_set = true;
+                if (strcmp(optarg, "auto") == 0)
+                    option_mem_rebase = -1;
+                else if (strcmp(optarg, "none") == 0)
+                    option_mem_rebase = 0x0;
+                else
+                    option_mem_rebase = parseIntOptArg("--mem-rebase", optarg,
+                        0x100000000ll, 0xffff00000000ll, /*hex=*/true);
                 break;
             default:
                 error("failed to parse command-line options; try `--help' "

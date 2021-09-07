@@ -501,6 +501,10 @@ size_t emitElf(const Binary *B, const MappingSet &mappings,
     phdr->p_align  = PAGE_SIZE;
 
     stat_output_file_size = size;
+
+    if (option_mem_rebase_set)
+        warning("ignoring `--mem-rebase' option for Linux ELF binary");
+
     return size;
 }
 
