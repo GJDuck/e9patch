@@ -237,13 +237,12 @@ void parsePE(Binary *B)
     info.opt_hdr   = opt_hdr;
     info.shdr      = shdr;
     info.free_shdr = shdr + file_hdr->NumberOfSections;
-    info.win64     = opt_hdr->SizeOfImage + sizeof(struct e9_config_s);
 }
 
 /*
  * Find data.
  */
-static uint8_t *findData(const Binary *B, uint32_t addr)
+static uint8_t *findPEData(const Binary *B, uint32_t addr)
 {
     if (addr == 0x0)
         return nullptr;
@@ -265,7 +264,7 @@ static uint8_t *findData(const Binary *B, uint32_t addr)
 /*
  * Emit the (modified) PE executable.
  */
-size_t emitPE(const Binary *B, const MappingSet &mappings, size_t mapping_size)
+size_t emitPE(Binary *B, const MappingSet &mappings, size_t mapping_size)
 {
     uint8_t *data = B->patched.bytes;
     size_t size = B->patched.size;
@@ -274,6 +273,9 @@ size_t emitPE(const Binary *B, const MappingSet &mappings, size_t mapping_size)
     size = ALIGN(size, mapping_align);
      
     // Emit all mappings:
+    PIMAGE_OPTIONAL_HEADER64 opt_hdr = B->pe.opt_hdr;
+    uint32_t size_of_image = opt_hdr->SizeOfImage;
+    B->config = (intptr_t)size_of_image;
     for (auto mapping: mappings)
     {
         uint8_t *base = data + size;
@@ -283,16 +285,13 @@ size_t emitPE(const Binary *B, const MappingSet &mappings, size_t mapping_size)
     }
 
     // Emit the loader:
-    PIMAGE_OPTIONAL_HEADER64 opt_hdr = B->pe.opt_hdr;
-    uint32_t size_of_image = opt_hdr->SizeOfImage;
-
     uint32_t section_align = opt_hdr->SectionAlignment;
     uint32_t file_align = B->pe.opt_hdr->FileAlignment;
     size = ALIGN(size, file_align);
     off_t loader_offset = (off_t)size;
     struct e9_config_s *config = (struct e9_config_s *)(data + size);
     size_t config_offset = size;
-    size += sizeof(struct e9_config_s);
+    size += sizeof(struct e9_config_s) + sizeof(struct e9_config_pe_s);
     const char magic[]   = "E9PATCH";
     memcpy(config->magic, magic, sizeof(magic));
     config->base  = (intptr_t)size_of_image;
@@ -328,15 +327,12 @@ size_t emitPE(const Binary *B, const MappingSet &mappings, size_t mapping_size)
             }
         }
     }
-    size_t win64_size = config_offset + sizeof(struct e9_config_s) +
-        sizeof(struct e9_win64_s);
-    size = (size < win64_size? win64_size: size);
 
     uint32_t addr_of_entry = size_of_image + (uint32_t)(size - config_offset);
-    PIMAGE_TLS_DIRECTORY64 tls = (PIMAGE_TLS_DIRECTORY64)findData(B,
+    PIMAGE_TLS_DIRECTORY64 tls = (PIMAGE_TLS_DIRECTORY64)findPEData(B,
         opt_hdr->DataDirectory[IMAGE_DIRECTORY_ENTRY_TLS].VirtualAddress);
     intptr_t *callbacks = (tls != nullptr?
-        (intptr_t *)findData(B, tls->AddressOfCallBacks - opt_hdr->ImageBase):
+        (intptr_t *)findPEData(B, tls->AddressOfCallBacks - opt_hdr->ImageBase):
         nullptr);
     bool use_tls = (callbacks != nullptr && callbacks[0] != 0x0);
     if (use_tls)
@@ -423,7 +419,7 @@ size_t emitPE(const Binary *B, const MappingSet &mappings, size_t mapping_size)
     /*
      * Rebase the exectuable (if necessary).
      */
-    const uint8_t *relocs_base = findData(B, relocs);
+    const uint8_t *relocs_base = findPEData(B, relocs);
     intptr_t rebase_delta = 0;
     switch (option_mem_rebase)
     {
@@ -458,7 +454,7 @@ size_t emitPE(const Binary *B, const MappingSet &mappings, size_t mapping_size)
                 block->SizeOfBlock);
         bytes += block->SizeOfBlock;
 
-        uint8_t *block_base = findData(B, block->VirtualAddress);
+        uint8_t *block_base = findPEData(B, block->VirtualAddress);
         uint32_t num_entries =
             (block->SizeOfBlock - sizeof(IMAGE_BASE_RELOCATION)) /
                 sizeof(block->TypeOffset[0]);

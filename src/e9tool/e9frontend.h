@@ -2249,6 +2249,7 @@ enum ArgumentKind
     ARGUMENT_MEMOP,                 // Memory operand
     ARGUMENT_STATE,                 // The complete GPR state
     ARGUMENT_SYMBOL,                // Symbol value argument
+    ARGUMENT_CONFIG,                // Pointer to the e9_config_s struct
 
     ARGUMENT_OP,                    // Operand[i]
     ARGUMENT_SRC,                   // Source operand[i]

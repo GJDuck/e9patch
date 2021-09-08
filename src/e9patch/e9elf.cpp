@@ -288,8 +288,7 @@ size_t emitLoaderMap(uint8_t *data, intptr_t addr, size_t len, off_t offset,
 /*
  * Emit the (modified) ELF binary.
  */
-size_t emitElf(const Binary *B, const MappingSet &mappings,
-    size_t mapping_size)
+size_t emitElf(Binary *B, const MappingSet &mappings, size_t mapping_size)
 {
     uint8_t *data = B->patched.bytes;
     size_t size = B->patched.size;
@@ -305,6 +304,7 @@ size_t emitElf(const Binary *B, const MappingSet &mappings,
         B->Is, refactors);
  
     // Step (3): Emit all mappings:
+    B->config = option_loader_base;
     for (auto *mapping: mappings)
     {
         uint8_t *base = data + size;
@@ -319,7 +319,10 @@ size_t emitElf(const Binary *B, const MappingSet &mappings,
     struct e9_config_s *config = (struct e9_config_s *)(data + size);
     size_t config_offset = size;
     size += sizeof(struct e9_config_s);
-    const char magic[]   = "E9PATCH";
+    struct e9_config_elf_s *config_elf =
+        (struct e9_config_elf_s *)(data + size);
+    size += sizeof(struct e9_config_elf_s);
+    const char magic[] = "E9PATCH";
     memcpy(config->magic, magic, sizeof(magic));
     config->base = option_loader_base;
     if (B->mmap != INTPTR_MIN)
@@ -428,7 +431,7 @@ size_t emitElf(const Binary *B, const MappingSet &mappings,
     Elf64_Phdr *phdr = B->elf.phdr_dynamic;
     intptr_t dynamic = -1;
     if (phdr != nullptr)
-        config->dynamic = dynamic = (intptr_t)phdr->p_vaddr;
+        config_elf->dynamic = dynamic = (intptr_t)phdr->p_vaddr;
     switch (B->mode)
     {
         case MODE_ELF_EXECUTABLE:

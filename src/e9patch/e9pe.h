@@ -24,7 +24,6 @@
 #include "e9patch.h"
 
 void parsePE(Binary *B);
-size_t emitPE(const Binary *B, const MappingSet &mappings,
-    size_t mapping_size);
+size_t emitPE(Binary *B, const MappingSet &mappings, size_t mapping_size);
 
 #endif

@@ -200,8 +200,10 @@ void *e9loader(int argc, char **argv, const e9_config_s *config)
     char **envp = NULL;
     if ((config->flags & E9_FLAG_EXE) != 0)
     {
-        if (config->dynamic != 0x0)
-            dynamic = (void *)(elf_base + config->dynamic);
+        const struct e9_config_elf_s *config_elf =
+            (const struct e9_config_elf_s *)(config + 1);
+        if (config_elf->dynamic != 0x0)
+            dynamic = (void *)(elf_base + config_elf->dynamic);
         envp = argv + argc;
     }
     const intptr_t *inits = (const intptr_t *)(loader_base + config->inits);

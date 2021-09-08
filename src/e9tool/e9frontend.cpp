@@ -23,6 +23,7 @@
 
 #include <cerrno>
 #include <cstdarg>
+#include <cstddef>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -42,6 +43,7 @@
 #include <elf.h>
 
 #include "e9frontend.h"
+#include "../e9patch/e9loader.h"
 
 using namespace e9frontend;
 
@@ -1788,9 +1790,17 @@ unsigned e9frontend::sendPrintTrampolineMessage(FILE *out,
             // lea 0x78(%rsp),%rax
             // push %rax                # IoStatusBlock=...
             // lea -0x20(%rsp),%rsp
-            // leaq .Lwin64(%rip),%rax  # win64 struct
-            // mov 0x30(%rax),%rcx      # FileHandle=StdErrorHandle
-            // callq *0x40(%rax)        # call NtWriteFile
+            // leaq .Lconfig(%rip),%rax # E9Patch "config" struct
+            //                          # (see e9loader.h)
+            // mov ...(%rax),%rcx       # FileHandle=config->stderr
+            // callq *...(%rax)         # call config->NtWriteFile()
+            size_t stderr_offset = sizeof(struct e9_config_s) +
+                offsetof(struct e9_config_pe_s, stderr);
+            size_t nt_write_file_offset = sizeof(struct e9_config_s) +
+                offsetof(struct e9_config_pe_s, nt_write_file);
+            assert(stderr_offset <= UINT8_MAX &&
+                nt_write_file_offset <= UINT8_MAX);
+
             fprintf(out, "%u,\{\"int32\":%d},",
                 0xba, 0x0);
             fprintf(out, "%u,%u,%u,",
@@ -1810,12 +1820,12 @@ unsigned e9frontend::sendPrintTrampolineMessage(FILE *out,
             fprintf(out, "%u,", 0x50);
             fprintf(out, "%u,%u,%u,%u,{\"int8\":%d},",
                 0x48, 0x8d, 0x64, 0x24, -0x20);
-            fprintf(out, "%u,%u,%u,{\"rel32\":\".Lwin64\"},",
+            fprintf(out, "%u,%u,%u,{\"rel32\":\".Lconfig\"},",
                 0x48, 0x8d, 0x05);
             fprintf(out, "%u,%u,%u,{\"int8\":%d},",
-                0x48, 0x8b, 0x48, 0x30);
+                0x48, 0x8b, 0x48, (int)stderr_offset);
             fprintf(out, "%u,%u,{\"int8\":%d}",
-                0xff, 0x50, 0x40);
+                0xff, 0x50, (int)nt_write_file_offset);
 
             // lea 0x48(%rsp),%rsp
             // pop %r11

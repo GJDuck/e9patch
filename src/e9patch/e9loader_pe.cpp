@@ -190,6 +190,10 @@ typedef int (*close_handle_t)(void *handle);
 typedef int (*virtual_protect_t)(void *addr, size_t size, uint32_t prot,
     uint32_t *old_prot);
 
+static get_proc_address_t get_proc_address = NULL;
+static e9_nt_write_file_t nt_write_file    = NULL;
+static e9_nt_read_file_t nt_read_file      = NULL;
+
 #define DLL_PROCESS_ATTACH      1
 #define STD_ERROR_HANDLE        (-12)
 #define INVALID_HANDLE_VALUE    ((void *)(-1))
@@ -347,6 +351,104 @@ static NO_INLINE const void *e9get(const uint8_t *dll, const char *target)
 }
 
 /*
+ * Unlike Linux, the Windows kernel uses extended registers (%xmm, etc.),
+ * which means these must be preserved.  This is handled by the e9safe_call()
+ * wrapper.
+ */
+extern "C"
+{
+    intptr_t e9safe_call(void *f, ...);
+}
+asm (
+    ".globl e9safe_call\n"
+    ".type e9safe_call, @function\n"
+    "e9safe_call:\n"
+
+    // Align the stack:
+    "mov %rsp,%r11\n"
+    "and $-64,%rsp\n"
+    "push %r11\n"
+
+    // Save extended state:
+    "lea -(0x1000+64-8)(%rsp),%rsp\n"
+    "mov %rdx,%r10\n"
+    "xor %edx,%edx\n"
+    "mov $0xe7,%eax\n"          // x87,SSE,AVX,AVX512
+    "mov %rdx,512(%rsp)\n"      // Zero XSAVE header
+    "mov %rdx,512+8(%rsp)\n"
+    "mov %rdx,512+16(%rsp)\n"
+    "mov %rdx,512+24(%rsp)\n"
+    "xsave (%rsp)\n"
+
+    // Call the function:
+    "xchg %rcx,%r10\n"
+    "mov %r8,%rdx\n"
+    "mov %r9,%r8\n"
+    "mov 0x28(%r11),%r9\n"
+    "mov 0x88(%r11),%rax\n"
+    "push %rax\n"
+    "mov 0x80(%r11),%rax\n"
+    "push %rax\n"
+    "mov 0x78(%r11),%rax\n"
+    "push %rax\n"
+    "mov 0x70(%r11),%rax\n"
+    "push %rax\n"
+    "mov 0x68(%r11),%rax\n"
+    "push %rax\n"
+    "mov 0x60(%r11),%rax\n"
+    "push %rax\n"
+    "mov 0x58(%r11),%rax\n"
+    "push %rax\n"
+    "mov 0x50(%r11),%rax\n"
+    "push %rax\n"
+    "mov 0x48(%r11),%rax\n"
+    "push %rax\n"
+    "mov 0x40(%r11),%rax\n"
+    "push %rax\n"
+    "mov 0x38(%r11),%rax\n"
+    "push %rax\n"
+    "mov 0x30(%r11),%rax\n"
+    "push %rax\n"
+    "add $-0x20,%rsp\n"
+    "callq *%r10\n"             // f(...)
+
+    // Restore extended state:
+    "mov %rax,%rcx\n"
+    "xor %edx,%edx\n"
+    "mov $0xe7,%eax\n"
+    "xrstor 0x80(%rsp)\n"
+    "mov %rcx,%rax\n"
+    "lea 0x1000+64-8+0x80(%rsp),%rsp\n"
+
+    // Unalign the stack:
+    "pop %rsp\n"
+
+    "retq\n"
+);
+
+/*
+ * System/library call wrappers.
+ */
+static void *e9get_proc_address_wrapper(const void *module, const char *name)
+{
+    return get_proc_address(module, name);
+}
+static int32_t e9nt_write_file_wapper(intptr_t handle, intptr_t event,
+    void *apc_routine, void *apc_ctx, void *status, void *buf,
+    uint32_t len, void *byte_offset, void *key)
+{
+    return e9safe_call((void *)nt_write_file, handle, event, apc_routine,
+        apc_ctx, status, buf, len, byte_offset, key);
+}
+static int32_t e9nt_read_file_wapper(intptr_t handle, intptr_t event,
+    void *apc_routine, void *apc_ctx, void *status, void *buf,
+    uint32_t len, void *byte_offset, void *key)
+{
+    return e9safe_call((void *)nt_read_file, handle, event, apc_routine,
+        apc_ctx, status, buf, len, byte_offset, key);
+}
+
+/*
  * Main loader code.
  */
 void *e9loader(PEB *peb, const struct e9_config_s *config, int32_t reason)
@@ -500,18 +602,21 @@ void *e9loader(PEB *peb, const struct e9_config_s *config, int32_t reason)
 
     // Step (5): Setup the platform-specific data:
     PRTL_USER_PROCESS_PARAMETERS params = peb->ProcessParameters;
-    struct e9_win64_s *win64 = (struct e9_win64_s *)config->data;
-    win64->get           = (e9_get_t)GetProcAddress;
-    win64->ntdll         = (intptr_t)ntdll;
-    win64->kernel32      = (intptr_t)kernel32;
-    win64->user32        = (intptr_t)user32;
-    win64->stdin         = (intptr_t)params->StdInputHandle;
-    win64->stdout        = (intptr_t)params->StdOutputHandle;
-    win64->stderr        = (intptr_t)params->StdErrorHandle;
-    win64->nt_read_file  =
-        (e9_nt_read_file_t)GetProcAddress(ntdll, "NtReadFile");
-    win64->nt_write_file =
-        (e9_nt_write_file_t)GetProcAddress(ntdll, "NtWriteFile");
+    struct e9_config_pe_s *config_pe = (struct e9_config_pe_s *)(config + 1);
+    config_pe->get           =
+        (e9_get_proc_address_t)e9get_proc_address_wrapper;
+    config_pe->ntdll         = ntdll;
+    config_pe->kernel32      = kernel32;
+    config_pe->user32        = user32;
+    config_pe->stdin         = (intptr_t)params->StdInputHandle;
+    config_pe->stdout        = (intptr_t)params->StdOutputHandle;
+    config_pe->stderr        = (intptr_t)params->StdErrorHandle;
+    config_pe->nt_read_file  = e9nt_read_file_wapper;
+    config_pe->nt_write_file = e9nt_write_file_wapper;
+
+    get_proc_address = GetProcAddress;
+    nt_write_file = (e9_nt_write_file_t)GetProcAddress(ntdll, "NtWriteFile");
+    nt_read_file  = (e9_nt_read_file_t)GetProcAddress(ntdll, "NtReadFile");
     
     virtual_protect_t VirtualProtect =
         (virtual_protect_t)GetProcAddress(kernel32, "VirtualProtect");

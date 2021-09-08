@@ -1253,6 +1253,8 @@ static Action *parseAction(const ELF &elf, const char *str,
                         arg = ARGUMENT_BASE; break;
                     case TOKEN_DST:
                         arg = ARGUMENT_DST; break;
+                    case TOKEN_CONFIG:
+                        arg = ARGUMENT_CONFIG; break;
                     case TOKEN_ID:
                         arg = ARGUMENT_ID; break;
                     case TOKEN_IMM:

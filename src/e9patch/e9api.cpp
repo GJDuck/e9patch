@@ -243,7 +243,8 @@ mmap_failed:
     B->patched.bytes = (uint8_t *)ptr;
     B->patched.size  = size;
 
-    // Parse the mmaped ELF file:
+    // Parse the mmap'ed binary:
+    B->config = 0x0;
     switch (B->mode)
     {
         case MODE_ELF_EXECUTABLE: case MODE_ELF_SHARED_OBJECT:

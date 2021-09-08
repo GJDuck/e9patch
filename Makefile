@@ -69,7 +69,8 @@ loader_pe:
 
 src/e9patch/e9alloc.o: CXXFLAGS += -Wno-unused-function
 
-src/e9patch/e9elf.o: loader_elf loader_pe
+src/e9patch/e9elf.o: loader_elf
+src/e9patch/e9pe.o: loader_pe
 
 clean:
 	rm -rf $(E9PATCH_OBJS) e9tool.o e9patch e9tool a.out \

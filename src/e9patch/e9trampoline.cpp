@@ -412,6 +412,8 @@ static intptr_t getBuiltinLabelAddress(const Binary *B, const Instr *I,
         case 'c':
             if (strcmp(label, ".Lcontinue") == 0)
                 return (intptr_t)I->addr + (intptr_t)I->size;
+            else if (strcmp(label, ".Lconfig") == 0)
+                return B->config;
             break;
         case 'i':
             if (strcmp(label, ".Linstruction") == 0)
@@ -427,15 +429,6 @@ static intptr_t getBuiltinLabelAddress(const Binary *B, const Instr *I,
                         "0x%lx is not a conditional branch (as required by "
                         "\".Ltaken\")", I->addr);
                 return target;
-            }
-            break;
-        case 'w':
-            if (strcmp(label, ".Lwin64") == 0)
-            {
-                if (B->mode != MODE_PE_EXECUTABLE)
-                    error("failed to build trampoline; binary is not a "
-                        "PE executable (as required by \".Lwin64\")");
-                return (intptr_t)B->pe.win64;
             }
             break;
     }

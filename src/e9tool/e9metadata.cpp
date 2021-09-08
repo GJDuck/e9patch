@@ -1137,6 +1137,11 @@ static Type sendLoadArgumentMetadata(FILE *out, CallInfo &info,
                 regno);
             t = TYPE_CONST_VOID_PTR;
             break;
+        case ARGUMENT_CONFIG:
+            sendLoadPointerMetadata(out, info, _static, 0x0,
+                "{\"rel32\":\".Lconfig\"}", regno);
+            t = TYPE_CONST_VOID_PTR;
+            break;
         case ARGUMENT_ASM:
             sendLeaFromPCRelToR64(out, "{\"rel32\":\".LasmStr\"}", regno);
             t = TYPE_CONST_CHAR_PTR;
