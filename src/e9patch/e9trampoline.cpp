@@ -663,18 +663,36 @@ static void buildBytes(const Binary *B, const Trampoline *T,
                 for (unsigned i = 0; i < entry.length; i++)
                     buf.push(0x0);
                 continue;  
-            case ENTRY_INT8:
-                buf.push(entry.uint8);
-                break;
-            case ENTRY_INT16:
-                buf.push((uint8_t *)&entry.uint16, sizeof(entry.uint16));
-                break;
-            case ENTRY_INT32:
-                buf.push((uint8_t *)&entry.uint32, sizeof(entry.uint32));
-                break;
+            case ENTRY_INT8: case ENTRY_INT16: case ENTRY_INT32:
             case ENTRY_INT64:
-                buf.push((uint8_t *)&entry.uint64, sizeof(entry.uint64));
-                break;
+            {
+                int64_t val = 0;
+                if (entry.use_label)
+                {
+                    val = lookupLabel(B, entry.label, I, entry32, labels);
+                    val += entry32 + I->addr;
+                }
+                else
+                    val = (int64_t)entry.uint64;
+                switch (entry.kind)
+                {
+                    case ENTRY_INT8:
+                        buf.push((uint8_t)val);
+                        break;
+                    case ENTRY_INT16:
+                        buf.push((uint8_t *)&val, sizeof(uint16_t));
+                        break;
+                    case ENTRY_INT32:
+                        buf.push((uint8_t *)&val, sizeof(uint32_t));
+                        break;
+                    case ENTRY_INT64:
+                        buf.push((uint8_t *)&val, sizeof(uint64_t));
+                        break;
+                    default:
+                        break;
+                }
+                continue;
+            }
  
             case ENTRY_LABEL:
                 continue;
@@ -847,6 +865,8 @@ bool TrampolineCmp::operator()(const Trampoline *a, const Trampoline *b) const
                     return (cmp < 0);
                 break;
             case ENTRY_REL8: case ENTRY_REL32:
+            case ENTRY_INT8: case ENTRY_INT16: case ENTRY_INT32:
+            case ENTRY_INT64:
                 if (entry_a->use_label != entry_b->use_label)
                     return (entry_a->use_label < entry_b->use_label);
                 if (entry_a->use_label)
@@ -860,22 +880,6 @@ bool TrampolineCmp::operator()(const Trampoline *a, const Trampoline *b) const
                     if (entry_a->uint64 != entry_b->uint64)
                         return (entry_a->uint64 < entry_b->uint64);
                 }
-                break;
-            case ENTRY_INT8:
-                if (entry_a->uint8 != entry_b->uint8)
-                    return (entry_a->uint8 < entry_b->uint8);
-                break;
-            case ENTRY_INT16:
-                if (entry_a->uint16 != entry_b->uint16)
-                    return (entry_a->uint16 < entry_b->uint16);
-                break;
-            case ENTRY_INT32:
-                if (entry_a->uint32 != entry_b->uint32)
-                    return (entry_a->uint32 < entry_b->uint32);
-                break;
-            case ENTRY_INT64:
-                if (entry_a->uint64 != entry_b->uint64)
-                    return (entry_a->uint64 < entry_b->uint64);
                 break;
             case ENTRY_DEBUG: case ENTRY_INSTRUCTION:
             case ENTRY_INSTRUCTION_BYTES: case ENTRY_CONTINUE:

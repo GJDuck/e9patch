@@ -744,14 +744,11 @@ static void sendOperandDataMetadata(FILE *out, const InstrInfo *I,
 }
 
 /*
- * Emits instructions to translate an address into a static address, if
- * necessary.  This essentially just subtracts the ELF base address.
+ * Emits instructions to translate to/from static and dynamic addresses.
  */
-static void sendTranslateToStaticAddress(FILE *out, const InstrInfo *I,
-    CallInfo &info, bool _static, int regno)
+static void sendTranslateAddress(FILE *out, const InstrInfo *I, CallInfo &info,
+    bool neg, int regno)
 {
-    if (!_static || !info.pic)
-        return;
     Register exclude[] = {getReg(regno), REGISTER_INVALID};
     Register rscratch = info.getScratch(exclude);
     bool save_rax = false;
@@ -764,26 +761,44 @@ static void sendTranslateToStaticAddress(FILE *out, const InstrInfo *I,
     int regno_1 = getRegIdx(rscratch);
     sendLeaFromPCRelToR64(out, "{\"rel32\":0}", regno_1);
 
-    // The not+lea implement %arg -= %base without affecting %rflags:
-
-    // not %reg
-    const uint8_t REX[] =
-        {0x48, 0x48, 0x48, 0x48, 0x49, 0x49, 0x00,
-         0x48, 0x49, 0x49, 0x48, 0x48, 0x49, 0x49, 0x49, 0x49, 0x48};
-    const uint8_t MODRM[] =
-        {0xd7, 0xd6, 0xd2, 0xd1, 0xd0, 0xd1, 0x00,
-         0xd0, 0xd2, 0xd3, 0xd3, 0xd5, 0xd4, 0xd5, 0xd6, 0xd7, 0xd4};
-    fprintf(out, "%u,%u,%u,", REX[regno_1], 0xf7, MODRM[regno_1]);
+    int32_t disp = 0x0;
+    if (neg)
+    {
+        // The not+lea implement %arg -= %base without affecting %rflags:
+        // not %reg
+        const uint8_t REX[] =
+            {0x48, 0x48, 0x48, 0x48, 0x49, 0x49, 0x00,
+             0x48, 0x49, 0x49, 0x48, 0x48, 0x49, 0x49, 0x49, 0x49, 0x48};
+        const uint8_t MODRM[] =
+            {0xd7, 0xd6, 0xd2, 0xd1, 0xd0, 0xd1, 0x00,
+             0xd0, 0xd2, 0xd3, 0xd3, 0xd5, 0xd4, 0xd5, 0xd6, 0xd7, 0xd4};
+        fprintf(out, "%u,%u,%u,", REX[regno_1], 0xf7, MODRM[regno_1]);
+        disp = 0x1;
+    }
 
     // lea 0x1(%arg,%reg,1),%arg
     sendLoadFromMemOpToR64(out, I, info, /*size=*/8, /*seg=*/REGISTER_NONE,
-        /*disp=*/0x1, /*base=*/getReg(regno), /*index=*/rscratch,
+        disp, /*base=*/getReg(regno), /*index=*/rscratch,
         /*scale=*/1, /*lea=*/true, regno, /*asis=*/true);
 
     if (save_rax)
         fprintf(out, "%u,", 0x58);      // pop %rax
     else
         info.clobber(rscratch);
+}
+static void sendTranslateToStaticAddress(FILE *out, const InstrInfo *I,
+    CallInfo &info, bool _static, int regno)
+{
+    if (!_static || !info.pic)
+        return;
+    sendTranslateAddress(out, I, info, /*neg=*/true, regno);
+}
+static void sendTranslateToDynamicAddress(FILE *out, const InstrInfo *I,
+    CallInfo &info, bool _static, int regno)
+{
+    if (_static || !info.pic)
+        return;
+    sendTranslateAddress(out, I, info, /*neg=*/false, regno);
 }
 
 /*
@@ -1138,8 +1153,21 @@ static Type sendLoadArgumentMetadata(FILE *out, CallInfo &info,
             t = TYPE_CONST_VOID_PTR;
             break;
         case ARGUMENT_CONFIG:
-            sendLoadPointerMetadata(out, info, _static, 0x0,
-                "{\"rel32\":\".Lconfig\"}", regno);
+            // ELF = "config anywhere", PE = "config close".
+            switch (elf->type)
+            {
+                case BINARY_TYPE_ELF_EXE: case BINARY_TYPE_ELF_DSO:
+                case BINARY_TYPE_ELF_PIE:
+                    sendMovFromI64ToR64(out, "{\"int64\":\".Lconfig\"}",
+                        regno);
+                    sendTranslateToDynamicAddress(out, I, info,
+                        /*static=*/false, regno);
+                    break;
+                case BINARY_TYPE_PE_EXE: case BINARY_TYPE_PE_DLL:
+                    sendLeaFromPCRelToR64(out, "{\"rel32\":\".Lconfig\"}",
+                        regno);
+                    break;
+            }
             t = TYPE_CONST_VOID_PTR;
             break;
         case ARGUMENT_ASM:

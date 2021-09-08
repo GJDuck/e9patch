@@ -3526,6 +3526,20 @@ static void sendMovFromI64ToR64(FILE *out, intptr_t value, int regno)
 }
 
 /*
+ * Send a `movabs $i64,%r64' instruction.
+ */
+static void sendMovFromI64ToR64(FILE *out, const char *value, int regno)
+{
+    const uint8_t REX[] =
+        {0x48, 0x48, 0x48, 0x48, 0x49, 0x49, 0x00,
+         0x48, 0x49, 0x49, 0x48, 0x48, 0x49, 0x49, 0x49, 0x49, 0x48};
+    const uint8_t OPCODE[] =
+        {0xbf, 0xbe, 0xba, 0xb9, 0xb8, 0xb9, 0x00,
+         0xb8, 0xba, 0xbb, 0xbb, 0xbd, 0xbc, 0xbd, 0xbe, 0xbf, 0xbc};
+    fprintf(out, "%u,%u,%s,", REX[regno], OPCODE[regno], value);
+}
+
+/*
  * Send a `lea offset(%rip),%r64' instruction.
  */
 static void sendLeaFromPCRelToR64(FILE *out, const char *offset, int regno)

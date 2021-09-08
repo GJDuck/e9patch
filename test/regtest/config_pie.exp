@@ -1,0 +1,14 @@
+cmp %rax, %rbx # diff = 0x20e9e9000
+movq 0x19a(%rip), %rcx # diff = 0x20e9e9000
+cmp %r8, %rcx # diff = 0x20e9e9000
+mov $-0x7777, %rcx # diff = 0x20e9e9000
+and %rax, %rbx # diff = 0x20e9e9000
+cvtsi2ss %rax, %xmm0 # diff = 0x20e9e9000
+test %rax, %rax # diff = 0x20e9e9000
+test %rax, %rax # diff = 0x20e9e9000
+movq %ds:-0x100(%rsp,%rsi,8), %rcx # diff = 0x20e9e9000
+cmp %rax, %rcx # diff = 0x20e9e9000
+movq 0xa000000(%rax), %rcx # diff = 0x20e9e9000
+movq 0xa000000(%rax,%rsi,8), %rcx # diff = 0x20e9e9000
+inc %rdi # diff = 0x20e9e9000
+PASSED
