@@ -1860,8 +1860,17 @@ unsigned e9frontend::sendPrintTrampolineMessage(FILE *out,
 /*
  * Send an "exit" "trampoline" message.
  */
-unsigned e9frontend::sendExitTrampolineMessage(FILE *out, int status)
+unsigned e9frontend::sendExitTrampolineMessage(FILE *out, BinaryType type,
+    int status)
 {
+    switch (type)
+    {
+        case BINARY_TYPE_PE_EXE: case BINARY_TYPE_PE_DLL:
+            error("exit actions for Windows PE binaries are "
+                "not-yet-implemented");
+        default:
+            break;
+    }
     sendMessageHeader(out, "trampoline");
     sendParamHeader(out, "name");
     fprintf(out, "\"$exit_%d\"", status);

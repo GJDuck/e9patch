@@ -1140,6 +1140,10 @@ static void parseParams(Parser &parser, Message &msg)
                         value.integer = (intptr_t)MODE_ELF_SHARED_OBJECT;
                     else if (strcmp(parser.s, "pe.exe") == 0)
                         value.integer = (intptr_t)MODE_PE_EXECUTABLE;
+                    else if (strcmp(parser.s, "pe.dll") == 0)
+                        parse_error(parser, "failed to parse mode string "
+                            "\"%s\"; Windows PE DLLs are not-yet-implemented",
+                            parser.s);
                     else
                         parse_error(parser, "failed to parse mode string "
                             "\"%s\"; expected one of {\"elf.exe\", "

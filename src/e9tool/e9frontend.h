@@ -2317,7 +2317,8 @@ extern void sendELFFileMessage(FILE *out, const ELF *elf,
 extern unsigned sendPassthruTrampolineMessage(FILE *out);
 extern unsigned sendPrintTrampolineMessage(FILE *out, BinaryType type);
 extern unsigned sendTrapTrampolineMessage(FILE *out);
-extern unsigned sendExitTrampolineMessage(FILE *out, int status);
+extern unsigned sendExitTrampolineMessage(FILE *out, BinaryType type,
+    int status);
 extern unsigned sendCallTrampolineMessage(FILE *out, const char *name,
     const std::vector<Argument> &args, BinaryType type, bool clean = true, 
     CallKind call = CALL_BEFORE);

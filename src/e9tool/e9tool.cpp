@@ -2680,7 +2680,8 @@ int main(int argc, char **argv)
                 auto i = have_exit.find(action->status);
                 if (i == have_exit.end())
                 {
-                    sendExitTrampolineMessage(backend.out, action->status);
+                    sendExitTrampolineMessage(backend.out, elf.type, 
+                        action->status);
                     have_exit.insert(action->status);
                 }
                 break;
