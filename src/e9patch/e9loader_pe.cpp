@@ -431,7 +431,7 @@ asm (
  */
 static void *e9get_proc_address_wrapper(const void *module, const char *name)
 {
-    return get_proc_address(module, name);
+    return (void *)e9safe_call((void *)get_proc_address, module, name);
 }
 static int32_t e9nt_write_file_wapper(intptr_t handle, intptr_t event,
     void *apc_routine, void *apc_ctx, void *status, void *buf,
