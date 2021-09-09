@@ -5,7 +5,7 @@
  * |  __/\__, | || (_) | (_) | |
  *  \___|  /_/ \__\___/ \___/|_|
  *  
- * Copyright (C) 2020 National University of Singapore
+ * Copyright (C) 2021 National University of Singapore
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -23,6 +23,7 @@
 
 #include <cerrno>
 #include <cstdarg>
+#include <cstddef>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -42,6 +43,7 @@
 #include <elf.h>
 
 #include "e9frontend.h"
+#include "../e9patch/e9loader.h"
 
 using namespace e9frontend;
 
@@ -152,15 +154,29 @@ typedef std::map<Symbol, intptr_t> Symbols;
 /*
  * Get argument register index.
  */
-static int getArgRegIdx(int argno)
+static int getArgRegIdx(bool sysv, int argno)
 {
-    if (argno <= R9_IDX)
-        return argno;
-    if (argno == RFLAGS_IDX)
-        return R10_IDX;
-    if (argno == RAX_IDX)
-        return R11_IDX;
-    return -1;
+    switch (argno)
+    {
+        case 0:
+            return (sysv? RDI_IDX: RCX_IDX);
+        case 1:
+            return (sysv? RSI_IDX: RDX_IDX);
+        case 2:
+            return (sysv? RDX_IDX: R8_IDX);
+        case 3:
+            return (sysv? RCX_IDX: R9_IDX);
+        case 4:
+            return (sysv? R8_IDX: R10_IDX);
+        case 5:
+            return (sysv? R9_IDX: R11_IDX);
+        case 6:
+            return (sysv? R10_IDX: -1);
+        case 7:
+            return (sysv? R11_IDX: -1);
+        default:
+            return -1;
+    }
 }
 
 /*
@@ -802,34 +818,56 @@ static const char *getRegName(Register reg)
 /*
  * Get all callee-save registers.
  */
-static const int *getCallerSaveRegs(bool clean, bool state, bool conditional,
-    size_t num_args)
+static const int *getCallerSaveRegs(bool sysv, bool clean, bool state,
+    bool conditional, size_t num_args)
 {
+    // If "state", then we must save the entire register state:
     static const int state_save[] =
     {
         RAX_IDX, RCX_IDX, RDX_IDX, RBX_IDX, RBP_IDX, RSI_IDX, RDI_IDX, R8_IDX,
         R9_IDX, R10_IDX, R11_IDX, R12_IDX, R13_IDX, R14_IDX, R15_IDX,
         RFLAGS_IDX, RSP_IDX, RIP_IDX, -1
     };
-    static const int clean_save[] =
+    if (state)
+        return state_save;
+ 
+    // For clean calls, we must save all caller save registers according
+    // to the corresponding ABI.  Notes:
+    // - To support `conditional', %rcx must be saved first.
+    // - %rax must be saved before %rflags.
+    static const int clean_sysv_save[] =
     {
         RCX_IDX, RAX_IDX, RFLAGS_IDX, R11_IDX, R10_IDX, R9_IDX, R8_IDX,
         RDX_IDX, RSI_IDX, RDI_IDX, -1
     };
-    static const int naked_save[] =
+    static const int clean_win64_save[] =
+    {
+        RCX_IDX, RAX_IDX, RFLAGS_IDX, R11_IDX, R10_IDX, R9_IDX, R8_IDX,
+        RDX_IDX, -1
+    };
+    const int *clean_save = (sysv? clean_sysv_save: clean_win64_save);
+    if (clean)
+        return clean_save;
+
+    // For `naked' calls, we only save the number of registers actually used
+    // by args.
+    static const int naked_sysv_save[] =
     {
         R11_IDX, R10_IDX, R9_IDX, R8_IDX, RCX_IDX, RDX_IDX, RSI_IDX, RDI_IDX,
         -1
     };
-    if (state)
-        return state_save;
-    else if (clean)
-        return clean_save;
-    else if (!conditional)
-        return naked_save + (8 - num_args);
-    else
+    static const int naked_win64_save[] =
     {
-        // If conditional, %rax must be the first register:
+        R11_IDX, R10_IDX, R9_IDX, R8_IDX, RDX_IDX, RCX_IDX, -1
+    };
+    const int *naked_save = (sysv? naked_sysv_save: naked_win64_save);
+    unsigned naked_len    = (sysv? 8: 6);
+    if (!conditional)
+        return naked_save + (naked_len - num_args);
+
+    // For `conditional+naked' calls. %rax must be saved first:
+    if (sysv)
+    {
         static const int conditional_save[][10] =
         {
             {RAX_IDX, -1},
@@ -843,6 +881,20 @@ static const int *getCallerSaveRegs(bool clean, bool state, bool conditional,
                 RDI_IDX, -1},
             {RAX_IDX, R11_IDX, R10_IDX, R9_IDX, R8_IDX, RCX_IDX, RDX_IDX,
                 RSI_IDX, RDI_IDX, -1},
+        };
+        return conditional_save[num_args];
+    }
+    else
+    {
+        static const int conditional_save[][10] =
+        {
+            {RAX_IDX, -1},
+            {RAX_IDX, RCX_IDX, -1},
+            {RAX_IDX, RDX_IDX, RCX_IDX, -1},
+            {RAX_IDX, R8_IDX, RDX_IDX, RCX_IDX, -1},
+            {RAX_IDX, R9_IDX, R8_IDX, RDX_IDX, RCX_IDX, -1},
+            {RAX_IDX, R10_IDX, R9_IDX, R8_IDX, RDX_IDX, RCX_IDX, -1},
+            {RAX_IDX, R11_IDX, R10_IDX, R9_IDX, R8_IDX, RDX_IDX, RCX_IDX, -1},
         };
         return conditional_save[num_args];
     }
@@ -1151,9 +1203,9 @@ struct CallInfo
     /*
      * Constructor.
      */
-    CallInfo(bool clean, bool state,  bool conditional, size_t num_args,
-             bool before, bool pic) :
-        rsave(getCallerSaveRegs(clean, state, conditional, num_args)),
+    CallInfo(bool sysv, bool clean, bool state,  bool conditional,
+            size_t num_args, bool before, bool pic) :
+        rsave(getCallerSaveRegs(sysv, clean, state, conditional, num_args)),
         before(before), pic(pic)
     {
         for (unsigned i = 0; rsave[i] >= 0; i++)
@@ -1207,8 +1259,7 @@ namespace e9frontend
         // PLT
         PLTInfo plt;
 
-        bool pie;                       // PIE?
-        bool dso;                       // Shared object?
+        BinaryType type;                // Binary type.
         bool reloc;                     // Needs relocation?
  
         Targets targets;                // Jump/Call targets [optional]
@@ -1632,7 +1683,8 @@ unsigned e9frontend::sendPassthruTrampolineMessage(FILE *out)
 /*
  * Send a "print" "trampoline" message.
  */
-unsigned e9frontend::sendPrintTrampolineMessage(FILE *out)
+unsigned e9frontend::sendPrintTrampolineMessage(FILE *out,
+    e9frontend::BinaryType type)
 {
     sendMessageHeader(out, "trampoline");
     sendParamHeader(out, "name");
@@ -1642,45 +1694,169 @@ unsigned e9frontend::sendPrintTrampolineMessage(FILE *out)
     putc('[', out);
 
     /*
-     * Print instrumentation works by setting up a SYS_write system call that
+     * Print instrumentation works by setting up a "write" system call that
      * prints a string representation of the instruction to stderr.  The
      * string representation is past via macros defined by the "patch"
      * message.
      */
+    switch (type)
+    {
+        case BINARY_TYPE_ELF_DSO: case BINARY_TYPE_ELF_EXE:
+        case BINARY_TYPE_ELF_PIE:
+            // lea -0x4000(%rsp),%rsp
+            // push %rdi
+            // push %rsi
+            // push %rax
+            // push %rcx
+            // push %rdx
+            // push %r11
+            fprintf(out, "%u,%u,%u,%u,{\"int32\":%d},",
+                0x48, 0x8d, 0xa4, 0x24, -0x4000);
+            fprintf(out, "%u,", 0x57);
+            fprintf(out, "%u,", 0x56);
+            fprintf(out, "%u,", 0x50);
+            fprintf(out, "%u,", 0x51);
+            fprintf(out, "%u,", 0x52);
+            fprintf(out, "%u,%u,", 0x41, 0x53);
 
-    // Save registers we intend to use:
-    fprintf(out, "%u,%u,%u,%u,{\"int32\":%d},",     // lea -0x4000(%rsp),%rsp
-        0x48, 0x8d, 0xa4, 0x24, -0x4000);
-    fprintf(out, "%u,", 0x57);                      // push %rdi
-    fprintf(out, "%u,", 0x56);                      // push %rsi
-    fprintf(out, "%u,", 0x50);                      // push %rax
-    fprintf(out, "%u,", 0x51);                      // push %rcx
-    fprintf(out, "%u,", 0x52);                      // push %rdx
-    fprintf(out, "%u,%u,", 0x41, 0x53);             // push %r11
+            // leaq .Lstring(%rip), %rsi
+            // mov $strlen,%edx
+            // mov $0x2,%edi        # stderr
+            // mov $0x1,%eax        # SYS_write
+            fprintf(out, "%u,%u,%u,{\"rel32\":\".Lstring\"},",
+                0x48, 0x8d, 0x35);
+            fprintf(out, "%u,\"$asmStrLen\",", 0xba);
+            fprintf(out, "%u,{\"int32\":%d},",
+                0xbf, 0x02);
+            fprintf(out, "%u,{\"int32\":%d},",
+                0xb8, 0x01);
 
-    // Set-up the arguments to the SYS_write system call:
-    fprintf(out, "%u,%u,%u,", 0x48, 0x8d, 0x35);    // leaq .Lstring(%rip), %rsi
-    fprintf(out, "{\"rel32\":\".Lstring\"},");
-    fprintf(out, "%u,", 0xba);                      // mov $strlen,%edx
-    fprintf(out, "\"$asmStrLen\",");
-    fprintf(out, "%u,%u,%u,%u,%u,",                 // mov $0x2,%edi
-        0xbf, 0x02, 0x00, 0x00, 0x00);
-    fprintf(out, "%u,%u,%u,%u,%u,",                 // mov $0x1,%eax
-        0xb8, 0x01, 0x00, 0x00, 0x00);
+            // syscall
+            fprintf(out, "%u,%u", 0x0f, 0x05);
 
-    // Execute the system call:
-    fprintf(out, "%u,%u", 0x0f, 0x05);              // syscall 
+            // pop %r11
+            // pop %rdx
+            // pop %rcx
+            // pop %rax
+            // pop %rsi
+            // pop %rdi
+            // lea 0x4000(%rsp),%rsp
+            fprintf(out, ",%u,%u", 0x41, 0x5b);
+            fprintf(out, ",%u", 0x5a);
+            fprintf(out, ",%u", 0x59);
+            fprintf(out, ",%u", 0x58);
+            fprintf(out, ",%u", 0x5e);
+            fprintf(out, ",%u", 0x5f);
+            fprintf(out, ",%u,%u,%u,%u,{\"int32\":%d}",
+                0x48, 0x8d, 0xa4, 0x24, 0x4000);
 
-    // Restore the saved registers:
-    fprintf(out, ",%u,%u", 0x41, 0x5b);             // pop %r11
-    fprintf(out, ",%u", 0x5a);                      // pop %rdx
-    fprintf(out, ",%u", 0x59);                      // pop %rcx
-    fprintf(out, ",%u", 0x58);                      // pop %rax
-    fprintf(out, ",%u", 0x5e);                      // pop %rsi
-    fprintf(out, ",%u", 0x5f);                      // pop %rdi
-    fprintf(out, ",%u,%u,%u,%u,{\"int32\":%d}",     // lea 0x4000(%rsp),%rsp
-        0x48, 0x8d, 0xa4, 0x24, 0x4000);
-    
+            break;
+
+        case BINARY_TYPE_PE_EXE: case BINARY_TYPE_PE_DLL:
+
+            // lea -0x1000(%rsp),%rsp
+            // push %rax
+            // seto %al
+            // lahf
+            // push %rax
+            // push %rcx
+            // push %rdx
+            // push %r8
+            // push %r9
+            // push %r10
+            // push %r11
+            fprintf(out, "%u,%u,%u,%u,{\"int32\":%d},",
+                0x48, 0x8d, 0xa4, 0x24, -0x1000);
+            fprintf(out, "%u,", 0x50);
+            fprintf(out, "%u,%u,%u,", 0x0f, 0x90, 0xc0);
+            fprintf(out, "%u,", 0x9f);
+            fprintf(out, "%u,", 0x50);
+            fprintf(out, "%u,", 0x51);
+            fprintf(out, "%u,", 0x52);
+            fprintf(out, "%u,%u,", 0x41, 0x50);
+            fprintf(out, "%u,%u,", 0x41, 0x51);
+            fprintf(out, "%u,%u,", 0x41, 0x52);
+            fprintf(out, "%u,%u,", 0x41, 0x53);
+
+            // mov $0x0,%edx            # Event = NULL
+            // mov %edx,%r8d            # ApcRoutine = NULL
+            // mov %edx,%r9d            # ApcContext = NULL
+            // push %rdx                # Key = NULL
+            // push %rdx                # ByteOffset = NULL
+            // mov $strlen,%eax
+            // push %rax                # Length=asmStrLen
+            // leaq .Lstring(%rip),%rax
+            // push %rax                # Buffer=asmStr
+            // lea 0x78(%rsp),%rax
+            // push %rax                # IoStatusBlock=...
+            // lea -0x20(%rsp),%rsp
+            // leaq .Lconfig(%rip),%rax # E9Patch "config" struct
+            //                          # (see e9loader.h)
+            // mov ...(%rax),%rcx       # FileHandle=config->stderr
+            // callq *...(%rax)         # call config->NtWriteFile()
+            size_t stderr_offset = sizeof(struct e9_config_s) +
+                offsetof(struct e9_config_pe_s, stderr);
+            size_t nt_write_file_offset = sizeof(struct e9_config_s) +
+                offsetof(struct e9_config_pe_s, nt_write_file);
+            assert(stderr_offset <= UINT8_MAX &&
+                nt_write_file_offset <= UINT8_MAX);
+
+            fprintf(out, "%u,\{\"int32\":%d},",
+                0xba, 0x0);
+            fprintf(out, "%u,%u,%u,",
+                0x41, 0x89, 0xd0);
+            fprintf(out, "%u,%u,%u,",
+                0x41, 0x89, 0xd1);
+            fprintf(out, "%u,", 0x52);
+            fprintf(out, "%u,", 0x52);
+            fprintf(out, "%u,\"$asmStrLen\",",
+                0xb8);
+            fprintf(out, "%u,", 0x50);
+            fprintf(out, "%u,%u,%u,{\"rel32\":\".Lstring\"},",
+                0x48, 0x8d, 0x05);
+            fprintf(out, "%u,", 0x50);
+            fprintf(out, "%u,%u,%u,%u,{\"int8\":%d},",
+                0x48, 0x8d, 0x44, 0x24, 0x78);
+            fprintf(out, "%u,", 0x50);
+            fprintf(out, "%u,%u,%u,%u,{\"int8\":%d},",
+                0x48, 0x8d, 0x64, 0x24, -0x20);
+            fprintf(out, "%u,%u,%u,{\"rel32\":\".Lconfig\"},",
+                0x48, 0x8d, 0x05);
+            fprintf(out, "%u,%u,%u,{\"int8\":%d},",
+                0x48, 0x8b, 0x48, (int)stderr_offset);
+            fprintf(out, "%u,%u,{\"int8\":%d}",
+                0xff, 0x50, (int)nt_write_file_offset);
+
+            // lea 0x48(%rsp),%rsp
+            // pop %r11
+            // pop %r10
+            // pop %r9
+            // pop %r8
+            // pop %rdx
+            // pop %rcx
+            // pop %rax
+            // add $0x7f,%al
+            // sahf
+            // pop %rax
+            // lea 0x1000(%rsp),%rsp
+            fprintf(out, ",%u,%u,%u,%u,{\"int8\":%d}",
+                0x48, 0x8d, 0x64, 0x24, 0x48);
+            fprintf(out, ",%u,%u", 0x41, 0x5b);
+            fprintf(out, ",%u,%u", 0x41, 0x5a);
+            fprintf(out, ",%u,%u", 0x41, 0x59);
+            fprintf(out, ",%u,%u", 0x41, 0x58);
+            fprintf(out, ",%u", 0x5a);
+            fprintf(out, ",%u", 0x59);
+            fprintf(out, ",%u", 0x58);
+            fprintf(out, ",%u,%u", 0x04, 0x7f);
+            fprintf(out, ",%u", 0x9e);
+            fprintf(out, ",%u", 0x58);
+            fprintf(out, ",%u,%u,%u,%u,{\"int32\":%d}",
+                0x48, 0x8d, 0xa4, 0x24, 0x1000);
+
+            break;
+    }
+
     // Execute the displaced instruction, and return from the trampoline:
     fprintf(out, ",\"$instruction\",\"$continue\"");
     
@@ -1694,8 +1870,17 @@ unsigned e9frontend::sendPrintTrampolineMessage(FILE *out)
 /*
  * Send an "exit" "trampoline" message.
  */
-unsigned e9frontend::sendExitTrampolineMessage(FILE *out, int status)
+unsigned e9frontend::sendExitTrampolineMessage(FILE *out, BinaryType type,
+    int status)
 {
+    switch (type)
+    {
+        case BINARY_TYPE_PE_EXE: case BINARY_TYPE_PE_DLL:
+            error("exit actions for Windows PE binaries are "
+                "not-yet-implemented");
+        default:
+            break;
+    }
     sendMessageHeader(out, "trampoline");
     sendParamHeader(out, "name");
     fprintf(out, "\"$exit_%d\"", status);
@@ -2124,6 +2309,10 @@ ELF *e9frontend::parseELF(const char *filename, intptr_t base)
             dynstr_tab, /*entry_size=*/8, plt);
     }
 
+    BinaryType type = BINARY_TYPE_ELF_EXE;
+    type = (pic && exe?  BINARY_TYPE_ELF_PIE: type);
+    type = (pic && !exe? BINARY_TYPE_ELF_DSO: type);
+
     ELF *elf = new ELF;
     elf->filename       = strDup(filename);
     elf->data           = data;
@@ -2133,8 +2322,7 @@ ELF *e9frontend::parseELF(const char *filename, intptr_t base)
     elf->strs           = strtab;
     elf->phdrs          = phdrs;
     elf->phnum          = phnum;
-    elf->pie            = (pic && exe);
-    elf->dso            = (pic && !exe);
+    elf->type           = type;
     elf->reloc          = reloc;
     elf->sections.swap(sections);
     elf->dynsyms.swap(dynsyms);
@@ -2148,10 +2336,240 @@ ELF *e9frontend::parseELF(const char *filename, intptr_t base)
 }
 
 /*
+ * Parse a PE file into an ELF structure.
+ */
+typedef struct _IMAGE_FILE_HEADER
+{
+      uint16_t Machine;
+      uint16_t NumberOfSections;
+      uint32_t TimeDateStamp;
+      uint32_t PointerToSymbolTable;
+      uint32_t NumberOfSymbols;
+      uint16_t SizeOfOptionalHeader;
+      uint16_t Characteristics;
+} IMAGE_FILE_HEADER, *PIMAGE_FILE_HEADER;
+#define IMAGE_FILE_MACHINE_AMD64 0x8664
+typedef struct _IMAGE_DATA_DIRECTORY
+{
+      uint32_t VirtualAddress;
+      uint32_t Size;
+} IMAGE_DATA_DIRECTORY, *PIMAGE_DATA_DIRECTORY;
+typedef struct _IMAGE_OPTIONAL_HEADER64
+{
+    uint16_t Magic;
+    uint8_t  MajorLinkerVersion;
+    uint8_t  MinorLinkerVersion;
+    uint32_t SizeOfCode;
+    uint32_t SizeOfInitializedData;
+    uint32_t SizeOfUninitializedData;
+    uint32_t AddressOfEntryPoint;
+    uint32_t BaseOfCode;
+    uint64_t ImageBase;
+    uint32_t SectionAlignment;
+    uint32_t FileAlignment;
+    uint16_t MajorOperatingSystemVersion;
+    uint16_t MinorOperatingSystemVersion;
+    uint16_t MajorImageVersion;
+    uint16_t MinorImageVersion;
+    uint16_t MajorSubsystemVersion;
+    uint16_t MinorSubsystemVersion;
+    uint32_t Win32VersionValue;
+    uint32_t SizeOfImage;
+    uint32_t SizeOfHeaders;
+    uint32_t CheckSum;
+    uint16_t Subsystem;
+    uint16_t DllCharacteristics;
+    uint64_t SizeOfStackReserve;
+    uint64_t SizeOfStackCommit;
+    uint64_t SizeOfHeapReserve;
+    uint64_t SizeOfHeapCommit;
+    uint32_t LoaderFlags;
+    uint32_t NumberOfRvaAndSizes;
+    IMAGE_DATA_DIRECTORY DataDirectory[];
+} IMAGE_OPTIONAL_HEADER64, *PIMAGE_OPTIONAL_HEADER64;
+typedef struct _IMAGE_SECTION_HEADER
+{
+    char Name[8];
+    union
+    {
+        uint32_t PhysicalAddress;
+        uint32_t VirtualSize;
+    };
+    uint32_t VirtualAddress;
+    uint32_t SizeOfRawData;
+    uint32_t PointerToRawData;
+    uint32_t PointerToRelocations;
+    uint32_t PointerToLinenumbers;
+    uint16_t NumberOfRelocations;
+    uint16_t NumberOfLinenumbers;
+    uint32_t Characteristics;
+} IMAGE_SECTION_HEADER, *PIMAGE_SECTION_HEADER;
+#define IMAGE_SCN_MEM_EXECUTE   0x20000000
+#define IMAGE_SCN_MEM_READ      0x40000000
+#define IMAGE_SCN_MEM_WRITE     0x80000000
+#define IMAGE_SCN_MEM_SHARED    0x10000000
+#define IMAGE_SCN_CNT_CODE      0x00000020
+ELF *e9frontend::parsePE(const char *filename)
+{
+    int fd = open(filename, O_RDONLY, 0);
+    if (fd < 0)
+        error("failed to open file \"%s\" for reading: %s", filename,
+            strerror(errno));
+
+    struct stat stat;
+    if (fstat(fd, &stat) != 0)
+        error("failed to get statistics for file \"%s\": %s", filename,
+            strerror(errno));
+
+    size_t size = (size_t)stat.st_size;
+    void *ptr = mmap(NULL, size, MAP_SHARED, PROT_READ, fd, 0);
+    if (ptr == MAP_FAILED)
+        error("failed to map file \"%s\" into memory: %s", filename,
+            strerror(errno));
+    close(fd);
+    const uint8_t *data = (const uint8_t *)ptr;
+
+    if (size < 0x3c + sizeof(uint32_t))
+        error("failed to parse PE file \"%s\"; file size (%zu) is too small "
+            "for MS-DOS header", filename, size);
+    if (data[0] != 'M' || data[1] != 'Z')
+        error("failed to parse PE file \"%s\"; invalid MS-DOS stub header "
+            "magic number, expected \"MZ\"", filename);
+    uint32_t pe_offset = *(const uint32_t *)(data + 0x3c);
+    const size_t pe_hdr_size = sizeof(uint32_t) + sizeof(IMAGE_FILE_HEADER) +
+        sizeof(IMAGE_OPTIONAL_HEADER64);
+    if (pe_offset < 0x3c + sizeof(uint32_t) || pe_offset + pe_hdr_size > size)
+        error("failed to parse PE file \"%s\"; file size (%zu) is too small"
+            "for PE header(s)", filename, size);
+    if (data[pe_offset] != 'P' ||
+            data[pe_offset+1] != 'E' ||
+            data[pe_offset+2] != 0x0 ||
+            data[pe_offset+3] != 0x0)
+        error("failed to parse PE file \"%s\"; invalid PE signature, "
+            "expected \"PE\\0\\0\"", filename);
+    const IMAGE_FILE_HEADER *file_hdr =
+        (PIMAGE_FILE_HEADER)(data + pe_offset + sizeof(uint32_t));
+    if (file_hdr->Machine != IMAGE_FILE_MACHINE_AMD64)
+        error("failed to parse PE file \"%s\"; invalid machine (0x%x), "
+            "expected x86_64 (0x%x)", filename, file_hdr->Machine,
+            IMAGE_FILE_MACHINE_AMD64);
+    if (file_hdr->SizeOfOptionalHeader < sizeof(IMAGE_OPTIONAL_HEADER64))
+        error("failed to parse PE file \"%s\"; invalid optional header "
+            "size (%zu), expected (>=%zu)", filename,
+            file_hdr->SizeOfOptionalHeader,
+            sizeof(IMAGE_OPTIONAL_HEADER64));
+    const IMAGE_OPTIONAL_HEADER64 *opt_hdr =
+        (PIMAGE_OPTIONAL_HEADER64)(file_hdr + 1);
+    static const uint16_t PE64_MAGIC = 0x020b;
+    if (opt_hdr->Magic != PE64_MAGIC)
+        error("failed to parse PE file \"%s\"; invalid magic number (0x%x), "
+            "expected PE64 (0x%x)", filename, opt_hdr->Magic, PE64_MAGIC);
+    const IMAGE_SECTION_HEADER *shdrs =
+        (PIMAGE_SECTION_HEADER)&opt_hdr->DataDirectory[
+            opt_hdr->NumberOfRvaAndSizes];
+
+    /*
+     * Find all sections.
+     */
+    SectionInfo sections;
+    std::map<off_t, const Elf64_Shdr *> exes;
+    std::string strtab;
+    for (uint16_t i = 0; i < file_hdr->NumberOfSections; i++)
+    {
+        const IMAGE_SECTION_HEADER *shdr = shdrs + i;
+        off_t offset  = (off_t)shdr->PointerToRawData;
+        intptr_t addr = (intptr_t)shdr->VirtualAddress;
+        size_t size   = (size_t)shdr->VirtualSize;
+        Elf64_Shdr *elf_shdr = new Elf64_Shdr;
+
+        uint64_t flags = 0;
+        if (offset != 0)
+            flags |= SHF_ALLOC;
+        if ((shdr->Characteristics & IMAGE_SCN_MEM_WRITE) != 0)
+            flags |= SHF_WRITE;
+        if ((shdr->Characteristics & IMAGE_SCN_MEM_EXECUTE) != 0)
+            flags |= SHF_EXECINSTR;
+        elf_shdr->sh_name      = strtab.size();
+        elf_shdr->sh_type      = SHT_PROGBITS;
+        elf_shdr->sh_flags     = flags;
+        elf_shdr->sh_addr      = addr;
+        elf_shdr->sh_offset    = offset;
+        elf_shdr->sh_size      = size;
+        elf_shdr->sh_link      = 0;
+        elf_shdr->sh_info      = 0;
+        elf_shdr->sh_addralign = PAGE_SIZE;
+        elf_shdr->sh_entsize   = 0;
+
+        const char *name = shdr->Name;
+        strtab += shdr->Name;
+        strtab += '\0';
+
+        sections.insert({name, elf_shdr});
+        if ((shdr->Characteristics & IMAGE_SCN_MEM_EXECUTE) != 0 &&
+                (shdr->Characteristics & IMAGE_SCN_CNT_CODE) != 0)
+            exes.insert({offset, elf_shdr});
+    }
+
+    ELF *elf = new ELF;
+    elf->filename       = strDup(filename);
+    elf->data           = data;
+    elf->size           = size;
+    elf->base           = (intptr_t)opt_hdr->ImageBase;
+    elf->end            = elf->base + (intptr_t)opt_hdr->SizeOfImage;;
+    elf->strs           = new char[strtab.size()];
+    elf->phdrs          = nullptr;
+    elf->phnum          = 0;
+    elf->type           = BINARY_TYPE_PE_EXE;
+    elf->reloc          = false;
+    elf->sections.swap(sections);
+    elf->exes.reserve(exes.size());
+    for (const auto &entry: exes)
+        elf->exes.push_back(entry.second);
+    memcpy((void *)elf->strs, strtab.c_str(), strtab.size());
+
+    return elf;
+}
+
+/*
+ * Parse a binary.
+ */
+ELF *e9frontend::parseBinary(const char *filename, intptr_t base)
+{
+    int fd = open(filename, O_RDONLY, 0);
+    if (fd < 0)
+        error("failed to open file \"%s\" for reading: %s", filename,
+            strerror(errno));
+    char c;
+    if (read(fd, &c, sizeof(char)) != 1)
+        error("failed to read file \"%s\": %s", filename, strerror(errno));
+    close(fd);
+ 
+    switch (c)
+    {
+        case 'E':
+        default:
+            return parseELF(filename, base);
+        case 'M':
+            return parsePE(filename);
+    }
+}
+
+/*
  * Free an ELF file object.
  */
 void freeELF(ELF *elf)
 {
+    switch (elf->type)
+    {
+        case BINARY_TYPE_PE_DLL: case BINARY_TYPE_PE_EXE:
+            // For Windows PE, the ELF objects are allocated by `new':
+            for (auto &entry: elf->sections)
+                delete entry.second;
+            delete elf->strs;
+            break;
+        default:
+            break;
+    }
     free((void *)elf->filename);
     munmap((void *)elf->data, elf->size);
     delete elf;
@@ -2160,14 +2578,9 @@ void freeELF(ELF *elf)
 /*
  * ELF getters.
  */
-e9frontend::ElfType e9frontend::getELFType(const ELF *elf)
+e9frontend::BinaryType e9frontend::getELFType(const ELF *elf)
 {
-    if (elf->dso)
-        return ELFTYPE_DSO;
-    else if (elf->pie)
-        return ELFTYPE_PIE;
-    else
-        return ELFTYPE_EXEC;
+    return elf->type;
 }
 const char *e9frontend::getELFFilename(const ELF *elf)
 {
@@ -2301,7 +2714,7 @@ void e9frontend::sendELFFileMessage(FILE *out, const ELF *ptr, bool absolute)
     /*
      * Sanity checks.
      */
-    if (!elf.pie)
+    if (elf.type != BINARY_TYPE_ELF_PIE)
         error("failed to embed ELF file \"%s\"; file is not a dynamic "
             "executable", elf.filename);
     if (elf.reloc)
@@ -3113,6 +3526,20 @@ static void sendMovFromI64ToR64(FILE *out, intptr_t value, int regno)
 }
 
 /*
+ * Send a `movabs $i64,%r64' instruction.
+ */
+static void sendMovFromI64ToR64(FILE *out, const char *value, int regno)
+{
+    const uint8_t REX[] =
+        {0x48, 0x48, 0x48, 0x48, 0x49, 0x49, 0x00,
+         0x48, 0x49, 0x49, 0x48, 0x48, 0x49, 0x49, 0x49, 0x49, 0x48};
+    const uint8_t OPCODE[] =
+        {0xbf, 0xbe, 0xba, 0xb9, 0xb8, 0xb9, 0x00,
+         0xb8, 0xba, 0xbb, 0xbb, 0xbd, 0xbc, 0xbd, 0xbe, 0xbf, 0xbc};
+    fprintf(out, "%u,%u,%s,", REX[regno], OPCODE[regno], value);
+}
+
+/*
  * Send a `lea offset(%rip),%r64' instruction.
  */
 static void sendLeaFromPCRelToR64(FILE *out, const char *offset, int regno)
@@ -3186,7 +3613,8 @@ static void sendLeaFromStackToR64(FILE *out, int32_t offset, int regno)
  * Send a call ELF trampoline.
  */
 unsigned e9frontend::sendCallTrampolineMessage(FILE *out, const char *name,
-    const std::vector<Argument> &args, bool clean, CallKind call)
+    const std::vector<Argument> &args, BinaryType type, bool clean,
+    CallKind call)
 {
     bool state = false;
     for (const auto &arg: args)
@@ -3196,6 +3624,15 @@ unsigned e9frontend::sendCallTrampolineMessage(FILE *out, const char *name,
             state = true;
             break;
         }
+    }
+    bool sysv = true;
+    switch (type)
+    {
+        case BINARY_TYPE_PE_EXE: case BINARY_TYPE_PE_DLL:
+            sysv = false;
+            break;
+        default:
+            break;
     }
 
     sendMessageHeader(out, "trampoline");
@@ -3219,7 +3656,8 @@ unsigned e9frontend::sendCallTrampolineMessage(FILE *out, const char *name,
     // Push all caller-save registers:
     bool conditional = (call == CALL_CONDITIONAL ||
                         call == CALL_CONDITIONAL_JUMP);
-    const int *rsave = getCallerSaveRegs(clean, state, conditional, args.size());
+    const int *rsave = getCallerSaveRegs(sysv, clean, state, conditional,
+        args.size());
     int num_rsave = 0;
     Register rscratch = (clean || state? REGISTER_RAX: REGISTER_INVALID);
     int32_t offset = 0x4000;
@@ -3232,11 +3670,23 @@ unsigned e9frontend::sendCallTrampolineMessage(FILE *out, const char *name,
 
     // Load the arguments:
     fputs("\"$loadArgs\",", out);
+    if (!sysv)
+    {
+        // lea -0x20(%rsp),%rsp         # MS ABI red-zone
+        fprintf(out, "%u,%u,%u,%u,{\"int8\":%d},",
+            0x48, 0x8d, 0x64, 0x24, -0x20);
+    }
 
     // Call the function:
     fprintf(out, "%u,\"$function\",", 0xe8);        // callq function
 
     // Restore the state:
+    if (!sysv)
+    {
+        // lea 0x20(%rsp),%rsp          # MS ABI red-zone
+        fprintf(out, "%u,%u,%u,%u,{\"int8\":%d},",
+            0x48, 0x8d, 0x64, 0x24, 0x20);
+    }
     fputs("\"$restoreState\",", out);
     
     // If clean & conditional & !state, store result in %rcx, else in %rax

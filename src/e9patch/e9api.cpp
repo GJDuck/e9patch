@@ -31,6 +31,7 @@
 #include "e9emit.h"
 #include "e9optimize.h"
 #include "e9patch.h"
+#include "e9pe.h"
 #include "e9json.h"
 #include "e9tactics.h"
 #include "e9x86_64.h"
@@ -177,7 +178,7 @@ static void queuePatch(Binary *B, Instr *I, const Trampoline *T)
 static Binary *parseBinary(const Message &msg)
 {
     const char *filename = nullptr;
-    Mode mode = MODE_EXECUTABLE;
+    Mode mode = MODE_ELF_EXECUTABLE;
     bool have_mode = false, dup = false;
     for (unsigned i = 0; i < msg.num_params; i++)
     {
@@ -242,8 +243,18 @@ mmap_failed:
     B->patched.bytes = (uint8_t *)ptr;
     B->patched.size  = size;
 
-    // Parse the mmaped ELF file:
-    parseElf(B);
+    // Parse the mmap'ed binary:
+    B->config = 0x0;
+    switch (B->mode)
+    {
+        case MODE_ELF_EXECUTABLE: case MODE_ELF_SHARED_OBJECT:
+            B->pic = parseElf(B);
+            break;
+        case MODE_PE_EXECUTABLE:
+            parsePE(B);
+            B->pic = true;
+            break;
+    }
 
     // Map the file (unmodified):
     ptr = mmap(ptr, size, PROT_READ, MAP_SHARED, fd, 0);
@@ -336,7 +347,7 @@ static void parseInstruction(Binary *B, const Message &msg)
     }
     Instr *I = new Instr(offset, address, length, B->original.bytes + offset,
         B->patched.bytes + offset, B->patched.state + offset, pcrel32_idx,
-        pcrel8_idx, B->elf.pic);
+        pcrel8_idx, B->pic);
     insertInstruction(B, I);
 }
 
@@ -439,23 +450,35 @@ static void parseEmit(Binary *B, const Message &msg)
 
     // Create and optimize the mappings:
     MappingSet mappings;
-    buildMappings(B->allocator, option_mem_mapping_size, mappings);
+    size_t granularity = (B->mode != MODE_PE_EXECUTABLE? PAGE_SIZE:
+        WINDOWS_VIRTUAL_ALLOC_SIZE);
+    size_t mapping_size = std::max(granularity, option_mem_mapping_size);
+    buildMappings(B->allocator, mapping_size, mappings);
     switch (option_mem_granularity)
     {
         case 128:
-            optimizeMappings<Key128>(B->allocator, option_mem_mapping_size,
+            optimizeMappings<Key128>(B->allocator, mapping_size, granularity,
                 mappings);
             break;
         case 4096:
-            optimizeMappings<Key4096>(B->allocator, option_mem_mapping_size,
+            optimizeMappings<Key4096>(B->allocator, mapping_size, granularity,
                 mappings);
             break;
         default:
-            error("unimplemented granularity (%zu)", option_mem_granularity);
+            error("unimplemented granularity (%zu)",
+                option_mem_granularity);
     }
 
     // Create the patched binary:
-    B->patched.size = emitElf(B, mappings, option_mem_mapping_size);
+    switch (B->mode)
+    {
+        case MODE_ELF_EXECUTABLE: case MODE_ELF_SHARED_OBJECT:
+            B->patched.size = emitElf(B, mappings, mapping_size);
+            break;
+        case MODE_PE_EXECUTABLE:
+            B->patched.size = emitPE(B, mappings, mapping_size);
+            break;
+    }
 
     // Emit the result:
     switch (format)
@@ -552,11 +575,11 @@ static void parseReserve(Binary *B, const Message &msg)
         error("failed to parse \"reserve\" message (id=%u); only one of "
             "the \"bytes\" or \"length\" parameters can be specified",
             msg.id);
-    if (absolute && B->elf.pic)
+    if (absolute && B->pic)
         address = ABSOLUTE_ADDRESS(address);
     if (have_init)
     {
-        if (absolute && B->elf.pic)
+        if (absolute && B->pic)
             init = ABSOLUTE_ADDRESS(init);
         if (bytes == nullptr || init < address ||
                 init >= address + bytes->entries[0].length)
@@ -567,7 +590,7 @@ static void parseReserve(Binary *B, const Message &msg)
     }
     if (have_mmap)
     {
-        if (absolute && B->elf.pic)
+        if (absolute && B->pic)
             mmap = ABSOLUTE_ADDRESS(mmap);
         if (bytes == nullptr || mmap < address ||
                 mmap >= address + bytes->entries[0].length)

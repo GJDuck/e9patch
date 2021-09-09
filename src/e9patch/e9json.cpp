@@ -672,9 +672,8 @@ static Entry makeDataEntry(Parser &parser)
 {
     expectToken(parser, TOKEN_STRING);
     Entry entry; 
+    memset(&entry, 0x0, sizeof(entry));
     entry.kind   = ENTRY_LABEL;
-    entry.length = 0;
-    entry.bytes  = nullptr;
 
     switch (parser.s[0])
     {
@@ -737,28 +736,37 @@ type_error:
         case ENTRY_INT64:
         {
             char token = expectToken2(parser, TOKEN_NUMBER, TOKEN_STRING);
-            intptr_t x;
-            if (token == TOKEN_NUMBER)
-                x = (intptr_t)parser.i;
-            else
-                x = stringToNumber(parser);
-            switch (entry.kind)
+            if (token == TOKEN_STRING && parser.s[0] == '.' &&
+                    parser.s[1] == 'L')
             {
-                case ENTRY_INT8:
-                    entry.uint8 = (uint8_t)convertInteger(parser, x,
-                        INT8_MIN, UINT8_MAX, 8);
-                    break;
-                case ENTRY_INT16:
-                    entry.uint16 = (uint16_t)convertInteger(parser, x,
-                        INT16_MIN, UINT16_MAX, 16);
-                    break;
-                case ENTRY_INT32:
-                    entry.uint32 = (uint32_t)convertInteger(parser, x,
-                        INT32_MIN, UINT32_MAX, 32);
-                    break;
-                default:
-                    entry.uint64 = (uint64_t)x;
-                    break;
+                entry.use_label = true;
+                entry.label = dupString(parser.s);
+            }
+            else
+            {
+                intptr_t x;
+                if (token == TOKEN_NUMBER)
+                    x = (intptr_t)parser.i;
+                else
+                    x = stringToNumber(parser);
+                switch (entry.kind)
+                {
+                    case ENTRY_INT8:
+                        entry.uint8 = (uint8_t)convertInteger(parser, x,
+                            INT8_MIN, UINT8_MAX, 8);
+                        break;
+                    case ENTRY_INT16:
+                        entry.uint16 = (uint16_t)convertInteger(parser, x,
+                            INT16_MIN, UINT16_MAX, 16);
+                        break;
+                    case ENTRY_INT32:
+                        entry.uint32 = (uint32_t)convertInteger(parser, x,
+                            INT32_MIN, UINT32_MAX, 32);
+                        break;
+                    default:
+                        entry.uint64 = (uint64_t)x;
+                        break;
+                }
             }
             break;
         }
@@ -1134,14 +1142,20 @@ static void parseParams(Parser &parser, Message &msg)
                     break;
                 case PARAM_MODE:
                     expectToken(parser, TOKEN_STRING);
-                    if (strcmp(parser.s, "exe") == 0)
-                        value.integer = (intptr_t)MODE_EXECUTABLE;
-                    else if (strcmp(parser.s, "dso") == 0)
-                        value.integer = (intptr_t)MODE_SHARED_OBJECT;
+                    if (strcmp(parser.s, "elf.exe") == 0)
+                        value.integer = (intptr_t)MODE_ELF_EXECUTABLE;
+                    else if (strcmp(parser.s, "elf.dso") == 0)
+                        value.integer = (intptr_t)MODE_ELF_SHARED_OBJECT;
+                    else if (strcmp(parser.s, "pe.exe") == 0)
+                        value.integer = (intptr_t)MODE_PE_EXECUTABLE;
+                    else if (strcmp(parser.s, "pe.dll") == 0)
+                        parse_error(parser, "failed to parse mode string "
+                            "\"%s\"; Windows PE DLLs are not-yet-implemented",
+                            parser.s);
                     else
                         parse_error(parser, "failed to parse mode string "
-                            "\"%s\"; expected one of {\"exe\", \"dso\"}",
-                            parser.s);
+                            "\"%s\"; expected one of {\"elf.exe\", "
+                            "\"elf.dso\", \"pe.exe\"}", parser.s);
                     break;
                 case PARAM_UNKNOWN:
                     parseAndDiscardObject(parser);

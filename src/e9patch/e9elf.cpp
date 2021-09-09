@@ -68,7 +68,7 @@ typedef std::vector<Refactor> RefactorSet;
 /*
  * Parse the ELF file & reserve any occupied address space.
  */
-void parseElf(Binary *B)
+bool parseElf(Binary *B)
 {
     const char *filename = B->filename;
     uint8_t *data = B->patched.bytes;
@@ -114,7 +114,7 @@ void parseElf(Binary *B)
     {
         case ET_EXEC:
         {
-            if (mode == MODE_SHARED_OBJECT)
+            if (mode == MODE_ELF_SHARED_OBJECT)
                 error("failed to parse ELF file \"%s\": file is an "
                     "executable and not a shared object", filename);
             if (!reserve(B, 0x0, 0x10000))
@@ -123,7 +123,7 @@ void parseElf(Binary *B)
         }
         case ET_DYN:
             pic = true;
-            pie = (mode == MODE_EXECUTABLE);
+            pie = (mode == MODE_ELF_EXECUTABLE);
             break;
         default:
             error("failed to parse ELF file \"%s\"; file is not executable",
@@ -178,7 +178,8 @@ void parseElf(Binary *B)
     info.phdr_gnu_relro = phdr_gnu_relro;
     info.phdr_gnu_stack = phdr_gnu_stack;
     info.phdr_dynamic   = phdr_dynamic;
-    info.pic            = pic;
+
+    return pic;
 }
 
 /*
@@ -192,7 +193,7 @@ static size_t emitRefactoredPatch(const uint8_t *original, uint8_t *data,
     size_t size, size_t mapping_size, const InstrSet &Is,
     RefactorSet &refactors)
 {
-    if (option_static_loader)
+    if (option_loader_static)
         return 0;
 
     assert(size % PAGE_SIZE == 0);
@@ -249,8 +250,8 @@ static size_t emitRefactoredPatch(const uint8_t *original, uint8_t *data,
 /*
  * Emit a mapping.
  */
-static size_t emitLoaderMap(uint8_t *data, intptr_t addr, size_t len,
-    off_t offset, bool r, bool w, bool x, intptr_t *ub)
+size_t emitLoaderMap(uint8_t *data, intptr_t addr, size_t len, off_t offset,
+    bool r, bool w, bool x, intptr_t *ub)
 {
     bool abs = IS_ABSOLUTE(addr);
     if (ub != nullptr && !abs)
@@ -287,8 +288,7 @@ static size_t emitLoaderMap(uint8_t *data, intptr_t addr, size_t len,
 /*
  * Emit the (modified) ELF binary.
  */
-size_t emitElf(const Binary *B, const MappingSet &mappings,
-    size_t mapping_size)
+size_t emitElf(Binary *B, const MappingSet &mappings, size_t mapping_size)
 {
     uint8_t *data = B->patched.bytes;
     size_t size = B->patched.size;
@@ -304,6 +304,7 @@ size_t emitElf(const Binary *B, const MappingSet &mappings,
         B->Is, refactors);
  
     // Step (3): Emit all mappings:
+    B->config = option_loader_base;
     for (auto *mapping: mappings)
     {
         uint8_t *base = data + size;
@@ -318,9 +319,12 @@ size_t emitElf(const Binary *B, const MappingSet &mappings,
     struct e9_config_s *config = (struct e9_config_s *)(data + size);
     size_t config_offset = size;
     size += sizeof(struct e9_config_s);
-    const char magic[]   = "E9PATCH";
+    struct e9_config_elf_s *config_elf =
+        (struct e9_config_elf_s *)(data + size);
+    size += sizeof(struct e9_config_elf_s);
+    const char magic[] = "E9PATCH";
     memcpy(config->magic, magic, sizeof(magic));
-    config->base = option_mem_loader;
+    config->base = option_loader_base;
     if (B->mmap != INTPTR_MIN)
         config->mmap = B->mmap;
 
@@ -347,7 +351,7 @@ size_t emitElf(const Binary *B, const MappingSet &mappings,
                 if (mapping->preload != preload)
                     continue;
                 bounds.clear();
-                getVirtualBounds(mapping, bounds);
+                getVirtualBounds(mapping, PAGE_SIZE, bounds);
                 bool r = ((mapping->prot & PROT_READ) != 0);
                 bool w = ((mapping->prot & PROT_WRITE) != 0);
                 bool x = ((mapping->prot & PROT_EXEC) != 0);
@@ -357,12 +361,10 @@ size_t emitElf(const Binary *B, const MappingSet &mappings,
                     size_t len    = b.ub - b.lb;
                     off_t offset  = offset_0 + b.lb;
 
-                    debug("load trampoline: mmap(" ADDRESS_FORMAT ", %zu, "
-                        "%s%s%s0, MAP_FIXED | MAP_PRIVATE, fd, +%zd)",
-                        ADDRESS(base), len,
-                        (r? "PROT_READ | ": ""),
-                        (w? "PROT_WRITE | ": ""),
-                        (x? "PROT_EXEC | ": ""), offset_0);
+                    debug("load trampoline: mmap(addr=" ADDRESS_FORMAT
+                        ",size=%zu,offset=+%zu,prot=%c%c%c)",
+                        ADDRESS(base), len, offset_0, (r? 'r': '-'),
+                        (w? 'w': '-'), (x? 'x': '-'));
                     stat_num_virtual_bytes += len;
 
                     size += emitLoaderMap(data + size, base, len, offset,
@@ -372,14 +374,14 @@ size_t emitElf(const Binary *B, const MappingSet &mappings,
             }
         }
     }
-    if (ub > option_mem_loader)
+    if (ub > option_loader_base)
     {
-        // This error may occur if the front-end changes `--mem-loader'
+        // This error may occur if the front-end changes `--loader-base'
         // mid-way through the patching process.  It is easiest to detect
         // the error here than earlier.
-        error("loader base address (0x%lx) (see `--mem-loader') must not "
+        error("loader base address (0x%lx) (see `--loader-base') must not "
             "exceed maximum mapping address (0x%lx) (see `--mem-ub')",
-            option_mem_loader, ub);
+            option_loader_base, ub);
     }
     for (const auto &refactor: refactors)
     {
@@ -391,12 +393,12 @@ size_t emitElf(const Binary *B, const MappingSet &mappings,
             nullptr);
         config->num_maps[1]++;
     }
-    intptr_t entry = (option_mem_loader + (size - config_offset));
+    intptr_t entry = (option_loader_base + (size - config_offset));
     if (option_trap_entry)
         data[size++] = /*int3=*/0xCC;
     switch (B->mode)
     {
-        case MODE_EXECUTABLE:
+        case MODE_ELF_EXECUTABLE:
             // mov (%rsp),%rdi
             // lea 0x8(%rsp),%rsi
             data[size++] = 0x48; data[size++] = 0x8B; data[size++] = 0x3C;
@@ -404,12 +406,14 @@ size_t emitElf(const Binary *B, const MappingSet &mappings,
             data[size++] = 0x48; data[size++] = 0x8D; data[size++] = 0x74;
             data[size++] = 0x24; data[size++] = 0x08;
             break;
-        case MODE_SHARED_OBJECT:
+        case MODE_ELF_SHARED_OBJECT:
             // xorq %edi, %edi
             // xorq %esi, %esi
             data[size++] = 0x31; data[size++] = 0xFF;
             data[size++] = 0x31; data[size++] = 0xF6;
             break;
+        default:
+            error("invalid mode");
     }
     // lea config(%rip), %rdx
     data[size++] = 0x48; data[size++] = 0x8D; data[size++] = 0x15;
@@ -427,10 +431,10 @@ size_t emitElf(const Binary *B, const MappingSet &mappings,
     Elf64_Phdr *phdr = B->elf.phdr_dynamic;
     intptr_t dynamic = -1;
     if (phdr != nullptr)
-        config->dynamic = dynamic = (intptr_t)phdr->p_vaddr;
+        config_elf->dynamic = dynamic = (intptr_t)phdr->p_vaddr;
     switch (B->mode)
     {
-        case MODE_EXECUTABLE:
+        case MODE_ELF_EXECUTABLE:
         {
             Elf64_Ehdr *ehdr = B->elf.ehdr;
             config->entry = (intptr_t)B->elf.ehdr->e_entry;
@@ -438,7 +442,7 @@ size_t emitElf(const Binary *B, const MappingSet &mappings,
             config->flags |= E9_FLAG_EXE;
             break;
         }
-        case MODE_SHARED_OBJECT:
+        case MODE_ELF_SHARED_OBJECT:
         {
             if (phdr == nullptr)
                 error("failed to replace DT_INIT entry; missing PT_DYNAMIC "
@@ -461,6 +465,8 @@ size_t emitElf(const Binary *B, const MappingSet &mappings,
                 error("failed to replace DT_INIT entry; entry was not found");
             break;
         }
+        default:
+            error("invalid mode");
     }
 
     // Step (6): Modify the PHDR to load the loader.
@@ -468,7 +474,7 @@ size_t emitElf(const Binary *B, const MappingSet &mappings,
     //       (or PT_GNU_*) injection method to load the loader.  Some
     //       alternative methods may also work, but are not yet implemented.
     const char *phdr_str = "PT_NOTE, PT_GNU_RELRO, or PT_GNU_STACK";
-    switch (option_phdr_loader)
+    switch (option_loader_phdr)
     {
         case PT_NOTE:
             phdr_str = "PT_NOTE";
@@ -491,13 +497,17 @@ size_t emitElf(const Binary *B, const MappingSet &mappings,
     phdr->p_type   = PT_LOAD;
     phdr->p_flags  = PF_X | PF_R;
     phdr->p_offset = config_offset;
-    phdr->p_vaddr  = (Elf64_Addr)option_mem_loader;
+    phdr->p_vaddr  = (Elf64_Addr)option_loader_base;
     phdr->p_paddr  = (Elf64_Addr)nullptr;
     phdr->p_filesz = config_size;
     phdr->p_memsz  = config_size;
     phdr->p_align  = PAGE_SIZE;
 
     stat_output_file_size = size;
+
+    if (option_mem_rebase_set)
+        warning("ignoring `--mem-rebase' option for Linux ELF binary");
+
     return size;
 }
 

@@ -30,7 +30,7 @@ struct Mapping
 {
     // Occupancy:
     intptr_t lb;                // Occupancy lower bound.
-    intptr_t ub;                // Occupancy Upper bound.
+    intptr_t ub;                // Occupancy upper bound.
 
     // Virtual memory:
     intptr_t base;              // Virtual base address.
@@ -53,10 +53,11 @@ void buildMappings(const Allocator &allocator, const size_t MAPPING_SIZE,
     MappingSet &mappings);
 void flattenMapping(const Binary *B, uint8_t *buf, const Mapping *mapping,
     uint8_t fill);
-void getVirtualBounds(const Mapping *mapping, std::vector<Bounds> &bounds);
+void getVirtualBounds(const Mapping *mapping, size_t granularity,
+    std::vector<Bounds> &bounds);
 
 template <typename Key>
 void optimizeMappings(const Allocator &allocator, const size_t MAPPING_SIZE,
-    MappingSet &mappings);
+    size_t granularity, MappingSet &mappings);
 
 #endif

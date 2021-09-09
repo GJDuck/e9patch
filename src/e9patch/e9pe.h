@@ -1,5 +1,5 @@
 /*
- * e9alloc.h
+ * e9pe.h
  * Copyright (C) 2020 National University of Singapore
  *
  * This program is free software: you can redistribute it and/or modify
@@ -16,16 +16,14 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#ifndef __E9ALLOC_H
-#define __E9ALLOC_H
+#ifndef __E9PE_H
+#define __E9PE_H
 
-#include <cstdint>
-
+#include "e9alloc.h"
+#include "e9mapping.h"
 #include "e9patch.h"
 
-const Alloc *allocate(Binary *B, intptr_t lb, intptr_t ub,
-    const Trampoline *T, const Instr *I, bool same_page = false);
-bool reserve(Binary *B, intptr_t lb, intptr_t ub);
-void deallocate(Binary *B, const Alloc *a);
+void parsePE(Binary *B);
+size_t emitPE(Binary *B, const MappingSet &mappings, size_t mapping_size);
 
 #endif

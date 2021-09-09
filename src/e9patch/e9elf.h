@@ -25,8 +25,10 @@
 #include "e9mapping.h"
 #include "e9patch.h"
 
-void parseElf(Binary *B);
-size_t emitElf(const Binary *B, const MappingSet &mappings,
-    size_t mapping_size);
+bool parseElf(Binary *B);
+size_t emitElf(Binary *B, const MappingSet &mappings, size_t mapping_size);
+
+size_t emitLoaderMap(uint8_t *data, intptr_t addr, size_t len, off_t offset,
+    bool r, bool w, bool x, intptr_t *ub);
 
 #endif

@@ -87,13 +87,24 @@ template <typename Key>
 static void bitstring(Key key, std::string &str)
 {
     Key mask = 0xFFFFFFFFFFFFFFFFull;
-    for (unsigned i = 0; i < size(key); i += 64)
+    for (unsigned i = 0; i < size(key); i += 2 * 64)
     {
-        uint64_t key64 = (key & mask).to_ullong();
-        char buf[32];
-        snprintf(buf, sizeof(buf)-1, "%.16lX", key64);
-        str += buf;
-        key >>= 64;
+        const char digs[] = "0123456789ABCDEF";
+        size_t count = 0;
+        for (unsigned j = 0; j < 2; j++)
+        {
+            uint64_t key64 = (key & mask).to_ullong();
+            count += __builtin_popcountll(key64);
+            key >>= 64;
+        }
+        switch (count)
+        {
+            case 0: case 1:
+                break;
+            default:
+                count = 1 + (count - 2) / 9; break;
+        }
+        str += digs[count];
     }
 }
 template <>
@@ -595,9 +606,9 @@ static void collectMappings(Radix::Node<Key> *node, MappingSet &mappings)
 /*
  * Shrink a mapping (if possible).
  */
-static void shrinkMapping(Mapping *mapping0)
+static void shrinkMapping(Mapping *mapping0, size_t granularity)
 {
-    if (mapping0->size == PAGE_SIZE)
+    if (mapping0->size == granularity)
         return;
 
     intptr_t lb = INTPTR_MAX, ub = INTPTR_MIN;
@@ -608,11 +619,11 @@ static void shrinkMapping(Mapping *mapping0)
         ub = std::max(ub, mapping->ub);
     }
 
-    lb = lb - lb % PAGE_SIZE;
-    if (ub % PAGE_SIZE != 0)
+    lb = lb - lb % granularity;
+    if (ub % granularity != 0)
     {
-        ub += PAGE_SIZE;
-        ub = ub - ub % PAGE_SIZE;
+        ub += granularity;
+        ub = ub - ub % granularity;
     }
     size_t size = ub - lb;
     if (size >= mapping0->size)
@@ -633,7 +644,7 @@ static void shrinkMapping(Mapping *mapping0)
  */
 template <typename Key>
 void optimizeMappings(const Allocator &allocator, const size_t MAPPING_SIZE,
-    MappingSet &mappings)
+    size_t granularity, MappingSet &mappings)
 {
     Radix::Node<Key> *tree = nullptr;
     for (auto mapping: mappings)
@@ -648,14 +659,14 @@ void optimizeMappings(const Allocator &allocator, const size_t MAPPING_SIZE,
     putchar('\n');
 
     for (auto mapping: mappings)
-        shrinkMapping(mapping);
+        shrinkMapping(mapping, granularity);
 }
 template
 void optimizeMappings<Key128>(const Allocator &allocator,
-    const size_t MAPPING_SIZE,MappingSet &mappings);
+    const size_t MAPPING_SIZE, size_t granularity, MappingSet &mappings);
 template
 void optimizeMappings<Key4096>(const Allocator &allocator,
-    const size_t MAPPING_SIZE,MappingSet &mappings);
+    const size_t MAPPING_SIZE, size_t granularity, MappingSet &mappings);
 
 /**************************************************************************/
 /* FLATTEN MAPPINGS                                                       */
@@ -725,16 +736,18 @@ void flattenMapping(const Binary *B, uint8_t *buf, const Mapping *mapping,
 /*
  * Get the virtual bounds of a mapping.
  */
-static void pushBounds(intptr_t lb, intptr_t ub, std::vector<Bounds> &bounds)
+static void pushBounds(intptr_t lb, intptr_t ub, size_t granularity,
+    std::vector<Bounds> &bounds)
 {
     if (lb == INTPTR_MAX || ub == INTPTR_MIN)
         return;
-    lb = lb - lb % PAGE_SIZE;
-    if (ub % PAGE_SIZE != 0)
-        ub = (ub + PAGE_SIZE) - (ub % PAGE_SIZE);
+    lb = lb - lb % granularity;
+    if (ub % granularity != 0)
+        ub = (ub + granularity) - (ub % granularity);
     bounds.push_back({lb, ub});
 }
-void getVirtualBounds(const Mapping *mapping, std::vector<Bounds> &bounds)
+void getVirtualBounds(const Mapping *mapping, size_t granularity,
+    std::vector<Bounds> &bounds)
 {
     intptr_t lb = INTPTR_MAX, ub = INTPTR_MIN;
     const size_t   SIZE = mapping->size;
@@ -749,7 +762,7 @@ void getVirtualBounds(const Mapping *mapping, std::vector<Bounds> &bounds)
         if (a->T == nullptr)
         {
             // Reserved memory.  We must split into two separate mappings.
-            pushBounds(lb, ub, bounds);
+            pushBounds(lb, ub, granularity, bounds);
             lb = INTPTR_MAX;
             ub = INTPTR_MIN;
             continue;
@@ -759,6 +772,6 @@ void getVirtualBounds(const Mapping *mapping, std::vector<Bounds> &bounds)
         lb = std::min(lb, lb1);
         ub = std::max(ub, ub1);
     }
-    pushBounds(lb, ub, bounds);
+    pushBounds(lb, ub, granularity, bounds);
 }
 

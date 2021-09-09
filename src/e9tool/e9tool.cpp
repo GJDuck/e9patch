@@ -52,7 +52,7 @@ static bool option_cfg          = false;
 static bool option_trap_all     = false;
 static bool option_intel_syntax = false;
 static std::string option_format("binary");
-static std::string option_output("a.out");
+static std::string option_output("");
 
 #include "e9plugin.h"
 #include "e9frontend.cpp"
@@ -1253,6 +1253,8 @@ static Action *parseAction(const ELF &elf, const char *str,
                         arg = ARGUMENT_BASE; break;
                     case TOKEN_DST:
                         arg = ARGUMENT_DST; break;
+                    case TOKEN_CONFIG:
+                        arg = ARGUMENT_CONFIG; break;
                     case TOKEN_ID:
                         arg = ARGUMENT_ID; break;
                     case TOKEN_IMM:
@@ -2152,7 +2154,8 @@ static void usage(FILE *stream, const char *progname)
         "\n"
         "\t--output FILE, -o FILE\n"
         "\t\tSpecifies the path to the output file.  The default filename is\n"
-        "\t\t\"a.out\".\n"
+        "\t\tone of {\"a.out\", \"a.so\", \"a.exe\", \"a.dll\"}, depending on\n"
+        "\t\tthe input binary type.\n"
         "\n"
         "\t--seed=SEED\n"
         "\t\tSet SEED to be the random number seed.\n"
@@ -2439,7 +2442,7 @@ int main(int argc, char **argv)
     bool exe = (option_executable? true:
                (option_shared? false: !isLibraryFilename(filename)));
     filename = findBinary(filename, exe, /*dot=*/true);
-    ELF &elf = *parseELF(filename, 0x0);
+    ELF &elf = *parseBinary(filename);
 
     /*
      * Patch the match/action pairs.
@@ -2501,6 +2504,21 @@ int main(int argc, char **argv)
     /*
      * The ELF file seems OK, spawn and initialize the e9patch backend.
      */
+    if (option_output == "")
+    {
+        // Choose a default name:
+        switch (elf.type)
+        {
+            case BINARY_TYPE_ELF_DSO:
+                option_output = "a.so"; break;
+            case BINARY_TYPE_ELF_PIE: case BINARY_TYPE_ELF_EXE:
+                option_output = "a.out"; break;
+            case BINARY_TYPE_PE_EXE:
+                option_output = "a.exe"; break;
+            case BINARY_TYPE_PE_DLL:
+                option_output = "a.dll"; break;
+        }
+    }
     Backend backend;
     std::vector<const char *> options;
     if (option_format == "json")
@@ -2535,10 +2553,20 @@ int main(int argc, char **argv)
     /*
      * Send binary message.
      */
-    const char *mode = 
-        (option_executable? "exe":
-        (option_shared?     "dso":
-        (elf.dso? "dso": "exe")));
+    const char *mode = "???";
+    switch (elf.type)
+    {
+        case BINARY_TYPE_ELF_DSO:
+            mode = (option_executable? "elf.exe": "elf.dso"); break;
+        case BINARY_TYPE_ELF_PIE:
+            mode = (option_shared? "elf.dso": "elf.exe"); break;
+        case BINARY_TYPE_ELF_EXE:
+            mode = "elf.exe"; break;
+        case BINARY_TYPE_PE_EXE:
+            mode = "pe.exe"; break;
+        case BINARY_TYPE_PE_DLL:
+            mode = "pe.dll"; break;
+    }
     sendBinaryMessage(backend.out, mode, filename);
  
     /*
@@ -2552,7 +2580,7 @@ int main(int argc, char **argv)
         options.push_back(mapping_size[option_compression_level]);
     }
     if (option_static_loader)
-        options.push_back("--static-loader");
+        options.push_back("--loader-static");
     if (option_trap_all)
         options.push_back("--trap-all");
     switch (option_optimization_level)
@@ -2585,7 +2613,7 @@ int main(int argc, char **argv)
             options.push_back("-Oorder=true");
             options.push_back("-Opeephole=true");
             options.push_back("-Oscratch-stack=true");
-            options.push_back("--mem-granularity=128");
+            options.push_back("--mem-granularity=4096");
             break;
         case '3':
             options.push_back("--batch");
@@ -2654,7 +2682,8 @@ int main(int argc, char **argv)
                 auto i = have_exit.find(action->status);
                 if (i == have_exit.end())
                 {
-                    sendExitTrampolineMessage(backend.out, action->status);
+                    sendExitTrampolineMessage(backend.out, elf.type, 
+                        action->status);
                     have_exit.insert(action->status);
                 }
                 break;
@@ -2682,7 +2711,7 @@ int main(int argc, char **argv)
                 if (j == have_call.end())
                 {
                     sendCallTrampolineMessage(backend.out, action->name,
-                        action->args, action->clean, action->call);
+                        action->args, elf.type, action->clean, action->call);
                     have_call.insert(action->name);
                 }
                 break;
@@ -2694,7 +2723,7 @@ int main(int argc, char **argv)
     if (have_passthru)
         sendPassthruTrampolineMessage(backend.out);
     if (have_print)
-        sendPrintTrampolineMessage(backend.out);
+        sendPrintTrampolineMessage(backend.out, elf.type);
     if (have_trap)
         sendTrapTrampolineMessage(backend.out);
 

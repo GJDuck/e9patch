@@ -35,13 +35,7 @@
 #include <syscall.h>
 #include <unistd.h>
 
-#include "e9loader.h"
-
-#define NO_INLINE    __attribute__((__noinline__))
-#define NO_RETURN   __attribute__((__noreturn__))
-
-#define BUFSIZ      8192
-#define PAGE_SIZE   4096
+#include "e9loader.cpp"
 
 extern "C"
 {
@@ -72,123 +66,6 @@ asm (
     "\tsyscall\n"
     "\tretq\n"
 );
-
-/*
- * Low-level string formatting routines.
- */
-static char *e9write_str(char *str, const char *s)
-{
-    while (*s != '\0')
-        *str++ = *s++;
-    return str;
-}
-static char *e9write_char(char *str, char c)
-{
-    *str++ = c;
-    return str;
-}
-static NO_INLINE char *e9write_hex(char *str, uint64_t x)
-{
-    if (x == 0)
-    {
-        *str++ = '0';
-        return str;
-    }
-    bool zero = false;
-    int n = 15;
-    do
-    {
-        unsigned digit = (unsigned)((x >> (n * 4)) & 0xF);
-        n--;
-        if (digit == 0 && !zero)
-            continue;
-        zero = true;
-        if (digit <= 9)
-            *str++ = '0' + digit;
-        else
-            *str++ = 'a' + (digit - 10);
-    }
-    while (n >= 0);
-    return str;
-}
-static NO_INLINE char *e9write_num(char *str, uint64_t x)
-{
-    if (x == 0)
-    {
-        *str++ = '0';
-        return str;
-    }
-    bool zero = false;
-    uint64_t r = 10000000000000000000ull;
-    do
-    {
-        unsigned digit = (unsigned)(x / r);
-        x %= r;
-        r /= 10;
-        if (digit == 0 && !zero)
-            continue;
-        zero = true;
-        *str++ = '0' + digit;
-    }
-    while (r > 0);
-    return str;
-}
-static NO_INLINE char *e9write_format(char *str, const char *msg, va_list ap)
-{
-    char c;
-    while ((c = *msg++) != '\0')
-    {
-        if (c == '%')
-        {
-            c = *msg++;
-            const char *s;
-            uint64_t x;
-            int64_t i;
-            switch (c)
-            {
-                case '%':
-                    str = e9write_char(str, '%');
-                    break;
-                case 'c':
-                    c = (char)va_arg(ap, int);
-                    str = e9write_char(str, c);
-                    break;
-                case 's':
-                    s = va_arg(ap, const char *);
-                    str = e9write_str(str, s);
-                    break;
-                case 'p':
-                    str = e9write_str(str, "0x");
-                    // Fallthrough
-                case 'x': case 'X':
-                    x = (c == 'x'? va_arg(ap, unsigned): va_arg(ap, uint64_t));
-                    str = e9write_hex(str, x);
-                    break;
-                case 'u': case 'U':
-                    x = (c == 'u'? va_arg(ap, unsigned): va_arg(ap, uint64_t));
-                    str = e9write_num(str, x);
-                    break;
-                case 'd': case 'D':
-                    i = (c == 'd'? va_arg(ap, unsigned): va_arg(ap, uint64_t));
-                    if (i < 0)
-                        str = e9write_char(str, '-');
-                    str = e9write_num(str, (uint64_t)(i < 0? -i: i));
-                    break;
-            }
-            continue;
-        }
-        str = e9write_char(str, c);
-    }
-    return str;
-}
-static char *e9write_format(char *str, const char *msg, ...)
-{
-    va_list ap;
-    va_start(ap, msg);
-    str = e9write_format(str, msg, ap);
-    va_end(ap);
-    return str;
-}
 
 /*
  * Something went wrong, print an error and abort.
@@ -323,8 +200,10 @@ void *e9loader(int argc, char **argv, const e9_config_s *config)
     char **envp = NULL;
     if ((config->flags & E9_FLAG_EXE) != 0)
     {
-        if (config->dynamic != 0x0)
-            dynamic = (void *)(elf_base + config->dynamic);
+        const struct e9_config_elf_s *config_elf =
+            (const struct e9_config_elf_s *)(config + 1);
+        if (config_elf->dynamic != 0x0)
+            dynamic = (void *)(elf_base + config_elf->dynamic);
         envp = argv + argc;
     }
     const intptr_t *inits = (const intptr_t *)(loader_base + config->inits);

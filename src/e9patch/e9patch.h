@@ -59,6 +59,26 @@ struct CStrCmp
 };
 
 /*
+ * Addresses.
+ */
+#define RELATIVE_ADDRESS_MAX        0x1FFFFFFFFFFFF000ll
+#define RELATIVE_ADDRESS_MIN        (-0x1FFFFFFFFFFFF000ll)
+
+#define ABSOLUTE_ADDRESS_MAX        0x7FFFFFFFFFFFF000ll
+#define ABSOLUTE_ADDRESS_MIN        0x4000000000001000ll
+
+#define RELATIVE_ADDRESS(p)         (p)
+#define ABSOLUTE_ADDRESS(p)         ((p)+0x6000000000000000)
+
+#define IS_RELATIVE(p)              \
+    ((p) >= RELATIVE_ADDRESS_MIN && (p) <= RELATIVE_ADDRESS_MAX)
+#define IS_ABSOLUTE(p)              \
+    ((p) >= ABSOLUTE_ADDRESS_MIN && (p) <= ABSOLUTE_ADDRESS_MAX)
+
+#define BASE_ADDRESS(p)             \
+    (IS_ABSOLUTE(p)? (p)-0x6000000000000000: (p))
+
+/*
  * Buffer.
  */
 struct Buffer
@@ -338,16 +358,36 @@ struct ElfInfo
     Elf64_Phdr *phdr_gnu_relro;     // PHDR PT_GNU_RELRO (used for loader?).
     Elf64_Phdr *phdr_gnu_stack;     // PHDR PT_GNU_STACK (used for loader?).
     Elf64_Phdr *phdr_dynamic;       // PHDR PT_DYNAMIC else nullptr.
-    bool pic;                       // Position independent?
 };
+
+/*
+ * The (minimal) PE info needed for rewriting.
+ */
+struct _IMAGE_FILE_HEADER;
+struct _IMAGE_OPTIONAL_HEADER64;
+struct _IMAGE_SECTION_HEADER;
+typedef struct _IMAGE_FILE_HEADER IMAGE_FILE_HEADER, *PIMAGE_FILE_HEADER;
+typedef struct _IMAGE_OPTIONAL_HEADER64 IMAGE_OPTIONAL_HEADER64,
+    *PIMAGE_OPTIONAL_HEADER64;
+typedef struct _IMAGE_SECTION_HEADER
+    IMAGE_SECTION_HEADER, *PIMAGE_SECTION_HEADER;
+struct PEInfo
+{
+    PIMAGE_FILE_HEADER file_hdr;        // PE file header.
+    PIMAGE_OPTIONAL_HEADER64 opt_hdr;   // PE optional header.
+    PIMAGE_SECTION_HEADER shdr;         // All PE section headers.
+    PIMAGE_SECTION_HEADER free_shdr;    // A free PE section header.
+};
+#define WINDOWS_VIRTUAL_ALLOC_SIZE      ((size_t)0x10000ull)    // 64KB
 
 /*
  * Supported binary modes.
  */
 enum Mode 
 {
-    MODE_EXECUTABLE,                    // Binary is an executable.
-    MODE_SHARED_OBJECT                  // Binary is a shared object.
+    MODE_ELF_EXECUTABLE,                // Binary is an ELF executable.
+    MODE_ELF_SHARED_OBJECT,             // Binary is an ELF shared object.
+    MODE_PE_EXECUTABLE,                 // Binary is a PE executable.
 };
 
 /*
@@ -400,8 +440,14 @@ struct Binary
 {
     const char *filename;               // The binary's path.
     size_t size;                        // The binary's size.
-    ElfInfo elf;                        // ELF information.
+    union
+    {
+        ElfInfo elf;                    // ELF information.
+        PEInfo pe;                      // PE information.
+    };
     Mode mode;                          // Binary mode.
+    intptr_t config;                    // Config pointer.
+    bool pic;                           // Position independent?
 
     struct
     {
@@ -454,17 +500,22 @@ extern bool option_tactic_T1;
 extern bool option_tactic_T2;
 extern bool option_tactic_T3;
 extern bool option_tactic_backward_T3;
-extern int option_phdr_loader;
-extern bool option_static_loader;
+extern intptr_t option_loader_base;
+extern int option_loader_phdr;
+extern bool option_loader_static;
 extern std::set<intptr_t> option_trap;
 extern bool option_trap_all;
 extern bool option_trap_entry;
 extern size_t option_mem_granularity;
-extern intptr_t option_mem_loader;
 extern size_t option_mem_mapping_size;
 extern bool option_mem_multi_page;
+extern intptr_t option_mem_rebase;
 extern intptr_t option_mem_lb;
 extern intptr_t option_mem_ub;
+extern bool option_loader_base_set;
+extern bool option_loader_phdr_set;
+extern bool option_loader_static_set;
+extern bool option_mem_rebase_set;
 
 /*
  * Global statistics.

@@ -398,6 +398,44 @@ int getTrampolinePrologueSize(const Binary *B, const Instr *I)
 }
 
 /*
+ * Get the address of a "builtin" label, or INTPTR_MIN.
+ */
+static intptr_t getBuiltinLabelAddress(const Binary *B, const Instr *I,
+    const char *label)
+{
+    if (label[0] != '.' && label[1] != 'L')
+        return INTPTR_MIN;
+
+    // Check for "builtin" labels:
+    switch (label[2])
+    {
+        case 'c':
+            if (strcmp(label, ".Lcontinue") == 0)
+                return (intptr_t)I->addr + (intptr_t)I->size;
+            else if (strcmp(label, ".Lconfig") == 0)
+                return B->config;
+            break;
+        case 'i':
+            if (strcmp(label, ".Linstruction") == 0)
+                return (intptr_t)I->addr;
+            break;
+        case 't':
+            if (strcmp(label, ".Ltaken") == 0)
+            {
+                intptr_t target = getCFTTarget(I->addr, I->original.bytes,
+                    I->size, CFT_JCC);
+                if (target == INTPTR_MIN)
+                    error("failed to build trampoline; instruction at address "
+                        "0x%lx is not a conditional branch (as required by "
+                        "\".Ltaken\")", I->addr);
+                return target;
+            }
+            break;
+    }
+    return INTPTR_MIN;
+}
+
+/*
  * Calculate trampoline bounds.
  */
 static size_t getTrampolineBounds(const Binary *B, const Trampoline *T,
@@ -442,29 +480,21 @@ static size_t getTrampolineBounds(const Binary *B, const Trampoline *T,
                 size = getTrampolineBounds(B, U, I, depth+1, size, b);
                 continue;
             }
-            case ENTRY_REL8:
+            case ENTRY_REL8: case ENTRY_REL32:
             {
-                size += sizeof(int8_t);
-                if (!entry.use_label)
+                size += (entry.kind == ENTRY_REL8?
+                    sizeof(int8_t): sizeof(int32_t));
+                intptr_t addr = INTPTR_MIN;
+                if (entry.use_label)
+                    addr = getBuiltinLabelAddress(B, I, entry.label);
+                else
+                    addr = (intptr_t)entry.uint64;
+                if (addr != INTPTR_MIN)
                 {
-                    intptr_t lb = (intptr_t)entry.uint64 + (INT8_MIN + 1);
-                    intptr_t ub = (intptr_t)entry.uint64 + (INT8_MAX - 1);
-                    lb -= size;
-                    ub -= size;
-                    b.lb = std::max(b.lb, lb);
-                    b.ub = std::min(b.ub, ub);
-                }
-                continue;
-            }
-            case ENTRY_REL32:
-            {
-                size += sizeof(int32_t);
-                if (!entry.use_label)
-                {
-                    intptr_t lb = (intptr_t)entry.uint64 + (INT32_MIN + 1);
-                    intptr_t ub = (intptr_t)entry.uint64 + (INT32_MAX - 1);
-                    lb -= size;
-                    ub -= size;
+                    intptr_t lb = addr - size + 1 +
+                        (entry.kind == ENTRY_REL8? INT8_MIN: INT32_MIN);
+                    intptr_t ub = addr - size - 1 +
+                        (entry.kind == ENTRY_REL8? INT8_MAX: INT32_MAX);
                     b.lb = std::max(b.lb, lb);
                     b.ub = std::min(b.ub, ub);
                 }
@@ -590,39 +620,18 @@ static off_t buildLabelSet(const Binary *B, const Trampoline *T,
 /*
  * Lookup a label value.
  */
-static off_t lookupLabel(const char *label, const Instr *I, int32_t offset32,
-    const LabelSet &labels)
+static off_t lookupLabel(const Binary *B, const char *label, const Instr *I,
+    int32_t offset32, const LabelSet &labels)
 {
     if (label[0] != '.' && label[1] != 'L')
         error("failed to build trampoline; unknown prefix for \"%s\" label",
             label);
 
-    // Check for "builtin" labels:
-    switch (label[2])
+    intptr_t addr = getBuiltinLabelAddress(B, I, label);
+    if (addr != INTPTR_MIN)
     {
-        case 'c':
-            if (strcmp(label, ".Lcontinue") == 0)
-                return (I == nullptr? 0: (off_t)I->size - (off_t)offset32);
-            break;
-        case 'i':
-            if (strcmp(label, ".Linstruction") == 0)
-                return -(off_t)offset32;
-            break;
-        case 't':
-            if (strcmp(label, ".Ltaken") == 0)
-            {
-                if (I == nullptr)
-                    return 0;
-                intptr_t target = getCFTTarget(I->addr, I->original.bytes,
-                    I->size, CFT_JCC);
-                if (target == INTPTR_MIN)
-                    error("failed to build trampoline; instruction at address "
-                        "0x%lx is not a conditional branch (as required by "
-                        "\".Ltaken\")", I->addr);
-                off_t offset = (off_t)offset32 + (I->addr - target);
-                return offset;
-            }
-            break;
+        off_t offset = (addr - I->addr) - (off_t)offset32;
+        return offset;
     }
 
     // Check for user labels:
@@ -654,18 +663,36 @@ static void buildBytes(const Binary *B, const Trampoline *T,
                 for (unsigned i = 0; i < entry.length; i++)
                     buf.push(0x0);
                 continue;  
-            case ENTRY_INT8:
-                buf.push(entry.uint8);
-                break;
-            case ENTRY_INT16:
-                buf.push((uint8_t *)&entry.uint16, sizeof(entry.uint16));
-                break;
-            case ENTRY_INT32:
-                buf.push((uint8_t *)&entry.uint32, sizeof(entry.uint32));
-                break;
+            case ENTRY_INT8: case ENTRY_INT16: case ENTRY_INT32:
             case ENTRY_INT64:
-                buf.push((uint8_t *)&entry.uint64, sizeof(entry.uint64));
-                break;
+            {
+                int64_t val = 0;
+                if (entry.use_label)
+                {
+                    val = lookupLabel(B, entry.label, I, entry32, labels);
+                    val += entry32 + I->addr;
+                }
+                else
+                    val = (int64_t)entry.uint64;
+                switch (entry.kind)
+                {
+                    case ENTRY_INT8:
+                        buf.push((uint8_t)val);
+                        break;
+                    case ENTRY_INT16:
+                        buf.push((uint8_t *)&val, sizeof(uint16_t));
+                        break;
+                    case ENTRY_INT32:
+                        buf.push((uint8_t *)&val, sizeof(uint32_t));
+                        break;
+                    case ENTRY_INT64:
+                        buf.push((uint8_t *)&val, sizeof(uint64_t));
+                        break;
+                    default:
+                        break;
+                }
+                continue;
+            }
  
             case ENTRY_LABEL:
                 continue;
@@ -685,7 +712,7 @@ static void buildBytes(const Binary *B, const Trampoline *T,
                 off_t rel = 0;
                 if (entry.use_label)
                 {
-                    rel = lookupLabel(entry.label, I, entry32, labels);
+                    rel = lookupLabel(B, entry.label, I, entry32, labels);
                     rel = rel - (buf.size() +
                         (entry.kind == ENTRY_REL8? sizeof(int8_t):
                                                    sizeof(int32_t)));
@@ -838,6 +865,8 @@ bool TrampolineCmp::operator()(const Trampoline *a, const Trampoline *b) const
                     return (cmp < 0);
                 break;
             case ENTRY_REL8: case ENTRY_REL32:
+            case ENTRY_INT8: case ENTRY_INT16: case ENTRY_INT32:
+            case ENTRY_INT64:
                 if (entry_a->use_label != entry_b->use_label)
                     return (entry_a->use_label < entry_b->use_label);
                 if (entry_a->use_label)
@@ -851,22 +880,6 @@ bool TrampolineCmp::operator()(const Trampoline *a, const Trampoline *b) const
                     if (entry_a->uint64 != entry_b->uint64)
                         return (entry_a->uint64 < entry_b->uint64);
                 }
-                break;
-            case ENTRY_INT8:
-                if (entry_a->uint8 != entry_b->uint8)
-                    return (entry_a->uint8 < entry_b->uint8);
-                break;
-            case ENTRY_INT16:
-                if (entry_a->uint16 != entry_b->uint16)
-                    return (entry_a->uint16 < entry_b->uint16);
-                break;
-            case ENTRY_INT32:
-                if (entry_a->uint32 != entry_b->uint32)
-                    return (entry_a->uint32 < entry_b->uint32);
-                break;
-            case ENTRY_INT64:
-                if (entry_a->uint64 != entry_b->uint64)
-                    return (entry_a->uint64 < entry_b->uint64);
                 break;
             case ENTRY_DEBUG: case ENTRY_INSTRUCTION:
             case ENTRY_INSTRUCTION_BYTES: case ENTRY_CONTINUE:

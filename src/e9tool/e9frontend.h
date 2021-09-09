@@ -55,13 +55,15 @@ typedef std::map<const char *, intptr_t, CStrCmp> GOTInfo;
 typedef std::map<const char *, intptr_t, CStrCmp> PLTInfo;
 
 /*
- * ELF file type.
+ * Binary file type.
  */
-enum ElfType
+enum BinaryType
 {
-    ELFTYPE_DSO,                    // Shared object
-    ELFTYPE_PIE,                    // Position-independent Executable
-    ELFTYPE_EXEC,                   // Executable
+    BINARY_TYPE_ELF_DSO,            // Linux ELF Shared object
+    BINARY_TYPE_ELF_PIE,            // Linux ELF PIE Executable
+    BINARY_TYPE_ELF_EXE,            // Linux ELF non-PIE Executable
+    BINARY_TYPE_PE_DLL,             // Windows PE DLL
+    BINARY_TYPE_PE_EXE,             // Windows PE Executable
 };
 struct ELF;
 
@@ -2247,6 +2249,7 @@ enum ArgumentKind
     ARGUMENT_MEMOP,                 // Memory operand
     ARGUMENT_STATE,                 // The complete GPR state
     ARGUMENT_SYMBOL,                // Symbol value argument
+    ARGUMENT_CONFIG,                // Pointer to the e9_config_s struct
 
     ARGUMENT_OP,                    // Operand[i]
     ARGUMENT_SRC,                   // Source operand[i]
@@ -2313,11 +2316,12 @@ extern unsigned sendReserveMessage(FILE *out, intptr_t addr,
 extern void sendELFFileMessage(FILE *out, const ELF *elf,
     bool absolute = false);
 extern unsigned sendPassthruTrampolineMessage(FILE *out);
-extern unsigned sendPrintTrampolineMessage(FILE *out);
+extern unsigned sendPrintTrampolineMessage(FILE *out, BinaryType type);
 extern unsigned sendTrapTrampolineMessage(FILE *out);
-extern unsigned sendExitTrampolineMessage(FILE *out, int status);
+extern unsigned sendExitTrampolineMessage(FILE *out, BinaryType type,
+    int status);
 extern unsigned sendCallTrampolineMessage(FILE *out, const char *name,
-    const std::vector<Argument> &args, bool clean = true, 
+    const std::vector<Argument> &args, BinaryType type, bool clean = true, 
     CallKind call = CALL_BEFORE);
 extern unsigned sendTrampolineMessage(FILE *out, const char *name,
     const char *template_);
@@ -2325,9 +2329,11 @@ extern unsigned sendTrampolineMessage(FILE *out, const char *name,
 /*
  * ELF functions.
  */
-extern ELF *parseELF(const char *filename, intptr_t base);
+extern ELF *parseELF(const char *filename, intptr_t base = 0x0);
+extern ELF *parsePE(const char *filename);  // See note
+extern ELF *parseBinary(const char *filename, intptr_t base = 0x0);
 extern void freeELF(ELF *elf);
-extern ElfType getELFType(const ELF *elf);
+extern BinaryType getELFType(const ELF *elf);
 extern const char *getELFFilename(const ELF *elf);
 extern const uint8_t *getELFData(const ELF *elf);
 extern size_t getELFDataSize(const ELF *elf);
@@ -2344,6 +2350,10 @@ extern const SymbolInfo &getELFDynSymInfo(const ELF *elf);
 extern const SymbolInfo &getELFSymInfo(const ELF *elf);
 extern const GOTInfo &getELFGOTInfo(const ELF *elf);
 extern const PLTInfo &getELFPLTInfo(const ELF *elf);
+
+// Note: Windows PE files are parsed as "pseudo-ELF" files.  This saves having
+//       to rewrite/redesign large parts of E9Tool.  This will likely change
+//       in future.
 
 /*
  * Misc. functions:

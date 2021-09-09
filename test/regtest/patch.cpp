@@ -465,3 +465,9 @@ const void *stack_overflow(const void *addr, intptr_t *rsp, const char *_asm)
     return addr;        // loop
 }
 
+void diff(const void *a, const void *b, const char *_asm)
+{
+    intptr_t diff = (intptr_t)b - (intptr_t)a;
+    fprintf(stderr, "%s # diff = 0x%lx\n", _asm, diff);
+}
+

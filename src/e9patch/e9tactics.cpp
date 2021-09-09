@@ -260,6 +260,8 @@ static Bounds makeBounds(Binary &B, const Trampoline *T, const Instr *I,
     // Step (7): Apply the user-specified bounds (if any).
     lo = std::max(lo, option_mem_lb);
     hi = std::min(hi, option_mem_ub);
+    if (B.mode != MODE_PE_EXECUTABLE)
+        hi = std::min(hi, option_loader_base);
  
     return {lo, hi};
 }
