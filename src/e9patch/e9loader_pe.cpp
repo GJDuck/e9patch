@@ -357,7 +357,7 @@ static NO_INLINE const void *e9get(const uint8_t *dll, const char *target)
  */
 extern "C"
 {
-    intptr_t e9safe_call(void *f, ...);
+    static intptr_t e9safe_call(const void *f, ...);
 }
 asm (
     ".globl e9safe_call\n"
@@ -509,6 +509,10 @@ void *e9loader(PEB *peb, const struct e9_config_s *config, int32_t reason)
             config->magic[4] != 'T' || config->magic[5] != 'C' ||
             config->magic[6] != 'H' || config->magic[7] != '\0')
         e9error("missing \"E9PATCH\" magic number");
+    if (config->inits != 0x0)
+        e9error("custom initialization functions are not-yet-implemented");
+    if (config->mmap != 0x0)
+        e9error("custom memory mapping functions are not-yet-implemented");
 
     // Step (3): Get functions necessary for loader:
     get_last_error_t GetLastError =
@@ -603,16 +607,18 @@ void *e9loader(PEB *peb, const struct e9_config_s *config, int32_t reason)
     // Step (5): Setup the platform-specific data:
     PRTL_USER_PROCESS_PARAMETERS params = peb->ProcessParameters;
     struct e9_config_pe_s *config_pe = (struct e9_config_pe_s *)(config + 1);
-    config_pe->get           =
-        (e9_get_proc_address_t)e9get_proc_address_wrapper;
-    config_pe->ntdll         = ntdll;
-    config_pe->kernel32      = kernel32;
-    config_pe->user32        = user32;
-    config_pe->stdin         = (intptr_t)params->StdInputHandle;
-    config_pe->stdout        = (intptr_t)params->StdOutputHandle;
-    config_pe->stderr        = (intptr_t)params->StdErrorHandle;
-    config_pe->nt_read_file  = e9nt_read_file_wapper;
-    config_pe->nt_write_file = e9nt_write_file_wapper;
+
+    config_pe->safe_call        = (e9_safe_call_t)&e9safe_call; 
+    config_pe->get_proc_address =
+        (e9_get_proc_address_t)&e9get_proc_address_wrapper;
+    config_pe->nt_read_file     = &e9nt_read_file_wapper;
+    config_pe->nt_write_file    = &e9nt_write_file_wapper;
+    config_pe->ntdll            = ntdll;
+    config_pe->kernel32         = kernel32;
+    config_pe->user32           = user32;
+    config_pe->stdin            = (intptr_t)params->StdInputHandle;
+    config_pe->stdout           = (intptr_t)params->StdOutputHandle;
+    config_pe->stderr           = (intptr_t)params->StdErrorHandle;
 
     get_proc_address = GetProcAddress;
     nt_write_file = (e9_nt_write_file_t)GetProcAddress(ntdll, "NtWriteFile");
