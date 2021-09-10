@@ -254,8 +254,7 @@ static NO_INLINE void e9debug_impl(void *stderr, write_console_t WriteConsole,
 
 extern "C"
 {
-    void *e9loader(PEB *peb, const struct e9_config_s *config,
-        int32_t reason);
+    void *e9loader(PEB *peb, const struct e9_config_s *config);
 }
 
 asm (
@@ -451,14 +450,16 @@ static int32_t e9nt_read_file_wapper(intptr_t handle, intptr_t event,
 /*
  * Main loader code.
  */
-void *e9loader(PEB *peb, const struct e9_config_s *config, int32_t reason)
+void *e9loader(PEB *peb, const struct e9_config_s *config)
 {
     // Step (0): Sanity checks & initialization:
     const uint8_t *loader_base = (const uint8_t *)config;
     const uint8_t *image_base  = loader_base - config->base;
     void *entry = (void *)(image_base + config->entry);
-    if (reason != DLL_PROCESS_ATTACH)
+    static bool inited = false;
+    if (inited)
         return entry;   // Enforce single execution
+    inited = true;
 
     // Step (1): Parse the PEB/LDR for kernel32.dll and our image path:
     PEB_LDR_DATA* ldr = peb->Ldr;
@@ -472,7 +473,7 @@ void *e9loader(PEB *peb, const struct e9_config_s *config, int32_t reason)
         const LDR_DATA_TABLE_ENTRY* entry =
             CONTAINING_RECORD(curr, LDR_DATA_TABLE_ENTRY, InMemoryOrderLinks);
         const UNICODE_STRING *name = &entry->FullDllName;
-        if (entry->DllBase == peb->ImageBaseAddress)
+        if (entry->DllBase == (void *)image_base)
             self = name->Buffer;
         name++;     // BaseDllName immediately follows FullDllName
         if (e9wcscasecmp(name->Buffer, L"kernel32.dll") == 0)

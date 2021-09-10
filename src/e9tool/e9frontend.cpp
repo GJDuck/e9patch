@@ -2409,6 +2409,7 @@ typedef struct _IMAGE_SECTION_HEADER
 #define IMAGE_SCN_MEM_WRITE     0x80000000
 #define IMAGE_SCN_MEM_SHARED    0x10000000
 #define IMAGE_SCN_CNT_CODE      0x00000020
+#define IMAGE_FILE_DLL          0x2000
 ELF *e9frontend::parsePE(const char *filename)
 {
     int fd = open(filename, O_RDONLY, 0);
@@ -2464,6 +2465,9 @@ ELF *e9frontend::parsePE(const char *filename)
     if (opt_hdr->Magic != PE64_MAGIC)
         error("failed to parse PE file \"%s\"; invalid magic number (0x%x), "
             "expected PE64 (0x%x)", filename, opt_hdr->Magic, PE64_MAGIC);
+    BinaryType type = BINARY_TYPE_PE_EXE;
+    if ((file_hdr->Characteristics & IMAGE_FILE_DLL) != 0)
+        type = BINARY_TYPE_PE_DLL;
     const IMAGE_SECTION_HEADER *shdrs =
         (PIMAGE_SECTION_HEADER)&opt_hdr->DataDirectory[
             opt_hdr->NumberOfRvaAndSizes];
@@ -2519,7 +2523,7 @@ ELF *e9frontend::parsePE(const char *filename)
     elf->strs           = new char[strtab.size()];
     elf->phdrs          = nullptr;
     elf->phnum          = 0;
-    elf->type           = BINARY_TYPE_PE_EXE;
+    elf->type           = type;
     elf->reloc          = false;
     elf->sections.swap(sections);
     elf->exes.reserve(exes.size());

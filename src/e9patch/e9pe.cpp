@@ -18,7 +18,9 @@
 
 #include <cstdint>
 
+#include <unistd.h>
 #include <sys/mman.h>
+#include <sys/syscall.h>
 
 #include "e9alloc.h"
 #include "e9elf.h"
@@ -134,12 +136,22 @@ typedef struct _IMAGE_BASE_RELOCATION
 /*
  * Simple string hash function.
  */
-uint64_t hash(const char *s)
+static uint64_t hash(const char *s)
 {
 	uint64_t h = 777799777ull;
 	while (*s)
 	    h = (3333331ull * h) ^ (0xe9e9ea1bull * (uint64_t)*s++);
 	return h;
+}
+
+/*
+ * Simple random number function.
+ */
+static uint64_t random(const char *s)
+{
+    uint64_t r;
+    (void)syscall(SYS_getrandom, &r, sizeof(r), 0);
+    return r;
 }
 
 /*
@@ -196,16 +208,6 @@ void parsePE(Binary *B)
         error("failed to parse PE file \"%s\"; invalid image base (0x%lx), "
             "expected a multiple of virtual allocation granularity (%u)",
             filename, image_base, WINDOWS_VIRTUAL_ALLOC_SIZE);
-    bool have_relocs =
-        (opt_hdr->DllCharacteristics & IMAGE_DLLCHARACTERISTICS_DYNAMIC_BASE)
-            != 0;
-    uint64_t image_base_min = 0x100000000;
-    if ((option_mem_rebase == 0 || !have_relocs) &&
-            image_base < image_base_min)
-        error("failed to parse PE file \"%s\"; image base (0x%lx) must be "
-            "(>=0x%lx)%s", filename, image_base, image_base_min,
-            (have_relocs? " (hint: see the `--mem-rebase' option)":
-                ", but relocations are stripped"));
     PIMAGE_SECTION_HEADER shdr =
         (PIMAGE_SECTION_HEADER)&opt_hdr->DataDirectory[
             opt_hdr->NumberOfRvaAndSizes];
@@ -331,16 +333,17 @@ size_t emitPE(Binary *B, const MappingSet &mappings, size_t mapping_size)
     uint32_t addr_of_entry = size_of_image + (uint32_t)(size - config_offset);
     PIMAGE_TLS_DIRECTORY64 tls = (PIMAGE_TLS_DIRECTORY64)findPEData(B,
         opt_hdr->DataDirectory[IMAGE_DIRECTORY_ENTRY_TLS].VirtualAddress);
+    intptr_t image_base = (intptr_t)opt_hdr->ImageBase;
     intptr_t *callbacks = (tls != nullptr?
-        (intptr_t *)findPEData(B, tls->AddressOfCallBacks - opt_hdr->ImageBase):
+        (intptr_t *)findPEData(B, tls->AddressOfCallBacks - image_base):
         nullptr);
     bool use_tls = (callbacks != nullptr && callbacks[0] != 0x0);
     if (use_tls)
     {
         // This PE file uses TLS callbacks, which are called before the entry
         // point.  Thus we inject the loader here:
-        config->entry = (intptr_t)callbacks[0] - (intptr_t)opt_hdr->ImageBase;
-        callbacks[0]  = (intptr_t)opt_hdr->ImageBase + (intptr_t)addr_of_entry;
+        config->entry = (intptr_t)callbacks[0] - image_base;
+        callbacks[0]  = image_base + (intptr_t)addr_of_entry;
     }
     else
     {
@@ -404,13 +407,15 @@ size_t emitPE(Binary *B, const MappingSet &mappings, size_t mapping_size)
      * Windows ASLR depends on text relocations, which is not compatible with
      * static binary rewriting.  Thus, it must be disabled...
      */
-    bool have_relocs =
-        (opt_hdr->DllCharacteristics & IMAGE_DLLCHARACTERISTICS_DYNAMIC_BASE)
-            != 0;
     uint32_t relocs =
         opt_hdr->DataDirectory[IMAGE_DIRECTORY_ENTRY_BASERELOC].VirtualAddress;
     uint32_t relocs_size =
         opt_hdr->DataDirectory[IMAGE_DIRECTORY_ENTRY_BASERELOC].Size;
+    bool have_relocs =
+        ((file_hdr->Characteristics & IMAGE_FILE_RELOCS_STRIPPED) == 0) &&
+        ((opt_hdr->DllCharacteristics & IMAGE_DLLCHARACTERISTICS_DYNAMIC_BASE)
+            != 0) &&
+        relocs != 0x0 && relocs_size > 0;
     opt_hdr->DllCharacteristics &= ~IMAGE_DLLCHARACTERISTICS_DYNAMIC_BASE;
     opt_hdr->DataDirectory[IMAGE_DIRECTORY_ENTRY_BASERELOC].VirtualAddress = 0;
     opt_hdr->DataDirectory[IMAGE_DIRECTORY_ENTRY_BASERELOC].Size = 0;
@@ -419,24 +424,33 @@ size_t emitPE(Binary *B, const MappingSet &mappings, size_t mapping_size)
     /*
      * Rebase the exectuable (if necessary).
      */
+    intptr_t image_base_min = 0x100000000;
+    if ((option_mem_rebase == 0 || !have_relocs) &&
+            image_base < image_base_min)
+        error("failed to parse PE file \"%s\"; image base (0x%lx) must be "
+            "(>=0x%lx)%s", B->filename, image_base, image_base_min,
+            (have_relocs? " (hint: see the `--mem-rebase' option)":
+                ", but relocations are stripped"));
     const uint8_t *relocs_base = findPEData(B, relocs);
     intptr_t rebase_delta = 0;
     switch (option_mem_rebase)
     {
-        case -1:
+        case OPTION_REBASE_AUTO: case OPTION_REBASE_RANDOM:
         {
             // Auto rebase
             uint64_t lo = 0x100000000000ull, hi = 0xB00000000000ull;
-            uint64_t base = hash(B->filename) % (hi - lo) + lo;
+            uint64_t r = (option_mem_rebase == OPTION_REBASE_AUTO?
+                hash(B->filename): random(B->filename));
+            uint64_t base = r % (hi - lo) + lo;
             base -= base % mapping_align;
-			rebase_delta = (intptr_t)base - (intptr_t)opt_hdr->ImageBase;
+			rebase_delta = (intptr_t)base - image_base;
             break;
         }
-        case 0:
+        case OPTION_REBASE_NONE:
             // No rebase
             break;
         default:
-            rebase_delta = option_mem_rebase - (intptr_t)opt_hdr->ImageBase;
+            rebase_delta = option_mem_rebase - image_base;
             break;
     }
     if (rebase_delta != 0 && !have_relocs)

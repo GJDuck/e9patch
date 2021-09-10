@@ -295,9 +295,10 @@ static void usage(FILE *stream, const char *progname)
         "\n"
         "\t--mem-rebase[=ADDR]\n"
         "\t\tRebase the binary to the absolute address ADDR.  Only\n"
-        "\t\trelevant for Windows PE binaries.  The special value \"auto\"\n"
-        "\t\twill cause a suitable base address to be chose automatically.\n"
-        "\t\tThe special value \"none\" leaves the original base intact.\n"
+        "\t\trelevant for Windows PE binaries.  The special values \"auto\"\n"
+        "\t\tor \"random\" will cause a suitable base address to be chosen\n"
+        "\t\tautomatically/randomly.  The special value \"none\" leaves the\n"
+        "\t\toriginal base intact.\n"
         "\t\tDefault: none (disabled)\n"
         "\n"
         "\t--tactic-B1[=false]\n"
@@ -581,9 +582,11 @@ void parseOptions(int argc, char * const argv[], bool api)
             case OPTION_MEM_REBASE:
                 option_mem_rebase_set = true;
                 if (strcmp(optarg, "auto") == 0)
-                    option_mem_rebase = -1;
+                    option_mem_rebase = OPTION_REBASE_AUTO;
+                else if (strcmp(optarg, "random") == 0)
+                    option_mem_rebase = OPTION_REBASE_RANDOM;
                 else if (strcmp(optarg, "none") == 0)
-                    option_mem_rebase = 0x0;
+                    option_mem_rebase = OPTION_REBASE_NONE;
                 else
                     option_mem_rebase = parseIntOptArg("--mem-rebase", optarg,
                         0x100000000ll, 0xffff00000000ll, /*hex=*/true);
@@ -671,12 +674,14 @@ int realMain(int argc, char **argv)
     const char *mode_str = "???";
     switch (B->mode)
     {
-        case MODE_ELF_EXECUTABLE:
+        case MODE_ELF_EXE:
             mode_str = "Linux ELF executable"; break;
-        case MODE_ELF_SHARED_OBJECT:
+        case MODE_ELF_DSO:
             mode_str = "Linux ELF dynamic shared object"; break;
-        case MODE_PE_EXECUTABLE:
+        case MODE_PE_EXE:
             mode_str = "Windows PE executable"; break;
+        case MODE_PE_DLL:
+            mode_str = "Windows PE dynamic link library"; break;
     }
 
     printf("\n\n-----------------------------------------------\n");

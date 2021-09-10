@@ -385,9 +385,10 @@ struct PEInfo
  */
 enum Mode 
 {
-    MODE_ELF_EXECUTABLE,                // Binary is an ELF executable.
-    MODE_ELF_SHARED_OBJECT,             // Binary is an ELF shared object.
-    MODE_PE_EXECUTABLE,                 // Binary is a PE executable.
+    MODE_ELF_EXE,                       // Linux ELF executable.
+    MODE_ELF_DSO,                       // Linux ELF shared object.
+    MODE_PE_EXE,                        // Windows PE executable.
+    MODE_PE_DLL,                        // Windows PE DLL.
 };
 
 /*
@@ -516,6 +517,13 @@ extern bool option_loader_base_set;
 extern bool option_loader_phdr_set;
 extern bool option_loader_static_set;
 extern bool option_mem_rebase_set;
+
+/*
+ * Special values for option_mem_rebase.
+ */
+#define OPTION_REBASE_NONE      0
+#define OPTION_REBASE_AUTO      -1
+#define OPTION_REBASE_RANDOM    -2
 
 /*
  * Global statistics.

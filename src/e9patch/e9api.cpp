@@ -178,7 +178,7 @@ static void queuePatch(Binary *B, Instr *I, const Trampoline *T)
 static Binary *parseBinary(const Message &msg)
 {
     const char *filename = nullptr;
-    Mode mode = MODE_ELF_EXECUTABLE;
+    Mode mode = MODE_ELF_EXE;
     bool have_mode = false, dup = false;
     for (unsigned i = 0; i < msg.num_params; i++)
     {
@@ -247,10 +247,10 @@ mmap_failed:
     B->config = 0x0;
     switch (B->mode)
     {
-        case MODE_ELF_EXECUTABLE: case MODE_ELF_SHARED_OBJECT:
+        case MODE_ELF_EXE: case MODE_ELF_DSO:
             B->pic = parseElf(B);
             break;
-        case MODE_PE_EXECUTABLE:
+        case MODE_PE_EXE: case MODE_PE_DLL:
             parsePE(B);
             B->pic = true;
             break;
@@ -450,8 +450,10 @@ static void parseEmit(Binary *B, const Message &msg)
 
     // Create and optimize the mappings:
     MappingSet mappings;
-    size_t granularity = (B->mode != MODE_PE_EXECUTABLE? PAGE_SIZE:
-        WINDOWS_VIRTUAL_ALLOC_SIZE);
+    size_t granularity = PAGE_SIZE;
+    granularity = (B->mode == MODE_PE_EXE ||
+                   B->mode == MODE_PE_DLL? WINDOWS_VIRTUAL_ALLOC_SIZE:
+                    granularity);
     size_t mapping_size = std::max(granularity, option_mem_mapping_size);
     buildMappings(B->allocator, mapping_size, mappings);
     switch (option_mem_granularity)
@@ -472,10 +474,10 @@ static void parseEmit(Binary *B, const Message &msg)
     // Create the patched binary:
     switch (B->mode)
     {
-        case MODE_ELF_EXECUTABLE: case MODE_ELF_SHARED_OBJECT:
+        case MODE_ELF_EXE: case MODE_ELF_DSO:
             B->patched.size = emitElf(B, mappings, mapping_size);
             break;
-        case MODE_PE_EXECUTABLE:
+        case MODE_PE_EXE: case MODE_PE_DLL:
             B->patched.size = emitPE(B, mappings, mapping_size);
             break;
     }

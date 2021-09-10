@@ -1143,19 +1143,17 @@ static void parseParams(Parser &parser, Message &msg)
                 case PARAM_MODE:
                     expectToken(parser, TOKEN_STRING);
                     if (strcmp(parser.s, "elf.exe") == 0)
-                        value.integer = (intptr_t)MODE_ELF_EXECUTABLE;
+                        value.integer = (intptr_t)MODE_ELF_EXE;
                     else if (strcmp(parser.s, "elf.dso") == 0)
-                        value.integer = (intptr_t)MODE_ELF_SHARED_OBJECT;
+                        value.integer = (intptr_t)MODE_ELF_DSO;
                     else if (strcmp(parser.s, "pe.exe") == 0)
-                        value.integer = (intptr_t)MODE_PE_EXECUTABLE;
+                        value.integer = (intptr_t)MODE_PE_EXE;
                     else if (strcmp(parser.s, "pe.dll") == 0)
-                        parse_error(parser, "failed to parse mode string "
-                            "\"%s\"; Windows PE DLLs are not-yet-implemented",
-                            parser.s);
+                        value.integer = (intptr_t)MODE_PE_DLL;
                     else
                         parse_error(parser, "failed to parse mode string "
                             "\"%s\"; expected one of {\"elf.exe\", "
-                            "\"elf.dso\", \"pe.exe\"}", parser.s);
+                            "\"elf.dso\", \"pe.exe\", \"pe.dll\"}", parser.s);
                     break;
                 case PARAM_UNKNOWN:
                     parseAndDiscardObject(parser);

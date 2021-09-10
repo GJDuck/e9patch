@@ -114,7 +114,7 @@ bool parseElf(Binary *B)
     {
         case ET_EXEC:
         {
-            if (mode == MODE_ELF_SHARED_OBJECT)
+            if (mode == MODE_ELF_DSO)
                 error("failed to parse ELF file \"%s\": file is an "
                     "executable and not a shared object", filename);
             if (!reserve(B, 0x0, 0x10000))
@@ -123,7 +123,7 @@ bool parseElf(Binary *B)
         }
         case ET_DYN:
             pic = true;
-            pie = (mode == MODE_ELF_EXECUTABLE);
+            pie = (mode == MODE_ELF_EXE);
             break;
         default:
             error("failed to parse ELF file \"%s\"; file is not executable",
@@ -398,7 +398,7 @@ size_t emitElf(Binary *B, const MappingSet &mappings, size_t mapping_size)
         data[size++] = /*int3=*/0xCC;
     switch (B->mode)
     {
-        case MODE_ELF_EXECUTABLE:
+        case MODE_ELF_EXE:
             // mov (%rsp),%rdi
             // lea 0x8(%rsp),%rsi
             data[size++] = 0x48; data[size++] = 0x8B; data[size++] = 0x3C;
@@ -406,7 +406,7 @@ size_t emitElf(Binary *B, const MappingSet &mappings, size_t mapping_size)
             data[size++] = 0x48; data[size++] = 0x8D; data[size++] = 0x74;
             data[size++] = 0x24; data[size++] = 0x08;
             break;
-        case MODE_ELF_SHARED_OBJECT:
+        case MODE_ELF_DSO:
             // xorq %edi, %edi
             // xorq %esi, %esi
             data[size++] = 0x31; data[size++] = 0xFF;
@@ -434,7 +434,7 @@ size_t emitElf(Binary *B, const MappingSet &mappings, size_t mapping_size)
         config_elf->dynamic = dynamic = (intptr_t)phdr->p_vaddr;
     switch (B->mode)
     {
-        case MODE_ELF_EXECUTABLE:
+        case MODE_ELF_EXE:
         {
             Elf64_Ehdr *ehdr = B->elf.ehdr;
             config->entry = (intptr_t)B->elf.ehdr->e_entry;
@@ -442,7 +442,7 @@ size_t emitElf(Binary *B, const MappingSet &mappings, size_t mapping_size)
             config->flags |= E9_FLAG_EXE;
             break;
         }
-        case MODE_ELF_SHARED_OBJECT:
+        case MODE_ELF_DSO:
         {
             if (phdr == nullptr)
                 error("failed to replace DT_INIT entry; missing PT_DYNAMIC "
