@@ -150,6 +150,13 @@ static void queueFlush(Binary *B, intptr_t cursor)
                 ;
             parseOptions(argc, argv, /*api=*/true);
             delete[] argv;
+            switch (B->mode)
+            {
+                case MODE_ELF_EXE: case MODE_ELF_DSO:
+                    B->config = option_loader_base; break;
+                default:
+                    break;
+            }
         }
         B->Q.pop_back();
     }
@@ -244,7 +251,6 @@ mmap_failed:
     B->patched.size  = size;
 
     // Parse the mmap'ed binary:
-    B->config = 0x0;
     switch (B->mode)
     {
         case MODE_ELF_EXE: case MODE_ELF_DSO:

@@ -239,6 +239,7 @@ void parsePE(Binary *B)
     info.opt_hdr   = opt_hdr;
     info.shdr      = shdr;
     info.free_shdr = shdr + file_hdr->NumberOfSections;
+    B->config      = (intptr_t)opt_hdr->SizeOfImage;
 }
 
 /*
@@ -277,7 +278,6 @@ size_t emitPE(Binary *B, const MappingSet &mappings, size_t mapping_size)
     // Emit all mappings:
     PIMAGE_OPTIONAL_HEADER64 opt_hdr = B->pe.opt_hdr;
     uint32_t size_of_image = opt_hdr->SizeOfImage;
-    B->config = (intptr_t)size_of_image;
     for (auto mapping: mappings)
     {
         uint8_t *base = data + size;

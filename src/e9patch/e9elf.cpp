@@ -178,6 +178,7 @@ bool parseElf(Binary *B)
     info.phdr_gnu_relro = phdr_gnu_relro;
     info.phdr_gnu_stack = phdr_gnu_stack;
     info.phdr_dynamic   = phdr_dynamic;
+    B->config = option_loader_base;
 
     return pic;
 }
@@ -304,7 +305,6 @@ size_t emitElf(Binary *B, const MappingSet &mappings, size_t mapping_size)
         B->Is, refactors);
  
     // Step (3): Emit all mappings:
-    B->config = option_loader_base;
     for (auto *mapping: mappings)
     {
         uint8_t *base = data + size;
