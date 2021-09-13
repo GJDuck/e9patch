@@ -51,6 +51,9 @@ asm (
     ".type _entry,@function\n"
     "_entry:\n"
     "\tcallq e9loader\n"
+    "\tpop %rdx\n"
+    "\tpop %rsi\n"
+    "\tpop %rdi\n"
     "\tjmpq *%rax\n"
 
     ".globl e9syscall\n"

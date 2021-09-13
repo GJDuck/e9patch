@@ -396,6 +396,8 @@ size_t emitElf(Binary *B, const MappingSet &mappings, size_t mapping_size)
     intptr_t entry = (option_loader_base + (size - config_offset));
     if (option_trap_entry)
         data[size++] = /*int3=*/0xCC;
+    // push %rdi,%rsi,%rdx
+    data[size++] = 0x57; data[size++] = 0x56; data[size++] = 0x52;
     switch (B->mode)
     {
         case MODE_ELF_EXE:
