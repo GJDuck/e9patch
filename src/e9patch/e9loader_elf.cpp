@@ -39,7 +39,8 @@
 
 extern "C"
 {
-    void *e9loader(int argc, char **argv, const struct e9_config_s *config);
+    void *e9loader(int argc, char **argv, char **envp,
+        const struct e9_config_s *config);
     intptr_t e9syscall(long number, ...);
 }
 
@@ -118,7 +119,7 @@ static intptr_t e9mmap(void *ptr, size_t len, int prot, int flags, int fd,
 }
 
 typedef intptr_t (*mmap_t)(void *, size_t, int, int, int, off_t);
-typedef void (*init_t)(int, char **, char **, void *);
+typedef void (*init_t)(int, char **, char **, const void *, const void *);
 
 /*
  * Load a set of maps.
@@ -154,7 +155,7 @@ static NO_INLINE void e9load_maps(const e9_map_s *maps, uint32_t num_maps,
 /*
  * Main loader code.
  */
-void *e9loader(int argc, char **argv, const e9_config_s *config)
+void *e9loader(int argc, char **argv, char **envp, const e9_config_s *config)
 {
     // Step (0): Sanity checks & initialization:
     if (config->magic[0] != 'E' || config->magic[1] != '9' ||
@@ -199,21 +200,16 @@ void *e9loader(int argc, char **argv, const e9_config_s *config)
     e9syscall(SYS_close, fd);
 
     // Step (3): Call the initialization routines:
-    void *dynamic = NULL;
-    char **envp = NULL;
-    if ((config->flags & E9_FLAG_EXE) != 0)
-    {
-        const struct e9_config_elf_s *config_elf =
-            (const struct e9_config_elf_s *)(config + 1);
-        if (config_elf->dynamic != 0x0)
-            dynamic = (void *)(elf_base + config_elf->dynamic);
-        envp = argv + argc;
-    }
+    const struct e9_config_elf_s *config_elf =
+        (const struct e9_config_elf_s *)(config + 1);
+    const void *dynamic = NULL;
+    if (config_elf->dynamic != 0x0)
+        dynamic = (const void *)(elf_base + config_elf->dynamic);
     const intptr_t *inits = (const intptr_t *)(loader_base + config->inits);
     for (uint16_t i = 0; i < config->num_inits; i++)
     {
         init_t init = (init_t)(elf_base + inits[i]);
-        init(argc, argv, envp, dynamic);
+        init(argc, argv, envp, dynamic, config);
     }
 
     // Step (4): Return the entry point:

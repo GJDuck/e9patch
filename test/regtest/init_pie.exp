@@ -1,0 +1,3 @@
+mmap() intercepted
+init argv = "./init_pie.exe" 
+PASSED

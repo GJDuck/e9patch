@@ -1,0 +1,1 @@
+./test -M false -A 'call nop@init'

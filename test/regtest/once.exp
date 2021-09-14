@@ -1,5 +1,5 @@
 mmap() intercepted
-init(argc=1,dynamic=0x0) called
+init argv = "./once.exe" 
 0xa000100: jnz 0xa0002ae
 0xa000108: js 0xa000106
 0xa00011e: jz 0xa000122

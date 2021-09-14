@@ -60,6 +60,8 @@ static bool runTest(const struct dirent *test, const std::string &options)
     exe += ".exe";
     std::string log(basename);
     log += ".log";
+    std::string cmd(basename);
+    cmd += ".cmd";
 
     // Step (1): generate the EXE
     std::string command("../../e9tool ");
@@ -94,9 +96,19 @@ static bool runTest(const struct dirent *test, const std::string &options)
     }
 
     // Step (2): execute the EXE
+    FILE *CMD = fopen(cmd.c_str(), "r");
     command.clear();
-    command += "./";
-    command += exe;
+    if (CMD != NULL)
+    {
+        for (int i = 0; (c = getc(CMD)) != '\n' && isprint(c) && i < 1024; i++)
+            command += c;
+        fclose(CMD);
+    }
+    else
+    {
+        command += "./";
+        command += exe;
+    }
     command += " >";
     command += out;
     command += " 2>&1";

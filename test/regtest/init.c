@@ -17,7 +17,15 @@ void *_mmap(void *addr, size_t length, int prot, int flags, int fd,
 
 void init(int argc, char **argv, char **envp, void *dynamic)
 {
-    fprintf(stderr, "init(argc=%d,dynamic=%p) called\n", argc, dynamic);
+    fprintf(stderr, "init argv = ");
+    for (int i = 0; i < argc; i++)
+        fprintf(stderr, "\"%s\" ", argv[i]);
+    fputc('\n', stderr);
+}
+
+void nop(void)
+{
+    ;
 }
 
 const void *once(uint8_t *trampoline, const void *addr, const void *next,

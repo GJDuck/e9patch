@@ -520,6 +520,8 @@ The following arguments are supported:
     <td>The string length of <tt>asm</tt> (excluding the nul character)</td></tr>
 <tr><td><b><tt>base</tt></b></td><td><tt>const void &#42;</tt></td>
     <td>The runtime base address of the binary</td></tr>
+<tr><td><b><tt>config</tt></b></td><td><tt>const void &#42;</tt></td>
+    <td>A pointer to the E9Patch configuration (see <tt>e9loader.h</tt>)</td></tr>
 <tr><td><b><tt>addr</tt></b></td><td><tt>const void &#42;</tt></td>
     <td>The runtime address of the matching instruction</td></tr>
 <tr><td><b><tt>static addr</tt></b></td><td><tt>const void &#42;</tt></td>
@@ -984,9 +986,6 @@ The initialization function must be named `init`, and will be called
 once during the patched program's initialization.
 For patched executables, the command line arguments (`argc` and `argv`) and
 the environment pointer (`envp`) will be passed as arguments to the function.
-Note that, for technical reasons, the `argc`/`argv`/`envp`
-arguments are only available for patched executables, and will be
-zero/`NULL` for patched shared objects.
 
 In the example above, the initialization function searches for an
 environment variable `MAX`, and sets the `max` counter accordingly.

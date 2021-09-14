@@ -401,24 +401,24 @@ size_t emitElf(Binary *B, const MappingSet &mappings, size_t mapping_size)
     switch (B->mode)
     {
         case MODE_ELF_EXE:
-            // mov (%rsp),%rdi
-            // lea 0x8(%rsp),%rsi
-            data[size++] = 0x48; data[size++] = 0x8B; data[size++] = 0x3C;
-            data[size++] = 0x24;
+            // mov 0x18(%rsp),%rdi      # argc
+            // lea 0x20(%rsp),%rsi      # argv
+            // lea (%rsi,%rdi,8),%rdx   # envp
+            data[size++] = 0x48; data[size++] = 0x8B; data[size++] = 0x7C;
+            data[size++] = 0x24; data[size++] = 0x18;
             data[size++] = 0x48; data[size++] = 0x8D; data[size++] = 0x74;
-            data[size++] = 0x24; data[size++] = 0x08;
+            data[size++] = 0x24; data[size++] = 0x20;
+            data[size++] = 0x48; data[size++] = 0x8D; data[size++] = 0x14;
+            data[size++] = 0xFE;
             break;
         case MODE_ELF_DSO:
-            // xorq %edi, %edi
-            // xorq %esi, %esi
-            data[size++] = 0x31; data[size++] = 0xFF;
-            data[size++] = 0x31; data[size++] = 0xF6;
+            // argc/argv/envp already in correct registers.
             break;
         default:
             error("invalid mode");
     }
-    // lea config(%rip), %rdx
-    data[size++] = 0x48; data[size++] = 0x8D; data[size++] = 0x15;
+    // lea config(%rip), %rcx
+    data[size++] = 0x48; data[size++] = 0x8D; data[size++] = 0x0D;
     int32_t config_rel32 =
         -(int32_t)((size + sizeof(int32_t)) - config_offset);
     memcpy(data + size, &config_rel32, sizeof(config_rel32));
