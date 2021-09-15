@@ -150,7 +150,7 @@ bool parseElf(Binary *B)
             {
                 intptr_t vstart = (intptr_t)phdr->p_vaddr;
                 intptr_t vend   = vstart + phdr->p_memsz;
-                if (!reserve(B, vstart, vend))
+                if (vend - vstart > 0 && !reserve(B, vstart, vend))
                     error("failed to reserve address space range %p..%p",
                         vstart, vend);
                 break;

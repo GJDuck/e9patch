@@ -237,6 +237,7 @@ data_END:
     lea .Lstring(%rip),%rsi
     mov $7, %rdx
     syscall
+    # Note: %r11 is undefined after syscall
 
     mov $60,%eax    # SYS_exit
     xor %edi,%edi

@@ -50,6 +50,7 @@ asm (
      */
     ".globl _entry\n"
     ".type _entry,@function\n"
+    ".section .text.entry,\"x\",@progbits\n"
     "_entry:\n"
     "\tcallq e9loader\n"
     "\tpop %rdx\n"
@@ -59,6 +60,7 @@ asm (
 
     ".globl e9syscall\n"
     ".type e9syscall,@function\n"
+    ".section .text\n"
     "e9syscall:\n"
     "\tmov %edi, %eax\n"
     "\tmov %rsi, %rdi\n"
