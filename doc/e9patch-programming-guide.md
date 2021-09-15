@@ -340,7 +340,12 @@ of the frontend, and E9Patch will simply execute the template "as-is".
 The `"reserve"` message is useful for reserving sections of the
 patched program's virtual address space and (optionally) initializing
 it with data.
-Reserved addresses will not be used to host trampolines.
+The reserved address range will not be used to host trampolines.
+
+Note that the reserved address range will be implicitly rounded to the
+nearest page boundary.
+This means that trampoline and reserved memory will be disjoint at the
+page level.
 
 #### Parameters:
 

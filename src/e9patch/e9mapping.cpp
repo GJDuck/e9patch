@@ -157,15 +157,15 @@ static Key calculateKey(const Allocator &allocator, const size_t MAPPING_SIZE,
         if (a->T == nullptr)
             continue;
 
-        size_t preamble   = a->lb - BASE;
+        size_t prologue   = a->lb - BASE;
         size_t postscript = (a->ub >= END? 0: END - a->ub);
 
-        preamble   = preamble / UNIT_SIZE;
+        prologue   = prologue / UNIT_SIZE;
         postscript = postscript / UNIT_SIZE;
-        assert(preamble < KEY_BITS);
+        assert(prologue < KEY_BITS);
         assert(postscript < KEY_BITS);
 
-        Key tmp = (KEY_ONES << preamble);
+        Key tmp = (KEY_ONES << prologue);
         tmp    &= (KEY_ONES >> postscript);
         key    |= tmp;
     }

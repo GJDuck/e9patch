@@ -652,6 +652,36 @@ static Entry makeDebugEntry(void)
 }
 
 /*
+ * Create a ZEROES template entry.
+ */
+static Entry makeZeroesEntry(size_t len)
+{
+    Entry entry;
+    entry.kind   = ENTRY_ZEROES;
+    entry.length = (unsigned)len;
+    return entry;
+}
+
+/*
+ * Make padding.
+ */
+Trampoline *makePadding(size_t len)
+{
+    if (len == 0)
+        return nullptr;
+    size_t num_entries = 1;
+    uint8_t *ptr =
+        new uint8_t[sizeof(Trampoline) + num_entries * sizeof(Entry)];
+    Trampoline *T  = (Trampoline *)ptr;
+    T->prot        = PROT_READ | PROT_EXEC;
+    T->num_entries = num_entries;
+    T->preload     = false;
+    T->entries[0]  = makeZeroesEntry(len);
+
+    return T;
+}
+
+/*
  * Convert an integer.
  */
 static uintptr_t convertInteger(const Parser &parser, intptr_t x,

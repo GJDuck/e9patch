@@ -112,5 +112,6 @@ struct Message
 
 bool getMessage(FILE *stream, size_t lineno, Message &msg);
 const char *getMethodString(Method method);
+Trampoline *makePadding(size_t size);
 
 #endif

@@ -145,10 +145,7 @@ static void queueFlush(Binary *B, intptr_t cursor)
         {
             // Options entry
             char * const *argv = entry.argv;
-            int argc;
-            for (argc = 0; argv[argc] != nullptr; argc++)
-                ;
-            parseOptions(argc, argv, /*api=*/true);
+            parseOptions(argv, /*api=*/true);
             delete[] argv;
             switch (B->mode)
             {
@@ -619,17 +616,33 @@ static void parseReserve(Binary *B, const Message &msg)
     if (bytes != nullptr)
     {
         bytes->preload = true;
-        const Alloc *A = allocate(B, address, address, bytes, nullptr);
-        if (A == nullptr)
-            error("failed to reserve address space at address "
-                ADDRESS_FORMAT, ADDRESS(address));
         length = getTrampolineSize(B, bytes, nullptr);
-        debug("reserved address space [prot=%c%c%c, size=%zu, bytes="
-            ADDRESS_FORMAT ".." ADDRESS_FORMAT "]",
-            (protection & PROT_READ? 'r': '-'),
-            (protection & PROT_WRITE? 'w': '-'),
-            (protection & PROT_EXEC? 'x': '-'), length, ADDRESS(address),
-            ADDRESS(address + (intptr_t)length));
+        size_t length_lo = address % PAGE_SIZE;
+        size_t length_hi = PAGE_SIZE - (length_lo + length) % PAGE_SIZE;
+        intptr_t address_lo = address - length_lo;
+        intptr_t address_hi = address + length;
+        const unsigned num_trampolines = 3;
+        Trampoline *trampolines[num_trampolines] =
+            {makePadding(length_lo), bytes, makePadding(length_hi)};
+        intptr_t addrs[num_trampolines] =
+            {address_lo, address, address_hi};
+        size_t lens[num_trampolines] = {length_lo, length, length_hi};
+        for (unsigned i = 0; i < num_trampolines; i++)
+        {
+            if (trampolines[i] == nullptr)
+                continue;
+            const Alloc *A = allocate(B, addrs[i], addrs[i], trampolines[i],
+                nullptr);
+            if (A == nullptr)
+                error("failed to reserve address space at address "
+                    ADDRESS_FORMAT, ADDRESS(addrs[i]));
+            debug("reserved address space [prot=%c%c%c, size=%zu, bytes="
+                ADDRESS_FORMAT ".." ADDRESS_FORMAT "]",
+                (protection & PROT_READ? 'r': '-'),
+                (protection & PROT_WRITE? 'w': '-'),
+                (protection & PROT_EXEC? 'x': '-'), lens[i], ADDRESS(addrs[i]),
+                ADDRESS(addrs[i] + (intptr_t)lens[i]));
+        }
     }
     if (have_length)
     {
@@ -713,8 +726,16 @@ static void parseOptions(Binary *B, const Message &msg)
     if (dup)
         error("failed to parse \"options\" message (id=%u); duplicate "
             "parameters detected", msg.id);
-    PatchEntry entry(argv);
-    B->Q.push_front(entry);
+    if (B->cursor == INTPTR_MAX)
+    {
+        parseOptions(argv, /*api=*/true);
+        delete[] argv;
+    }
+    else
+    {
+        PatchEntry entry(argv);
+        B->Q.push_front(entry);
+    }
 }
 
 /*

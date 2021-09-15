@@ -337,10 +337,13 @@ size_t emitElf(Binary *B, const MappingSet &mappings, size_t mapping_size)
     }
     std::vector<Bounds> bounds;
     intptr_t ub = INTPTR_MIN;
+    // level 0 == non-trampoline mappings (reserves, refactors), default mmap()
+    // level 1 == trampoline mappings, user mmap() can be used.
     for (unsigned i = 0; i < 2; i++)
     {
-        config->maps[i] = (uint32_t)(size - config_offset);
-        bool preload = (i == 0);
+        unsigned level = i;
+        config->maps[level] = (uint32_t)(size - config_offset);
+        bool preload = (level == 0);
         for (auto *mapping: mappings)
         {
             if (preload)
@@ -361,16 +364,32 @@ size_t emitElf(Binary *B, const MappingSet &mappings, size_t mapping_size)
                     size_t len    = b.ub - b.lb;
                     off_t offset  = offset_0 + b.lb;
 
-                    debug("load trampoline: mmap(addr=" ADDRESS_FORMAT
+                    const char *name = (level == 0? "reserve": "trampoline");
+                    debug("load %s: mmap(addr=" ADDRESS_FORMAT
                         ",size=%zu,offset=+%zu,prot=%c%c%c)",
-                        ADDRESS(base), len, offset_0, (r? 'r': '-'),
+                        name, ADDRESS(base), len, offset_0, (r? 'r': '-'),
                         (w? 'w': '-'), (x? 'x': '-'));
                     stat_num_virtual_bytes += len;
 
                     size += emitLoaderMap(data + size, base, len, offset,
                         r, w, x, &ub);
-                    config->num_maps[i]++;
+                    config->num_maps[level]++;
                 }
+            }
+        }
+        if (level == 0)
+        {
+            // Emit refactorings at level 0.
+            for (const auto &refactor: refactors)
+            {
+                debug("load refactor: mmap(addr=" ADDRESS_FORMAT
+                    ",size=%zu,offset=+%zd,prot=r-x)",
+                    ADDRESS(refactor.addr), refactor.size,
+                    refactor.patched.offset);
+                size += emitLoaderMap(data + size, refactor.addr,
+                    refactor.size, refactor.patched.offset, /*r=*/true,
+                    /*w=*/false, /*x=*/true, nullptr);
+                config->num_maps[level]++;
             }
         }
     }
@@ -382,16 +401,6 @@ size_t emitElf(Binary *B, const MappingSet &mappings, size_t mapping_size)
         error("loader base address (0x%lx) (see `--loader-base') must not "
             "exceed maximum mapping address (0x%lx) (see `--mem-ub')",
             option_loader_base, ub);
-    }
-    for (const auto &refactor: refactors)
-    {
-        debug("load refactoring: mmap(" ADDRESS_FORMAT ", %zu, "
-            "PROT_READ | PROT_WRITE | 0, MAP_FIXED | MAP_PRIVATE, fd, +%zd)",
-            ADDRESS(refactor.addr), refactor.size, refactor.patched.offset);
-        size += emitLoaderMap(data + size, refactor.addr, refactor.size,
-            refactor.patched.offset, /*r=*/true, /*w=*/false, /*x=*/true,
-            nullptr);
-        config->num_maps[1]++;
     }
     intptr_t entry = (option_loader_base + (size - config_offset));
     if (option_trap_entry)

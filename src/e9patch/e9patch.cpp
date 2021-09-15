@@ -371,8 +371,11 @@ enum Option
 /*
  * Parse options.
  */
-void parseOptions(int argc, char * const argv[], bool api)
+void parseOptions(char * const argv[], bool api)
 {
+    int argc;
+    for (argc = 0; argv[argc] != nullptr; argc++)
+        ;
     const int req_arg = required_argument, opt_arg = optional_argument,
               no_arg  = no_argument;
     static const struct option long_options[] =
@@ -619,7 +622,7 @@ int realMain(int argc, char **argv)
     if (getenv("E9PATCH_DEBUG") != nullptr)
         option_debug = true;
 
-    parseOptions(argc, argv);
+    parseOptions(argv);
 
     if (option_input != "-")
     {
