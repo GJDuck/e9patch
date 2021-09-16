@@ -1478,7 +1478,7 @@ static int islower(int c)
 
 static int isprint(int c)
 {
-    return (c >= ' ' && c <= UINT8_MAX);
+    return (c >= ' ' && c < INT8_MAX);
 }
 
 static int isspace(int c)
