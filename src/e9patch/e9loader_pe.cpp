@@ -263,6 +263,7 @@ asm (
      */
     ".globl _entry\n"
     ".type _entry,@function\n"
+    ".section .text.entry,\"x\",@progbits\n"
     "_entry:\n"
     // %r9 = pointer to config.
 
@@ -281,6 +282,8 @@ asm (
     "\tpop %rcx\n"
 
     "\tjmpq *%rax\n"
+
+    ".section .text\n"
 );
 
 /*
