@@ -1261,6 +1261,7 @@ namespace e9frontend
 
         BinaryType type;                // Binary type.
         bool reloc;                     // Needs relocation?
+        bool dynlink;                   // Dynamically linked?
  
         Targets targets;                // Jump/Call targets [optional]
 
@@ -2219,6 +2220,7 @@ ELF *e9frontend::parseELF(const char *filename, intptr_t base)
     const Elf64_Phdr *phdrs = (const Elf64_Phdr *)(data + ehdr->e_phoff);
     size_t phnum = (size_t)ehdr->e_phnum;
     intptr_t end = INTPTR_MIN;
+    bool dynlink = false;
     for (size_t i = 0; i < phnum; i++)
     {
         const Elf64_Phdr *phdr = phdrs + i;
@@ -2227,6 +2229,8 @@ ELF *e9frontend::parseELF(const char *filename, intptr_t base)
         end = std::max(end, phdr_end);
         if (!exe && phdr->p_type == PT_INTERP && !isLibraryFilename(filename))
             exe = true;
+        if (phdr->p_type == PT_INTERP)
+            dynlink = true;
     }
     end += base;
 
@@ -2312,6 +2316,7 @@ ELF *e9frontend::parseELF(const char *filename, intptr_t base)
     BinaryType type = BINARY_TYPE_ELF_EXE;
     type = (pic && exe?  BINARY_TYPE_ELF_PIE: type);
     type = (pic && !exe? BINARY_TYPE_ELF_DSO: type);
+    dynlink = (dynlink || (type != BINARY_TYPE_ELF_EXE));
 
     ELF *elf = new ELF;
     elf->filename       = strDup(filename);
@@ -2324,6 +2329,7 @@ ELF *e9frontend::parseELF(const char *filename, intptr_t base)
     elf->phnum          = phnum;
     elf->type           = type;
     elf->reloc          = reloc;
+    elf->dynlink        = dynlink;
     elf->sections.swap(sections);
     elf->dynsyms.swap(dynsyms);
     elf->syms.swap(syms);
@@ -2525,6 +2531,7 @@ ELF *e9frontend::parsePE(const char *filename)
     elf->phnum          = 0;
     elf->type           = type;
     elf->reloc          = false;
+    elf->dynlink        = false;
     elf->sections.swap(sections);
     elf->exes.reserve(exes.size());
     for (const auto &entry: exes)
