@@ -3,7 +3,7 @@
  *
  * Usage:
  *
- *    ./e9compile.sh examples/windows.c -mabi=ms
+ *    ./e9compile.sh examples/win64_demo.c -mabi=ms
  *    ./e9tool -M ... -A 'call entry(config,addr,instr,size,asm)@win64_demo' \
  *          prog.exe
  *
@@ -69,7 +69,7 @@ static intptr_t get_stderr(const struct e9_config_s *config)
                 config_pe->kernel32, "WriteFile");
     if (set_console_text_attribute_fn == NULL || write_file_fn == NULL)
         asm volatile ("ud2");
-    return config_pe->stderr;
+    return config_pe->stderr_handle;
 }
 
 /*

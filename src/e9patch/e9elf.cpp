@@ -410,18 +410,18 @@ size_t emitElf(Binary *B, const MappingSet &mappings, size_t mapping_size)
     switch (B->mode)
     {
         case MODE_ELF_EXE:
-            // mov 0x18(%rsp),%rdi      # argc
-            // lea 0x20(%rsp),%rsi      # argv
-            // lea (%rsi,%rdi,8),%rdx   # envp
+            // mov 0x18(%rsp),%rdi          # argc
+            // lea 0x20(%rsp),%rsi          # argv
+            // lea 0x8(%rsi,%rdi,8),%rdx    # envp
             data[size++] = 0x48; data[size++] = 0x8B; data[size++] = 0x7C;
             data[size++] = 0x24; data[size++] = 0x18;
             data[size++] = 0x48; data[size++] = 0x8D; data[size++] = 0x74;
             data[size++] = 0x24; data[size++] = 0x20;
-            data[size++] = 0x48; data[size++] = 0x8D; data[size++] = 0x14;
-            data[size++] = 0xFE;
+            data[size++] = 0x48; data[size++] = 0x8D; data[size++] = 0x54;
+            data[size++] = 0xFE; data[size++] = 0x08;
             break;
         case MODE_ELF_DSO:
-            // argc/argv/envp already in correct registers.
+            // argc/argv/envp are already in the correct registers.
             break;
         default:
             error("invalid mode");

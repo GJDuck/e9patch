@@ -80,9 +80,9 @@ struct e9_config_pe_s
     e9_get_proc_address_t get_proc_address;     // safe GetProcAddress()
     e9_nt_write_file_t nt_write_file;           // safe NtWriteFile()
     e9_nt_read_file_t nt_read_file;             // safe NtReadFile()
-    intptr_t stdin;                             // stdin
-    intptr_t stdout;                            // stdout
-    intptr_t stderr;                            // stderr
+    intptr_t stdin_handle;                      // stdin
+    intptr_t stdout_handle;                     // stdout
+    intptr_t stderr_handle;                     // stderr
     const void *ntdll;                          // ntdll.dll
     const void *kernel32;                       // kernel32.dll
     const void *user32;                         // user32.dll, or NULL

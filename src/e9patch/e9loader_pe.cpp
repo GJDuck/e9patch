@@ -620,9 +620,9 @@ void *e9loader(PEB *peb, const struct e9_config_s *config)
     config_pe->ntdll            = ntdll;
     config_pe->kernel32         = kernel32;
     config_pe->user32           = user32;
-    config_pe->stdin            = (intptr_t)params->StdInputHandle;
-    config_pe->stdout           = (intptr_t)params->StdOutputHandle;
-    config_pe->stderr           = (intptr_t)params->StdErrorHandle;
+    config_pe->stdin_handle     = (intptr_t)params->StdInputHandle;
+    config_pe->stdout_handle    = (intptr_t)params->StdOutputHandle;
+    config_pe->stderr_handle    = (intptr_t)params->StdErrorHandle;
 
     get_proc_address = GetProcAddress;
     nt_write_file = (e9_nt_write_file_t)GetProcAddress(ntdll, "NtWriteFile");
