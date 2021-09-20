@@ -1796,7 +1796,7 @@ unsigned e9frontend::sendPrintTrampolineMessage(FILE *out,
             // mov ...(%rax),%rcx       # FileHandle=config->stderr
             // callq *...(%rax)         # call config->NtWriteFile()
             size_t stderr_offset = sizeof(struct e9_config_s) +
-                offsetof(struct e9_config_pe_s, stderr);
+                offsetof(struct e9_config_pe_s, stderr_handle);
             size_t nt_write_file_offset = sizeof(struct e9_config_s) +
                 offsetof(struct e9_config_pe_s, nt_write_file);
             assert(stderr_offset <= UINT8_MAX &&
