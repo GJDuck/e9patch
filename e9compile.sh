@@ -61,7 +61,7 @@ then
     exit 1
 fi
 
-CFLAGS="-pie -nostdlib -static \
+CFLAGS="-pie -nostdlib \
     -Wl,-z -Wl,max-page-size=4096 \
     -Wl,-z -Wl,norelro \
     -Wl,-z -Wl,stack-size=0 \

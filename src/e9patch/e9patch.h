@@ -25,6 +25,7 @@
 #include <cstring>
 
 #include <elf.h>
+#include <sys/types.h>
 
 #include <deque>
 #include <map>

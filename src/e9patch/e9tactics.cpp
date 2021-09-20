@@ -19,6 +19,7 @@
 #include <cassert>
 #include <cstdint>
 #include <cstdlib>
+#include <cstdio>
 #include <cstring>
 
 #include "e9alloc.h"
