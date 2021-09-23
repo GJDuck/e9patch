@@ -2053,23 +2053,24 @@ static bool sendInstructionMessage(FILE *out, Instr &I, intptr_t addr)
 /*
  * Check if the target is compatible with the input binary.
  */
+#define CONFIG_ERRNO        0x1
+#define CONFIG_MUTEX        0x2
 static void checkCompatible(const ELF &elf, const ELF &target)
 {
-    const Elf64_Sym *config_errno = getELFDynSym(&target, "_stdlib_errno");
-    const Elf64_Sym *config_mutex = getELFDynSym(&target, "_stdlib_mutex");
+    const Elf64_Sym *config = getELFDynSym(&target, "_stdlib_config");
     switch (elf.type)
     {
         case BINARY_TYPE_PE_EXE: case BINARY_TYPE_PE_DLL:
-            if (config_errno != nullptr || config_mutex != nullptr)
+            if (config != nullptr)
                 error("binary \"%s\" is incompatible with Windows/PE "
                     "instrumentation; the \"stdlib.c\" library supports "
                     "Linux/ELF only", target.filename);
             return;
         case BINARY_TYPE_ELF_EXE:
-            if (elf.dynlink)
+            if (elf.dynlink || config == nullptr)
                 return;
-            if ((config_errno != nullptr && config_errno->st_value == 0) ||
-                (config_mutex != nullptr && config_errno->st_value == 0))
+            if ((config->st_value & CONFIG_ERRNO) == 0 ||
+                    (config->st_value & CONFIG_MUTEX) == 0)
                 error("binary \"%s\" is incompatible with statically linked "
                     "Linux/ELF executable instrumentation; please recompile "
                     "with the `-DNO_GLIBC=1' option",

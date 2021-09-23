@@ -490,18 +490,6 @@ static __attribute__((__noinline__)) int *__errno_location(void)
 register int errno asm ("r11");
 #endif
 
-/*
- * Save errno configuration as a symbol.
- */
-asm (
-    ".globl _stdlib_errno\n"
-#ifdef ERRNO_TLS
-    ".set _stdlib_errno,0\n"
-#else
-    ".set _stdlib_errno,1\n"
-#endif
-);
-
 /****************************************************************************/
 /* SYSCALL                                                                  */
 /****************************************************************************/
@@ -975,16 +963,30 @@ static __attribute__((__noinline__)) int mutex_unlock(mutex_t *m)
     return 0;                       // released
 }
 
+/****************************************************************************/
+/* CONFIGURATION                                                            */
+/****************************************************************************/
+
 /*
- * Save mutex configuration as a symbol.
+ * Save stdlib configuration as a symbol.
  */
-asm (
-    ".globl _stdlib_mutex\n"
-#ifndef MUTEX_SAFE
-    ".set _stdlib_mutex,0\n"
+#ifndef ERRNO_TLS
+#define CONFIG_ERRNO        0x1
 #else
-    ".set _stdlib_mutex,1\n"
+#define CONFIG_ERRNO        0
 #endif
+
+#ifdef MUTEX_SAFE
+#define CONFIG_MUTEX        0x2
+#else
+#define CONFIG_MUTEX        0
+#endif
+
+asm (
+    ".globl _stdlib_config\n"
+    ".set _stdlib_config,"
+        STRING(CONFIG_ERRNO) "|"
+        STRING(CONFIG_MUTEX) "\n"
 );
 
 /****************************************************************************/
