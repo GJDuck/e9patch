@@ -1132,9 +1132,9 @@ static Type sendLoadArgumentMetadata(FILE *out, CallInfo &info,
             sendLoadValueMetadata(out, id, regno);
             break;
         case ARGUMENT_NEXT:
-            switch (action->call)
+            switch (action->patch->pos)
             {
-                case CALL_AFTER:
+                case POS_AFTER:
                     // If we reach here after the instruction, it means the
                     // branch was NOT taken, so (next=.Lcontinue).
                     sendLoadPointerMetadata(out, info, _static,
@@ -1205,9 +1205,9 @@ static Type sendLoadArgumentMetadata(FILE *out, CallInfo &info,
             switch ((Register)arg.value)
             {
                 case REGISTER_RIP:
-                    switch (action->call)
+                    switch (action->patch->pos)
                     {
-                        case CALL_AFTER:
+                        case POS_AFTER:
                             sendLeaFromPCRelToR64(out,
                                 "{\"rel32\":\".Lcontinue\"}", regno);
                             break;
@@ -1393,7 +1393,7 @@ static Type sendLoadArgumentMetadata(FILE *out, CallInfo &info,
                     op->type == OPTYPE_MEM)
             {
                 // Filter dangerous memory operand pass-by-value arguments:
-                if (action->call == CALL_AFTER)
+                if (action->patch->pos == POS_AFTER)
                 {
                     warning(CONTEXT_FORMAT "failed to load memory "
                         "operand contents into register %s; operand may "
@@ -1493,10 +1493,11 @@ static Metadata *buildMetadata(const ELF *elf, const Action *action,
 {
     if (action == nullptr)
         return nullptr;
-    switch (action->kind)
+    const Patch *patch = action->patch;
+    switch (patch->kind)
     {
-        case ACTION_EXIT: case ACTION_PASSTHRU:
-        case ACTION_PLUGIN: case ACTION_TRAP:
+        case PATCH_EXIT: case PATCH_PASSTHRU:
+        case PATCH_PLUGIN: case PATCH_TRAP:
             return nullptr;
         default:
             break;
@@ -1509,9 +1510,9 @@ static Metadata *buildMetadata(const ELF *elf, const Action *action,
     setvbuf(out, NULL, _IONBF, 0);
     long pos = 0;
 
-    switch (action->kind)
+    switch (patch->kind)
     {
-        case ACTION_PRINT:
+        case PATCH_PRINT:
         {
             sendAsmStrData(out, I, /*newline=*/true);
             const char *asm_str = buildMetadataString(out, buf, &pos);
@@ -1528,11 +1529,11 @@ static Metadata *buildMetadata(const ELF *elf, const Action *action,
             
             break;
         }
-        case ACTION_CALL:
+        case PATCH_CALL:
         {
             // Load arguments.
             bool state = false;
-            for (const auto &arg: action->args)
+            for (const auto &arg: patch->args)
             {
                 if (arg.kind == ARGUMENT_STATE)
                 {
@@ -1551,14 +1552,13 @@ static Metadata *buildMetadata(const ELF *elf, const Action *action,
             }
 
             int argno = 0;
-            bool before = (action->call != CALL_AFTER);
-            bool conditional = (action->call == CALL_CONDITIONAL ||
-                                action->call == CALL_CONDITIONAL_JUMP);
+            bool before = (patch->pos != POS_AFTER);
             bool pic = (getELFType(elf) != BINARY_TYPE_ELF_EXE);
-            CallInfo info(sysv, action->clean, state, conditional,
-                action->args.size(), before, pic);
+            CallInfo info(sysv, (patch->abi == ABI_CLEAN), state,
+                (patch->jmp != JUMP_NONE), patch->args.size(),
+                before, pic);
             TypeSig sig = TYPESIG_EMPTY;
-            for (const auto &arg: action->args)
+            for (const auto &arg: patch->args)
             {
                 int regno = getArgRegIdx(sysv, argno);
                 Type t = sendLoadArgumentMetadata(out, info, elf, action, arg,
@@ -1568,7 +1568,7 @@ static Metadata *buildMetadata(const ELF *elf, const Action *action,
             }
             argno = 0;
             int32_t rsp_args_offset = 0;
-            for (int argno = (int)action->args.size()-1; argno >= 0; argno--)
+            for (int argno = (int)patch->args.size()-1; argno >= 0; argno--)
             {
                 // Send stack arguments:
                 int regno = getArgRegIdx(sysv, argno);
@@ -1580,7 +1580,8 @@ static Metadata *buildMetadata(const ELF *elf, const Action *action,
                         break;
                 }
             }
-            for (int regno = 0; !action->clean && regno < RMAX_IDX; regno++)
+            for (int regno = 0; patch->abi == ABI_NAKED &&
+                    regno < RMAX_IDX; regno++)
             {
                 Register reg = getReg(regno);
                 if (!info.isCallerSave(reg) && info.isClobbered(reg))
@@ -1599,22 +1600,22 @@ static Metadata *buildMetadata(const ELF *elf, const Action *action,
             i++;
 
             // Find & call the function.
-            intptr_t addr = lookupSymbol(action->elf, action->symbol, sig);
+            intptr_t addr = lookupSymbol(patch->elf, patch->symbol, sig);
             if (addr < 0 || addr > INT32_MAX)
             {
-                lookupSymbolWarnings(action->elf, I, action->symbol, sig);
+                lookupSymbolWarnings(patch->elf, I, patch->symbol, sig);
                 std::string str;
-                getSymbolString(action->symbol, sig, str);
+                getSymbolString(patch->symbol, sig, str);
                 error(CONTEXT_FORMAT "failed to find a symbol matching \"%s\" "
                     "in binary \"%s\"", CONTEXT(I), str.c_str(),
-                    action->elf->filename);
+                    patch->elf->filename);
             }
             fprintf(out, "{\"rel32\":%d}", (int32_t)addr);
             const char *md_function = buildMetadataString(out, buf, &pos);
             metadata[i].name = "function";
             metadata[i].data = md_function;
             i++;
-            info.call(conditional);
+            info.call(patch->jmp != JUMP_NONE);
 
             // Restore state.
             if (rsp_args_offset != 0)
@@ -1662,7 +1663,7 @@ static Metadata *buildMetadata(const ELF *elf, const Action *action,
 
             // Place data (if necessary).
             argno = 0;
-            for (const auto &arg: action->args)
+            for (const auto &arg: patch->args)
             {
                 int regno = getArgRegIdx(sysv, argno);
                 sendArgumentDataMetadata(out, arg, I, regno);

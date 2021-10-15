@@ -68,6 +68,35 @@ enum BinaryType
 struct ELF;
 
 /*
+ * Patch pos.
+ */
+enum PatchPos
+{
+    POS_BEFORE,                     // Instrument before
+    POS_REPLACE,                    // Replace instruction
+    POS_AFTER,                      // Instrument after
+};
+
+/*
+ * Call ABI.
+ */
+enum CallABI
+{
+    ABI_CLEAN,                      // Clean ABI
+    ABI_NAKED,                      // Naked ABI
+};
+
+/*
+ * Jump kind
+ */
+enum CallJump
+{
+    JUMP_NONE,
+    JUMP_NEXT,                      // if (f(...) != 0) goto next; ...
+    JUMP_ADDR,                      // if (addr = f(...)) goto addr; ...
+};
+
+/*
  * Metadata.
  */
 struct Metadata
@@ -2059,7 +2088,7 @@ struct Instr
     size_t emitted:1;               // (E9Tool internal)
     size_t jump:1;                  // (E9Tool internal)
 
-	Instr() : patch(0), emitted(0), action(0), jump(0)
+    Instr() : patch(0), emitted(0), action(0), jump(0)
     {
         ;
     }
@@ -2181,18 +2210,6 @@ struct InstrInfo
                 return 0;
         }
     }
-};
-
-/*
- * Call kind
- */
-enum CallKind
-{
-    CALL_BEFORE,
-    CALL_AFTER,
-    CALL_REPLACE,
-    CALL_CONDITIONAL,
-    CALL_CONDITIONAL_JUMP,
 };
 
 /*
@@ -2320,9 +2337,9 @@ extern unsigned sendPrintTrampolineMessage(FILE *out, BinaryType type);
 extern unsigned sendTrapTrampolineMessage(FILE *out);
 extern unsigned sendExitTrampolineMessage(FILE *out, BinaryType type,
     int status);
-extern unsigned sendCallTrampolineMessage(FILE *out, const char *name,
-    const std::vector<Argument> &args, BinaryType type, bool clean = true, 
-    CallKind call = CALL_BEFORE);
+unsigned sendCallTrampolineMessage(FILE *out, const char *name,
+    const std::vector<Argument> &args, BinaryType type, CallABI abi,
+    CallJump jmp, PatchPos pos);
 extern unsigned sendTrampolineMessage(FILE *out, const char *name,
     const char *template_);
 
@@ -2352,8 +2369,7 @@ extern const GOTInfo &getELFGOTInfo(const ELF *elf);
 extern const PLTInfo &getELFPLTInfo(const ELF *elf);
 
 // Note: Windows PE files are parsed as "pseudo-ELF" files.  This saves having
-//       to rewrite/redesign large parts of E9Tool.  This will likely change
-//       in future.
+//       to rewrite/redesign large parts of E9Tool.  This may change in future.
 
 /*
  * Misc. functions:

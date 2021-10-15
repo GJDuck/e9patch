@@ -3624,9 +3624,12 @@ static void sendLeaFromStackToR64(FILE *out, int32_t offset, int regno)
  * Send a call ELF trampoline.
  */
 unsigned e9frontend::sendCallTrampolineMessage(FILE *out, const char *name,
-    const std::vector<Argument> &args, BinaryType type, bool clean,
-    CallKind call)
+    const std::vector<Argument> &args, BinaryType type, CallABI abi,
+    CallJump jmp, PatchPos pos)
 {
+    if (jmp != JUMP_NONE && pos != POS_BEFORE)
+        error("call-with-jump must use the `before' position");
+
     bool state = false;
     for (const auto &arg: args)
     {
@@ -3657,7 +3660,7 @@ unsigned e9frontend::sendCallTrampolineMessage(FILE *out, const char *name,
     fputs("\".Ltrampoline\",", out);
 
     // Put instruction here for "after" instrumentation.
-    if (call == CALL_AFTER)
+    if (pos == POS_AFTER)
         fprintf(out, "\"$instruction\",");
 
     // Adjust the stack:
@@ -3665,8 +3668,8 @@ unsigned e9frontend::sendCallTrampolineMessage(FILE *out, const char *name,
         0x48, 0x8d, 0xa4, 0x24, -0x4000);
 
     // Push all caller-save registers:
-    bool conditional = (call == CALL_CONDITIONAL ||
-                        call == CALL_CONDITIONAL_JUMP);
+    bool conditional = (jmp == JUMP_NEXT || jmp == JUMP_ADDR);
+    bool clean = (abi == ABI_CLEAN);
     const int *rsave = getCallerSaveRegs(sysv, clean, state, conditional,
         args.size());
     int num_rsave = 0;
@@ -3674,7 +3677,7 @@ unsigned e9frontend::sendCallTrampolineMessage(FILE *out, const char *name,
     int32_t offset = 0x4000;
     for (int i = 0; rsave[i] >= 0; i++, num_rsave++)
     {
-        sendPush(out, offset, (call != CALL_AFTER), getReg(rsave[i]), rscratch);
+        sendPush(out, offset, (pos != POS_AFTER), getReg(rsave[i]), rscratch);
         if (rsave[i] != RSP_IDX && rsave[i] != RIP_IDX)
             offset += sizeof(int64_t);
     }
@@ -3740,7 +3743,7 @@ unsigned e9frontend::sendCallTrampolineMessage(FILE *out, const char *name,
         }
 
         // The result is non-zero
-        if (call == CALL_CONDITIONAL_JUMP)
+        if (jmp == JUMP_ADDR)
         {
             // The register state, including %rsp, must be fully restored
             // before implementing the jump.  This means (1) the jump target
@@ -3783,10 +3786,9 @@ unsigned e9frontend::sendCallTrampolineMessage(FILE *out, const char *name,
     fputs("\"$restoreRSP\",",out);
     
     // Put instruction here for "before" instrumentation:
-    switch (call)
+    switch (pos)
     {
-        case CALL_BEFORE: case CALL_CONDITIONAL:
-        case CALL_CONDITIONAL_JUMP:
+        case POS_BEFORE:
             fputs("\"$instruction\",", out);
             break;
         default:
