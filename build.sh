@@ -39,10 +39,28 @@ done
 TARGET=`readlink zydis`
 if [ ! -d zydis ]
 then
-    echo -e "${GREEN}$0${OFF}: cloning Zydis..."
-    git clone --recursive 'https://github.com/zyantific/zydis.git' 
+    ZYDIS_VERSION=6a17c48576e1b016ce098c4bdbd001a1403b6a0a
+    ZYCORE_VERSION=4f3746faa1d19a14857ea7d1495c2ab006103698
+
+    echo -e "${GREEN}$0${OFF}: downloading zydis-$ZYDIS_VERSION.zip..."
+    wget -O zydis-$ZYDIS_VERSION.zip https://github.com/zyantific/zydis/archive/$ZYDIS_VERSION.zip
+
+    echo -e "${GREEN}$0${OFF}: downloading zycore-$ZYCORE_VERSION.zip..."
+    wget -O zycore-$ZYCORE_VERSION.zip https://github.com/zyantific/zycore-c/archive/$ZYCORE_VERSION.zip
+
+    echo -e "${GREEN}$0${OFF}: extracting zydis-$ZYDIS_VERSION.zip..."
+    unzip zydis-$ZYDIS_VERSION.zip
+    rm -f zydis-$ZYDIS_VERSION.zip
+
+    echo -e "${GREEN}$0${OFF}: extracting zycore-$ZYCORE_VERSION.zip..."
+    unzip zycore-$ZYCORE_VERSION.zip
+    rm -f zycore-$ZYCORE_VERSION.zip
 
     echo -e "${GREEN}$0${OFF}: building Zydis..."
+    mv zydis-$ZYDIS_VERSION zydis/
+    rm -rf zydis/dependencies/zycore/
+    mv zycore-c-$ZYCORE_VERSION zydis/dependencies/zycore/
+    rm -rf zycore-c-$ZYCORE_VERSION
 	cat << EOF > zydis/include/ZydisExportConfig.h
 #ifndef ZYDIS_EXPORT_H
 #define ZYDIS_EXPORT_H
