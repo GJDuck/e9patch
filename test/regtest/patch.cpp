@@ -471,3 +471,8 @@ void diff(const void *a, const void *b, const char *_asm)
     fprintf(stderr, "%s # diff = 0x%lx\n", _asm, diff);
 }
 
+void print(const char *_asm)
+{
+    fprintf(stderr, "%s\n", _asm);
+}
+

@@ -1420,9 +1420,19 @@ void e9frontend::sendMetadataFooter(FILE *out)
 /*
  * Send definition header.
  */
-void e9frontend::sendDefinitionHeader(FILE *out, const char *name)
+void e9frontend::sendDefinitionHeader(FILE *out, const char *patch,
+    const char *name)
 {
-    fprintf(out, "\"$%s\":", name);
+    fprintf(out, "\"$%s@%s\":[", name, patch);
+}
+
+/*
+ * Send definition footer.
+ */
+void e9frontend::sendDefinitionFooter(FILE *out, bool last)
+{
+    putc(']', out);
+    sendSeparator(out, last);
 }
 
 /*
@@ -1553,35 +1563,6 @@ static unsigned sendInstructionMessage(FILE *out, intptr_t addr,
 }
 
 /*
- * Send a "patch" message.
- */
-unsigned e9frontend::sendPatchMessage(FILE *out, const char *trampoline,
-    off_t offset, const Metadata *metadata)
-{
-    sendMessageHeader(out, "patch");
-    sendParamHeader(out, "trampoline");
-    sendString(out, trampoline);
-    sendSeparator(out);
-    if (metadata != nullptr)
-    {
-        sendParamHeader(out, "metadata");
-        sendMetadataHeader(out);
-        for (unsigned i = 0; metadata[i].name != nullptr; i++)
-        {
-            sendDefinitionHeader(out, metadata[i].name);
-            sendCode(out, metadata[i].data);
-            sendSeparator(out, (metadata[i+1].name == nullptr));
-        }
-        sendMetadataFooter(out);
-        sendSeparator(out);
-    }
-    sendParamHeader(out, "offset");
-    sendInteger(out, (intptr_t)offset);
-    sendSeparator(out, /*last=*/true);
-    return sendMessageFooter(out, /*sync=*/true);
-}
-
-/*
  * Send an "emit" message.
  */
 static unsigned sendEmitMessage(FILE *out, const char *filename,
@@ -1675,8 +1656,7 @@ unsigned e9frontend::sendPassthruTrampolineMessage(FILE *out)
     sendString(out, "$passthru");
     sendSeparator(out);
     sendParamHeader(out, "template");
-    putc('[', out);
-    fprintf(out, "\"$instruction\",\"$continue\"]");
+    fputs("[]", out);
     sendSeparator(out, /*last=*/true);
     return sendMessageFooter(out, /*sync=*/true);
 }
@@ -1720,13 +1700,13 @@ unsigned e9frontend::sendPrintTrampolineMessage(FILE *out,
             fprintf(out, "%u,", 0x52);
             fprintf(out, "%u,%u,", 0x41, 0x53);
 
-            // leaq .Lstring(%rip), %rsi
+            // leaq .Lasm(%rip), %rsi
             // mov $strlen,%edx
             // mov $0x2,%edi        # stderr
             // mov $0x1,%eax        # SYS_write
-            fprintf(out, "%u,%u,%u,{\"rel32\":\".Lstring\"},",
+            fprintf(out, "%u,%u,%u,{\"rel32\":\".Lasm@print\"},",
                 0x48, 0x8d, 0x35);
-            fprintf(out, "%u,\"$asmStrLen\",", 0xba);
+            fprintf(out, "%u,\"$ASM_LEN@print\",", 0xba);
             fprintf(out, "%u,{\"int32\":%d},",
                 0xbf, 0x02);
             fprintf(out, "%u,{\"int32\":%d},",
@@ -1785,9 +1765,9 @@ unsigned e9frontend::sendPrintTrampolineMessage(FILE *out,
             // push %rdx                # Key = NULL
             // push %rdx                # ByteOffset = NULL
             // mov $strlen,%eax
-            // push %rax                # Length=asmStrLen
-            // leaq .Lstring(%rip),%rax
-            // push %rax                # Buffer=asmStr
+            // push %rax                # Length=ASM_LEN
+            // leaq .Lasm(%rip),%rax
+            // push %rax                # Buffer=ASM
             // lea 0x78(%rsp),%rax
             // push %rax                # IoStatusBlock=...
             // lea -0x20(%rsp),%rsp
@@ -1810,10 +1790,10 @@ unsigned e9frontend::sendPrintTrampolineMessage(FILE *out,
                 0x41, 0x89, 0xd1);
             fprintf(out, "%u,", 0x52);
             fprintf(out, "%u,", 0x52);
-            fprintf(out, "%u,\"$asmStrLen\",",
+            fprintf(out, "%u,\"$ASM_LEN@print\",",
                 0xb8);
             fprintf(out, "%u,", 0x50);
-            fprintf(out, "%u,%u,%u,{\"rel32\":\".Lstring\"},",
+            fprintf(out, "%u,%u,%u,{\"rel32\":\".Lasm@print\"},",
                 0x48, 0x8d, 0x05);
             fprintf(out, "%u,", 0x50);
             fprintf(out, "%u,%u,%u,%u,{\"int8\":%d},",
@@ -1858,12 +1838,7 @@ unsigned e9frontend::sendPrintTrampolineMessage(FILE *out,
             break;
     }
 
-    // Execute the displaced instruction, and return from the trampoline:
-    fprintf(out, ",\"$instruction\",\"$continue\"");
-    
-    // Place the string representation of the instruction here:
-    fprintf(out, ",\".Lstring\",\"$asmStr\"]");
-
+    fputc(']', out);
     sendSeparator(out, /*last=*/true);
     return sendMessageFooter(out, /*sync=*/true);
 }
@@ -1910,9 +1885,7 @@ unsigned e9frontend::sendTrapTrampolineMessage(FILE *out)
     sendString(out, "$trap");
     sendSeparator(out);
     sendParamHeader(out, "template");
-    putc('[', out);
-    fprintf(out, "%u,\"$instruction\",\"$continue\"", 0xcc);
-    putc(']', out);
+    fprintf(out, "[%u]", 0xcc);
     sendSeparator(out, /*last=*/true);
     return sendMessageFooter(out, /*sync=*/true);
 }
@@ -3649,19 +3622,13 @@ unsigned e9frontend::sendCallTrampolineMessage(FILE *out, const char *name,
             break;
     }
 
+    const char *patch = name+1;
     sendMessageHeader(out, "trampoline");
     sendParamHeader(out, "name");
     sendString(out, name);
     sendSeparator(out);
     sendParamHeader(out, "template");
     putc('[', out);
-    
-    // Put a label at the start of the trampoline:
-    fputs("\".Ltrampoline\",", out);
-
-    // Put instruction here for "after" instrumentation.
-    if (pos == POS_AFTER)
-        fprintf(out, "\"$instruction\",");
 
     // Adjust the stack:
     fprintf(out, "%u,%u,%u,%u,{\"int32\":%d},",     // lea -0x4000(%rsp),%rsp
@@ -3683,7 +3650,7 @@ unsigned e9frontend::sendCallTrampolineMessage(FILE *out, const char *name,
     }
 
     // Load the arguments:
-    fputs("\"$loadArgs\",", out);
+    fprintf(out, "\"$ARGS@%s\",", patch);
     if (!sysv)
     {
         // lea -0x20(%rsp),%rsp         # MS ABI red-zone
@@ -3692,7 +3659,7 @@ unsigned e9frontend::sendCallTrampolineMessage(FILE *out, const char *name,
     }
 
     // Call the function:
-    fprintf(out, "%u,\"$function\",", 0xe8);        // callq function
+    fprintf(out, "%u,\"$FUNC@%s\",", 0xe8, patch);      // callq function
 
     // Restore the state:
     if (!sysv)
@@ -3701,7 +3668,7 @@ unsigned e9frontend::sendCallTrampolineMessage(FILE *out, const char *name,
         fprintf(out, "%u,%u,%u,%u,{\"int8\":%d},",
             0x48, 0x8d, 0x64, 0x24, 0x20);
     }
-    fputs("\"$restoreState\",", out);
+    fprintf(out, "\"$RSTOR@%s\",", patch);
     
     // If clean & conditional & !state, store result in %rcx, else in %rax
     bool preserve_rax = (conditional || !clean);
@@ -3733,13 +3700,13 @@ unsigned e9frontend::sendCallTrampolineMessage(FILE *out, const char *name,
             // xchg %rax,%rcx
             //
             fprintf(out, "%u,%u,", 0x48, 0x91);
-            fprintf(out, "%u,{\"rel8\":\".Lskip\"},", 0xe3);
+            fprintf(out, "%u,{\"rel8\":\".Lskip@%s\"},", 0xe3, patch);
             fprintf(out, "%u,%u,", 0x48, 0x91);
         }
         else
         {
             // jrcxz .Lskip
-            fprintf(out, "%u,{\"rel8\":\".Lskip\"},", 0xe3);
+            fprintf(out, "%u,{\"rel8\":\".Lskip@%s\"},", 0xe3, patch);
         }
 
         // The result is non-zero
@@ -3759,7 +3726,7 @@ unsigned e9frontend::sendCallTrampolineMessage(FILE *out, const char *name,
             fprintf(out, "%u,%u,%u,%u,%u,{\"int32\":%d},",
                 0x64, 0x48, 0x89, (result_rax? 0x04: 0x0c), 0x25, tls_offset);
             fprintf(out, "%u,", (result_rax? 0x58: 0x59));
-            fputs("\"$restoreRSP\",",out);
+            fprintf(out, "\"$RSTOR_RSP@%s\",", patch);
 
             // jmpq *%fs:0x40
             fprintf(out, "%u,%u,%u,%u,{\"int32\":%d},",
@@ -3768,12 +3735,12 @@ unsigned e9frontend::sendCallTrampolineMessage(FILE *out, const char *name,
         else
         {
             fprintf(out, "%u,", (result_rax? 0x58: 0x59));
-            fputs("\"$restoreRSP\",",out);
+            fprintf(out, "\"$RSTOR_RSP@%s\",", patch);
             fputs("\"$continue\",", out);
         }
  
         // The result is zero...
-        fputs("\".Lskip\",", out);
+        fprintf(out, "\".Lskip@%s\",", patch);
         if (result_rax)
         {
             // xchg %rax,%rcx
@@ -3783,26 +3750,8 @@ unsigned e9frontend::sendCallTrampolineMessage(FILE *out, const char *name,
     }
 
     // Restore the stack pointer.
-    fputs("\"$restoreRSP\",",out);
+    fprintf(out, "\"$RSTOR_RSP@%s\"]", patch);
     
-    // Put instruction here for "before" instrumentation:
-    switch (pos)
-    {
-        case POS_BEFORE:
-            fputs("\"$instruction\",", out);
-            break;
-        default:
-            break;
-    }
-
-    // Return from trampoline:
-    fputs("\"$continue\"", out);
-
-    // Any additional data:
-    if (args.size() > 0)
-        fputs(",\"$data\"]", out);
-    else
-        fputc(']', out);
     sendSeparator(out, /*last=*/true);
     return sendMessageFooter(out, /*sync=*/true);
 }

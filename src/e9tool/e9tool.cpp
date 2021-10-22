@@ -2032,20 +2032,66 @@ static bool matchEval(const MatchExpr *expr, const Targets &targets,
     return pass;
 }
 
+struct Matching
+{
+    const std::vector<Action *> actions;
+    
+    Matching(std::vector<Action *> &&actions) : actions(std::move(actions))
+    {
+        ;
+    }
+};
+struct MatchingCmp
+{
+    bool operator()(const Matching &m1, const Matching &m2)
+    {
+        for (size_t i = 0; ; i++)
+        {
+            if (i >= m1.actions.size())
+                return (i < m2.actions.size());
+            else if (i >= m2.actions.size())
+                return false;
+            if (m1.actions[i] < m2.actions[i])
+                return true;
+            if (m1.actions[i] > m2.actions[i])
+                return false;
+        }
+    }
+};
+struct MatchingCache
+{
+    std::map<const Matching, size_t, MatchingCmp> cache;
+    std::vector<const Matching *> matchings;
+
+};
+
 /*
  * Matching.
  */
-static int match(const std::vector<Action *> &actions, const Targets &targets,
-    const InstrInfo *I)
+static void match(const std::vector<Action *> &actions, const Targets &targets,
+    const InstrInfo *I, std::vector<Action *> &matching)
 {
-    int idx = 0;
-    for (const auto action: actions)
+    for (auto *action: actions)
     {
-        if (matchEval(action->match, targets, I))
-            return idx;
-        idx++;
+        if (!matchEval(action->match, targets, I))
+            continue;
+        matching.push_back(action);
     }
-    return -1;
+}
+
+/*
+ * Save matching.
+ */
+static size_t saveMatching(std::vector<Action *> &matching, MatchingCache &Ms)
+{
+    Matching M(std::move(matching));
+    auto i = Ms.cache.find(M);
+    if (i != Ms.cache.end())
+        return i->second;
+    size_t idx = Ms.matchings.size();
+    auto j = Ms.cache.insert({M, idx});
+    Ms.matchings.push_back(&j.first->first);
+    return idx;
 }
 
 /*
@@ -2616,6 +2662,7 @@ int main(int argc, char **argv)
         }
         spawnBackend(option_backend.c_str(), options, backend);
     }
+    FILE *out = backend.out;
 
     /*
      * Send binary message.
@@ -2634,7 +2681,7 @@ int main(int argc, char **argv)
         case BINARY_TYPE_PE_DLL:
             mode = "pe.dll"; break;
     }
-    sendBinaryMessage(backend.out, mode, filename);
+    sendBinaryMessage(out, mode, filename);
  
     /*
      * Send options message.
@@ -2707,7 +2754,7 @@ int main(int argc, char **argv)
     for (const char *option: option_options)
         options.push_back(option);
     if (options.size() > 0)
-        sendOptionsMessage(backend.out, options);
+        sendOptionsMessage(out, options);
     for (auto addr: option_trap)
     {
         options.clear();
@@ -2715,13 +2762,13 @@ int main(int argc, char **argv)
         std::string val;
         val += std::to_string(addr);
         options.push_back(val.c_str());
-        sendOptionsMessage(backend.out, options);
+        sendOptionsMessage(out, options);
     }
 
     /*
      * Initialize all plugins:
      */
-    initPlugins(backend.out, &elf);
+    initPlugins(out, &elf);
 
     /*
      * Send trampoline definitions:
@@ -2750,7 +2797,7 @@ int main(int argc, char **argv)
                 auto i = have_exit.find(status);
                 if (i == have_exit.end())
                 {
-                    sendExitTrampolineMessage(backend.out, elf.type, 
+                    sendExitTrampolineMessage(out, elf.type, 
                         status);
                     have_exit.insert(status);
                 }
@@ -2767,7 +2814,7 @@ int main(int argc, char **argv)
                     // Load the called ELF file into the address space:
                     target = parseELF(patch->filename, file_addr);
                     checkCompatible(elf, *target);
-                    sendELFFileMessage(backend.out, target);
+                    sendELFFileMessage(out, target);
                     files.insert({patch->filename, target});
                     file_addr  = target->end + 2 * PAGE_SIZE;
                     file_addr -= file_addr % PAGE_SIZE;
@@ -2780,7 +2827,7 @@ int main(int argc, char **argv)
                 auto j = have_call.find(patch->name);
                 if (j == have_call.end())
                 {
-                    sendCallTrampolineMessage(backend.out, patch->name,
+                    sendCallTrampolineMessage(out, patch->name,
                         patch->args, elf.type, patch->abi, patch->jmp,
                         patch->pos);
                     have_call.insert(patch->name);
@@ -2792,11 +2839,11 @@ int main(int argc, char **argv)
         }
     }
     if (have_passthru)
-        sendPassthruTrampolineMessage(backend.out);
+        sendPassthruTrampolineMessage(out);
     if (have_print)
-        sendPrintTrampolineMessage(backend.out, elf.type);
+        sendPrintTrampolineMessage(out, elf.type);
     if (have_trap)
-        sendTrapTrampolineMessage(backend.out);
+        sendTrapTrampolineMessage(out);
 
     /*
      * Disassemble the ELF file.
@@ -2857,7 +2904,7 @@ int main(int argc, char **argv)
                 section, filename, section);
     }
     Is.shrink_to_fit();
-    notifyPlugins(backend.out, &elf, Is.data(), Is.size(),
+    notifyPlugins(out, &elf, Is.data(), Is.size(),
         EVENT_DISASSEMBLY_COMPLETE);
     size_t count = Is.size();
 
@@ -2866,18 +2913,21 @@ int main(int argc, char **argv)
         CFGAnalysis(&elf, Is.data(), Is.size(), elf.targets);
 
     // Step (2): Find all matching instructions:
+    std::vector<Action *> matching;
+    MatchingCache Ms;
     for (size_t i = 0; i < count; i++)
     {
+        matching.clear();
         RawInstr raw;
         InstrInfo I;
         getInstrInfo(&elf, &Is[i], &I, &raw);
-        matchPlugins(backend.out, &elf, Is.data(), Is.size(), i, &I);
-        int idx = match(actions, elf.targets, &I);
-        bool matched = (idx >= 0);
+        matchPlugins(out, &elf, Is.data(), Is.size(), i, &I);
+        match(actions, elf.targets, &I, matching);
+        bool matched = (matching.size() > 0);
         if (matched)
         {
-            Is[i].patch  = true;
-            Is[i].action = idx;
+            Is[i].patch    = true;
+            Is[i].matching = saveMatching(matching, Ms);
         }
         debug("%s0x%lx%s: %s%s%s%s",
             (option_is_tty? "\33[31m": ""),
@@ -2892,13 +2942,14 @@ int main(int argc, char **argv)
                  (I.category & CATEGORY_CALL) != 0))
             Is[i].jump = true;
     }
-    notifyPlugins(backend.out, &elf, Is.data(), Is.size(),
+    notifyPlugins(out, &elf, Is.data(), Is.size(),
         EVENT_MATCHING_COMPLETE);
 
     /*
      * Send instructions & patches.  Note: this MUST be done in reverse!
      */
     intptr_t id = -1;
+    std::vector<const Action *> metadata;
     for (ssize_t i = (ssize_t)count - 1; i >= 0; i--)
     {
         switch (option_optimization_level)
@@ -2908,7 +2959,7 @@ int main(int argc, char **argv)
                 {
                     // Always emits jump/calls for -Opeephole
                     Is[i].emitted = true;
-                    sendInstructionMessage(backend.out, Is[i].address,
+                    sendInstructionMessage(out, Is[i].address,
                         Is[i].size, Is[i].offset);
                 }
                 break;
@@ -2922,35 +2973,84 @@ int main(int argc, char **argv)
         getInstrInfo(&elf, &Is[i], &I, &raw);
         bool done = false;
         for (ssize_t j = i; !done && j >= 0; j--)
-            done = !sendInstructionMessage(backend.out, Is[j], Is[i].address);
+            done = !sendInstructionMessage(out, Is[j], Is[i].address);
         done = false;
         for (size_t j = i + 1; !done && j < count; j++)
-            done = !sendInstructionMessage(backend.out, Is[j], Is[i].address);
+            done = !sendInstructionMessage(out, Is[j], Is[i].address);
 
-        const Action *action = actions[Is[i].action];
+        // Send the "patch" message.
+        sendMessageHeader(out, "patch");
+        sendParamHeader(out, "trampoline");
+        fputs("[\".Ltrampoline\",", out);
+        const Matching *M = Ms.matchings[Is[i].matching];
         id++;
-        if (action->patch->kind == PATCH_PLUGIN)
+        size_t idx = 0;
+        PatchPos pos = POS_BEFORE;
+        bool emit = false;
+        for (const auto *action: M->actions)
         {
-            // Special handling for plugins:
             const Patch *patch = action->patch;
-            if (patch->plugin->patchFunc != nullptr)
+            if (patch->pos < pos)
+                error("patches are applied out-of-order");
+            else if (patch->pos > pos)
             {
-                patch->plugin->patchFunc(backend.out, &elf, Is.data(),
-                    Is.size(), i, &I, patch->plugin->context);
+                emit = true;
+                if (patch->pos != POS_REPLACE)
+                    fprintf(out, "\"$instruction\",");
+                pos = POS_AFTER;
+            }
+            idx++;
+            sendString(out, action->patch->name);
+            sendSeparator(out);
+        }
+        if (!emit)
+            fputs("\"$instruction\",", out);
+        fputs("\"$continue\",", out);
+        metadata.clear();
+        for (const auto *action: M->actions)
+        {
+            const Patch *patch = action->patch;
+            bool found = false;
+            switch (patch->kind)
+            {
+                case PATCH_PRINT: case PATCH_CALL:
+                    for (const auto *prev: metadata)
+                    {
+                        if (strcmp(prev->patch->name, action->patch->name)
+                                == 0)
+                        {
+                            found = true;
+                            break;
+                        }
+                    }
+                    if (found)
+                        break;
+                    fprintf(out, "\"$DATA@%s\",", patch->name+1);
+                    metadata.push_back(action);
+                    break;
+                default:
+                    break;
             }
         }
-        else
+        fputc(']', out);
+        sendSeparator(out);
+        
+        sendParamHeader(out, "metadata");
+        sendMetadataHeader(out);
+        for (const auto *action: metadata)
         {
-            // Builtin actions:
-            char buf[BUFSIZ];
-            Metadata metadata_buf[MAX_ARGNO+1];
-            Metadata *metadata = buildMetadata(&elf, action, &I, id,
-                metadata_buf, buf, sizeof(buf)-1);
-            sendPatchMessage(backend.out, action->patch->name, I.offset,
-                metadata);
+            if (sendMetadata(out, &elf, action, &I, id))
+                sendSeparator(out);
         }
+        sendMetadataFooter(out);
+        sendSeparator(out);
+
+        sendParamHeader(out, "offset");
+        sendInteger(out, I.offset);
+        sendSeparator(out, /*last=*/true);
+        sendMessageFooter(out, /*sync=*/true);
     }
-    notifyPlugins(backend.out, &elf, Is.data(), Is.size(),
+    notifyPlugins(out, &elf, Is.data(), Is.size(),
         EVENT_PATCHING_COMPLETE);
     Is.clear();
 
@@ -2973,7 +3073,7 @@ int main(int argc, char **argv)
         option_output = "a.out";
         option_format = "binary";
     }
-    sendEmitMessage(backend.out, option_output.c_str(), option_format.c_str());
+    sendEmitMessage(out, option_output.c_str(), option_format.c_str());
 
     /*
      * Wait for E9Patch to complete.
@@ -2983,7 +3083,7 @@ int main(int argc, char **argv)
     /*
      * Finalize all plugins.
      */
-    finiPlugins(backend.out, &elf);
+    finiPlugins(out, &elf);
 
     return 0;
 }
