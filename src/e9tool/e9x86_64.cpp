@@ -43,11 +43,11 @@ static ZydisFormatter formatter;
 static void initDisassembler(void)
 {
     ZyanStatus result = ZydisDecoderInit(&decoder, ZYDIS_MACHINE_MODE_LONG_64,
-        ZYDIS_STACK_WIDTH_64);
+        ZYDIS_ADDRESS_WIDTH_64);
     if (!ZYAN_SUCCESS(result))
         error("failed to initialize disassembler decoder");
     result = ZydisDecoderInit(&decoder_minimal, ZYDIS_MACHINE_MODE_LONG_64,
-        ZYDIS_STACK_WIDTH_64);
+        ZYDIS_ADDRESS_WIDTH_64);
     if (!ZYAN_SUCCESS(result))
         error("failed to initialize disassembler decoder");
     (void)ZydisDecoderEnableMode(&decoder_minimal, ZYDIS_DECODER_MODE_MINIMAL,
