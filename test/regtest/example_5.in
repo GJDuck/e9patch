@@ -1,1 +1,1 @@
-./test -M 'op.size > 1' -A 'call entry(r10,r13,r12,instr,size,asm)@inst'
+./test -M 'op.size > 1' -P 'entry(r10,r13,r12,instr,size,asm)@inst'

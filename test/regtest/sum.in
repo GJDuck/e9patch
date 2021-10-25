@@ -1,1 +1,1 @@
-./test -M true -A 'call sum(rax,asm)@patch'
+./test -M true -P 'sum(rax,asm)@patch'

@@ -1,1 +1,1 @@
-./test.pie -M condjump -A 'call entry(rflags,static target,static next,instr,size,asm)@inst'
+./test.pie -M condjump -P 'entry(rflags,static target,static next,instr,size,asm)@inst'

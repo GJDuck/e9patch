@@ -1500,8 +1500,8 @@ static bool sendMetadata(FILE *out, const ELF *elf, const Action *action,
 
     switch (patch->kind)
     {
-        case PATCH_EXIT: case PATCH_PASSTHRU:
-        case PATCH_PLUGIN: case PATCH_TRAP:
+        case PATCH_EXIT: case PATCH_EMPTY: case PATCH_PLUGIN: case PATCH_TRAP:
+        case PATCH_BREAK:
             return false;
         case PATCH_PRINT:
         {

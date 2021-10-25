@@ -1,1 +1,1 @@
-./test -M 'defined(op[0]) && op[0].type == reg' -A 'call entry(op[0],reg[0],addr,instr,size,asm)@inst'
+./test -M 'defined(op[0]) && op[0].type == reg' -P 'entry(op[0],reg[0],addr,instr,size,asm)@inst'

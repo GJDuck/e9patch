@@ -1647,16 +1647,46 @@ unsigned e9frontend::sendReserveMessage(FILE *out, intptr_t addr,
 }
 
 /*
- * Send a "passthru" "trampoline" message.
+ * Send an "empty" "trampoline" message.
  */
-unsigned e9frontend::sendPassthruTrampolineMessage(FILE *out)
+unsigned e9frontend::sendEmptyTrampolineMessage(FILE *out)
 {
     sendMessageHeader(out, "trampoline");
     sendParamHeader(out, "name");
-    sendString(out, "$passthru");
+    sendString(out, "$empty");
     sendSeparator(out);
     sendParamHeader(out, "template");
     fputs("[]", out);
+    sendSeparator(out, /*last=*/true);
+    return sendMessageFooter(out, /*sync=*/true);
+}
+
+/*
+ * Send a "break" "trampoline" message.
+ */
+unsigned e9frontend::sendBreakTrampolineMessage(FILE *out)
+{
+    sendMessageHeader(out, "trampoline");
+    sendParamHeader(out, "name");
+    sendString(out, "$break");
+    sendSeparator(out);
+    sendParamHeader(out, "template");
+    fputs("[\"$continue\"]", out);
+    sendSeparator(out, /*last=*/true);
+    return sendMessageFooter(out, /*sync=*/true);
+}
+
+/*
+ * Send a "trap" "trampoline" message.
+ */
+unsigned e9frontend::sendTrapTrampolineMessage(FILE *out)
+{
+    sendMessageHeader(out, "trampoline");
+    sendParamHeader(out, "name");
+    sendString(out, "$trap");
+    sendSeparator(out);
+    sendParamHeader(out, "template");
+    fprintf(out, "[%u]", /*int3=*/0xcc);
     sendSeparator(out, /*last=*/true);
     return sendMessageFooter(out, /*sync=*/true);
 }
@@ -1852,8 +1882,8 @@ unsigned e9frontend::sendExitTrampolineMessage(FILE *out, BinaryType type,
     switch (type)
     {
         case BINARY_TYPE_PE_EXE: case BINARY_TYPE_PE_DLL:
-            error("exit actions for Windows PE binaries are "
-                "not-yet-implemented");
+            error("exit trampolines are not-yet-implemented for "
+                "Windows PE binaries");
         default:
             break;
     }
@@ -1871,21 +1901,6 @@ unsigned e9frontend::sendExitTrampolineMessage(FILE *out, BinaryType type,
     fprintf(out, "%u,%u", 0x0f, 0x05);              // syscall
     putc(']', out);
 
-    sendSeparator(out, /*last=*/true);
-    return sendMessageFooter(out, /*sync=*/true);
-}
-
-/*
- * Send a "trap" "trampoline" message.
- */
-unsigned e9frontend::sendTrapTrampolineMessage(FILE *out)
-{
-    sendMessageHeader(out, "trampoline");
-    sendParamHeader(out, "name");
-    sendString(out, "$trap");
-    sendSeparator(out);
-    sendParamHeader(out, "template");
-    fprintf(out, "[%u]", 0xcc);
     sendSeparator(out, /*last=*/true);
     return sendMessageFooter(out, /*sync=*/true);
 }
@@ -3600,9 +3615,6 @@ unsigned e9frontend::sendCallTrampolineMessage(FILE *out, const char *name,
     const std::vector<Argument> &args, BinaryType type, CallABI abi,
     CallJump jmp, PatchPos pos)
 {
-    if (jmp != JUMP_NONE && pos != POS_BEFORE)
-        error("call-with-jump must use the `before' position");
-
     bool state = false;
     for (const auto &arg: args)
     {
@@ -3635,7 +3647,7 @@ unsigned e9frontend::sendCallTrampolineMessage(FILE *out, const char *name,
         0x48, 0x8d, 0xa4, 0x24, -0x4000);
 
     // Push all caller-save registers:
-    bool conditional = (jmp == JUMP_NEXT || jmp == JUMP_ADDR);
+    bool conditional = (jmp != JUMP_NONE);
     bool clean = (abi == ABI_CLEAN);
     const int *rsave = getCallerSaveRegs(sysv, clean, state, conditional,
         args.size());
@@ -3710,7 +3722,7 @@ unsigned e9frontend::sendCallTrampolineMessage(FILE *out, const char *name,
         }
 
         // The result is non-zero
-        if (jmp == JUMP_ADDR)
+        if (jmp == JUMP_GOTO)
         {
             // The register state, including %rsp, must be fully restored
             // before implementing the jump.  This means (1) the jump target

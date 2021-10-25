@@ -1,4 +1,4 @@
-./test -M true -A 'call rip_to_rsp(state,asm)@patch'
+./test -M true -P 'rip_to_rsp(state,asm)@patch'
 
 # This will segv on the next instrumented instruction,
 # since the instrumentation itself uses the stack.

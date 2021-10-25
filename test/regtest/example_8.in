@@ -1,1 +1,1 @@
-./test -M 'op[0] == rax' -A 'call entry(addr,rax,op[0],instr,size,asm)@inst'
+./test -M 'op[0] == rax' -P 'entry(addr,rax,op[0],instr,size,asm)@inst'

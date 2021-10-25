@@ -1,1 +1,1 @@
-./test -M true -A print
+./test -M true -P print

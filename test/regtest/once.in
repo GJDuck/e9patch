@@ -1,1 +1,1 @@
-./test -M jump -A 'call[condjump] once(trampoline,addr,next,asm)@init'
+./test -M jump -P 'if once(trampoline,addr,next,asm)@init goto'

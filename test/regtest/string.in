@@ -1,1 +1,1 @@
-./test -M jump -A 'call string("Hello World!")@patch'
+./test -M jump -P 'string("Hello World!")@patch'

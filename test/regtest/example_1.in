@@ -1,1 +1,1 @@
-./test -M 'asm == jmp.*%r.*' -A 'call entry(addr,target,next,instr,size,asm)@inst'
+./test -M 'asm == jmp.*%r.*' -P 'entry(addr,target,next,instr,size,asm)@inst'

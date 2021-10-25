@@ -1,1 +1,1 @@
-./test -M 'rax in regs' -A 'call[naked] naked_bug(rax,state)@patch'
+./test -M 'rax in regs' -P 'naked_bug.naked(rax,state)@patch'

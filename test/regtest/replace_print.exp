@@ -1,0 +1,35 @@
+jnz 0xa0002ae
+push %r15
+js 0xa000106
+movq 0x5e(%rip), %rax
+mov $0x8877665544332211, %rbx
+cmp %rax, %rbx
+jz 0xa000122
+ud2
+nop
+jns 0xa000128
+ud2
+nopl %eax, (%rax)
+jnl 0xa00012f
+ud2
+jle 0xa000133
+ud2
+cmp $0x33, %ebx
+jnle 0xa00013a
+ud2
+jle 0xa0002ae
+movq 0x28(%rip), %r8
+movq 0x19a(%rip), %rcx
+cmp %r8, %rcx
+nopl %eax, (%rax)
+jnz 0xa000159
+ud2
+jnle 0xa00015d
+ud2
+jrcxz 0xa000161
+jmp 0xa000163
+ud2
+call 0xa000168
+jmp 0xa00016d
+jmp 0xa000177
+Segmentation fault

@@ -1,1 +1,1 @@
-./test.pie -M true -A print
+./test.pie -M true -P print

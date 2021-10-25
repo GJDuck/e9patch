@@ -1,1 +1,1 @@
-./test -M 'rax in regs' -A 'call entry(rax,eax,ax,instr,size,asm)@inst'
+./test -M 'rax in regs' -P 'entry(rax,eax,ax,instr,size,asm)@inst'

@@ -1,1 +1,1 @@
-./test -M true -A 'call rotate(state,asm)@patch'
+./test -M true -P 'rotate(state,asm)@patch'

@@ -1,1 +1,1 @@
-./test.pie -M 'op[0] == rax || op[1] == rcx || op[0] == rdi' -A 'call diff(base,config,asm)@patch'
+./test.pie -M 'op[0] == rax || op[1] == rcx || op[0] == rdi' -P 'diff(base,config,asm)@patch'

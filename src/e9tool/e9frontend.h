@@ -92,8 +92,8 @@ enum CallABI
 enum CallJump
 {
     JUMP_NONE,
-    JUMP_NEXT,                      // if (f(...) != 0) goto next; ...
-    JUMP_ADDR,                      // if (addr = f(...)) goto addr; ...
+    JUMP_BREAK,                     // if (f(...) != 0) break; ...
+    JUMP_GOTO,                      // if (addr = f(...)) goto addr; ...
 };
 
 /*
@@ -2330,9 +2330,10 @@ extern unsigned sendReserveMessage(FILE *out, intptr_t addr,
     intptr_t mmap = 0x0, bool absolute = false);
 extern void sendELFFileMessage(FILE *out, const ELF *elf,
     bool absolute = false);
-extern unsigned sendPassthruTrampolineMessage(FILE *out);
-extern unsigned sendPrintTrampolineMessage(FILE *out, BinaryType type);
+extern unsigned sendEmptyTrampolineMessage(FILE *out);
+extern unsigned sendBreakTrampolineMessage(FILE *out);
 extern unsigned sendTrapTrampolineMessage(FILE *out);
+extern unsigned sendPrintTrampolineMessage(FILE *out, BinaryType type);
 extern unsigned sendExitTrampolineMessage(FILE *out, BinaryType type,
     int status);
 unsigned sendCallTrampolineMessage(FILE *out, const char *name,

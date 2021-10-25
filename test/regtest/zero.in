@@ -1,1 +1,1 @@
-./test -M 'mnemonic == mov.* && op[0].type == mem && op[0].base == rip && op[1] == rcx' -A 'call[after] zero(state,asm)@patch'
+./test -M 'mnemonic == mov.* && op[0].type == mem && op[0].base == rip && op[1] == rcx' -P 'after zero(state,asm)@patch'

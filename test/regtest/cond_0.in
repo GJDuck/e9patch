@@ -1,1 +1,1 @@
-./test -M true -A 'call[conditional] ret_0(asm)@patch'
+./test -M true -P 'if ret_0(asm)@patch break'

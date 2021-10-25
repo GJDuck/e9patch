@@ -54,21 +54,24 @@ enum Token
     TOKEN_BASE,
     TOKEN_BB,
     TOKEN_BEFORE,
+    TOKEN_BREAK,
     TOKEN_CALL,
     TOKEN_CLEAN,
-    TOKEN_COND,
     TOKEN_CONDJUMP,
     TOKEN_CONFIG,
     TOKEN_DEFINED,
     TOKEN_DISPLACEMENT,
     TOKEN_DOTDOT,
     TOKEN_DST,
+    TOKEN_EMPTY,
     TOKEN_END,
     TOKEN_ENTRY,
     TOKEN_EXIT,
     TOKEN_FALSE,
     TOKEN_GEQ,
+    TOKEN_GOTO,
     TOKEN_ID,
+    TOKEN_IF,
     TOKEN_IMM,
     TOKEN_IN,
     TOKEN_INDEX,
@@ -184,13 +187,12 @@ static const TokenInfo tokens[] =
     {"bl",              TOKEN_REGISTER,         REGISTER_BL},
     {"bp",              TOKEN_REGISTER,         REGISTER_BP},
     {"bpl",             TOKEN_REGISTER,         REGISTER_BPL},
+    {"break",           TOKEN_BREAK,            0},
     {"bx",              TOKEN_REGISTER,         REGISTER_BX},
     {"call",            TOKEN_CALL,             0},
     {"ch",              TOKEN_REGISTER,         REGISTER_CH},
     {"cl",              TOKEN_REGISTER,         REGISTER_CL},
     {"clean",           TOKEN_CLEAN,            0},
-    {"cond",            TOKEN_COND,             0},
-    {"conditional",     TOKEN_COND,             0},
     {"condjump",        TOKEN_CONDJUMP,         0},
     {"config",          TOKEN_CONFIG,           0},
     {"cs",              TOKEN_REGISTER,         REGISTER_CS},
@@ -211,6 +213,7 @@ static const TokenInfo tokens[] =
     {"ecx",             TOKEN_REGISTER,         REGISTER_ECX},
     {"edi",             TOKEN_REGISTER,         REGISTER_EDI},
     {"edx",             TOKEN_REGISTER,         REGISTER_EDX},
+    {"empty",           TOKEN_EMPTY,            0},
     {"end",             TOKEN_END,              0},
     {"entry",           TOKEN_ENTRY,            0},
     {"es",              TOKEN_REGISTER,         REGISTER_ES},
@@ -219,8 +222,10 @@ static const TokenInfo tokens[] =
     {"exit",            TOKEN_EXIT,             0},
     {"false",           TOKEN_FALSE,            false},
     {"fs",              TOKEN_REGISTER,         REGISTER_FS},
+    {"goto",            TOKEN_GOTO,             0},
     {"gs",              TOKEN_REGISTER,         REGISTER_GS},
     {"id",              TOKEN_ID,               0},
+    {"if",              TOKEN_IF,               0},
     {"imm",             TOKEN_IMM,              OPTYPE_IMM},
     {"in",              TOKEN_IN,               0},
     {"index",           TOKEN_INDEX,            0},
@@ -703,7 +708,7 @@ struct Parser
         }
     }
 
-    void expectToken2(int token1, int token2)
+    int expectToken2(int token1, int token2)
     {
         int t = getToken();
         if (t != token1 && t != token2)
@@ -715,6 +720,7 @@ struct Parser
                 getNameFromToken((Token)token1),
                 getNameFromToken((Token)token2), s);
         }
+        return t;
     }
 
     NO_RETURN void unexpectedToken()
@@ -730,7 +736,7 @@ struct Parser
         return getNameFromToken((Token)token);
     }
 
-    int getRegex()
+    int getBlob()
     {
         if (peek != TOKEN_ERROR)
             unexpectedToken();
