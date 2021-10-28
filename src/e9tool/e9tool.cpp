@@ -1234,11 +1234,12 @@ static Patch *parsePatch(const ELF &elf, const char *str)
         
         case PATCH_CALL:
         {
-            t = parser.expectToken2('(', '.');
-            if (t == '.')
+            t = parser.expectToken2('(', '<');
+            if (t == '<')
             {
                 t = parser.expectToken2(TOKEN_CLEAN, TOKEN_NAKED);
                 abi = (t == TOKEN_CLEAN? ABI_CLEAN: ABI_NAKED);
+                parser.expectToken('>');
                 parser.expectToken('(');
             }
             while (true)

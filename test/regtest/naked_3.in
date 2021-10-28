@@ -1,1 +1,1 @@
-./test -M true -P 'if ret_0x0.naked(asm,state,rsp,rax,&rax,trampoline,target,next)@patch break'
+./test -M true -P 'if ret_0x0<naked>(asm,state,rsp,rax,&rax,trampoline,target,next)@patch break'

@@ -1,1 +1,1 @@
-./test -M true -P 'naked.naked(asm)@patch'
+./test -M true -P 'naked<naked>(asm)@patch'

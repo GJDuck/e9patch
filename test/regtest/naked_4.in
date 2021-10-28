@@ -1,1 +1,1 @@
-./test -M true -P 'nop.naked(op[0],op[1],op[2],&op[0],&op[1],&op[2],state,addr)@patch'
+./test -M true -P 'nop<naked>(op[0],op[1],op[2],&op[0],&op[1],&op[2],state,addr)@patch'
