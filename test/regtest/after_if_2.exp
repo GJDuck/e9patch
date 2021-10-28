@@ -1,0 +1,28 @@
+push %r15
+movq 0x5e(%rip), %rax
+cmp %rax, %rbx
+nop
+nopl %eax, (%rax)
+cmp $0x33, %ebx
+movq 0x28(%rip), %r8
+movq 0x19a(%rip), %rcx
+cmp %r8, %rcx
+nopl %eax, (%rax)
+lea 0x14(%rip), %r10
+push %r10
+push %r11
+add $0x8, %rsp
+lea 0x2(%rip), %rdx
+pop %r14
+push %r13
+pxor %xmm0, %xmm0
+cmp $0x85, %rax
+movq -0x100(%rsp), %rax
+movq -0x100(%rsp,%rsi,8), %rax
+movq %cs:-0x100(%rsp,%rsi,8), %rax
+movq %ds:-0x100(%rsp,%rsi,8), %rcx
+cmp %rax, %rcx
+lea -0x263(%rip), %rax
+cmp %rcx, %rdx
+lea 0x54(%rip), %rsi
+PASSED

@@ -320,6 +320,12 @@ asm
     "mov $0x0, %eax\n"
     "retq\n"
 
+    ".globl ret_0x1\n"
+    ".type ret_0x1, @function\n"
+    "ret_0x1:\n"
+    "mov $0x1, %eax\n"
+    "retq\n"
+
     ".global nop\n"
     ".type nop, @function\n"
     "nop:\n"

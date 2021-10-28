@@ -17,25 +17,27 @@ to be used directly.
     - [1.2 Definedness](#s12)
     - [1.3 Examples](#s13)
     - [1.4 Exclusions](#s14)
-* [2. Action Language](#s2)
-    - [2.1 Builtin Actions](#s21)
-    - [2.2 Call Actions](#s22)
-        * [2.2.1 Call Action Arguments](#s221)
+* [2. Patch Language](#s2)
+    - [2.1 Builtin Trampolines](#s21)
+    - [2.2 Call Trampolines](#s22)
+        * [2.2.1 Call Trampoline Arguments](#s221)
             - [2.2.1.1 Pass-by-pointer](#s2211)
             - [2.2.1.2 Polymorphic Arguments](#s2212)
             - [2.2.1.3 Explicit Memory Operand Arguments](#s2213)
             - [2.2.1.4 Undefined Arguments](#s2214)
-        * [2.2.2 Call Action Options](#s222)
-        * [2.2.3 Call Action Standard Library](#s223)
-        * [2.2.4 Call Action Initialization](#s224)
-        * [2.2.5 Call Action Dynamic Loading](#s225)
-    - [2.3 Plugin Actions](#s23)
+        * [2.2.2 Call Trampoline ABI](#s222)
+        * [2.2.3 Conditional Call Trampoline](#s223)
+        * [2.2.4 Call Trampoline Standard Library](#s224)
+        * [2.2.5 Call Trampoline Initialization](#s225)
+        * [2.2.6 Call Trampoline Dynamic Loading](#s226)
+    - [2.3 Plugin Trampolines](#s23)
+    - [2.4 Trampoline Composition](#s24)
 
 ---
 ## <a id="s1">1. Matching Language</a>
 
 The *matching language* specifies what instructions should be patched by
-the corresponding *action* (see below).
+the corresponding *patch* (see below).
 Matchings are specified using the (`--match MATCH`) or
 (`-M MATCH)` command-line option.
 The basic form of a matching (`MATCH`) is a Boolean expression of
@@ -140,7 +142,7 @@ supported:
     <td>The size of the instruction in bytes</td></tr>
 <tr><td><b><tt>random</tt></b></td><td><tt>Integer</tt></td>
     <td>A random value [0..<tt>RAND_MAX</tt>]</td></tr>
-<tr><td><b><tt>target</tt></b></td><td><tt>Intger</tt></td>
+<tr><td><b><tt>target</tt></b></td><td><tt>Integer</tt></td>
     <td>The jump/call target (if statically known).</td></tr>
 <tr><td><b><tt>x87<tt></b></td><td><tt>Boolean</tt></td>
     <td>True for x87 instructions, false otherwise</tt></td>
@@ -383,81 +385,101 @@ and E9Tool assumes that `UB` points to a valid instruction from which
 disassembly can resume.
 
 ---
-## <a id="s2">2. Action Language</a>
+## <a id="s2">2. Patch Language</a>
 
-The *action language* specifies how to patch matching instructions
+The *patch language* specifies how to patch matching instructions
 from the input binary.
-Actions are specified using the (`--action ACTION`) or
-(`-A ACTION)` command-line option, and must be paired with one
+Patches are specified using the (`--patch PATCH`) or
+(`-P PATCH`) command-line option, and must be paired with one
 or more matchings.
-The basic form of an action (`ACTION`) uses
+The basic form of a patch (`PATCH`) uses
 the following high-level grammar:
 
 <pre>
-    ACTION ::=   <b>passthru</b>
-               | <b>trap</b>
-               | <b>exit(</b>CODE<b>)</b>
-               | <b>print</b>
-               | CALL
-               | <b>plugin(</b>NAME<b>).patch()</b>
+    PATCH      ::= [ POSITION ] TRAMPOLINE
+    POSITION   ::=   <b>before</b>
+                   | <b>replace</b>
+                   | <b>after</b>
+    TRAMPOLINE ::=   <b>empty</b>
+                   | <b>break</b>
+                   | <b>trap</b>
+                   | <b>exit(</b>CODE<b>)</b>
+                   | <b>print</b>
+                   | CALL
+                   | <b>if</b> CALL <b>break</b>
+                   | <b>if</b> CALL <b>goto</b>
+                   | <b>plugin(</b>NAME<b>).patch()</b>
 </pre>
 
-An action is either *builtin*, a *call*, or defined by a *plugin*.
+A patch is an optional *position* followed by a *trampoline*.
+The trampoline represents code that will be executed when
+control-flow reaches the matching instruction.
+The trampoline can be either a *builtin* trampoline, a *call* trampoline,
+or a trampoline defined by a *plugin*.
 
 ---
-### <a id="s21">2.1 Builtin Actions</a>
+### <a id="s21">2.1 Builtin Trampolines</a>
 
-The builtin actions include:
+The builtin trampolines include:
 
 <table border="1">
-<tr><th>Action</th><th>Description</th></tr>
-<tr><td><b><tt>passthru</tt></b></td>
-    <td>Empty instrumentation</td></tr>
+<tr><th>Patch</th><th>Description</th></tr>
+<tr><td><b><tt>empty</tt></b></td>
+    <td>The empty trampoline</td></tr>
+<tr><td><b><tt>break</tt></b></td>
+    <td>Immediately return from trampoline</td></tr>
 <tr><td><b><tt>trap</tt></b></td>
-    <td>Trap (<tt>int3</tt>) instrumentation</td></tr>
+    <td>Execute a TRAP (<tt>int3</tt>) instruction</td></tr>
 <tr><td><b><tt>exit(CODE)</tt></b></td>
-    <td>Exit with <tt>CODE</tt> instrumentation</td></tr>
+    <td>Exit with <tt>CODE</tt></td></tr>
 <tr><td><b><tt>print</tt></b></td>
-    <td>Instruction printing instrumentation</td></tr>
+    <td>Printing the matching instruction</td></tr>
 </table>
 
 Here:
 
-* The `passthru` instrumentation uses empty trampolines that do nothing
-  other than return control flow back to the main program.
-  This can be used to establish a baseline for benchmarking.
-* The `trap` instrumentation executes a single trap (`int3`) instruction.
-* The `exit(CODE)` instrumentation immediately exits the program
-  with status `CODE`.
-* The `print` instrumentation inserts a trampoline that prints the
-  assembly representation of the instrumented instruction to `stderr`.
+* `empty` is the empty trampoline with no instructions.
+  Control-flow is still redirected to/from empty trampolines, and
+  this can be used to establish a baseline for benchmarking.
+* `break` immediately returns from the trampoline back to the main
+  program.
+* `trap` executes a single TRAP (`int3`) instruction.
+* `exit(CODE)` will immediately exit from the program with status `CODE`.
+* `print` will print the assembly representation of the matching
+  instruction to `stderr`.
   This can be used for testing and debugging.
 
 ---
-### <a id="s22">2.2 Call Actions</a>
+### <a id="s22">2.2 Call Trampolines</a>
 
-A *call* action calls a user-defined function that can be implemented
+A *call* trampoline calls a user-defined function that can be implemented
 in a high-level programming language such as C or C++.
-Call actions are the main way of implementing custom patches using
+Call trampolines are the main way of implementing custom patches using
 E9Tool.
-The syntax for a call action is as follows:
+The syntax for a call trampoline is as follows:
 
 <pre>
-    CALL ::=  <b>call</b> [ OPTIONS ] FUNCTION [ ARGS ] <b>@</b> BINARY
-
-    OPTIONS ::=   <b>[</b> OPTION <b>,</b> ... <b>]</b>
-    OPTION  ::=   <b>clean</b> | <b>naked</b>
-                | <b>before</b> | <b>after</b> | <b>replace</b> | <b>conditional</b> | [ <b>condjump</b> ]
-
-    ARGS ::=   <b>(</b> ARG <b>,</b> ... <b>)</b>
+    CALL ::= FUNCTION [ ABI ] ARGS <b>@</b> BINARY
+    ABI  ::= <b>&lt;</b> <b>clean</b> | <b>naked</b> <b>&gt;</b>
+    ARGS ::= <b>(</b> ARG <b>,</b> ... <b>)</b>
 </pre>
 
-The call action specifies that the trampoline should call function
-`FUNCTION` from the instrumentation binary `BINARY` with the arguments
-`ARGS`.
+The call trampoline specifies that the trampoline should call function
+`FUNCTION` from the binary `BINARY` with the arguments `ARGS`.
 
-To use a call action, simply implement the desired instrumentation
-as a function using a suitable programming language (e.g., `C`).
+To use a call trampoline:
+
+1. Implement the desired patch as a function using the `C` or `C++`
+   programming language.
+2. Compile the patch program using the special `e9compile.sh` script
+   to generate a patch binary.
+3. Use an E9Tool to call the patch function from the patch binary
+   at the desired locations.
+
+E9Tool will handle all of the low-level details, such as loading the
+patch binary into memory, passing the arguments to the function, and 
+saving/restoring the CPU state.
+
 For example, the following code defines a function that increments a
 counter.
 Once the counter exceeds some predefined maximum value, the function
@@ -473,21 +495,35 @@ the program.
                 asm volatile ("int3");
         }
 
-Once defined, the instrumentation will need to be compiled accordingly.
-For this, the `e9compile.sh` script has been included which invokes
-`gcc` with the necessary options in order to generate an E9Tool
-compatible binary:
+Once defined, the program can be compiled using the `e9compile.sh`
+script.
 
         ./e9compile.sh counter.c
 
----
-#### <a id="s221">2.2.1 Call Action Arguments</a>
+The `e9compile.sh` script is a `gcc` wrapper that ensures the
+generated binary is compatible with E9Tool.
+In this case, the script will generate a `counter` binary if
+compilation is successful.
 
-Call actions also support passing arguments to the called function.
+Finally, the `counter` binary can be used as a call trampoline.
+For example, to generate a `SIGTRAP` after the 10000th `xor`
+instruction:
+
+        ./e9tool -M 'mnemonic==xor' -P 'entry()@counter' ...
+
+Call trampolines are primarily designed for ease-of-use and
+**not** for speed.
+For applications where speed is essential, it is recommended
+to design a custom trampoline using a plugin.
+
+---
+#### <a id="s221">2.2.1 Call Trampoline Arguments</a>
+
+Call trampolines also support passing arguments to the called function.
 The syntax uses the `C`-style round brackets.
 For example:
 
-        ./e9tool -M ... -A 'call func(rip)@example' xterm
+        ./e9tool -M ... -P 'func(rip)@example' xterm
 
 This specifies that the current value of the instruction pointer
 `%rip` should be passed as the first argument to the function
@@ -499,7 +535,7 @@ The called function can use this argument, e.g.:
             ...
         }
 
-Call actions support up to eight *arguments*.
+Call trampolines support up to eight *arguments*.
 The following arguments are supported:
 
 <table border="1">
@@ -757,7 +793,7 @@ Notes:
   This corresponds to the value used by the matching.
 
 ---
-##### <a id="s2211">2.2.1.1 Pass-by-pointer</a>
+##### <a id="s2211">2.2.1.1 Pass-by-pointer Arguments</a>
 
 Some arguments can be passed by pointer.
 This allows the corresponding value to be modified (provided the
@@ -773,12 +809,12 @@ For example, the consider the following simple function defined in
             *ptr += 1;
         }
 
-And the following action:
+And the following patch:
 
         $ e9compile.sh example.c
-        $ e9tool -M ... -A 'call inc(&rax)@example' xterm
+        $ e9tool -M ... -P 'inc(&rax)@example' xterm
 
-This action will increment the `%rax` register when the `inc()` function
+This patch will increment the `%rax` register when the `inc()` function
 is called for each matching instruction.
 
 Attempting to write to a `const` pointer is undefined behavior.
@@ -830,7 +866,7 @@ For example, using `C++`, one can define:
 Next, the program can be rewritten as follows:
 
         $ e9compile.sh example.cpp
-        $ e9tool -M ... -A 'call func(&op[0])@example' xterm
+        $ e9tool -M ... -P 'func(&op[0])@example' xterm
 
 E9Tool will automatically select the function instance that best
 matches the argument types, or generate an error if no appropriate
@@ -849,7 +885,7 @@ The syntax is:
 Here, the <tt>mem8</tt>...<tt>mem64</tt> token specifies the size of
 the memory operand, and <tt>MEMOP</tt> is the memory operand itself
 specified in AT&amp;T syntax.
-For example, the following explcit memory operands access stack memory:
+For example, the following explicit memory operands access stack memory:
 
         mem64<(%rsp)>
         mem64<0x100(%rsp)>
@@ -867,84 +903,83 @@ This can also be used for function overloading:
         void func(std::nullptr_t x) { ... }
 
 ---
-#### <a id="s222">2.2.2 Call Action Options</a>
+#### <a id="s222">2.2.2 Call Trampoline ABI</a>
 
-Call actions support different *options*.
+Call trampolines support two *Application Binary Interfaces* (ABIs).
 
-The `before`/`after`/`replace`/`conditional`/`condjump` options
-specify where the instrumentation should be placed in relation to the
-matching instruction.
-Here:
+* `clean` saves/restores the CPU state and is compatible with `C`/`C++`
+* `naked` saves/restores registers corresponding to arguments only
 
-* `before` specifies that the function should be called *before* the
-   matching instruction (the default);
-* `after` specifies that the function should be called *after* the
-   matching instruction;
-* `replace` specifies that the function should *replace* the matching
-   instruction (which will not be executed); and
-* `conditional` inspects the return value of the function.
-   If the returned value is non-zero, the matching instruction will *not*
-   be executed (like `replace`).
-   Otherwise if zero, the matching instruction will be executed as normal
-   (like `before`).
-   Essentially, `conditional` implements the following pseudocode:
-<pre>
-       result = func(...);
-       if (result) { nop } else { instruction }
-</pre>
-* `condjump` inspects the return value of the function.
-   If the returned value is non-zero, then control-flow will jump to the
-   returned value interpreted as an address, and without executing the
-   matching instruction.
-   Otherwise if zero, the matching instruction will be executed as normal
-   (like `before`).
-   Essentially, `condjump` implements the following pseudocode:
-<pre>
-        result = func(...);
-        if (result) { goto result } else { instruction }
-</pre>
+The ABI can be specified inside angled brackets (`<...>`) after the function
+name, e.g.:
 
-Only one of these options is valid at the same time.
-Note that for the `after` option, the function will **not** be called
-if the matching instruction transfers control flow, e.g., for
-jumps (taken), calls or returns.
+        $ e9tool -M ... -P 'func<naked>(&op[0])@example' xterm
 
-The `naked` option specifies that the function should be called
-directly and to minimize the saving/restoring any state.
-By default, the `clean` call option will save/restore all scratch
-registers that are potentially clobbered by `C`/`C++` code.
-In contrast, `naked` calls will not save any register unless it is
-explicitly used to pass an argument, and it is up to the function to
-save/restore any state as necessary.
-Naked calls allow for a more fine grained control and this can be used to
-improve performance.
-However, naked calls are generally incompatible with `C`/`C++`, and
-the function will usually need to be implemented directly in assembly.
-As such, the `naked` option is not recommended 
-unless you know what you are doing.
+This will call `func` using the `naked` ABI.
 
-The default is `clean`, which means E9Tool will automatically
-generate code for saving/restoring the CPU state,
+The `clean` ABI is the default, which means E9Tool will automatically
+generate code for saving/restoring most of the CPU state,
 including all caller-saved registers
 `%rax`, `%rdi`, `%rsi`, `%rdx`, `%rcx`, `%r8`, `%r9`, `%r10`, and `%r11`.
-Note that, for performance reasons, the `clean` call ABI differs from
-the standard System V ABI in the following way:
+Note however that the `clean` ABI is different from the standard
+System V ABI in the following ways:
 
 * The x87/MMX/SSE/AVX/AVX2/AVX512 registers are *not* saved.
 * The stack pointer `%rsp` is *not* guaranteed to be aligned to a 16-byte
   boundary.
 
-These differences are generally safe provided the instrumentation code
-exclusively uses general-purpose registers
-(as is enforced by `e9compile.sh`).
-Otherwise, it will be necessary to save the registers and align the
-stack manually inside the instrumentation code.
+These differences exist for performance reasons, since saving/restoring
+the extended register state is an expensive operation.
+The differences are generally safe provided the patch code exclusively
+uses general-purpose registers.
+Patch binaries generated by the `e9compile.sh` script are guaranteed to
+be compatible with the `clean` ABI.
+
+The `naked` ABI specifies that the function should be called
+directly and to limit the saving/restoring to registers used to
+pass arguments.
+Naked calls allow for a more fine grained control and this can be used to
+improve performance.
+However, naked calls are generally incompatible with `C`/`C++`, and
+the function will usually need to be implemented directly in assembly.
+As such, the `naked` ABI is not recommended unless you know what you are doing.
 
 ---
-#### <a id="s223">2.2.3 Call Action Standard Library</a>
+#### <a id="s223">2.2.3 Conditional Call Trampolines</a>
 
-The main limitation of call actions is that the instrumentation
-cannot use dynamically linked libraries directly, including `glibc`.
+*Conditional* call trampolines examine the return value of the called
+function, and change the control flow accordingly.
+There are two basic forms of conditional call trampolines:
+
+* `if func(...) break`: if the function returns a non-zero value, then
+  immediately return from the trampoline back to the main program.
+  to the main program if the function returns a non-zero value.
+* `if func(...) goto`: if the function returns a non-zero value interpreted
+  as an *address*, then immediately jump to that *address*.
+
+The first form allows for the conditional execution of the remainder
+of the trampoline, possibly including the matching instruction itself.
+For example, consider:
+
+        $ e9tool -M 'mnemonic==syscall' -P 'if filter(...)@example break' ...
+
+The patch is placed in the default `before` position, i.e., will be executed
+as instrumentation *before* the matching instruction.
+If the `filter(...)` function returns a non-zero value, the trampoline will
+immediately return, without executing the matching instruction.
+
+The second form allows for arbitrary jumps to be implemented.
+The (`if func(...) goto`) syntax can be thought of as shorthand for:
+
+        if (addr = func(...)) { goto addr; }
+
+The `goto` is only executed if the return value of the `func` is non-`NULL`.
+
+---
+#### <a id="s224">2.2.4 Call Trampoline Standard Library</a>
+
+The main limitation of call trampolines is that the patch code
+cannot use standard libraries directly, including `glibc`.
 This is because the instrumentation binary is directly injected
 into the rewritten binary rather than dynamically/statically linked.
 
@@ -954,16 +989,16 @@ To use, simply include this file into the instrumentation code:
 
         #include "stdlib.c"
 
-This version of libc is designed to be compatible with call instrumentation.
+This version of libc is designed to be compatible with patch code.
 However, only a subset of libc is implemented, so it is WYSIWYG.
-Many common libc functions, including file I/O and memory
+That said, many common libc functions, including file I/O and memory
 allocation, have been implemented.
 
 Unlike `glibc` the parallel libc is designed to be compatible with the clean
 ABI and handle problems, such as deadlocks, more gracefully.
 
 ---
-#### <a id="s224">2.2.4 Call Action Initialization</a>
+#### <a id="s225">2.2.5 Call Trampoline Initialization</a>
 
 It is also possible to define an initialization function in the
 instrumentation code.
@@ -991,20 +1026,20 @@ In the example above, the initialization function searches for an
 environment variable `MAX`, and sets the `max` counter accordingly.
 
 ---
-#### <a id="s225">2.2.5 Call Action Dynamic Loading</a>
+#### <a id="s226">2.2.6 Call Trampoline Dynamic Loading</a>
 
-The parallel libc also provides an implementation of the standard dynamic linker
-functions `dlopen()`, `dlsym()`, and `dlclose()`.
+The parallel libc also provides an optional implementation of the
+standard dynamic linker functions `dlopen()`, `dlsym()`, and `dlclose()`.
 These can be used to dynamically load shared objects at runtime, or access
 existing shared libraries that are already dynamically linked into the original
 program.
-To enable, simply define the `LIBDL` macro before including `stdlib.c`.
+To enable, define the `LIBDL` macro before including `stdlib.c`.
 
         #define LIBDL
         #include "stdlib.c"
 
 The `dlinit(dynamic)` function must also be called in the `init()` routine,
-where `dynamic` is the fourth argument to the `init()` function:
+where `dynamic` is a secret fourth argument to the `init()` function:
 
         void init(int argc, char **argv, char **envp, void *dynamic)
         {
@@ -1046,17 +1081,94 @@ Be aware that the dynamic loading API has several caveats:
 * The `dlcall()` function is relatively slow, so ought to be used sparingly.
 
 ---
-### <a id="s23">2.3 Plugin Actions</a>
+### <a id="s23">2.3 Plugin Trampolines</a>
 
-Call action trampolines call the instrumentation binary from the
-trampoline.
-This adds an extra layer of indirection, namely, from the main
-program, to the trampoline, and to the call instrumentation.
-For highly optimized applications, it is better to inline the instrumentation
-directly inside the trampoline.
-However, this requires a very fine-grained control over the
-generated trampolines.
-This is possible using *plugin actions*, which allow a very fine-grained
-control over the contents of the generated trampolines.
-For more information, please see the [E9Patch Programmer's Guide](https://github.com/GJDuck/e9patch/blob/master/doc/e9patch-programming-guide.md).
+By design, call trampolines are very simple to use, but this also comes at
+the cost of efficiency.
+The problem is that call trampolines add an extra layer of indirection,
+namely, the control-flow will transfer from the main program, to the trampoline,
+and then to the called function.
+For optimal results, it is sometimes better to inline the functionality
+directly into the trampoline and avoid the extra level of indirection.
+
+A very fine-grained control over the generated trampolines is possible
+using *plugin trampolines*, which allows for the precise content of
+trampolines to be specified directly.
+The downside is that low-level details, such as the saving/restoring of
+CPU state, must be handled manually by the trampoline code, so this method
+is generally only recommended for expert users only.
+
+For more information, please see the
+[E9Patch Programmer's Guide](https://github.com/GJDuck/e9patch/blob/master/doc/e9patch-programming-guide.md).
+
+---
+### <a id="s24">2.4 Trampoline Composition</a>
+
+Depending on the `--match`/`-M` and `--patch`/`-P` options, more than
+one patch may match a given instruction.
+If this occurs, then *all* matching trampolines will be executed in an order
+determined by:
+
+* The explicit (or implicit) *patch position* annotation, then
+* The command-line order for tie-breaking.
+
+The possible values for the *patch position* annotation are:
+
+* `before`: The trampoline will be executed *before* the matching instruction.
+  That is, the trampoline is *instrumentation*.
+* `replace`: The trampoline *replaces* the matching instruction.
+* `after`: The trampoline is executed *after* the matching instruction.
+
+If unspecified, the default patch position is assumed to be "`before`", meaning
+that the trampoline will be executed before the matching instruction
+(i.e., instrumentation).
+
+Conceptually, the individual trampolines will be arranged into a "meta"
+trampoline that will be executed in place of the original matching
+instruction.
+The meta trampoline has the following basic form:
+<pre>
+        BEFORE (<b>instruction</b> | REPLACE) AFTER <b>break</b>
+</pre>
+Here `BEFORE` are all *before* trampolines in command-line order,
+`instruction` is the original matching instruction,
+`REPLACE` is the *replace*ment trampoline,
+`AFTER` are all *after* trampolines in command-line order, and
+`break` returns control-flow back to the main program.
+
+Notes:
+
+* There can be at most one *replace*ment trampoline.
+  If no replacement trampoline is specified, E9Tool will execute the original
+  matching instruction.
+* For the `after` position, the trampoline will **not** be executed
+  if the matching instruction transfers control flow
+  (i.e., for jumps taken, calls or returns).
+* Similarly, if any component trampoline transfers control flow
+  (via a `break` or `goto`), the
+  rest of the "meta" trampoline will not be executed.
+
+For example, consider the command:
+
+        e9tool -M 'asm=xor.*' -P 'after trap' -P 'replace f(...)@bin' -P print -P 'before if g(...)@bin goto' ...
+
+Then the following "meta" trampoline will be executed in place of each `xor`
+instruction:
+
+        print; if g(...) goto; f(...)@bin; trap; break;
+
+The `print` trampoline is implicitly in the *before* position, so is executed
+first.
+Next, the conditional call (`if g(...) goto`), also in the *before* position,
+will be executed.
+This conditional call will transfer control-flow if the `g(...)` function
+returns a non-`NULL` value, in which case the rest of the meta trampoline
+will not be executed.
+Otherwise, the call `f(...)@bin` trampoline will be executed next,
+which *replace*s the original matching `xor` instruction.
+Finally, the `trap` trampoline, in the *after* position, will be executed last.
+
+This design makes it possible to compose instrumentation schemas.
+For example, one could compose AFL fuzzing instrumentation with another
+instrumentation for detecting memory errors.
 
