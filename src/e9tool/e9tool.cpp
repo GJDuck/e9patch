@@ -382,9 +382,9 @@ struct Patch
 struct Action
 {
     const MatchExpr * const match;
-    const Patch * const patch;
+    const std::vector<const Patch *> patch;
 
-    Action(const MatchExpr *match, const Patch *patch) :
+    Action(const MatchExpr * match, std::vector<const Patch *> &&patch) :
         match(match), patch(patch)
     {
         ;
@@ -1200,7 +1200,7 @@ static Patch *parsePatch(const ELF &elf, const char *str)
             kind = PATCH_CALL; break;
     }
 
-    // Parse the rest of the action (if necessary):
+    // Parse the rest of the patch (if necessary):
     const char *filename = nullptr;
     Plugin *plugin = nullptr;
     CallABI abi = ABI_CLEAN;
@@ -1214,8 +1214,8 @@ static Patch *parsePatch(const ELF &elf, const char *str)
             parser.expectToken('(');
             parser.expectToken(TOKEN_INTEGER);
             if (parser.i < 0 || parser.i > 255)
-                error("failed to parse action; exit status must be an "
-                    "integer within the range 0..255");
+                error("failed to parse exit trampoline; the exit status "
+                    " must be an integer within the range 0..255");
             status = (int)parser.i;
             parser.expectToken(')');
             break;
@@ -1387,8 +1387,8 @@ static Patch *parsePatch(const ELF &elf, const char *str)
                             if (ptr &&
                                 (field != FIELD_BASE && field != FIELD_INDEX))
                             {
-                                error("failed to parse call action; cannot "
-                                    "pass field `%s' by pointer",
+                                error("failed to parse call trampoline; "
+                                    "cannot pass field `%s' by pointer",
                                     parser.getName(t));
                             }
                         }
@@ -1409,7 +1409,7 @@ static Patch *parsePatch(const ELF &elf, const char *str)
                     default:
                     not_a_ptr:
                         if (ptr)
-                            error("failed to parse call action; cannot "
+                            error("failed to parse call trampoline; cannot "
                                 "pass argument `%s' by pointer",
                                 parser.getName(arg_token));
                 }
@@ -1421,7 +1421,7 @@ static Patch *parsePatch(const ELF &elf, const char *str)
                         case ARGUMENT_SYMBOL: case ARGUMENT_TARGET:
                             break;
                         default:
-                            error("failed to parse call action; cannot "
+                            error("failed to parse call trampoline; cannot "
                                 "use `static' with `%s' argument",
                                 parser.getName(arg_token));
                     }
@@ -1463,7 +1463,7 @@ static Patch *parsePatch(const ELF &elf, const char *str)
     }
     parser.expectToken(TOKEN_EOF);
 
-    // Build the action:
+    // Build the patch:
     std::string name;
     switch (kind)
     {
@@ -2036,6 +2036,9 @@ static bool matchEval(const MatchExpr *expr, const Targets &targets,
     return pass;
 }
 
+/*
+ * Matching.
+ */
 struct Matching
 {
     const std::vector<Action *> actions;
@@ -2136,25 +2139,35 @@ static bool sendInstructionMessage(FILE *out, Instr &I, intptr_t addr)
 }
 
 /*
+ * Metadata.
+ */
+struct Metadata
+{
+    const Action * const action;
+    size_t idx;
+};
+
+/*
  * Send a trampoline.
  */
-static bool sendTrampoline(FILE *out, const Action *action,
-    std::vector<const Action *> &metadata)
+static bool sendTrampoline(FILE *out, const Action *action, size_t idx,
+    std::vector<Metadata> &metadata)
 {
-    const Patch *patch = action->patch;
+    const Patch *patch = action->patch[idx];
     sendString(out, patch->name);
     sendSeparator(out);
 
-    if (action->patch->kind == PATCH_BREAK)
+    if (patch->kind == PATCH_BREAK)
         return true;
 
     bool found = false;
     switch (patch->kind)
     {
         case PATCH_PRINT: case PATCH_CALL:
-            for (const auto *prev: metadata)
+            for (const auto &entry: metadata)
             {
-                if (strcmp(prev->patch->name, action->patch->name) == 0)
+                const Patch *prev = entry.action->patch[entry.idx];
+                if (strcmp(prev->name, patch->name) == 0)
                 {
                     found = true;
                     break;
@@ -2162,7 +2175,7 @@ static bool sendTrampoline(FILE *out, const Action *action,
             }
             if (found)
                 break;
-            metadata.push_back(action);
+            metadata.push_back({action, idx});
             break;
         default:
             break;
@@ -2365,10 +2378,14 @@ enum Option
     OPTION_TRAP,
     OPTION_TRAP_ALL,
 };
+
+/*
+ * Action parsing.
+ */
 struct ActionEntry
 {
     std::vector<std::string> match;
-    std::string action;
+    std::vector<std::string> patch;
 };
 
 /*
@@ -2431,6 +2448,7 @@ int main(int argc, char **argv)
     std::string option_backend("");
     std::set<intptr_t> option_trap;
     std::vector<std::string> option_match;
+    std::vector<std::string> option_patch;
     std::vector<ActionEntry> option_actions;
     std::vector<std::string> option_exclude;
     srand(0xe9e9e9e9);
@@ -2491,6 +2509,13 @@ int main(int argc, char **argv)
             case OPTION_MATCH:
             case 'M':
             {
+                if (option_patch.size() > 0)
+                {
+                    ActionEntry entry;
+                    entry.match.swap(option_match);
+                    entry.patch.swap(option_patch);
+                    option_actions.emplace_back(entry);
+                }
                 std::string match(optarg);
                 option_match.emplace_back(match);
                 break;
@@ -2498,10 +2523,12 @@ int main(int argc, char **argv)
             case OPTION_PATCH:
             case 'P':
             {
-                ActionEntry entry;
-                entry.match.swap(option_match);
-                entry.action = optarg;
-                option_actions.emplace_back(entry);
+                if (option_match.size() == 0)
+                    error("failed to parse command-line arguments; "
+                        "the `--patch'/`-P' option must be preceded by "
+                        "one or more `--match'/`-M' options");
+                std::string patch(optarg);
+                option_patch.emplace_back(patch);
                 break;
             }
             case OPTION_PLT:
@@ -2580,13 +2607,20 @@ int main(int argc, char **argv)
         error("missing input file; try `--help' for more information");
         return EXIT_FAILURE;
     }
-    if (option_match.size() != 0)
-        error("failed to parse command-line arguments; detected extraneous "
-            "matching option(s) (`--match' or `-M') that are not paired "
-            "with a corresponding action (`--action' or `-A')"); 
+    if (option_match.size() > 0)
+    {
+        if (option_patch.size() == 0)
+            error("failed to parse command-line arguments; the `--match'/`-M' "
+                "option must be followed by one or more `--patch'/`-P' "
+                "options");
+        ActionEntry entry;
+        entry.match.swap(option_match);
+        entry.patch.swap(option_patch);
+        option_actions.emplace_back(entry);
+    }
     if (option_actions.size() > MAX_ACTIONS)
         error("failed to parse command-line arguments; the total number of "
-            "actions (%zu) exceeds the maximum (%zu)",
+            "match/patch pairs (%zu) exceeds the maximum (%zu)",
             option_actions.size(), MAX_ACTIONS);
     if (option_shared && option_executable)
         error("failed to parse command-line arguments; both the `--shared' "
@@ -2610,15 +2644,23 @@ int main(int argc, char **argv)
         if (entry.match.size() == 0)
             error("failed to parse action; the `--action' or `-A' option "
                 "must be preceded by one or more `--match' or `-M' options");
+        
         MatchExpr *match = nullptr;
-        for (const auto &match_str: entry.match)
+        for (const auto &str: entry.match)
         {
-            MatchExpr *expr = parseMatch(elf, match_str.c_str());
+            MatchExpr *expr = parseMatch(elf, str.c_str());
             match = (match == nullptr? expr:
                 new MatchExpr(MATCH_OP_AND, match, expr));
         }
-        Patch *patch = parsePatch(elf, entry.action.c_str());
-        Action *action = new Action(match, patch);
+        std::vector<const Patch *> patch;
+        for (const auto &str: entry.patch)
+        {
+            Patch *P = parsePatch(elf, str.c_str());
+            patch.push_back(P);
+            if (P->kind == PATCH_BREAK)
+                break;
+        }
+        Action *action = new Action(match, std::move(patch));
         actions.push_back(action);
     }
     option_actions.clear();
@@ -2826,65 +2868,67 @@ int main(int argc, char **argv)
     intptr_t file_addr = 0x70000000;
     for (auto *action: actions)
     {
-        switch (action->patch->kind)
+        for (const auto *patch: action->patch)
         {
-            case PATCH_PRINT:
-                have_print = true;
-                break;
-            case PATCH_EMPTY:
-                have_empty = true;
-                break;
-            case PATCH_BREAK:
-                have_break = true;
-                break;
-            case PATCH_TRAP:
-                have_trap = true;
-                break;
-            case PATCH_EXIT:
+            switch (patch->kind)
             {
-                int status = action->patch->status;
-                auto i = have_exit.find(status);
-                if (i == have_exit.end())
+                case PATCH_PRINT:
+                    have_print = true;
+                    break;
+                case PATCH_EMPTY:
+                    have_empty = true;
+                    break;
+                case PATCH_BREAK:
+                    have_break = true;
+                    break;
+                case PATCH_TRAP:
+                    have_trap = true;
+                    break;
+                case PATCH_EXIT:
                 {
-                    sendExitTrampolineMessage(out, elf.type, 
-                        status);
-                    have_exit.insert(status);
+                    int status = patch->status;
+                    auto i = have_exit.find(status);
+                    if (i == have_exit.end())
+                    {
+                        sendExitTrampolineMessage(out, elf.type, 
+                            status);
+                        have_exit.insert(status);
+                    }
+                    break;
                 }
-                break;
-            }
-            case PATCH_CALL:
-            {
-                // Step (1): Ensure the ELF file is loaded:
-                ELF *target = nullptr;
-                const Patch *patch = action->patch;
-                auto i = files.find(patch->filename);
-                if (i == files.end())
+                case PATCH_CALL:
                 {
-                    // Load the called ELF file into the address space:
-                    target = parseELF(patch->filename, file_addr);
-                    checkCompatible(elf, *target);
-                    sendELFFileMessage(out, target);
-                    files.insert({patch->filename, target});
-                    file_addr  = target->end + 2 * PAGE_SIZE;
-                    file_addr -= file_addr % PAGE_SIZE;
-                }
-                else
-                    target = i->second;
-                patch->elf = target;
+                    // Step (1): Ensure the ELF file is loaded:
+                    ELF *target = nullptr;
+                    auto i = files.find(patch->filename);
+                    if (i == files.end())
+                    {
+                        // Load the called ELF file into the address space:
+                        target = parseELF(patch->filename, file_addr);
+                        checkCompatible(elf, *target);
+                        sendELFFileMessage(out, target);
+                        files.insert({patch->filename, target});
+                        file_addr  = target->end + 2 * PAGE_SIZE;
+                        file_addr -= file_addr % PAGE_SIZE;
+                    }
+                    else
+                        target = i->second;
+                    patch->elf = target;
 
-                // Step (2): Create the trampoline:
-                auto j = have_call.find(patch->name);
-                if (j == have_call.end())
-                {
-                    sendCallTrampolineMessage(out, patch->name,
-                        patch->args, elf.type, patch->abi, patch->jmp,
-                        patch->pos);
-                    have_call.insert(patch->name);
+                    // Step (2): Create the trampoline:
+                    auto j = have_call.find(patch->name);
+                    if (j == have_call.end())
+                    {
+                        sendCallTrampolineMessage(out, patch->name,
+                            patch->args, elf.type, patch->abi, patch->jmp,
+                            patch->pos);
+                        have_call.insert(patch->name);
+                    }
+                    break;
                 }
-                break;
+                default:
+                    break;
             }
-            default:
-                break;
         }
     }
     if (have_empty)
@@ -3000,7 +3044,7 @@ int main(int argc, char **argv)
      * Send instructions & patches.  Note: this MUST be done in reverse!
      */
     intptr_t id = -1;
-    std::vector<const Action *> metadata;
+    std::vector<Metadata> metadata;
     for (ssize_t i = (ssize_t)count - 1; i >= 0; i--)
     {
         switch (option_optimization_level)
@@ -3041,22 +3085,29 @@ int main(int argc, char **argv)
         bool seen_break = false;
         for (const auto *action: M->actions)
         {
-            if (action->patch->pos != POS_BEFORE || seen_break)
-                continue;
-            seen_break = sendTrampoline(out, action, metadata);
+            for (size_t j = 0, n = action->patch.size(); j < n; j++)
+            {
+                if (action->patch[j]->pos != POS_BEFORE || seen_break)
+                    continue;
+                seen_break = sendTrampoline(out, action, j, metadata);
+            }
         }
 
         // REPLACE trampoline:
         bool seen_replace = false;
         for (const auto *action: M->actions)
         {
-            if (action->patch->pos != POS_REPLACE || seen_break)
-                continue;
-            if (seen_replace)
-                error("multiple \"replace\" patches for instruction \"%s\" "
-                    "at address 0x%lx", I.string.instr, I.address);
-            seen_replace = true;
-            seen_break = sendTrampoline(out, action, metadata);
+            for (size_t j = 0, n = action->patch.size(); j < n; j++)
+            {
+                if (action->patch[j]->pos != POS_REPLACE || seen_break)
+                    continue;
+                if (seen_replace)
+                    error("multiple matching \"replace\" trampolines for "
+                        "instruction \"%s\" at address 0x%lx", I.string.instr,
+                        I.address);
+                seen_replace = true;
+                seen_break = sendTrampoline(out, action, j, metadata);
+            }
         }
         if (!seen_replace && !seen_break)
             fprintf(out, "\"$instruction\",");
@@ -3064,31 +3115,37 @@ int main(int argc, char **argv)
         // AFTER trampolines:
         for (const auto *action: M->actions)
         {
-            if (action->patch->pos != POS_AFTER || seen_break)
-                continue;
-            seen_break = sendTrampoline(out, action, metadata);
+            for (size_t j = 0, n = action->patch.size(); j < n; j++)
+            {
+                if (action->patch[j]->pos != POS_AFTER || seen_break)
+                    continue;
+                seen_break = sendTrampoline(out, action, j, metadata);
+            }
         }
         if (!seen_break)
             fputs("\"$continue\",", out);
 
         // DATA:
-        for (const auto *action: metadata)
+        for (const auto &entry: metadata)
         {
-            const Patch *patch = action->patch;
+            const Patch *patch = entry.action->patch[entry.idx];
             fprintf(out, "\"$DATA@%s\",", patch->name+1);
         }
         fputc(']', out);
         sendSeparator(out);
-        
-        sendParamHeader(out, "metadata");
-        sendMetadataHeader(out);
-        for (const auto *action: metadata)
+
+        if (metadata.size() > 0)
         {
-            if (sendMetadata(out, &elf, action, &I, id))
-                sendSeparator(out);
+            sendParamHeader(out, "metadata");
+            sendMetadataHeader(out);
+            for (const auto &entry: metadata)
+            {
+                if (sendMetadata(out, &elf, entry.action, entry.idx, &I, id))
+                    sendSeparator(out);
+            }
+            sendMetadataFooter(out);
+            sendSeparator(out);
         }
-        sendMetadataFooter(out);
-        sendSeparator(out);
 
         sendParamHeader(out, "offset");
         sendInteger(out, I.offset);

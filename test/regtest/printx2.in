@@ -1,1 +1,1 @@
-./test -M true -P print -M 'addr >= &"entry"' -P print
+./test -M true -P print -P print

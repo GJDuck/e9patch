@@ -97,11 +97,6 @@ enum CallJump
 };
 
 /*
- * Metadata.
- */
-typedef std::map<const char *, const char *> Metadata;
-
-/*
  * Mnemonics.
  */
 enum Mnemonic : int16_t
@@ -2321,8 +2316,6 @@ extern void sendCode(FILE *out, const char *code);
  * High-level functions that send complete E9PATCH JSONRPC messages:
  */
 extern unsigned sendOptionsMessage(FILE *out, std::vector<const char *> &argv);
-// extern unsigned sendPatchMessage(FILE *out, const char *trampoline,
-//     off_t offset, const Metadata *metadata = nullptr);
 extern unsigned sendReserveMessage(FILE *out, intptr_t addr, size_t len,
     bool absolute = false);
 extern unsigned sendReserveMessage(FILE *out, intptr_t addr,

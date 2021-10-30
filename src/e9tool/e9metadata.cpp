@@ -1059,18 +1059,19 @@ static void sendBytesData(FILE *out, const uint8_t *bytes, size_t len)
 static bool matchEval(const MatchExpr *expr, const Targets &targets,
     const InstrInfo *I, const char *basename = nullptr,
     const Record **record = nullptr);
-static intptr_t lookupValue(const Action *action, const Targets &targets,
-    const InstrInfo *I, const char *basename, intptr_t idx)
+static intptr_t lookupValue(const Action *action, size_t idx,
+    const Targets &targets, const InstrInfo *I, const char *basename,
+    intptr_t pos)
 {
     const Record *record = nullptr;
     bool pass = matchEval(action->match, targets, I, basename, &record);
     if (!pass || record == nullptr)
         error("failed to lookup value from file \"%s.csv\"; matching is "
             "ambiguous", basename);
-    if (idx >= (intptr_t)record->size())
+    if (pos >= (intptr_t)record->size())
         error("failed to lookup value from file \"%s.csv\"; index %zd is "
-            "out-of-range 0..%zu", basename, idx, record->size()-1);
-    const char *str = record->at(idx);
+            "out-of-range 0..%zu", basename, pos, record->size()-1);
+    const char *str = record->at(pos);
     intptr_t x = nameToInt(basename, str);
     return x;
 }
@@ -1079,7 +1080,7 @@ static intptr_t lookupValue(const Action *action, const Targets &targets,
  * Send instructions to load an argument into a register.
  */
 static Type sendLoadArgumentMetadata(FILE *out, CallInfo &info,
-    const ELF *elf, const Action *action, const Argument &arg,
+    const ELF *elf, const Action *action, size_t idx, const Argument &arg,
     const InstrInfo *I, intptr_t id, int argno, int regno)
 {
     if (regno < 0)
@@ -1087,7 +1088,7 @@ static Type sendLoadArgumentMetadata(FILE *out, CallInfo &info,
             "maximum number of arguments (%d)", argno);
     sendSaveRegToStack(out, info, getReg(regno));
 
-    const Patch *patch = action->patch;  
+    const Patch *patch = action->patch[idx];
     const char *name = patch->name+1;
     bool _static = arg._static;
     Type t = TYPE_INT64;
@@ -1095,8 +1096,8 @@ static Type sendLoadArgumentMetadata(FILE *out, CallInfo &info,
     {
         case ARGUMENT_USER:
         {
-            intptr_t value = lookupValue(action, elf->targets, I, arg.name,
-                arg.value);
+            intptr_t value = lookupValue(action, idx, elf->targets, I,
+                arg.name, arg.value);
             sendLoadValueMetadata(out, value, regno);
             break;
         }
@@ -1491,11 +1492,11 @@ static void sendArgumentDataMetadata(FILE *out, const char *name,
  * Build metadata.
  */
 static bool sendMetadata(FILE *out, const ELF *elf, const Action *action,
-    const InstrInfo *I, intptr_t id)
+    size_t idx, const InstrInfo *I, intptr_t id)
 {
     if (action == nullptr)
         return false;
-    const Patch *patch = action->patch;
+    const Patch *patch = action->patch[idx];
     const char *name = patch->name+1;
 
     switch (patch->kind)
@@ -1550,8 +1551,8 @@ static bool sendMetadata(FILE *out, const ELF *elf, const Action *action,
             for (const auto &arg: patch->args)
             {
                 int regno = getArgRegIdx(sysv, argno);
-                Type t = sendLoadArgumentMetadata(out, info, elf, action, arg,
-                    I, id, argno, regno);
+                Type t = sendLoadArgumentMetadata(out, info, elf, action, idx,
+                    arg, I, id, argno, regno);
                 sig = setType(sig, t, argno);
                 argno++;
             }

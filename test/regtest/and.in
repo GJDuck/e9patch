@@ -1,0 +1,1 @@
+./test.pie -M 'asm=[xm].*' -M 'op.size >= 2' -M 'op[0].type != mem' -M 'op[0].type != imm' -P print

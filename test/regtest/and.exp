@@ -1,0 +1,5 @@
+xor %esi, %esi
+xor %eax, %eax
+mov %eax, %edi
+PASSED
+xor %edi, %edi
