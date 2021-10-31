@@ -1212,7 +1212,7 @@ static Type sendLoadArgumentMetadata(FILE *out, CallInfo &info,
                 case REGISTER_RIP:
                     switch (patch->pos)
                     {
-                        case POS_AFTER:
+                        case POS_AFTER: case POS_REPLACE:
                             sendLeaFromPCRelToR64(out,
                                 "{\"rel32\":\".Lcontinue\"}", regno);
                             break;
@@ -1542,7 +1542,7 @@ static bool sendMetadata(FILE *out, const ELF *elf, const Action *action,
 
             sendDefinitionHeader(out, name, "ARGS");
             int argno = 0;
-            bool before = (patch->pos != POS_AFTER);
+            bool before = (patch->pos == POS_BEFORE);
             bool pic = (getELFType(elf) != BINARY_TYPE_ELF_EXE);
             CallInfo info(sysv, (patch->abi == ABI_CLEAN), state,
                 (patch->jmp != JUMP_NONE), patch->args.size(),

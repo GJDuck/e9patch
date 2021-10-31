@@ -8,7 +8,7 @@ all:
 	gcc -x assembler-with-cpp -o test.libc test_libc.s -pie -Wl,--export-dynamic
 	gcc -x assembler-with-cpp -shared -o libtest.so libtest.s 
 	../../e9compile.sh inst.c -I ../../examples/ -D NO_GLIBC
-	../../e9compile.sh patch.cpp -I ../../examples/ -D NO_GLIBC
+	../../e9compile.sh patch.cpp -std=c++11 -I ../../examples/ -D NO_GLIBC
 	../../e9compile.sh dl.c -I ../../examples/
 	../../e9compile.sh init.c -I ../../examples/ -D NO_GLIBC
 	g++ -std=c++11 -pie -fPIC -o regtest regtest.cpp -O2
