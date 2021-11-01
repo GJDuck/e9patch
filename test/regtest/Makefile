@@ -11,6 +11,8 @@ all:
 	../../e9compile.sh patch.cpp -std=c++11 -I ../../examples/ -D NO_GLIBC
 	../../e9compile.sh dl.c -I ../../examples/
 	../../e9compile.sh init.c -I ../../examples/ -D NO_GLIBC
+	g++ -std=c++11 -fPIC -shared -o example.so -O2 \
+        ../../examples/plugins/example.cpp -I ../../src/e9tool/
 	g++ -std=c++11 -pie -fPIC -o regtest regtest.cpp -O2
 
 clean:
