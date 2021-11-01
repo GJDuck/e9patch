@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2020 National University of Singapore
+ * Copyright (C) 2021 National University of Singapore
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to
@@ -147,10 +147,9 @@ extern void *e9_plugin_init_v1(FILE *out, const ELF *elf)
 /*
  * We match all control-flow transfer instructions.
  */
-extern intptr_t e9_plugin_match_v1(FILE *out, const ELF *elf, const Instr *Is,
-    size_t size, size_t idx, const InstrInfo *info, void *context)
+extern intptr_t e9_plugin_match_v1(FILE *out, const Context *cxt, void *arg)
 {
-    switch (info->mnemonic)
+    switch (cxt->I->mnemonic)
     {
         case MNEMONIC_RET:
             return 1;
@@ -173,29 +172,25 @@ extern intptr_t e9_plugin_match_v1(FILE *out, const ELF *elf, const Instr *Is,
 /*
  * Patch the selected instructions.
  */
-extern void e9_plugin_patch_v1(FILE *out, const ELF *elf, const Instr *Is,
-    size_t size, size_t idx, const InstrInfo *info, void *context)
+extern void e9_plugin_patch_v1(FILE *out, Phase phase, const Context *cxt,
+    void *arg)
 {
-    intptr_t counter = e9_plugin_match_v1(out, elf, Is, size, idx, info,
-        context);
-    if (counter == 0)
-        return;
-    counter = COUNTERS + (counter - 1) * sizeof(size_t);
- 
-    // We instantiate the trampoline template with $counter pointing to
-    // the counter corresponding to the instruction type:
-    Metadata metadata[2];
-    metadata[0].name = "counter";
-    std::string buf;
-    buf += "{\"rel32\":";
-    buf += std::to_string(counter);
-    buf += '}';
-    metadata[0].data = buf.c_str();
-    
-    metadata[1].name = nullptr;
-    metadata[1].data = nullptr;
-
-    // Send a "patch" E9Patch API message.
-    sendPatchMessage(out, "$cflimit", Is[idx].offset, metadata);
+    switch (phase)
+    {
+        case PHASE_CODE:
+            fputs("\"$cflimit\",", out);
+            return;
+        case PHASE_DATA:
+            return;
+        case PHASE_METADATA:
+        {
+            intptr_t counter = e9_plugin_match_v1(nullptr, cxt, arg);
+            counter = COUNTERS + (counter - 1) * sizeof(size_t);
+            fprintf(out, "\"$counter\":{\"rel32\":\"0x%lx\"},", counter);
+            return;
+        }
+        default:
+            return;
+    }
 }
 

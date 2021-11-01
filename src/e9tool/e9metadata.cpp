@@ -1491,19 +1491,25 @@ static void sendArgumentDataMetadata(FILE *out, const char *name,
 /*
  * Build metadata.
  */
-static bool sendMetadata(FILE *out, const ELF *elf, const Action *action,
-    size_t idx, const InstrInfo *I, intptr_t id)
+static void sendMetadata(FILE *out, const ELF *elf, const Action *action,
+    size_t idx, const InstrInfo *I, intptr_t id, const Context *cxt)
 {
     if (action == nullptr)
-        return false;
+        return;
     const Patch *patch = action->patch[idx];
     const char *name = patch->name+1;
 
     switch (patch->kind)
     {
-        case PATCH_EXIT: case PATCH_EMPTY: case PATCH_PLUGIN: case PATCH_TRAP:
-        case PATCH_BREAK:
-            return false;
+        case PATCH_PLUGIN:
+        {
+            const Plugin *plugin = patch->plugin;
+            plugin->patchFunc(out, PHASE_METADATA, cxt, plugin->context);
+            return;
+        }
+
+        case PATCH_EXIT: case PATCH_EMPTY: case PATCH_TRAP: case PATCH_BREAK:
+            return;
         case PATCH_PRINT:
         {
             sendDefinitionHeader(out, name, "DATA");
@@ -1514,9 +1520,8 @@ static bool sendMetadata(FILE *out, const ELF *elf, const Action *action,
             sendDefinitionHeader(out, name, "ASM_LEN");
             intptr_t len = strlen(I->string.instr) + 1;
             sendIntegerData(out, 32, len);
-            sendDefinitionFooter(out, /*last=*/true);
-
-            return true;
+            sendDefinitionFooter(out);
+            return;
         }
         case PATCH_CALL:
         {
@@ -1650,13 +1655,11 @@ static bool sendMetadata(FILE *out, const ELF *elf, const Action *action,
                 sendArgumentDataMetadata(out, name, arg, I, regno);
                 argno++;
             }
-            sendDefinitionFooter(out, /*last=*/true);
-            
-            return true;
+            sendDefinitionFooter(out);
+            return;
         }
-
         default:
-            return false;
+            return;
     }
 }
 

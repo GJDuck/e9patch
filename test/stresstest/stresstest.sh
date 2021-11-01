@@ -24,58 +24,62 @@ g++ -std=c++11 -fPIC -shared -o example.so -O2 \
     ../../examples/plugins/example.cpp -I ../../src/e9tool/ 
 export LIMIT=99999999999
 
-for ACTION in \
-    'passthru' \
-    'call[naked,after] entry@nop' \
-    'call entry(asm,instr,rflags,rdi,rip,addr,target,next)@nop' \
-    'call entry(&rsp,&rax,&rsi,&rdi,&r8,&r15,static addr,0x1234)@nop' \
-    'call entry(&op[0],&src[0],&dst[0],&op[1],&src[1],&dst[1],&dst[7],&src[7])@nop' \
-    'call entry(reg[0],&reg[0],imm[0],&imm[0],&mem[0],reg[1],&reg[1],imm[1])@nop' \
-    'plugin(example).patch()' \
-    'print'
-do
+runtest()
+{
+    MATCH=$1
+    PATCH=$2
+
     # Step (1): duplicate the tools
-    if ! ../../e9tool ../../e9tool --match true "--action=$ACTION" \
+    if ! ../../e9tool ../../e9tool "--match=$MATCH" "--patch=$PATCH" \
             -o tmp/e9tool.patched  -c 6 -s >/dev/null 2>&1
     then
-       echo -e "${RED}FAILED${OFF}: e9tool  ${YELLOW}$ACTION${OFF} [step (1)]"
+       echo -e "${RED}FAILED${OFF}: e9tool  ${YELLOW}-M $MATCH -P $PATCH${OFF} [step (1)]"
        continue
     fi
-    if ! ../../e9tool ../../e9patch --match true "--action=$ACTION" \
+    if ! ../../e9tool ../../e9patch "--match=$MATCH" "--patch=$PATCH" \
             -o tmp/e9patch.patched -c 6 -s >/dev/null 2>&1
     then
-        echo -e "${RED}FAILED${OFF}: e9patch ${YELLOW}$ACTION${OFF} [step (1)]"
+        echo -e "${RED}FAILED${OFF}: e9patch ${YELLOW}-M $MATCH -P $PATCH${OFF} [step (1)]"
         continue
     fi
  
     # Step (2): duplicate the tools with the duplicated tools
     if ! tmp/e9tool.patched --backend "$PWD/tmp/e9patch.patched" \
-            ../../e9tool  --match true "--action=$ACTION" \
+            ../../e9tool  "--match=$MATCH" "--patch=$PATCH" \
             -o tmp/e9tool.2.patched -c 6 -s >/dev/null 2>&1
     then
-        echo -e "${RED}FAILED${OFF}: e9tool  ${YELLOW}$ACTION${OFF} [step (2)]"
+        echo -e "${RED}FAILED${OFF}: e9tool  ${YELLOW}-M $MATCH -P $PATCH${OFF} [step (2)]"
         continue;
     fi
     if !  tmp/e9tool.patched --backend "$PWD/tmp/e9patch.patched" \
-            ../../e9patch --match true "--action=$ACTION" \
+            ../../e9patch "--match=$MATCH" "--patch=$PATCH" \
             -o tmp/e9patch.2.patched -c 6 -s >/dev/null 2>&1
     then
-        echo -e "${RED}FAILED${OFF}: e9patch ${YELLOW}$ACTION${OFF} [step (2)]"
+        echo -e "${RED}FAILED${OFF}: e9patch ${YELLOW}-M $MATCH -P $PATCH${OFF} [step (2)]"
         continue
     fi
     
     # Step (3): Everything should be the same:
     if diff tmp/e9tool.patched tmp/e9tool.2.patched > /dev/null
     then
-        echo -e "${GREEN}PASSED${OFF}: e9tool  ${YELLOW}$ACTION${OFF}"
+        echo -e "${GREEN}PASSED${OFF}: e9tool  ${YELLOW}-M $MATCH -P $PATCH${OFF}"
     else
-        echo -e "${RED}FAILED${OFF}: e9tool  ${YELLOW}$ACTION${OFF}"
+        echo -e "${RED}FAILED${OFF}: e9tool  ${YELLOW}-M $MATCH -P $PATCH${OFF}"
     fi
     if diff tmp/e9patch.patched tmp/e9patch.2.patched > /dev/null
     then
-        echo -e "${GREEN}PASSED${OFF}: e9patch ${YELLOW}$ACTION${OFF}"
+        echo -e "${GREEN}PASSED${OFF}: e9patch ${YELLOW}-M $MATCH -P $PATCH${OFF}"
     else
-        echo -e "${RED}FAILED${OFF}: e9patch ${YELLOW}$ACTION${OFF}"
+        echo -e "${RED}FAILED${OFF}: e9patch ${YELLOW}-M $MATCH -P $PATCH${OFF}"
     fi
-done
+}
+
+runtest true empty
+runtest true 'entry<naked>()@nop'
+runtest true 'entry(asm,instr,rflags,rdi,rip,addr,target,next)@nop'
+runtest true 'entry(&rsp,&rax,&rsi,&rdi,&r8,&r15,static addr,0x1234)@nop'
+runtest true 'entry(&op[0],&src[0],&dst[0],&op[1],&src[1],&dst[1],&dst[7],&src[7])@nop'
+runtest true 'entry(reg[0],&reg[0],imm[0],&imm[0],&mem[0],reg[1],&reg[1],imm[1])@nop'
+runtest 'plugin(example).match()' 'plugin(example).patch()'
+runtest true print
 

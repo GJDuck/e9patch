@@ -448,12 +448,13 @@ static Plugin *openPlugin(const char *basename)
 static void notifyPlugins(FILE *out, const ELF *elf, const Instr *Is,
     size_t size, Event event)
 {
+    Context cxt = {elf, Is, size, -1, nullptr, -1};
     for (auto i: plugins)
     {
         Plugin *plugin = i.second;
         if (plugin->eventFunc == nullptr)
             continue;
-        plugin->eventFunc(out, elf, Is, size, event, plugin->context);
+        plugin->eventFunc(out, event, &cxt, plugin->context);
     }
 }
 
@@ -463,13 +464,13 @@ static void notifyPlugins(FILE *out, const ELF *elf, const Instr *Is,
 static void matchPlugins(FILE *out, const ELF *elf, const Instr *Is,
     size_t size, size_t idx, const InstrInfo *I)
 {
+    Context cxt = {elf, Is, size, (ssize_t)idx, I, -1};
     for (auto i: plugins)
     {
         Plugin *plugin = i.second;
         if (plugin->matchFunc == nullptr)
             continue;
-        plugin->result = plugin->matchFunc(out, elf, Is, size, idx,
-            I, plugin->context);
+        plugin->result = plugin->matchFunc(out, &cxt, plugin->context);
     }
 }
 
@@ -2151,18 +2152,33 @@ struct Metadata
  * Send a trampoline.
  */
 static bool sendTrampoline(FILE *out, const Action *action, size_t idx,
-    std::vector<Metadata> &metadata)
+    const Context *cxt, std::vector<Metadata> &metadata)
 {
     const Patch *patch = action->patch[idx];
-    sendString(out, patch->name);
-    sendSeparator(out);
 
-    if (patch->kind == PATCH_BREAK)
-        return true;
+    const Plugin *plugin = nullptr;
+    if (patch->kind == PATCH_PLUGIN)
+    {
+        plugin = patch->plugin;
+        if (plugin->patchFunc != nullptr)
+            plugin->patchFunc(out, PHASE_CODE, cxt, plugin->context);
+    }
+    else
+    {
+        sendString(out, patch->name);
+        sendSeparator(out);
+        if (patch->kind == PATCH_BREAK)
+            return true;
+    }
 
     bool found = false;
     switch (patch->kind)
     {
+        case PATCH_PLUGIN:
+            plugin = patch->plugin;
+            if (plugin->patchFunc == nullptr)
+                break;
+            // Fallthrough
         case PATCH_PRINT: case PATCH_CALL:
             for (const auto &entry: metadata)
             {
@@ -3074,11 +3090,12 @@ int main(int argc, char **argv)
             done = !sendInstructionMessage(out, Is[j], Is[i].address);
 
         // Send the "patch" message.
+        id++;
+        Context cxt = {&elf, Is.data(), count, i, &I, id};
         sendMessageHeader(out, "patch");
         sendParamHeader(out, "trampoline");
         fputs("[\".Ltrampoline\",", out);
         const Matching *M = Ms.matchings[Is[i].matching];
-        id++;
 
         // BEFORE trampolines:
         metadata.clear();
@@ -3089,7 +3106,7 @@ int main(int argc, char **argv)
             {
                 if (action->patch[j]->pos != POS_BEFORE || seen_break)
                     continue;
-                seen_break = sendTrampoline(out, action, j, metadata);
+                seen_break = sendTrampoline(out, action, j, &cxt, metadata);
             }
         }
 
@@ -3106,7 +3123,7 @@ int main(int argc, char **argv)
                         "instruction \"%s\" at address 0x%lx", I.string.instr,
                         I.address);
                 seen_replace = true;
-                seen_break = sendTrampoline(out, action, j, metadata);
+                seen_break = sendTrampoline(out, action, j, &cxt, metadata);
             }
         }
         if (!seen_replace && !seen_break)
@@ -3119,7 +3136,7 @@ int main(int argc, char **argv)
             {
                 if (action->patch[j]->pos != POS_AFTER || seen_break)
                     continue;
-                seen_break = sendTrampoline(out, action, j, metadata);
+                seen_break = sendTrampoline(out, action, j, &cxt, metadata);
             }
         }
         if (!seen_break)
@@ -3129,7 +3146,13 @@ int main(int argc, char **argv)
         for (const auto &entry: metadata)
         {
             const Patch *patch = entry.action->patch[entry.idx];
-            fprintf(out, "\"$DATA@%s\",", patch->name+1);
+            if (patch->kind == PATCH_PLUGIN)
+            {
+                const Plugin *plugin = patch->plugin;
+                plugin->patchFunc(out, PHASE_DATA, &cxt, plugin->context);
+            }
+            else
+                fprintf(out, "\"$DATA@%s\",", patch->name+1);
         }
         fputc(']', out);
         sendSeparator(out);
@@ -3139,10 +3162,7 @@ int main(int argc, char **argv)
             sendParamHeader(out, "metadata");
             sendMetadataHeader(out);
             for (const auto &entry: metadata)
-            {
-                if (sendMetadata(out, &elf, entry.action, entry.idx, &I, id))
-                    sendSeparator(out);
-            }
+                sendMetadata(out, &elf, entry.action, entry.idx, &I, id, &cxt);
             sendMetadataFooter(out);
             sendSeparator(out);
         }
