@@ -584,3 +584,8 @@ void print(const char *_asm)
     fprintf(stderr, "%s\n", _asm);
 }
 
+void write(const char *str)
+{
+    fputs(str, stderr);
+}
+

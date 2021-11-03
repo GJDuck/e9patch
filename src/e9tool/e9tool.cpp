@@ -1151,7 +1151,7 @@ static const char *parseFunctionName(Parser &parser)
 /*
  * Parse a patch.
  */
-static Patch *parsePatch(const ELF &elf, const char *str)
+static const Patch *parsePatch(const ELF &elf, const char *str)
 {
     PatchKind kind;
     Parser parser(str, "patch", elf);
@@ -1466,6 +1466,7 @@ static Patch *parsePatch(const ELF &elf, const char *str)
 
     // Build the patch:
     std::string name;
+    static size_t id = 1;
     switch (kind)
     {
         case PATCH_PRINT:
@@ -1478,35 +1479,7 @@ static Patch *parsePatch(const ELF &elf, const char *str)
             return new Patch("$trap", PATCH_TRAP, pos);
         case PATCH_CALL:
             name += "$call_";
-            switch (pos)
-            {
-                case POS_BEFORE:
-                    name += 'B'; break;
-                case POS_REPLACE:
-                    name += 'R'; break;
-                case POS_AFTER:
-                    name += 'A'; break;
-            }
-            switch (abi)
-            {
-                case ABI_CLEAN:
-                    name += 'C'; break;
-                case ABI_NAKED:
-                    name += 'N'; break;
-            }
-            switch (jmp)
-            {
-                case JUMP_NONE:
-                    name += 'N'; break;
-                case JUMP_BREAK:
-                    name += 'B'; break;
-                case JUMP_GOTO:
-                    name += 'G'; break;
-            }
-            name += '_';
-            name += symbol;
-            name += '_';
-            name += filename;
+            name += std::to_string(id++);
             return new Patch(strDup(name.c_str()), PATCH_CALL, pos, abi, jmp,
                 symbol, std::move(args), filename);
         case PATCH_EXIT:
@@ -1514,11 +1487,9 @@ static Patch *parsePatch(const ELF &elf, const char *str)
             name += std::to_string(status);
             return new Patch(strDup(name.c_str()), PATCH_EXIT, pos, status);
         case PATCH_PLUGIN:
-        {
             name += "$plugin_";
-            name += filename;
+            name += std::to_string(id++);
             return new Patch(strDup(name.c_str()), PATCH_PLUGIN, pos, plugin);
-        }
         default:
             return nullptr;
     }
@@ -2042,7 +2013,7 @@ static bool matchEval(const MatchExpr *expr, const Targets &targets,
  */
 struct Matching
 {
-    const std::vector<Action *> actions;
+    std::vector<Action *> actions;
     
     Matching(std::vector<Action *> &&actions) : actions(std::move(actions))
     {
@@ -2051,26 +2022,25 @@ struct Matching
 };
 struct MatchingCmp
 {
-    bool operator()(const Matching &m1, const Matching &m2)
+    bool operator()(const Matching *m1, const Matching *m2)
     {
         for (size_t i = 0; ; i++)
         {
-            if (i >= m1.actions.size())
-                return (i < m2.actions.size());
-            else if (i >= m2.actions.size())
+            if (i >= m1->actions.size())
+                return (i < m2->actions.size());
+            else if (i >= m2->actions.size())
                 return false;
-            if (m1.actions[i] < m2.actions[i])
+            if (m1->actions[i] < m2->actions[i])
                 return true;
-            if (m1.actions[i] > m2.actions[i])
+            if (m1->actions[i] > m2->actions[i])
                 return false;
         }
     }
 };
 struct MatchingCache
 {
-    std::map<const Matching, size_t, MatchingCmp> cache;
+    std::map<const Matching *, size_t, MatchingCmp> cache;
     std::vector<const Matching *> matchings;
-
 };
 
 /*
@@ -2090,15 +2060,41 @@ static void match(const std::vector<Action *> &actions, const Targets &targets,
 /*
  * Save matching.
  */
-static size_t saveMatching(std::vector<Action *> &matching, MatchingCache &Ms)
+static size_t saveMatching(std::vector<Action *> &matching, const InstrInfo *I,
+    MatchingCache &Ms)
 {
+    // Check for existing:
     Matching M(std::move(matching));
-    auto i = Ms.cache.find(M);
+    auto i = Ms.cache.find(&M);
     if (i != Ms.cache.end())
         return i->second;
+
+    // Check if valid (at most one replace):
+    bool seen_replace = false, seen_break = false;
+    for (const auto *action: matching)
+        for (const auto *patch: action->patch)
+            seen_break = seen_break ||
+                (patch->kind == PATCH_BREAK && patch->pos == POS_BEFORE);
+    for (const auto *action: matching)
+    {
+        for (const auto *patch: action->patch)
+        {
+            if (patch->pos != POS_REPLACE)
+                continue;
+            if (seen_replace && !seen_break)
+                error("multiple matching \"replace\" trampolines detected "
+                    "for instruction \"%s\" at address 0x%lx", I->string.instr,
+                    I->address);
+            seen_replace = true;
+            seen_break = seen_break || (patch->kind == PATCH_BREAK);
+        }
+    }
+
+    // Add to cache:
     size_t idx = Ms.matchings.size();
-    auto j = Ms.cache.insert({M, idx});
-    Ms.matchings.push_back(&j.first->first);
+    Matching *N = new Matching(std::move(M.actions));
+    Ms.cache.insert({N, idx});
+    Ms.matchings.push_back(N);
     return idx;
 }
 
@@ -2671,7 +2667,7 @@ int main(int argc, char **argv)
         std::vector<const Patch *> patch;
         for (const auto &str: entry.patch)
         {
-            Patch *P = parsePatch(elf, str.c_str());
+            const Patch *P = parsePatch(elf, str.c_str());
             patch.push_back(P);
             if (P->kind == PATCH_BREAK)
                 break;
@@ -3015,8 +3011,7 @@ int main(int argc, char **argv)
                 section, filename, section);
     }
     Is.shrink_to_fit();
-    notifyPlugins(out, &elf, Is.data(), Is.size(),
-        EVENT_DISASSEMBLY_COMPLETE);
+    notifyPlugins(out, &elf, Is.data(), Is.size(), EVENT_DISASSEMBLY_COMPLETE);
     size_t count = Is.size();
 
     // Step (1a): CFG Analysis (if necessary).
@@ -3038,9 +3033,9 @@ int main(int argc, char **argv)
         if (matched)
         {
             Is[i].patch    = true;
-            Is[i].matching = saveMatching(matching, Ms);
+            Is[i].matching = saveMatching(matching, &I, Ms);
         }
-        debug("%s0x%lx%s: %s%s%s%s",
+        debug("%s0x%lx%s: match %s%s%s%s",
             (option_is_tty? "\33[31m": ""),
             I.address,
             (option_is_tty? "\33[0m": ""),
@@ -3053,52 +3048,24 @@ int main(int argc, char **argv)
                  (I.category & CATEGORY_CALL) != 0))
             Is[i].jump = true;
     }
-    notifyPlugins(out, &elf, Is.data(), Is.size(),
-        EVENT_MATCHING_COMPLETE);
+    notifyPlugins(out, &elf, Is.data(), Is.size(), EVENT_MATCHING_COMPLETE);
 
-    /*
-     * Send instructions & patches.  Note: this MUST be done in reverse!
-     */
-    intptr_t id = -1;
+    // Step (3): Send all composite trampolines:
+    size_t tid = 0;
+    std::map<const Matching *, size_t, MatchingCmp> tmps;
     std::vector<Metadata> metadata;
-    for (ssize_t i = (ssize_t)count - 1; i >= 0; i--)
+    std::vector<std::vector<Metadata>> metadatas;
+    Context cxt = {&elf, Is.data(), count, -1, nullptr, -1};
+    for (const auto *M: Ms.matchings)
     {
-        switch (option_optimization_level)
-        {
-            case '2': case '3': case 's':
-                if (!Is[i].emitted && Is[i].jump)
-                {
-                    // Always emits jump/calls for -Opeephole
-                    Is[i].emitted = true;
-                    sendInstructionMessage(out, Is[i].address,
-                        Is[i].size, Is[i].offset);
-                }
-                break;
-        }
-        if (!Is[i].patch)
-            continue;
-
-        // Disassmble the instruction again.
-        RawInstr raw;
-        InstrInfo I;
-        getInstrInfo(&elf, &Is[i], &I, &raw);
-        bool done = false;
-        for (ssize_t j = i; !done && j >= 0; j--)
-            done = !sendInstructionMessage(out, Is[j], Is[i].address);
-        done = false;
-        for (size_t j = i + 1; !done && j < count; j++)
-            done = !sendInstructionMessage(out, Is[j], Is[i].address);
-
-        // Send the "patch" message.
-        id++;
-        Context cxt = {&elf, Is.data(), count, i, &I, id};
-        sendMessageHeader(out, "patch");
-        sendParamHeader(out, "trampoline");
+        sendMessageHeader(out, "trampoline");
+        sendParamHeader(out, "name");
+        fprintf(out, "\"$tmp_%zu\"", tid);
+        sendSeparator(out);
+        sendParamHeader(out, "template");
         fputs("[\".Ltrampoline\",", out);
-        const Matching *M = Ms.matchings[Is[i].matching];
 
         // BEFORE trampolines:
-        metadata.clear();
         bool seen_break = false;
         for (const auto *action: M->actions)
         {
@@ -3118,10 +3085,6 @@ int main(int argc, char **argv)
             {
                 if (action->patch[j]->pos != POS_REPLACE || seen_break)
                     continue;
-                if (seen_replace)
-                    error("multiple matching \"replace\" trampolines for "
-                        "instruction \"%s\" at address 0x%lx", I.string.instr,
-                        I.address);
                 seen_replace = true;
                 seen_break = sendTrampoline(out, action, j, &cxt, metadata);
             }
@@ -3155,25 +3118,97 @@ int main(int argc, char **argv)
                 fprintf(out, "\"$DATA@%s\",", patch->name+1);
         }
         fputc(']', out);
-        sendSeparator(out);
+        sendSeparator(out, /*last=*/true);
+        sendMessageFooter(out, /*sync=*/true);
 
-        if (metadata.size() > 0)
+        metadatas.emplace_back();
+        metadatas[tid].swap(metadata);
+        tmps.insert({M, tid});
+        tid++;
+    }
+
+    /*
+     * Send instructions & patches.  Note: this MUST be done in reverse!
+     */
+    debug("--------------------------------------");
+    intptr_t id = -1;
+    for (ssize_t i = (ssize_t)count - 1; i >= 0; i--)
+    {
+        switch (option_optimization_level)
+        {
+            case '2': case '3': case 's':
+                if (!Is[i].emitted && Is[i].jump)
+                {
+                    // Always emits jump/calls for -Opeephole
+                    Is[i].emitted = true;
+                    sendInstructionMessage(out, Is[i].address,
+                        Is[i].size, Is[i].offset);
+                }
+                break;
+        }
+        if (!Is[i].patch)
+            continue;
+
+        // Disassmble the instruction again.
+        RawInstr raw;
+        InstrInfo I;
+        getInstrInfo(&elf, &Is[i], &I, &raw);
+        bool done = false;
+        for (ssize_t j = i; !done && j >= 0; j--)
+            done = !sendInstructionMessage(out, Is[j], Is[i].address);
+        done = false;
+        for (size_t j = i + 1; !done && j < count; j++)
+            done = !sendInstructionMessage(out, Is[j], Is[i].address);
+
+        // Send the "patch" message.
+        id++;
+        Context cxt = {&elf, Is.data(), count, i, &I, id};
+        const Matching *M = Ms.matchings[Is[i].matching];
+        size_t tid = tmps[M];
+
+        if (option_debug)
+        {
+            std::string s;
+            bool prev = false;
+            for (const auto *action: M->actions)
+            {
+                for (size_t j = 0, n = action->patch.size(); j < n; j++)
+                {
+                    if (prev)
+                        s += ',';
+                    prev = true;
+                    s += action->patch[j]->name;
+                }
+            }
+            debug("%s0x%lx%s: patch %s%s%s [%s] #%zu",
+                (option_is_tty? "\33[31m": ""),
+                I.address,
+                (option_is_tty? "\33[0m": ""),
+                (option_is_tty? "\33[32m": ""),
+                I.string.instr,
+                (option_is_tty? "\33[0m": ""),
+                s.c_str(), tid);
+        }
+
+        sendMessageHeader(out, "patch");
+        sendParamHeader(out, "trampoline");
+        fprintf(out, "\"$tmp_%zu\",", tid);
+        if (metadatas[tid].size() > 0)
         {
             sendParamHeader(out, "metadata");
             sendMetadataHeader(out);
-            for (const auto &entry: metadata)
-                sendMetadata(out, &elf, entry.action, entry.idx, &I, id, &cxt);
+            for (const auto &entry: metadatas[tid])
+                sendMetadata(out, &elf, entry.action, entry.idx, &I, id,
+                    &cxt);
             sendMetadataFooter(out);
             sendSeparator(out);
         }
-
         sendParamHeader(out, "offset");
         sendInteger(out, I.offset);
         sendSeparator(out, /*last=*/true);
         sendMessageFooter(out, /*sync=*/true);
     }
-    notifyPlugins(out, &elf, Is.data(), Is.size(),
-        EVENT_PATCHING_COMPLETE);
+    notifyPlugins(out, &elf, Is.data(), Is.size(), EVENT_PATCHING_COMPLETE);
     Is.clear();
 
     /*
