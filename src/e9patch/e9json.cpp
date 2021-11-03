@@ -1129,8 +1129,10 @@ static void parseParams(Parser &parser, Message &msg)
                     value.string = dupString(parser.s);
                     break;
                 case PARAM_TRAMPOLINE:
-                case PARAM_TEMPLATE:
                     value.trampoline = parseTrampoline(parser, /*debug=*/true);
+                    break;
+                case PARAM_TEMPLATE:
+                    value.trampoline = parseTrampoline(parser);
                     break;
                 case PARAM_METADATA:
                     value.metadata = parseMetadata(parser);
