@@ -2324,7 +2324,6 @@ extern unsigned sendReserveMessage(FILE *out, intptr_t addr,
 extern void sendELFFileMessage(FILE *out, const ELF *elf,
     bool absolute = false);
 extern unsigned sendEmptyTrampolineMessage(FILE *out);
-extern unsigned sendBreakTrampolineMessage(FILE *out);
 extern unsigned sendTrapTrampolineMessage(FILE *out);
 extern unsigned sendPrintTrampolineMessage(FILE *out, BinaryType type);
 extern unsigned sendExitTrampolineMessage(FILE *out, BinaryType type,

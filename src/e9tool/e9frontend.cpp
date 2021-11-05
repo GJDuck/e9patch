@@ -1662,21 +1662,6 @@ unsigned e9frontend::sendEmptyTrampolineMessage(FILE *out)
 }
 
 /*
- * Send a "break" "trampoline" message.
- */
-unsigned e9frontend::sendBreakTrampolineMessage(FILE *out)
-{
-    sendMessageHeader(out, "trampoline");
-    sendParamHeader(out, "name");
-    sendString(out, "$break");
-    sendSeparator(out);
-    sendParamHeader(out, "template");
-    fputs("[\"$continue\"]", out);
-    sendSeparator(out, /*last=*/true);
-    return sendMessageFooter(out, /*sync=*/true);
-}
-
-/*
  * Send a "trap" "trampoline" message.
  */
 unsigned e9frontend::sendTrapTrampolineMessage(FILE *out)
@@ -3010,10 +2995,10 @@ static std::pair<bool, bool> sendPush(FILE *out, int32_t offset, bool before,
     {
         case REGISTER_RIP:
             if (before)
-                sendLeaFromPCRelToR64(out, "{\"rel32\":\".Linstruction\"}",
+                sendLeaFromPCRelToR64(out, "{\"rel32\":\".Linstr\"}",
                     scratch);
             else
-                sendLeaFromPCRelToR64(out, "{\"rel32\":\".Lcontinue\"}",
+                sendLeaFromPCRelToR64(out, "{\"rel32\":\".Lbreak\"}",
                     scratch);
             sendMovFromR64ToStack(out, scratch, offset - RIP_SLOT);
             break;
@@ -3748,7 +3733,7 @@ unsigned e9frontend::sendCallTrampolineMessage(FILE *out, const char *name,
         {
             fprintf(out, "%u,", (result_rax? 0x58: 0x59));
             fprintf(out, "\"$RSTOR_RSP@%s\",", patch);
-            fputs("\"$continue\",", out);
+            fputs("\"$break\",", out);
         }
  
         // The result is zero...

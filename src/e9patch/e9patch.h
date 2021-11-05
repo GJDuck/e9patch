@@ -150,7 +150,7 @@ enum EntryKind
     ENTRY_INT64,
     ENTRY_INSTRUCTION,
     ENTRY_INSTRUCTION_BYTES,
-    ENTRY_CONTINUE,
+    ENTRY_BREAK,
     ENTRY_TAKEN,
 };
 
@@ -163,7 +163,8 @@ struct Entry
     union
     {
         unsigned length;                // Entry length
-        bool use_label;                 // Use label for rel8/rel32?
+        bool use;                       // Label use
+        bool optimize;                  // Optimize break?
     };
     union
     {

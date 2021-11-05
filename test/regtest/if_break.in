@@ -1,0 +1,1 @@
+./test.pie -M 'mem[0].index != nil' -P 'write("\n---------\n")@patch' -P print -P 'write("---------\n")@patch' -P 'if ret_0("before #1")@patch break' -P 'if ret_0("before #2")@patch break' -P 'if ret_0("before #3")@patch break' -P 'after print' -P 'after if ret_1("after #1")@patch break' -P 'after if ret_1("after #2")@patch break' -P 'after if ret_1("after #3")@patch break'

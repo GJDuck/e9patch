@@ -555,10 +555,10 @@ static bool sendLoadRegToArg(FILE *out, const InstrInfo *I, Register reg,
             }
             else if (info.before)
                 sendLeaFromPCRelToR64(out,
-                    "{\"rel32\":\".Linstruction\"}", regno);
+                    "{\"rel32\":\".Linstr\"}", regno);
             else
                 sendLeaFromPCRelToR64(out,
-                    "{\"rel32\":\".Lcontinue\"}", regno);
+                    "{\"rel32\":\".Lbreak\"}", regno);
             return true;
         }
         sendLoadRegToArg(out, reg, info, regno);
@@ -951,7 +951,7 @@ static void sendLoadNextMetadata(FILE *out, const char *name,
             fprintf(out, "%u,{\"rel8\":\".Ltake%s@%s\"},", 0xe3, regname,
                 name);
             sendLoadPointerMetadata(out, info, _static, I->address + I->size,
-                "{\"rel32\":\".Lcontinue\"}", regno);
+                "{\"rel32\":\".Lbreak\"}", regno);
             fprintf(out, "%u,{\"rel8\":\".Lnext%s@%s\"},", 0xeb, regname,
                 name);
             fprintf(out, "\".Ltake%s@%s\",", regname, name);
@@ -962,7 +962,7 @@ static void sendLoadNextMetadata(FILE *out, const char *name,
         }
         default:
             sendLoadPointerMetadata(out, info, _static, I->address + I->size,
-                "{\"rel32\":\".Lcontinue\"}", regno);
+                "{\"rel32\":\".Lbreak\"}", regno);
             return;
     }
 
@@ -970,10 +970,10 @@ static void sendLoadNextMetadata(FILE *out, const char *name,
     fprintf(out, "%u,{\"rel8\":\".Ltake%s@%s\"},", opcode, regname, name);
 
     // .LnotTaken:
-    // leaq .Lcontinue(%rip),%rarg
+    // leaq .Lbreak(%rip),%rarg
     // jmp .Lnext;
     sendLoadPointerMetadata(out, info, _static, I->address + I->size,
-        "{\"rel32\":\".Lcontinue\"}", regno);
+        "{\"rel32\":\".Lbreak\"}", regno);
     fprintf(out, "%u,{\"rel8\":\".Lnext%s@%s\"},", 0xeb, regname, name);
 
     // .Ltaken:
@@ -1025,12 +1025,12 @@ static void sendStringCharData(FILE *out, char c)
 static void sendAsmStrData(FILE *out, const InstrInfo *I,
     bool newline = false)
 {
-    fputc('\"', out);
+    fputs("{\"string\":\"", out);
     for (unsigned i = 0; I->string.instr[i] != '\0'; i++)
         sendStringCharData(out, I->string.instr[i]);
     if (newline)
         sendStringCharData(out, '\n');
-    fputc('\"', out);
+    fputs("\"}", out);
 }
 
 /*
@@ -1120,7 +1120,7 @@ static Type sendLoadArgumentMetadata(FILE *out, CallInfo &info,
             break;
         case ARGUMENT_ADDR:
             sendLoadPointerMetadata(out, info, _static, I->address,
-                "{\"rel32\":\".Linstruction\"}", regno);
+                "{\"rel32\":\".Linstr\"}", regno);
             t = TYPE_CONST_VOID_PTR;
             break;
         case ARGUMENT_ID:
@@ -1131,9 +1131,9 @@ static Type sendLoadArgumentMetadata(FILE *out, CallInfo &info,
             {
                 case POS_AFTER:
                     // If we reach here after the instruction, it means the
-                    // branch was NOT taken, so (next=.Lcontinue).
+                    // branch was NOT taken, so (next=.Lbreak).
                     sendLoadPointerMetadata(out, info, _static,
-                        I->address + I->size, "{\"rel32\":\".Lcontinue\"}",
+                        I->address + I->size, "{\"rel32\":\".Lbreak\"}",
                         regno);
                     break;
                 default:
@@ -1214,11 +1214,11 @@ static Type sendLoadArgumentMetadata(FILE *out, CallInfo &info,
                     {
                         case POS_AFTER: case POS_REPLACE:
                             sendLeaFromPCRelToR64(out,
-                                "{\"rel32\":\".Lcontinue\"}", regno);
+                                "{\"rel32\":\".Lbreak\"}", regno);
                             break;
                         default:
                             sendLeaFromPCRelToR64(out,
-                                "{\"rel32\":\".Linstruction\"}", regno);
+                                "{\"rel32\":\".Linstr\"}", regno);
                             break;
                     }
                     t = TYPE_CONST_VOID_PTR;
@@ -1457,9 +1457,9 @@ static void sendArgumentDataMetadata(FILE *out, const char *name,
         case ARGUMENT_ASM:
             if (arg.duplicate)
                 return;
-            fprintf(out, "\".Lasm@%s\",{\"string\":", name);
+            fprintf(out, "\".Lasm@%s\",", name);
             sendAsmStrData(out, I, /*newline=*/false);
-            fputs("},", out);
+            putc(',', out);
             break;
         case ARGUMENT_BYTES:
             if (arg.duplicate)

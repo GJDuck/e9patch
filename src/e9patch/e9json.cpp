@@ -590,17 +590,23 @@ static Entry makeMacroEntry(const char *macro)
     // Check for built-in macros:
     switch (macro[1])
     {
+        case 'B':
+            if (strcmp(macro, "$BREAK") == 0)
+            {
+                entry.kind = ENTRY_BREAK;
+                entry.optimize = true;
+                return entry;
+            }
+            break;
         case 'b':
             if (strcmp(macro, "$bytes") == 0)
             {
                 entry.kind = ENTRY_INSTRUCTION_BYTES;
                 return entry;
             }
-            break;
-        case 'c':
-            if (strcmp(macro, "$continue") == 0)
+            else if (strcmp(macro, "$break") == 0)
             {
-                entry.kind = ENTRY_CONTINUE;
+                entry.kind = ENTRY_BREAK;
                 return entry;
             }
             break;
@@ -769,7 +775,7 @@ type_error:
             if (token == TOKEN_STRING && parser.s[0] == '.' &&
                     parser.s[1] == 'L')
             {
-                entry.use_label = true;
+                entry.use = true;
                 entry.label = dupString(parser.s);
             }
             else
@@ -808,12 +814,12 @@ type_error:
             if (token == TOKEN_STRING && parser.s[0] == '.' &&
                     parser.s[1] == 'L')
             {
-                entry.use_label = true;
+                entry.use = true;
                 entry.label = dupString(parser.s);
             }
             else
             {
-                entry.use_label = false;
+                entry.use = false;
                 if (token == TOKEN_NUMBER)
                     entry.uint64 = (uint64_t)parser.i;
                 else
@@ -874,14 +880,14 @@ static Trampoline *parseTrampoline(Parser &parser, bool debug = false)
                             entries.push_back(makeMacroEntry(parser.s));
                             break;
                         case '.':
-                            entries.push_back(makeLabelEntry(parser.s));
-                            break;
+                            if (parser.s[1] == 'L')
+                            {
+                                entries.push_back(makeLabelEntry(parser.s));
+                                break;
+                            }
+                            // Fallthrough:
                         default:
-                            // String constant:
-                            for (unsigned i = 0; parser.s[i] != '\0'; i++)
-                                bytes.push_back((uint8_t)parser.s[i]);
-                            bytes.push_back((uint8_t)'\0');
-                            break;
+                            unexpectedToken(parser, "template entry", token);
                     }
                     break;
 

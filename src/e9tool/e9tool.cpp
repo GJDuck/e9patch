@@ -1474,7 +1474,7 @@ static const Patch *parsePatch(const ELF &elf, const char *str)
         case PATCH_EMPTY:
             return new Patch("$empty", PATCH_EMPTY, pos);
         case PATCH_BREAK:
-            return new Patch("$break", PATCH_BREAK, pos);
+            return new Patch("$BREAK", PATCH_BREAK, pos);
         case PATCH_TRAP:
             return new Patch("$trap", PATCH_TRAP, pos);
         case PATCH_CALL:
@@ -2872,8 +2872,7 @@ int main(int argc, char **argv)
     /*
      * Send trampoline definitions:
      */
-    bool have_print = false, have_empty = false, have_trap = false,
-        have_break = false;
+    bool have_print = false, have_empty = false, have_trap = false;
     std::map<const char *, ELF *, CStrCmp> files;
     std::set<const char *, CStrCmp> have_call;
     std::set<int> have_exit;
@@ -2889,9 +2888,6 @@ int main(int argc, char **argv)
                     break;
                 case PATCH_EMPTY:
                     have_empty = true;
-                    break;
-                case PATCH_BREAK:
-                    have_break = true;
                     break;
                 case PATCH_TRAP:
                     have_trap = true;
@@ -2945,8 +2941,6 @@ int main(int argc, char **argv)
     }
     if (have_empty)
         sendEmptyTrampolineMessage(out);
-    if (have_break)
-        sendBreakTrampolineMessage(out);
     if (have_print)
         sendPrintTrampolineMessage(out, elf.type);
     if (have_trap)
@@ -3103,7 +3097,7 @@ int main(int argc, char **argv)
             }
         }
         if (!seen_break)
-            fputs("\"$continue\",", out);
+            fputs("\"$BREAK\",", out);
 
         // DATA:
         for (const auto &entry: metadata)
