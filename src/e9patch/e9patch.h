@@ -86,40 +86,63 @@ struct Buffer
 {   
     unsigned i = 0; 
     const unsigned max;
-    uint8_t * const bytes;
+    uint8_t * const buf;
     
-    Buffer(uint8_t * bytes, unsigned max = UINT32_MAX) : bytes(bytes), max(max)
+    Buffer(uint8_t * bytes, unsigned max = UINT32_MAX) : buf(bytes), max(max)
     {
         ;
     }
     
     void push(uint8_t b)
     {
-        assert(i < max);
-        if (bytes != nullptr)
-            bytes[i] = b;
+        if (buf != nullptr && i < max)
+            buf[i] = b;
         i++;
     }
     
     void push(const uint8_t *data, unsigned len)
     {
-        assert(i + len <= max);
-        if (bytes != nullptr)
-            memcpy(bytes + i, data, len);
+        if (buf != nullptr && i < max)
+        {
+            unsigned size = (i + len > max? max - i: len);
+            memcpy(buf + i, data, size);
+        }
         i += len;
     }
 
     void push(uint8_t b, unsigned len)
     {
-        assert(i + len <= max);
-        if (bytes != nullptr)
-            memset(bytes + i, b, len);
+        if (buf != nullptr && i < max)
+        {
+            unsigned size = (i + len > max? max - i: len);
+            memset(buf + i, b, size);
+        }
         i += len;
     }
- 
-    size_t size()
+
+    size_t size(size_t start = 0)
     {
-        return (size_t)i;
+        return (size_t)i - start;
+    }
+
+    uint8_t *bytes()
+    {
+        return (i < max? buf + i: nullptr);
+    }
+
+    int commit(size_t start = 0)
+    {
+        if (i > max)
+        {
+            i = (unsigned)start;
+            return -1;
+        }
+        return (int)i - (int)start;
+    }
+
+    void reset(size_t start = 0)
+    {
+        i = (unsigned)start;
     }
 };
 
@@ -283,7 +306,11 @@ struct Alloc
     intptr_t lb;                // Allocation lower bound
     intptr_t ub;                // Allocation upper bound
     const Instr *I;             // Instruction.
-    const Trampoline *T;        // Trampoline.
+    union
+    {
+        const Trampoline *T;    // Trampoline.
+        uint8_t *bytes;         // Flattened bytes.
+    };
     unsigned entry;             // Entry offset.
 };
 
@@ -320,7 +347,7 @@ struct Allocator
             ;
         }
 
-        const Alloc *operator*();
+        Alloc *operator*();
         void operator++();
         bool operator!=(const iterator &i)
         {
@@ -433,12 +460,23 @@ struct EntryPoint
 typedef std::map<intptr_t, EntryPoint> EntrySet;
 
 /*
+ * Jump instruction info.
+ */
+struct JumpInfo
+{
+    intptr_t addr;                      // Instruction address
+    uint8_t *bytes;                     // Instruction bytes
+    size_t size;                        // Instruction size
+};
+
+/*
  * Binary representation.
  */
 typedef std::map<off_t, Instr *> InstrSet;
 typedef std::deque<PatchEntry> PatchQueue;
 typedef std::map<const char *, Trampoline *, CStrCmp> TrampolineSet;
 typedef std::vector<intptr_t> InitSet;
+typedef std::vector<JumpInfo> JumpSet;
 struct Binary
 {
     const char *filename;               // The binary's path.
@@ -472,7 +510,8 @@ struct Binary
 
     InstrSet Is;                        // All (known) instructions.
     TrampolineSet Ts;                   // All current trampoline templates.
-    EntrySet Es;                        // All trampoline entry points.
+    mutable EntrySet Es;                // All trampoline entry points.
+    mutable JumpSet Js;                 // All observed jumps (-Opeephole).
     Allocator allocator;                // Virtual address allocation.
 
     InitSet inits;                      // Initialization functions.

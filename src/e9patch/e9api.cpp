@@ -441,15 +441,12 @@ static void parseEmit(Binary *B, const Message &msg)
         error("failed to parse \"emit\" message (id=%u); duplicate "
             "parameters detected");
 
-    // Build trampoline entry set.
+    // Build trampoline entry set (b4 flush)
     buildEntrySet(B);
 
     // Flush the queue:
     queueFlush(B, INTPTR_MIN);
     putchar('\n');
-
-    // Post-processing optimizations:
-    optimizeAllJumps(B);
 
     // Create and optimize the mappings:
     MappingSet mappings;
@@ -473,6 +470,10 @@ static void parseEmit(Binary *B, const Message &msg)
             error("unimplemented granularity (%zu)",
                 option_mem_granularity);
     }
+
+    // Post-processing & optimizations:
+    flattenAllTrampolines(B);
+    optimizeAllJumps(B);
 
     // Create the patched binary:
     switch (B->mode)

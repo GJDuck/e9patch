@@ -2323,7 +2323,7 @@ static void usage(FILE *stream, const char *progname)
         "\t\t\t-O3 aggressively optimizes for performance, and \n"
         "\t\t\t-Os optimizes for space.\n"
         "\n"
-        "\t\tThe default is -O1.\n"
+        "\t\tThe default is -O2.\n"
         "\n"
         "\t--option OPTION\n"
         "\t\tPass OPTION to the e9patch backend.\n"

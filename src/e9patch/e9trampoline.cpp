@@ -70,16 +70,16 @@ void __attribute__((__constructor__(8000))) evicteeTrampolineInit(void)
     size_t num_entries = 2;
     uint8_t *ptr =
         new uint8_t[sizeof(Trampoline) + num_entries * sizeof(Entry)];
-    Trampoline *T        = (Trampoline *)ptr;
-    T->prot              = PROT_READ | PROT_EXEC;
-    T->num_entries       = num_entries;
-    T->preload           = false;
-    T->entries[0].kind   = ENTRY_INSTRUCTION;
-    T->entries[0].length = 0;
-    T->entries[0].bytes  = nullptr;
-    T->entries[1].kind   = ENTRY_BREAK;
-    T->entries[1].length = 0;
-    T->entries[1].bytes  = nullptr;
+    Trampoline *T          = (Trampoline *)ptr;
+    T->prot                = PROT_READ | PROT_EXEC;
+    T->num_entries         = num_entries;
+    T->preload             = false;
+    T->entries[0].kind     = ENTRY_INSTRUCTION;
+    T->entries[0].length   = 0;
+    T->entries[0].bytes    = nullptr;
+    T->entries[1].kind     = ENTRY_BREAK;
+    T->entries[1].optimize = true;
+    T->entries[1].bytes    = nullptr;
 
     evicteeTrampoline = T;
 }
@@ -117,6 +117,17 @@ static const Trampoline *expandMacro(const Binary *B,
 }
 
 /*
+ * Save a jump instruction for future optimization.
+ */
+static void saveJump(const Binary *B, intptr_t addr, uint8_t *bytes,
+    size_t size)
+{
+    if (!option_Opeephole || bytes == nullptr || !isCFT(bytes, size, CFT_JMP))
+        return;
+    B->Js.push_back({addr, bytes, size});
+}
+
+/*
  * Build a jump instruction from a trampoline back to the main code.
  */
 static int buildJump(const Binary *B, off_t offset, const Instr *J,
@@ -126,14 +137,14 @@ static int buildJump(const Binary *B, off_t offset, const Instr *J,
         return /*sizeof(jmpq)=*/5;
 
     int32_t rel32 = (int32_t)-(offset + /*sizeof(jmpq)=*/5);
-    uint8_t *bytes = buf->bytes + buf->i;
+    uint8_t *bytes = buf->bytes();
     buf->push(/*jmpq opcode=*/0xE9);
     buf->push((const uint8_t *)&rel32, sizeof(rel32));
 
     if (option_Opeephole && J != nullptr)
     {
         intptr_t addr = J->addr + offset;
-        optimizeJump(B, addr, bytes, /*sizeof(jmpq)=*/5);
+        saveJump(B, addr, bytes, /*sizeof(jmpq)=*/5);
     }
 
     return /*sizeof(jmpq)=*/5;
@@ -208,7 +219,7 @@ static int buildBreak(const Binary *B, const Instr *I, int32_t offset32,
     // Build the epilogue:
     J = I->next;
     int s = I->size, r = 0;
-    unsigned save = (mode == BUILD_BYTES? buf->i: 0);
+    unsigned start = (mode == BUILD_BYTES? buf->size(): 0);
     bool ok = true;
     for (unsigned j = 0; j < i; j++, J = J->next)
     {
@@ -220,6 +231,7 @@ static int buildBreak(const Binary *B, const Instr *I, int32_t offset32,
         }
 
         int len = 0;
+        uint8_t *bytes;
         switch (mode)
         {
             case BUILD_SIZE:
@@ -227,17 +239,15 @@ static int buildBreak(const Binary *B, const Instr *I, int32_t offset32,
                     J->size, J->pic, nullptr, /*relax=*/true);
                 break;
             case BUILD_BYTES:
+                bytes = buf->bytes();
                 len = relocateInstr(J->addr, offset32 + (r - s),
-                    J->original.bytes, J->size, J->pic, buf->bytes + buf->i);
+                    J->original.bytes, J->size, J->pic, buf);
                 if (len < 0)
                 {
-                    buf->i = save;
+                    buf->reset(start);
                     break;
                 }
-                if (option_Opeephole)
-                    optimizeJump(B, J->addr + offset32 + (r - s),
-                        buf->bytes + buf->i, len);
-                buf->i += (unsigned)len;
+                saveJump(B, J->addr + offset32 + (r - s), bytes, len);
                 break;
         }
         if (len < 0)
@@ -280,13 +290,16 @@ static int buildBreak(const Binary *B, const Instr *I, int32_t offset32,
 static int buildPrologue(const Binary *B, const Instr *I, int32_t offset32,
     BuildMode mode = BUILD_SIZE, Buffer *buf = nullptr)
 {
+    if (!option_Opeephole)
+        return 0;
     const Instr *J = getTrampolinePrologueStart(B->Es, I);
     if (J == nullptr || J == I)
         return 0;
 
     int r = 0; 
-    unsigned start = (mode == BUILD_BYTES? buf->i: 0);
+    unsigned start = (mode == BUILD_BYTES? buf->size(): 0);
     bool relax = (offset32 == 0x0);
+    std::vector<std::pair<const Instr *, intptr_t>> entries;
     for (; J != I; J = J->next)
     {
         int len = 0;
@@ -294,59 +307,35 @@ static int buildPrologue(const Binary *B, const Instr *I, int32_t offset32,
         switch (mode)
         {
             case BUILD_BYTES:
+            {
+                uint8_t *bytes = buf->bytes();
                 len = relocateInstr(J->addr, diff + offset32 + r,
-                    J->original.bytes, J->size, J->pic, buf->bytes + buf->i);
+                    J->original.bytes, J->size, J->pic, buf);
                 if (len < 0)
                 {
-                    buf->i = start;
+                    buf->reset(start);
                     break;
                 }
-                if (option_Opeephole)
-                    optimizeJump(B, J->addr + diff + offset32 + r,
-                        buf->bytes + buf->i, len);
-                buf->i += (unsigned)len;
+                saveJump(B, J->addr + diff + offset32 + r, bytes, len);
+                int diff = (int)(I->addr - J->addr);
+                intptr_t entry = J->addr + diff + offset32 + r;
+                entries.push_back({J, entry});
                 break;
+            }
             case BUILD_SIZE:
                 len = relocateInstr(J->addr, /*offset=*/0x0, J->original.bytes,
                     J->size, J->pic, nullptr, relax);
                 break;
         }
         if (len < 0)
-        {
-            r = 0;
-            break;
-        }
-        r += len;
-    }
-
-    return r;
-}
-
-/*
- * Calculate the trampoline entry points based on the prologue (if exists).
- */
-static void calcPrologueTargets(Binary *B, const Instr *I, int32_t offset32)
-{
-    const Instr *J = getTrampolinePrologueStart(B->Es, I);
-    if (J == nullptr || J == I)
-        return;
-
-    int r = 0;
-    std::vector<std::pair<const Instr *, intptr_t>> entries;
-    for (; J != I; J = J->next)
-    {
-        int len = relocateInstr(J->addr, /*offset=*/0x0, J->original.bytes,
-                J->size, J->pic, nullptr, /*relax=*/true);
-        if (len < 0)
-            return;
-        int diff = (int)(I->addr - J->addr);
-        intptr_t entry = J->addr + diff + offset32 + r;
-        entries.push_back({J, entry});
+            return 0;
         r += len;
     }
 
     for (const auto &entry: entries)
         setTrampolineEntry(B->Es, entry.first, entry.second);
+
+    return r;
 }
 
 /*
@@ -589,15 +578,6 @@ Bounds getTrampolineBounds(const Binary *B, const Trampoline *T,
 }
 
 /*
- * Calculate trampoline entry points.
- */
-void calcEntryPoints(Binary *B, const Trampoline *T, const Instr *I,
-    int32_t offset32)
-{
-    calcPrologueTargets(B, I, offset32);
-}
-
-/*
  * Build the set of labels.
  */
 static off_t buildLabelSet(const Binary *B, const Trampoline *T,
@@ -803,8 +783,8 @@ static void buildBytes(const Binary *B, const Trampoline *T,
 
             case ENTRY_INSTRUCTION:
             {
-                buf.i += relocateInstr(I->addr, entry32 + buf.size(),
-                    I->original.bytes, I->size, I->pic, buf.bytes + buf.i);
+                relocateInstr(I->addr, entry32 + buf.size(),
+                    I->original.bytes, I->size, I->pic, &buf);
                 continue;
             }
 
@@ -842,7 +822,7 @@ static void buildBytes(const Binary *B, const Trampoline *T,
 /*
  * Flatten a trampoline into a memory buffer.
  */
-void flattenTrampoline(const Binary *B, uint8_t *bytes, size_t size,
+static void flattenTrampoline(const Binary *B, uint8_t *bytes, size_t size,
     uint8_t fill, int32_t offset32, int32_t entry32, const Trampoline *T,
     const Instr *I)
 {
@@ -869,13 +849,7 @@ void flattenTrampoline(const Binary *B, uint8_t *bytes, size_t size,
         (void)buildPrologue(B, I, offset32, BUILD_BYTES, &buf);
         assert(buf.size() == (size_t)presize || buf.size() == 0);
         if (buf.size() == 0)
-        {
-            // This case is not handled correctly, since some jumps may
-            // already target this code.  TODO: fix.
-            error("failed to build trampoline prologue, and E9Patch cannot "
-                "recover from this condition yet (not-yet-implemented)");
-            // buf.push(fill, presize);
-        }
+            buf.push(fill, presize);
     }
 
     bytes += presize;
@@ -885,6 +859,30 @@ void flattenTrampoline(const Binary *B, uint8_t *bytes, size_t size,
         buildBytes(B, T, I, entry32, brk, labels, buf);
         assert(buf.i <= size);
         buf.push(fill, size - buf.i);
+    }
+}
+
+/*
+ * Flatten all trampolines.
+ */
+void flattenAllTrampolines(Binary *B)
+{
+    for (auto *A: B->allocator)
+    {
+        if (A->T == nullptr)
+        {
+            A->bytes = nullptr;
+            continue;
+        }
+        size_t size = A->ub - A->lb;
+        uint8_t *bytes = new uint8_t[size];
+
+        const Instr *I = A->I;
+        int32_t offset32 = (int32_t)(I == nullptr? 0: A->lb - I->addr);
+        int32_t entry32  = offset32 + A->entry;
+        flattenTrampoline(B, bytes, size, /*fill=int3=*/0xcc, offset32,
+            entry32, A->T, I);
+        A->bytes = bytes;
     }
 }
 
