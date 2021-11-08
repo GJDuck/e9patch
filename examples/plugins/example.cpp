@@ -53,7 +53,7 @@ using namespace e9frontend;
 /*
  * Initialize the counters and the trampoline.
  */
-extern void *e9_plugin_init_v1(FILE *out, const ELF *elf)
+extern void *e9_plugin_init_v1(const Context *cxt)
 {
     // The e9_plugin_init_v1() is called once per plugin by E9Tool.  This can
     // be used to emit additional E9Patch messages, such as address space
@@ -71,7 +71,7 @@ extern void *e9_plugin_init_v1(FILE *out, const ELF *elf)
     if (limit_str != nullptr)
         limit = (ssize_t)atoll(limit_str);
     const ssize_t counters[3] = {limit, limit, limit};
-    sendReserveMessage(out,
+    sendReserveMessage(cxt->out,
         (intptr_t)COUNTERS,             // Memory virtual address
         (const uint8_t *)counters,      // Memory contents
         sizeof(counters),               // Memory size
@@ -133,7 +133,7 @@ extern void *e9_plugin_init_v1(FILE *out, const ELF *elf)
     code << 0x48 << ',' << 0x8d << ',' << 0xa4 << ',' << 0x24 << ','
          << 0x00 << ',' << 0x40 << ',' << 0x00 << ',' << 0x00;
     
-    sendTrampolineMessage(out, "$limit", code.str().c_str());
+    sendTrampolineMessage(cxt->out, "$limit", code.str().c_str());
 
     return nullptr;
 }
@@ -141,7 +141,7 @@ extern void *e9_plugin_init_v1(FILE *out, const ELF *elf)
 /*
  * We match all control-flow transfer instructions.
  */
-extern intptr_t e9_plugin_match_v1(FILE *out, const Context *cxt, void *arg)
+extern intptr_t e9_plugin_match_v1(const Context *cxt)
 {
     // The e9_plugin_match_v1() function is invoked once by E9Tool for each
     // disassembled instruction.  The function should return a value that is
@@ -172,8 +172,7 @@ extern intptr_t e9_plugin_match_v1(FILE *out, const Context *cxt, void *arg)
 /*
  * Patch the selected instructions.
  */
-extern void e9_plugin_patch_v1(FILE *out, Phase phase, const Context *cxt,
-    void *arg)
+extern void e9_plugin_patch_v1(const Context *cxt, Phase phase)
 {
     // The e9_plugin_patch_v1() function is invoked by E9Tool in order to
     // build "patch" messages for E9Patch.  This function is invoked in three
@@ -201,7 +200,7 @@ extern void e9_plugin_patch_v1(FILE *out, Phase phase, const Context *cxt,
         case PHASE_CODE:
             // The trampoline code simply invokes the $limit template
             // (defined above):
-            fputs("\"$limit\",", out);
+            fputs("\"$limit\",", cxt->out);
             return;
         case PHASE_DATA:
             // There is no trampoline data:
@@ -210,9 +209,9 @@ extern void e9_plugin_patch_v1(FILE *out, Phase phase, const Context *cxt,
         {
             // The trampoline metadata instantiates the $counter macro with
             // the counter address corresponding to the instruction type:
-            intptr_t counter = e9_plugin_match_v1(nullptr, cxt, arg);
+            intptr_t counter = e9_plugin_match_v1(cxt);
             counter = COUNTERS + (counter - 1) * sizeof(size_t);
-            fprintf(out, "\"$counter\":{\"rel32\":\"0x%lx\"},", counter);
+            fprintf(cxt->out, "\"$counter\":{\"rel32\":\"0x%lx\"},", counter);
             return;
         }
         default:

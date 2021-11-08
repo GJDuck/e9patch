@@ -54,33 +54,27 @@ extern "C"
      */
     struct Context
     {
+        FILE *out;                              // The output stream
+        void *context;                          // The user context
         const e9frontend::ELF * const elf;      // Input ELF file
         const e9frontend::Instr * const Is;     // All disasm instructions
-        size_t size;                            // Size of Is
+        ssize_t size;                           // Size of Is
         ssize_t idx;                            // Current instruction idx
         const e9frontend::InstrInfo * const I;  // Current instruction info
         intptr_t id;                            // Current patch ID
     };
 
-    typedef void *(*PluginInit)(FILE *out, const e9frontend::ELF *elf);
-    typedef void (*PluginEvent)(FILE *out, Event event, const Context *cxt,
-        void *arg);
-    typedef intptr_t (*PluginMatch)(FILE *out, const Context *cxt,
-        void *arg);
-    typedef void (*PluginPatch)(FILE *out, Phase phase, const Context *cxt,
-        void *arg);
-    typedef void (*PluginFini)(FILE *out, const e9frontend::ELF *elf,
-        void *arg);
+    typedef void *(*PluginInit)(const Context *cxt);
+    typedef void (*PluginEvent)(const Context *cxt, Event event);
+    typedef intptr_t (*PluginMatch)(const Context *cxt);
+    typedef void (*PluginPatch)(const Context *cxt, Phase phase);
+    typedef void (*PluginFini)(const Context *cxt);
 
-    extern void *e9_plugin_init_v1(FILE *out, const e9frontend::ELF *elf);
-    extern void e9_plugin_event_v1(FILE *out, Event event, const Context *cxt, 
-        void *arg);
-    extern intptr_t e9_plugin_match_v1(FILE *out, const Context *cxt,
-        void *arg);
-    extern void e9_plugin_patch_v1(FILE *out, Phase phase, const Context *cxt,
-        void *arg);
-    extern void e9_plugin_fini_v1(FILE *out, const e9frontend::ELF *elf,
-        void *arg);
+    extern void *e9_plugin_init_v1(const Context *cxt);
+    extern void e9_plugin_event_v1(const Context *cxt, Event event);
+    extern intptr_t e9_plugin_match_v1(const Context *cxt);
+    extern void e9_plugin_patch_v1(const Context *cxt, Phase phase);
+    extern void e9_plugin_fini_v1(const Context *cxt);
 }
 
 #endif

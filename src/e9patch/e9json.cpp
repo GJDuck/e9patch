@@ -601,7 +601,7 @@ static Entry makeMacroEntry(const char *macro)
         case 'b':
             if (strcmp(macro, "$bytes") == 0)
             {
-                entry.kind = ENTRY_INSTRUCTION_BYTES;
+                entry.kind = ENTRY_INSTR_BYTES;
                 return entry;
             }
             else if (strcmp(macro, "$break") == 0)
@@ -611,16 +611,16 @@ static Entry makeMacroEntry(const char *macro)
             }
             break;
         case 'i':
-            if (strcmp(macro, "$instruction") == 0)
+            if (strcmp(macro, "$instr") == 0)
             {
-                entry.kind = ENTRY_INSTRUCTION;
+                entry.kind = ENTRY_INSTR;
                 return entry;
             }
             break;
         case 't':
-            if (strcmp(macro, "$taken") == 0)
+            if (strcmp(macro, "$take") == 0)
             {
-                entry.kind = ENTRY_TAKEN;
+                entry.kind = ENTRY_TAKE;
                 return entry;
             }
             break;

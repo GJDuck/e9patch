@@ -1492,7 +1492,7 @@ static void sendArgumentDataMetadata(FILE *out, const char *name,
  * Build metadata.
  */
 static void sendMetadata(FILE *out, const ELF *elf, const Action *action,
-    size_t idx, const InstrInfo *I, intptr_t id, const Context *cxt)
+    size_t idx, const InstrInfo *I, intptr_t id, Context *cxt)
 {
     if (action == nullptr)
         return;
@@ -1504,7 +1504,8 @@ static void sendMetadata(FILE *out, const ELF *elf, const Action *action,
         case PATCH_PLUGIN:
         {
             const Plugin *plugin = patch->plugin;
-            plugin->patchFunc(out, PHASE_METADATA, cxt, plugin->context);
+            cxt->context = plugin->context;
+            plugin->patchFunc(cxt, PHASE_METADATA);
             return;
         }
 

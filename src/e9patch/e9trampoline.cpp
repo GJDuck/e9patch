@@ -74,7 +74,7 @@ void __attribute__((__constructor__(8000))) evicteeTrampolineInit(void)
     T->prot                = PROT_READ | PROT_EXEC;
     T->num_entries         = num_entries;
     T->preload             = false;
-    T->entries[0].kind     = ENTRY_INSTRUCTION;
+    T->entries[0].kind     = ENTRY_INSTR;
     T->entries[0].length   = 0;
     T->entries[0].bytes    = nullptr;
     T->entries[1].kind     = ENTRY_BREAK;
@@ -394,7 +394,7 @@ static int getTrampolineSize(const Binary *B, const Trampoline *T,
             case ENTRY_REL32:
                 size += sizeof(int32_t);
                 continue;
-            case ENTRY_INSTRUCTION:
+            case ENTRY_INSTR:
             {
                 int r = relocateInstr(I->addr, /*offset=*/0, I->original.bytes,
                     I->size, I->pic, nullptr);
@@ -403,14 +403,14 @@ static int getTrampolineSize(const Binary *B, const Trampoline *T,
                 size += r;
                 continue;
             }
-            case ENTRY_INSTRUCTION_BYTES:
+            case ENTRY_INSTR_BYTES:
                 size += I->size;
                 continue;
             case ENTRY_BREAK:
                 size += buildBreak(B, I, /*offset=*/0, entry.optimize,
                     BUILD_SIZE);
                 continue;
-            case ENTRY_TAKEN:
+            case ENTRY_TAKE:
                 size += /*sizeof(jmpq)=*/5;
                 continue;
         }
@@ -462,14 +462,14 @@ static intptr_t getBuiltinLabelAddress(const Binary *B, const Instr *I,
                 return (intptr_t)I->addr;
             break;
         case 't':
-            if (strcmp(label, ".Ltaken") == 0)
+            if (strcmp(label, ".Ltake") == 0)
             {
                 intptr_t target = getCFTTarget(I->addr, I->original.bytes,
                     I->size, CFT_JCC);
                 if (target == INTPTR_MIN)
                     error("failed to build trampoline; instruction at address "
                         "0x%lx is not a conditional branch (as required by "
-                        "\".Ltaken\")", I->addr);
+                        "\".Ltake\")", I->addr);
                 return target;
             }
             break;
@@ -542,21 +542,21 @@ static size_t getTrampolineBounds(const Binary *B, const Trampoline *T,
                 }
                 continue;
             }
-            case ENTRY_INSTRUCTION:
+            case ENTRY_INSTR:
             {
                 int r = relocateInstr(I->addr, /*offset=*/0, I->original.bytes,
                     I->size, I->pic, nullptr);
                 size += (r < 0? 0: r);
                 continue;
             }
-            case ENTRY_INSTRUCTION_BYTES:
+            case ENTRY_INSTR_BYTES:
                 size += I->size;
                 continue;
             case ENTRY_BREAK:
                 size += buildBreak(B, I, /*offset=*/0, entry.optimize,
                     BUILD_SIZE);
                 continue;
-            case ENTRY_TAKEN:
+            case ENTRY_TAKE:
                 size += /*sizeof(jmpq)=*/5;
                 continue;
         }
@@ -631,18 +631,18 @@ static off_t buildLabelSet(const Binary *B, const Trampoline *T,
             case ENTRY_REL32:
                 offset += sizeof(int32_t);
                 continue;
-            case ENTRY_INSTRUCTION:
+            case ENTRY_INSTR:
                 offset += relocateInstr(I->addr, /*offset=*/0,
                     I->original.bytes, I->size, I->pic, nullptr);
                 continue;
-            case ENTRY_INSTRUCTION_BYTES:
+            case ENTRY_INSTR_BYTES:
                 offset += I->size;
                 continue;
             case ENTRY_BREAK:
                 offset += buildBreak(B, I, offset, entry.optimize,
                     BUILD_SIZE, brk, nullptr);
                 continue;
-            case ENTRY_TAKEN:
+            case ENTRY_TAKE:
                 offset += /*sizeof(jmpq)=*/5;
                 continue;
         }
@@ -781,14 +781,14 @@ static void buildBytes(const Binary *B, const Trampoline *T,
                 continue;
             }
 
-            case ENTRY_INSTRUCTION:
+            case ENTRY_INSTR:
             {
                 relocateInstr(I->addr, entry32 + buf.size(),
                     I->original.bytes, I->size, I->pic, &buf);
                 continue;
             }
 
-            case ENTRY_INSTRUCTION_BYTES:
+            case ENTRY_INSTR_BYTES:
                 buf.push(I->original.bytes, I->size);
                 break;
         
@@ -797,7 +797,7 @@ static void buildBytes(const Binary *B, const Trampoline *T,
                     BUILD_BYTES, &brk, &buf);
                 break;
 
-            case ENTRY_TAKEN:
+            case ENTRY_TAKE:
             {
                 intptr_t target = getCFTTarget(I->addr, I->original.bytes,
                     I->size, CFT_JCC);
@@ -940,9 +940,9 @@ bool TrampolineCmp::operator()(const Trampoline *a, const Trampoline *b) const
                         return (entry_a->uint64 < entry_b->uint64);
                 }
                 break;
-            case ENTRY_DEBUG: case ENTRY_INSTRUCTION:
-            case ENTRY_INSTRUCTION_BYTES: case ENTRY_BREAK:
-            case ENTRY_TAKEN:
+            case ENTRY_DEBUG: case ENTRY_INSTR:
+            case ENTRY_INSTR_BYTES: case ENTRY_BREAK:
+            case ENTRY_TAKE:
                 break;
         }
     }

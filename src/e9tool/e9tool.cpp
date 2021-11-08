@@ -448,13 +448,14 @@ static Plugin *openPlugin(const char *basename)
 static void notifyPlugins(FILE *out, const ELF *elf, const Instr *Is,
     size_t size, Event event)
 {
-    Context cxt = {elf, Is, size, -1, nullptr, -1};
     for (auto i: plugins)
     {
         Plugin *plugin = i.second;
         if (plugin->eventFunc == nullptr)
             continue;
-        plugin->eventFunc(out, event, &cxt, plugin->context);
+        Context cxt = {out, plugin->context, elf, Is, (ssize_t)size, -1,
+            nullptr, -1};
+        plugin->eventFunc(&cxt, event);
     }
 }
 
@@ -464,13 +465,14 @@ static void notifyPlugins(FILE *out, const ELF *elf, const Instr *Is,
 static void matchPlugins(FILE *out, const ELF *elf, const Instr *Is,
     size_t size, size_t idx, const InstrInfo *I)
 {
-    Context cxt = {elf, Is, size, (ssize_t)idx, I, -1};
     for (auto i: plugins)
     {
         Plugin *plugin = i.second;
         if (plugin->matchFunc == nullptr)
             continue;
-        plugin->result = plugin->matchFunc(out, &cxt, plugin->context);
+        Context cxt = {out, plugin->context, elf, Is, (ssize_t)size,
+            (ssize_t)idx, I, -1};
+        plugin->result = plugin->matchFunc(&cxt);
     }
 }
 
@@ -484,7 +486,8 @@ static void initPlugins(FILE *out, const ELF *elf)
         Plugin *plugin = i.second;
         if (plugin->initFunc == nullptr)
             continue;
-        plugin->context = plugin->initFunc(out, elf);
+        Context cxt = {out, nullptr, elf, nullptr, -1, -1, nullptr, -1};
+        plugin->context = plugin->initFunc(&cxt);
     }
 }
 
@@ -498,7 +501,9 @@ static void finiPlugins(FILE *out, const ELF *elf)
         Plugin *plugin = i.second;
         if (plugin->finiFunc == nullptr)
             continue;
-        plugin->finiFunc(out, elf, plugin->context);
+        Context cxt = {out, plugin->context, elf, nullptr, -1, -1, nullptr,
+            -1};
+        plugin->finiFunc(&cxt);
     }
 }
 
@@ -2148,7 +2153,7 @@ struct Metadata
  * Send a trampoline.
  */
 static bool sendTrampoline(FILE *out, const Action *action, size_t idx,
-    const Context *cxt, std::vector<Metadata> &metadata)
+    Context *cxt, std::vector<Metadata> &metadata)
 {
     const Patch *patch = action->patch[idx];
 
@@ -2157,7 +2162,10 @@ static bool sendTrampoline(FILE *out, const Action *action, size_t idx,
     {
         plugin = patch->plugin;
         if (plugin->patchFunc != nullptr)
-            plugin->patchFunc(out, PHASE_CODE, cxt, plugin->context);
+        {
+            cxt->context = plugin->context;
+            plugin->patchFunc(cxt, PHASE_CODE);
+        }
     }
     else
     {
@@ -3049,7 +3057,8 @@ int main(int argc, char **argv)
     std::map<const Matching *, size_t, MatchingCmp> tmps;
     std::vector<Metadata> metadata;
     std::vector<std::vector<Metadata>> metadatas;
-    Context cxt = {&elf, Is.data(), count, -1, nullptr, -1};
+    Context cxt = {out, nullptr, &elf, Is.data(), (ssize_t)count, -1, nullptr,
+        -1};
     for (const auto *M: Ms.matchings)
     {
         sendMessageHeader(out, "trampoline");
@@ -3084,7 +3093,7 @@ int main(int argc, char **argv)
             }
         }
         if (!seen_replace && !seen_break)
-            fprintf(out, "\"$instruction\",");
+            fprintf(out, "\"$instr\",");
 
         // AFTER trampolines:
         for (const auto *action: M->actions)
@@ -3106,7 +3115,8 @@ int main(int argc, char **argv)
             if (patch->kind == PATCH_PLUGIN)
             {
                 const Plugin *plugin = patch->plugin;
-                plugin->patchFunc(out, PHASE_DATA, &cxt, plugin->context);
+                cxt.context = plugin->context;
+                plugin->patchFunc(&cxt, PHASE_DATA);
             }
             else
                 fprintf(out, "\"$DATA@%s\",", patch->name+1);
@@ -3156,7 +3166,8 @@ int main(int argc, char **argv)
 
         // Send the "patch" message.
         id++;
-        Context cxt = {&elf, Is.data(), count, i, &I, id};
+        Context cxt = {out, nullptr, &elf, Is.data(), (ssize_t)count, i, &I,
+            id};
         const Matching *M = Ms.matchings[Is[i].matching];
         size_t tid = tmps[M];
 
