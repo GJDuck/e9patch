@@ -508,6 +508,31 @@ static void finiPlugins(FILE *out, const ELF *elf)
 }
 
 /*
+ * Deprecated feature error.
+ */
+static NO_RETURN void deprecated(const char *what)
+{
+    error(
+        "the \"%s\" syntax has been deprecated!\n"
+        "\n"
+        "Please use the following syntax instead:%s\n"
+        "\t--action PATCH            ---> --patch PATCH\n"
+        "\t-A PATCH                  ---> -P PATCH\n"
+        "\tpassthru                  ---> empty\n"
+        "\tcall f(...)@bin           ---> f(...)@bin\n"
+        "\tcall[after] f(...)@bin    ---> after f(...)@bin\n"
+        "\tcall[replace] f(...)@bin  ---> replace f(...)@bin\n"
+        "\tcall[naked] f(...)@bin    ---> f<naked>(...)@bin\n"
+        "\tcall[cond] f(...)#bin     ---> if f(...)@bin break\n"
+        "\tcall[condjump] f(...)@bin ---> if f(...)@bin goto%s\n"
+        "\n"
+        "Note that the behaviour of matching/patching option combinations has "
+            "also\n"
+        "changed.  See the e9tool-user-guide.md for more information.\n",
+        what, (option_is_tty? "\33[33m": ""), (option_is_tty? "\33[0m": ""));
+}
+
+/*
  * Parse and index.
  */
 static intptr_t parseIndex(Parser &parser, intptr_t lb, intptr_t ub)
@@ -1181,16 +1206,13 @@ static const Patch *parsePatch(const ELF &elf, const char *str)
         case TOKEN_BREAK:
             kind = PATCH_BREAK; break;
         case TOKEN_CALL:
-            error("the \"call ...\" syntax has been deprecated; see the "
-                "e9tool-user-guide.md for more information");
+            deprecated("call ...");
         case TOKEN_EMPTY:
             kind = PATCH_EMPTY; break;
         case TOKEN_EXIT:
             kind = PATCH_EXIT; break;
         case TOKEN_PASSTHRU:
-            warning("the \"passthru\" syntax has been deprecated; please "
-                "use \"empty\" instead");
-            kind = PATCH_EMPTY; break;
+            deprecated("passthru");
         case TOKEN_PRINT:
             kind = PATCH_PRINT; break;
         case TOKEN_PLUGIN:
@@ -1326,9 +1348,6 @@ static const Patch *parsePatch(const ELF &elf, const char *str)
                         arg = ARGUMENT_BYTES_SIZE; break;
                     case TOKEN_STATE:
                         arg = ARGUMENT_STATE; break;
-                    case TOKEN_STATIC_ADDR:
-                        error("the `staticAddr' argument is deprecated; "
-                            "please use `static addr' instead");
                     case TOKEN_SRC:
                         arg = ARGUMENT_SRC; break;
                     case TOKEN_TARGET:
@@ -2483,8 +2502,7 @@ int main(int argc, char **argv)
         {
             case OPTION_ACTION:
             case 'A':
-                error("the --action/-A options have been deprecated; please "
-                    "use --patch/-P instead");
+                deprecated("--action/-A");
             case OPTION_BACKEND:
                 option_backend = optarg;
                 break;
