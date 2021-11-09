@@ -1,0 +1,4 @@
+add $0x8, %rsp
+add $0x6, %r9
+add %r9, %r10
+PASSED

@@ -1,0 +1,1 @@
+./test -M 'rax,eax,ax,al in regs' -P '"print"(asm)@patch' -M 'asm=m.*' -P '"print"(asm)@patch'

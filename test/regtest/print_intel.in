@@ -1,1 +1,1 @@
-./test -M true -A print --syntax=intel
+./test -M true -P print --syntax=intel

@@ -1,1 +1,1 @@
-./test -M 'src[0].type == mem && src[0].scale == 8' -A 'call entry(mem[0].scale,&mem8<0x400(%rsp,%rdi,8)>,&mem32<0x333(%rbp,%rcx,4)>,instr,size,asm)@inst'
+./test -M 'src[0].type == mem && src[0].scale == 8' -P 'entry(mem[0].scale,&mem8<0x400(%rsp,%rdi,8)>,&mem32<0x333(%rbp,%rcx,4)>,instr,size,asm)@inst'

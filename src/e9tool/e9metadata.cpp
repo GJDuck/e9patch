@@ -555,10 +555,10 @@ static bool sendLoadRegToArg(FILE *out, const InstrInfo *I, Register reg,
             }
             else if (info.before)
                 sendLeaFromPCRelToR64(out,
-                    "{\"rel32\":\".Linstruction\"}", regno);
+                    "{\"rel32\":\".Linstr\"}", regno);
             else
                 sendLeaFromPCRelToR64(out,
-                    "{\"rel32\":\".Lcontinue\"}", regno);
+                    "{\"rel32\":\".Lbreak\"}", regno);
             return true;
         }
         sendLoadRegToArg(out, reg, info, regno);
@@ -570,8 +570,9 @@ static bool sendLoadRegToArg(FILE *out, const InstrInfo *I, Register reg,
  * Emits instructions to load an operand into the corresponding
  * regno register.  If the operand does not exist, load 0.
  */
-static bool sendLoadOperandMetadata(FILE *out, const InstrInfo *I,
-    const OpInfo *op, bool ptr, FieldKind field, CallInfo &info, int regno)
+static bool sendLoadOperandMetadata(FILE *out, const char *name,
+    const InstrInfo *I, const OpInfo *op, bool ptr, FieldKind field,
+    CallInfo &info, int regno)
 {
     if (field != FIELD_NONE)
     {
@@ -694,8 +695,10 @@ static bool sendLoadOperandMetadata(FILE *out, const InstrInfo *I,
                 sendLoadValueMetadata(out, op->imm, regno);
             else
             {
-                std::string offset("{\"rel32\":\".Limmediate_");
+                std::string offset("{\"rel32\":\".Limm");
                 offset += std::to_string(regno);
+                offset += '@';
+                offset += name;
                 offset += "\"}";
                 sendLeaFromPCRelToR64(out, offset.c_str(), regno);
             }
@@ -709,8 +712,8 @@ static bool sendLoadOperandMetadata(FILE *out, const InstrInfo *I,
 /*
  * Emits operand data.
  */
-static void sendOperandDataMetadata(FILE *out, const InstrInfo *I,
-    const OpInfo *op, int regno)
+static void sendOperandDataMetadata(FILE *out, const char *name,
+    const InstrInfo *I, const OpInfo *op, int regno)
 {
     if (op == nullptr)
         return;
@@ -718,7 +721,7 @@ static void sendOperandDataMetadata(FILE *out, const InstrInfo *I,
     switch (op->type)
     {
         case OPTYPE_IMM:
-            fprintf(out, "\".Limmediate_%d\",", regno);
+            fprintf(out, "\".Limm%d@%s\",", regno, name);
             switch (op->size)
             {
                 case 1:
@@ -875,8 +878,8 @@ static void sendLoadTargetMetadata(FILE *out, const InstrInfo *I,
  * Emits instructions to load the address of the next instruction to be
  * executed by the CPU.
  */
-static void sendLoadNextMetadata(FILE *out, const InstrInfo *I, CallInfo &info,
-    bool _static, int regno)
+static void sendLoadNextMetadata(FILE *out, const char *name,
+    const InstrInfo *I, CallInfo &info, bool _static, int regno)
 {
     const char *regname = getRegName(getReg(regno))+1;
     uint8_t opcode = 0x06;
@@ -945,39 +948,41 @@ static void sendLoadNextMetadata(FILE *out, const InstrInfo *I, CallInfo &info,
                 exclude, &slot);
             if (I->mnemonic == MNEMONIC_JECXZ)
                 fprintf(out, "%u,", 0x67);
-            fprintf(out, "%u,{\"rel8\":\".Ltaken%s\"},", 0xe3, regname);
+            fprintf(out, "%u,{\"rel8\":\".Ltake%s@%s\"},", 0xe3, regname,
+                name);
             sendLoadPointerMetadata(out, info, _static, I->address + I->size,
-                "{\"rel32\":\".Lcontinue\"}", regno);
-            fprintf(out, "%u,{\"rel8\":\".Lnext%s\"},", 0xeb, regname);
-            fprintf(out, "\".Ltaken%s\",", regname);
+                "{\"rel32\":\".Lbreak\"}", regno);
+            fprintf(out, "%u,{\"rel8\":\".Lnext%s@%s\"},", 0xeb, regname,
+                name);
+            fprintf(out, "\".Ltake%s@%s\",", regname, name);
             sendLoadTargetMetadata(out, I, info, _static, regno);
-            fprintf(out, "\".Lnext%s\",", regname);
+            fprintf(out, "\".Lnext%s@%s\",", regname, name);
             sendUndoTemporaryMovReg(out, REGISTER_RCX, scratch);
             return;
         }
         default:
             sendLoadPointerMetadata(out, info, _static, I->address + I->size,
-                "{\"rel32\":\".Lcontinue\"}", regno);
+                "{\"rel32\":\".Lbreak\"}", regno);
             return;
     }
 
     // jcc .Ltaken
-    fprintf(out, "%u,{\"rel8\":\".Ltaken%s\"},", opcode, regname);
+    fprintf(out, "%u,{\"rel8\":\".Ltake%s@%s\"},", opcode, regname, name);
 
     // .LnotTaken:
-    // leaq .Lcontinue(%rip),%rarg
+    // leaq .Lbreak(%rip),%rarg
     // jmp .Lnext;
     sendLoadPointerMetadata(out, info, _static, I->address + I->size,
-        "{\"rel32\":\".Lcontinue\"}", regno);
-    fprintf(out, "%u,{\"rel8\":\".Lnext%s\"},", 0xeb, regname);
+        "{\"rel32\":\".Lbreak\"}", regno);
+    fprintf(out, "%u,{\"rel8\":\".Lnext%s@%s\"},", 0xeb, regname, name);
 
     // .Ltaken:
     // ... load target into %rarg
-    fprintf(out, "\".Ltaken%s\",", regname);
+    fprintf(out, "\".Ltake%s@%s\",", regname, name);
     sendLoadTargetMetadata(out, I, info, _static, regno);
     
     // .Lnext:
-    fprintf(out, "\".Lnext%s\",", regname);
+    fprintf(out, "\".Lnext%s@%s\",", regname, name);
 }
 
 /*
@@ -1020,12 +1025,12 @@ static void sendStringCharData(FILE *out, char c)
 static void sendAsmStrData(FILE *out, const InstrInfo *I,
     bool newline = false)
 {
-    fputc('\"', out);
+    fputs("{\"string\":\"", out);
     for (unsigned i = 0; I->string.instr[i] != '\0'; i++)
         sendStringCharData(out, I->string.instr[i]);
     if (newline)
         sendStringCharData(out, '\n');
-    fputc('\"', out);
+    fputs("\"}", out);
 }
 
 /*
@@ -1049,38 +1054,24 @@ static void sendBytesData(FILE *out, const uint8_t *bytes, size_t len)
 }
 
 /*
- * Build a metadata value (string).
- */
-static const char *buildMetadataString(FILE *out, char *buf, long *pos)
-{
-    fputc('\0', out);
-    if (ferror(out))
-        error("failed to build metadata string: %s", strerror(errno));
-    
-    const char *str = buf + *pos;
-    *pos = ftell(out);
-
-    return str;
-}
-
-/*
  * Lookup a value from a CSV file based on the matching.
  */
 static bool matchEval(const MatchExpr *expr, const Targets &targets,
     const InstrInfo *I, const char *basename = nullptr,
     const Record **record = nullptr);
-static intptr_t lookupValue(const Action *action, const Targets &targets,
-    const InstrInfo *I, const char *basename, intptr_t idx)
+static intptr_t lookupValue(const Action *action, size_t idx,
+    const Targets &targets, const InstrInfo *I, const char *basename,
+    intptr_t pos)
 {
     const Record *record = nullptr;
     bool pass = matchEval(action->match, targets, I, basename, &record);
     if (!pass || record == nullptr)
         error("failed to lookup value from file \"%s.csv\"; matching is "
             "ambiguous", basename);
-    if (idx >= (intptr_t)record->size())
+    if (pos >= (intptr_t)record->size())
         error("failed to lookup value from file \"%s.csv\"; index %zd is "
-            "out-of-range 0..%zu", basename, idx, record->size()-1);
-    const char *str = record->at(idx);
+            "out-of-range 0..%zu", basename, pos, record->size()-1);
+    const char *str = record->at(pos);
     intptr_t x = nameToInt(basename, str);
     return x;
 }
@@ -1089,7 +1080,7 @@ static intptr_t lookupValue(const Action *action, const Targets &targets,
  * Send instructions to load an argument into a register.
  */
 static Type sendLoadArgumentMetadata(FILE *out, CallInfo &info,
-    const ELF *elf, const Action *action, const Argument &arg,
+    const ELF *elf, const Action *action, size_t idx, const Argument &arg,
     const InstrInfo *I, intptr_t id, int argno, int regno)
 {
     if (regno < 0)
@@ -1097,14 +1088,16 @@ static Type sendLoadArgumentMetadata(FILE *out, CallInfo &info,
             "maximum number of arguments (%d)", argno);
     sendSaveRegToStack(out, info, getReg(regno));
 
+    const Patch *patch = action->patch[idx];
+    const char *name = patch->name+1;
     bool _static = arg._static;
     Type t = TYPE_INT64;
     switch (arg.kind)
     {
         case ARGUMENT_USER:
         {
-            intptr_t value = lookupValue(action, elf->targets, I, arg.name,
-                arg.value);
+            intptr_t value = lookupValue(action, idx, elf->targets, I,
+                arg.name, arg.value);
             sendLoadValueMetadata(out, value, regno);
             break;
         }
@@ -1113,8 +1106,10 @@ static Type sendLoadArgumentMetadata(FILE *out, CallInfo &info,
             break;
         case ARGUMENT_STRING:
         {
-            std::string offset("{\"rel32\":\".Lstring_");
+            std::string offset("{\"rel32\":\".Lstr");
             offset += std::to_string(regno);
+            offset += '@';
+            offset += name;
             offset += "\"}";
             sendLeaFromPCRelToR64(out, offset.c_str(), regno);
             t = TYPE_CONST_CHAR_PTR;
@@ -1125,24 +1120,24 @@ static Type sendLoadArgumentMetadata(FILE *out, CallInfo &info,
             break;
         case ARGUMENT_ADDR:
             sendLoadPointerMetadata(out, info, _static, I->address,
-                "{\"rel32\":\".Linstruction\"}", regno);
+                "{\"rel32\":\".Linstr\"}", regno);
             t = TYPE_CONST_VOID_PTR;
             break;
         case ARGUMENT_ID:
             sendLoadValueMetadata(out, id, regno);
             break;
         case ARGUMENT_NEXT:
-            switch (action->patch->pos)
+            switch (patch->pos)
             {
                 case POS_AFTER:
                     // If we reach here after the instruction, it means the
-                    // branch was NOT taken, so (next=.Lcontinue).
+                    // branch was NOT taken, so (next=.Lbreak).
                     sendLoadPointerMetadata(out, info, _static,
-                        I->address + I->size, "{\"rel32\":\".Lcontinue\"}",
+                        I->address + I->size, "{\"rel32\":\".Lbreak\"}",
                         regno);
                     break;
                 default:
-                    sendLoadNextMetadata(out, I, info, _static, regno);
+                    sendLoadNextMetadata(out, name, I, info, _static, regno);
                     break;
             }
             t = TYPE_CONST_VOID_PTR;
@@ -1171,9 +1166,14 @@ static Type sendLoadArgumentMetadata(FILE *out, CallInfo &info,
             t = TYPE_CONST_VOID_PTR;
             break;
         case ARGUMENT_ASM:
-            sendLeaFromPCRelToR64(out, "{\"rel32\":\".LasmStr\"}", regno);
+        {
+            std::string offset("{\"rel32\":\".Lasm@");
+            offset += name;
+            offset += "\"}";
+            sendLeaFromPCRelToR64(out, offset.c_str(), regno);
             t = TYPE_CONST_CHAR_PTR;
             break;
+        }
         case ARGUMENT_ASM_SIZE: case ARGUMENT_ASM_LEN:
         {
             intptr_t len = strlen(I->string.instr);
@@ -1182,9 +1182,14 @@ static Type sendLoadArgumentMetadata(FILE *out, CallInfo &info,
             break;
         }
         case ARGUMENT_BYTES:
-            sendLeaFromPCRelToR64(out, "{\"rel32\":\".Lbytes\"}", regno);
+        {
+            std::string offset("{\"rel32\":\".Lbytes@");
+            offset += name;
+            offset += "\"}";
+            sendLeaFromPCRelToR64(out, offset.c_str(), regno);
             t = TYPE_CONST_INT8_PTR;
             break;
+        }
         case ARGUMENT_BYTES_SIZE:
             sendLoadValueMetadata(out, I->size, regno);
             break;
@@ -1205,15 +1210,15 @@ static Type sendLoadArgumentMetadata(FILE *out, CallInfo &info,
             switch ((Register)arg.value)
             {
                 case REGISTER_RIP:
-                    switch (action->patch->pos)
+                    switch (patch->pos)
                     {
-                        case POS_AFTER:
+                        case POS_AFTER: case POS_REPLACE:
                             sendLeaFromPCRelToR64(out,
-                                "{\"rel32\":\".Lcontinue\"}", regno);
+                                "{\"rel32\":\".Lbreak\"}", regno);
                             break;
                         default:
                             sendLeaFromPCRelToR64(out,
-                                "{\"rel32\":\".Linstruction\"}", regno);
+                                "{\"rel32\":\".Linstr\"}", regno);
                             break;
                     }
                     t = TYPE_CONST_VOID_PTR;
@@ -1393,7 +1398,7 @@ static Type sendLoadArgumentMetadata(FILE *out, CallInfo &info,
                     op->type == OPTYPE_MEM)
             {
                 // Filter dangerous memory operand pass-by-value arguments:
-                if (action->patch->pos == POS_AFTER)
+                if (patch->pos == POS_AFTER)
                 {
                     warning(CONTEXT_FORMAT "failed to load memory "
                         "operand contents into register %s; operand may "
@@ -1422,7 +1427,7 @@ static Type sendLoadArgumentMetadata(FILE *out, CallInfo &info,
                 }
             }
             if (!dangerous &&
-                !sendLoadOperandMetadata(out, I, op, arg.ptr, arg.field,
+                !sendLoadOperandMetadata(out, name, I, op, arg.ptr, arg.field,
                     info, regno))
                 t = TYPE_NULL_PTR;
             break;
@@ -1439,27 +1444,27 @@ static Type sendLoadArgumentMetadata(FILE *out, CallInfo &info,
 /*
  * Send argument data metadata.
  */
-static void sendArgumentDataMetadata(FILE *out, const Argument &arg,
-    const InstrInfo *I, int regno)
+static void sendArgumentDataMetadata(FILE *out, const char *name,
+    const Argument &arg, const InstrInfo *I, int regno)
 {
     switch (arg.kind)
     {
         case ARGUMENT_STRING:
-            fprintf(out, "\".Lstring_%d\",{\"string\":", regno);
+            fprintf(out, "\".Lstr%d@%s\",{\"string\":", regno, name);
             sendString(out, arg.name);
             fputs("},", out);
             break;
         case ARGUMENT_ASM:
             if (arg.duplicate)
                 return;
-            fputs("\".LasmStr\",{\"string\":", out);
+            fprintf(out, "\".Lasm@%s\",", name);
             sendAsmStrData(out, I, /*newline=*/false);
-            fputs("},", out);
+            putc(',', out);
             break;
         case ARGUMENT_BYTES:
             if (arg.duplicate)
                 return;
-            fputs("\".Lbytes\",", out);
+            fprintf(out, "\".Lbytes@%s\",", name);
             sendBytesData(out, I->data, I->size);
             fputc(',', out);
             break;
@@ -1475,59 +1480,49 @@ static void sendArgumentDataMetadata(FILE *out, const Argument &arg,
                           (arg.kind == ARGUMENT_MEM? OPTYPE_MEM:
                                 OPTYPE_INVALID)));
             const OpInfo *op = getOperand(I, (int)arg.value, type, access);
-            sendOperandDataMetadata(out, I, op, regno);
+            sendOperandDataMetadata(out, name, I, op, regno);
             break;
         }
         default:
             break;
     }
-
 }
 
 /*
  * Build metadata.
  */
-static Metadata *buildMetadata(const ELF *elf, const Action *action,
-    const InstrInfo *I, intptr_t id, Metadata *metadata, char *buf,
-    size_t size)
+static void sendMetadata(FILE *out, const ELF *elf, const Action *action,
+    size_t idx, const InstrInfo *I, intptr_t id, Context *cxt)
 {
     if (action == nullptr)
-        return nullptr;
-    const Patch *patch = action->patch;
-    switch (patch->kind)
-    {
-        case PATCH_EXIT: case PATCH_PASSTHRU:
-        case PATCH_PLUGIN: case PATCH_TRAP:
-            return nullptr;
-        default:
-            break;
-    }
-
-    FILE *out = fmemopen(buf, size, "w");
-    if (out == nullptr)
-        error("failed to open metadata stream for buffer of size %zu: %s",
-            size, strerror(errno));
-    setvbuf(out, NULL, _IONBF, 0);
-    long pos = 0;
+        return;
+    const Patch *patch = action->patch[idx];
+    const char *name = patch->name+1;
 
     switch (patch->kind)
     {
+        case PATCH_PLUGIN:
+        {
+            const Plugin *plugin = patch->plugin;
+            cxt->context = plugin->context;
+            plugin->patchFunc(cxt, PHASE_METADATA);
+            return;
+        }
+
+        case PATCH_EXIT: case PATCH_EMPTY: case PATCH_TRAP: case PATCH_BREAK:
+            return;
         case PATCH_PRINT:
         {
+            sendDefinitionHeader(out, name, "DATA");
+            fprintf(out, "\".Lasm@print\",");
             sendAsmStrData(out, I, /*newline=*/true);
-            const char *asm_str = buildMetadataString(out, buf, &pos);
+            sendDefinitionFooter(out);
+
+            sendDefinitionHeader(out, name, "ASM_LEN");
             intptr_t len = strlen(I->string.instr) + 1;
             sendIntegerData(out, 32, len);
-            const char *asm_str_len = buildMetadataString(out, buf, &pos);
-
-            metadata[0].name = "asmStr";
-            metadata[0].data = asm_str;
-            metadata[1].name = "asmStrLen";
-            metadata[1].data = asm_str_len;
-            metadata[2].name = nullptr;
-            metadata[2].data = nullptr;
-            
-            break;
+            sendDefinitionFooter(out);
+            return;
         }
         case PATCH_CALL:
         {
@@ -1551,8 +1546,9 @@ static Metadata *buildMetadata(const ELF *elf, const Action *action,
                     break;
             }
 
+            sendDefinitionHeader(out, name, "ARGS");
             int argno = 0;
-            bool before = (patch->pos != POS_AFTER);
+            bool before = (patch->pos == POS_BEFORE);
             bool pic = (getELFType(elf) != BINARY_TYPE_ELF_EXE);
             CallInfo info(sysv, (patch->abi == ABI_CLEAN), state,
                 (patch->jmp != JUMP_NONE), patch->args.size(),
@@ -1561,8 +1557,8 @@ static Metadata *buildMetadata(const ELF *elf, const Action *action,
             for (const auto &arg: patch->args)
             {
                 int regno = getArgRegIdx(sysv, argno);
-                Type t = sendLoadArgumentMetadata(out, info, elf, action, arg,
-                    I, id, argno, regno);
+                Type t = sendLoadArgumentMetadata(out, info, elf, action, idx,
+                    arg, I, id, argno, regno);
                 sig = setType(sig, t, argno);
                 argno++;
             }
@@ -1593,13 +1589,10 @@ static Metadata *buildMetadata(const ELF *elf, const Action *action,
                     info.restore(reg);
                 }
             }
-            int i = 0;
-            const char *md_load_args = buildMetadataString(out, buf, &pos);
-            metadata[i].name = "loadArgs";
-            metadata[i].data = md_load_args;
-            i++;
+            sendDefinitionFooter(out);
 
             // Find & call the function.
+            sendDefinitionHeader(out, name, "FUNC");
             intptr_t addr = lookupSymbol(patch->elf, patch->symbol, sig);
             if (addr < 0 || addr > INT32_MAX)
             {
@@ -1611,13 +1604,11 @@ static Metadata *buildMetadata(const ELF *elf, const Action *action,
                     patch->elf->filename);
             }
             fprintf(out, "{\"rel32\":%d}", (int32_t)addr);
-            const char *md_function = buildMetadataString(out, buf, &pos);
-            metadata[i].name = "function";
-            metadata[i].data = md_function;
-            i++;
+            sendDefinitionFooter(out);
             info.call(patch->jmp != JUMP_NONE);
 
             // Restore state.
+            sendDefinitionHeader(out, name, "RSTOR");
             if (rsp_args_offset != 0)
             {
                 // lea rsp_args_offset(%rsp),%rsp
@@ -1642,12 +1633,10 @@ static Metadata *buildMetadata(const ELF *elf, const Action *action,
                 if (sendPop(out, preserve_rax, reg, rscratch))
                     info.clobber(rscratch);
             }
-            const char *md_restore_state = buildMetadataString(out, buf, &pos);
-            metadata[i].name = "restoreState";
-            metadata[i].data = md_restore_state;
-            i++;
+            sendDefinitionFooter(out);
 
             // Restore %rsp.
+            sendDefinitionHeader(out, name, "RSTOR_RSP");
             if (pop_rsp)
                 sendPop(out, false, REGISTER_RSP);
             else
@@ -1656,34 +1645,22 @@ static Metadata *buildMetadata(const ELF *elf, const Action *action,
                 fprintf(out, "%u,%u,%u,%u,{\"int32\":%d},",
                     0x48, 0x8d, 0xa4, 0x24, 0x4000);
             }
-            const char *md_restore_rsp = buildMetadataString(out, buf, &pos);
-            metadata[i].name = "restoreRSP";
-            metadata[i].data = md_restore_rsp;
-            i++;
+            sendDefinitionFooter(out);
 
             // Place data (if necessary).
+            sendDefinitionHeader(out, name, "DATA");
             argno = 0;
             for (const auto &arg: patch->args)
             {
                 int regno = getArgRegIdx(sysv, argno);
-                sendArgumentDataMetadata(out, arg, I, regno);
+                sendArgumentDataMetadata(out, name, arg, I, regno);
                 argno++;
             }
-            const char *md_data = buildMetadataString(out, buf, &pos);
-            metadata[i].name = "data";
-            metadata[i].data = md_data;
-            i++;
-
-            metadata[i].name = nullptr;
-            metadata[i].data = nullptr;
-            break;
+            sendDefinitionFooter(out);
+            return;
         }
-
         default:
-            assert(false);
+            return;
     }
-
-    fclose(out);
-    return metadata;
 }
 

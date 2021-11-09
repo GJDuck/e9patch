@@ -1,1 +1,1 @@
-./test -M 'rax in regs' -A 'call rax_by_ptr(&rax,asm)@patch'
+./test -M 'rax in regs' -P 'rax_by_ptr(&rax,asm)@patch'

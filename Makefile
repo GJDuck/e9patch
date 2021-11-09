@@ -32,7 +32,7 @@ release: $(E9PATCH_OBJS)
 	$(CXX) $(CXXFLAGS) $(E9PATCH_OBJS) -o e9patch
 	strip e9patch
 
-debug: CXXFLAGS += -O0 -g
+debug: CXXFLAGS += -O0 -g -fsanitize=address
 debug: $(E9PATCH_OBJS)
 	$(CXX) $(CXXFLAGS) $(E9PATCH_OBJS) -o e9patch
 
@@ -47,7 +47,8 @@ tool: e9tool.o
 	strip e9tool
 
 tool.debug: CXXFLAGS += -O0 -g -I src/e9tool/ -I zydis/include/ \
-    -I zydis/dependencies/zycore/include/ -Wno-unused-function
+    -I zydis/dependencies/zycore/include/ -Wno-unused-function \
+    -fsanitize=address
 tool.debug: e9tool.o
 	$(CXX) $(CXXFLAGS) e9tool.o -o e9tool libZydis.a \
         -Wl,--export-dynamic -ldl

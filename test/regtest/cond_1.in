@@ -1,4 +1,4 @@
-./test -M true -A 'call[conditional] ret_1(asm)@patch'
+./test -M true -P 'if ret_1(asm)@patch break'
 
 # This effectively disables all instructions, so execution reaches the
 # `data', which is interpreted as `adc %esp,(%rdx)', which promptly SEGVs

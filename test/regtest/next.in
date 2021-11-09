@@ -1,1 +1,1 @@
-./test.pie -M true -A 'call "next"(static addr,base,static next,asm)@patch'
+./test.pie -M true -P '"next"(static addr,base,static next,asm)@patch'

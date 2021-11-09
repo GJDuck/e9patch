@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2020 National University of Singapore
+ * Copyright (C) 2021 National University of Singapore
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to
@@ -33,7 +33,8 @@
  *              examples/plugins/example.cpp -I . -I capstone/include/
  * 
  * To use:
- *          $ ./e9tool -M 'plugin[example]' -A 'plugin[example]' program
+ *          $ ./e9tool -M 'plugin(example).match()' \
+ *                     -P 'plugin(example).patch()' program
  *          $ ./a.out
  *          Trace/breakpoint trap
  */
@@ -52,8 +53,12 @@ using namespace e9frontend;
 /*
  * Initialize the counters and the trampoline.
  */
-extern void *e9_plugin_init_v1(FILE *out, const ELF *elf)
+extern void *e9_plugin_init_v1(const Context *cxt)
 {
+    // The e9_plugin_init_v1() is called once per plugin by E9Tool.  This can
+    // be used to emit additional E9Patch messages, such as address space
+    // reservations and trampoline templates.
+
     /* 
      * This example uses 3 counters (one for calls/jumps/returns).
      * We allocate and initialize the counters to UINT16_MAX (or the value
@@ -66,7 +71,7 @@ extern void *e9_plugin_init_v1(FILE *out, const ELF *elf)
     if (limit_str != nullptr)
         limit = (ssize_t)atoll(limit_str);
     const ssize_t counters[3] = {limit, limit, limit};
-    sendReserveMessage(out,
+    sendReserveMessage(cxt->out,
         (intptr_t)COUNTERS,             // Memory virtual address
         (const uint8_t *)counters,      // Memory contents
         sizeof(counters),               // Memory size
@@ -97,49 +102,38 @@ extern void *e9_plugin_init_v1(FILE *out, const ELF *elf)
     code << 0x9f << ',';
     code << 0x50 << ',';
 
-    // Increment the counter and branch if <= 0:
+    // Increment the counter and trap if <= 0:
     //
     // mov counter(%rip),%rax
     // sub $0x1,%rax
     // mov %rax,counter(%rip)
-    // jle .Ltrap
+    // jg .Lok
+    // int3
     //
     code << 0x48 << ',' << 0x8b << ',' << 0x05 << ",\"$counter\",";
     code << 0x48 << ',' << 0x83 << ',' << 0xe8 << ',' << 0x01 << ',';
     code << 0x48 << ',' << 0x89 << ',' << 0x05 << ",\"$counter\",";
-    code << 0x7e << ",{\"rel8\":\".Ltrap\"},";
+    code << 0x7f << ",{\"rel8\":\".Lok\"},";
+    code << 0xcc << ',';
     
     // Restore state & return from trampoline:
     //
-    // .Lcont:
+    // .Lok:
     // pop %rax
     // add $0x7f,%al
     // sahf
     // pop %rax  
     // lea 0x4000(%rsp),%rsp
-    // $instruction
-    // $continue
     //
-    code << "\".Lcont\",";
+    code << "\".Lok\",";
     code << 0x58 << ',';
     code << 0x04 << ',' << 0x7f << ',';
     code << 0x9e << ',';
     code << 0x58 << ',';
     code << 0x48 << ',' << 0x8d << ',' << 0xa4 << ',' << 0x24 << ','
-         << 0x00 << ',' << 0x40 << ',' << 0x00 << ',' << 0x00 << ',';
-    code << "\"$instruction\",";
-    code << "\"$continue\",";
+         << 0x00 << ',' << 0x40 << ',' << 0x00 << ',' << 0x00;
     
-    // Trap:
-    //
-    // .Ltrap:
-    // int3
-    // jmp .Lcont
-    code << "\".Ltrap\",";
-    code << 0xcc << ',';
-    code << 0xeb << ",{\"rel8\":\".Lcont\"}";
-
-    sendTrampolineMessage(out, "$cflimit", code.str().c_str());
+    sendTrampolineMessage(cxt->out, "$limit", code.str().c_str());
 
     return nullptr;
 }
@@ -147,10 +141,15 @@ extern void *e9_plugin_init_v1(FILE *out, const ELF *elf)
 /*
  * We match all control-flow transfer instructions.
  */
-extern intptr_t e9_plugin_match_v1(FILE *out, const ELF *elf, const Instr *Is,
-    size_t size, size_t idx, const InstrInfo *info, void *context)
+extern intptr_t e9_plugin_match_v1(const Context *cxt)
 {
-    switch (info->mnemonic)
+    // The e9_plugin_match_v1() function is invoked once by E9Tool for each
+    // disassembled instruction.  The function should return a value that is
+    // used for matching.
+
+    // For this example we return a non-zero value for all
+    // control-flow-transfer instructions:
+    switch (cxt->I->mnemonic)
     {
         case MNEMONIC_RET:
             return 1;
@@ -173,29 +172,50 @@ extern intptr_t e9_plugin_match_v1(FILE *out, const ELF *elf, const Instr *Is,
 /*
  * Patch the selected instructions.
  */
-extern void e9_plugin_patch_v1(FILE *out, const ELF *elf, const Instr *Is,
-    size_t size, size_t idx, const InstrInfo *info, void *context)
+extern void e9_plugin_patch_v1(const Context *cxt, Phase phase)
 {
-    intptr_t counter = e9_plugin_match_v1(out, elf, Is, size, idx, info,
-        context);
-    if (counter == 0)
-        return;
-    counter = COUNTERS + (counter - 1) * sizeof(size_t);
- 
-    // We instantiate the trampoline template with $counter pointing to
-    // the counter corresponding to the instruction type:
-    Metadata metadata[2];
-    metadata[0].name = "counter";
-    std::string buf;
-    buf += "{\"rel32\":";
-    buf += std::to_string(counter);
-    buf += '}';
-    metadata[0].data = buf.c_str();
-    
-    metadata[1].name = nullptr;
-    metadata[1].data = nullptr;
+    // The e9_plugin_patch_v1() function is invoked by E9Tool in order to
+    // build "patch" messages for E9Patch.  This function is invoked in three
+    // main phases: CODE, DATA and METADATA, as described below.
+    //
+    // Patching phases:
+    //
+    //  - CODE    : Called once per trampoline template.
+    //              Specifies the "code" part of the trampoline template that
+    //              will be executed for each matching instruction.
+    //
+    //  - DATA    : Called once per trampoline template.
+    //              Specifies the "data" part of the trampoline template that
+    //              can be referenced/used by the code part.  The data must be
+    //              read-only.  The data part is optional.
+    //
+    //  - METADATA: Called once per patched instruction.
+    //              Specifies the "metadata" which instantiates any macros
+    //              in the trampoline template (both code or data).  Data
+    //              that is instruction-specific should be specified as
+    //              metadata.  The metadata is optional.
 
-    // Send a "patch" E9Patch API message.
-    sendPatchMessage(out, "$cflimit", Is[idx].offset, metadata);
+    switch (phase)
+    {
+        case PHASE_CODE:
+            // The trampoline code simply invokes the $limit template
+            // (defined above):
+            fputs("\"$limit\",", cxt->out);
+            return;
+        case PHASE_DATA:
+            // There is no trampoline data:
+            return;
+        case PHASE_METADATA:
+        {
+            // The trampoline metadata instantiates the $counter macro with
+            // the counter address corresponding to the instruction type:
+            intptr_t counter = e9_plugin_match_v1(cxt);
+            counter = COUNTERS + (counter - 1) * sizeof(size_t);
+            fprintf(cxt->out, "\"$counter\":{\"rel32\":\"0x%lx\"},", counter);
+            return;
+        }
+        default:
+            return;
+    }
 }
 

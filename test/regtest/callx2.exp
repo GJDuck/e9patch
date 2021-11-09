@@ -1,0 +1,40 @@
+movq 0x5e(%rip), %rax
+movq 0x5e(%rip), %rax
+mov $0x8877665544332211, %rbx
+cmp %rax, %rbx
+nopl %eax, (%rax)
+movq 0x28(%rip), %r8
+movq 0x19a(%rip), %rcx
+nopl %eax, (%rax)
+mov $-0x7777, %rcx
+imul %r10
+and $0xfe, %rax
+and %rax, %rbx
+mov $0x4519, %rax
+mov $0x4519, %rax
+cvtsi2ss %rax, %xmm0
+cvttss2si %xmm1, %rax
+cmp $0x85, %rax
+movq -0x100(%rsp), %rax
+movq -0x100(%rsp), %rax
+test %rax, %rax
+movq -0x100(%rsp,%rsi,8), %rax
+movq -0x100(%rsp,%rsi,8), %rax
+test %rax, %rax
+movq %cs:-0x100(%rsp,%rsi,8), %rax
+movq %cs:-0x100(%rsp,%rsi,8), %rax
+movq %ds:-0x100(%rsp,%rsi,8), %rcx
+cmp %rax, %rcx
+movl 0xa000000, %ecx
+movq 0xa000000(%rax,%rsi,8), %rcx
+movq 0xa000000(%rax,%rsi,8), %rcx
+movq 0xa000000(,%rsi,8), %rdx
+movq 0xa000008, %rdx
+xor %eax, %eax
+inc %eax
+mov %eax, %edi
+mov %eax, %edi
+mov $0x7, %rdx
+PASSED
+mov $0x3c, %eax
+mov $0x3c, %eax

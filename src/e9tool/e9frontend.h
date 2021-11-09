@@ -92,17 +92,8 @@ enum CallABI
 enum CallJump
 {
     JUMP_NONE,
-    JUMP_NEXT,                      // if (f(...) != 0) goto next; ...
-    JUMP_ADDR,                      // if (addr = f(...)) goto addr; ...
-};
-
-/*
- * Metadata.
- */
-struct Metadata
-{
-    const char *name;               // Metadata name.
-    const char *data;               // Metadata data.
+    JUMP_BREAK,                     // if (f(...) != 0) break; ...
+    JUMP_GOTO,                      // if (addr = f(...)) goto addr; ...
 };
 
 /*
@@ -2077,10 +2068,10 @@ struct OpInfo
  */
 struct Instr
 {
-    size_t address:48;              // Instruction address
-    size_t action:16;               // (E9Tool internal)
+    size_t offset:40;               // Instruction offset in file
+    size_t matching:24;             // (E9Tool internal)
 
-    size_t offset:48;               // Instruction offset in file
+    size_t address:48;              // Instruction address
     size_t size:4;                  // Instruction size
     
     size_t data:1;                  // (E9Tool internal)
@@ -2088,7 +2079,7 @@ struct Instr
     size_t emitted:1;               // (E9Tool internal)
     size_t jump:1;                  // (E9Tool internal)
 
-    Instr() : patch(0), emitted(0), action(0), jump(0)
+    Instr() : patch(0), emitted(0), matching(0), jump(0)
     {
         ;
     }
@@ -2314,7 +2305,9 @@ extern void sendParamHeader(FILE *out, const char *name);
 extern void sendSeparator(FILE *out, bool last = false);
 extern void sendMetadataHeader(FILE *out);
 extern void sendMetadataFooter(FILE *out);
-extern void sendDefinitionHeader(FILE *out, const char *name);
+extern void sendDefinitionHeader(FILE *out, const char *patch,
+    const char *name);
+extern void sendDefinitionFooter(FILE *out, bool last = false);
 extern void sendInteger(FILE *out, intptr_t i);
 extern void sendString(FILE *out, const char *s);
 extern void sendCode(FILE *out, const char *code);
@@ -2323,8 +2316,6 @@ extern void sendCode(FILE *out, const char *code);
  * High-level functions that send complete E9PATCH JSONRPC messages:
  */
 extern unsigned sendOptionsMessage(FILE *out, std::vector<const char *> &argv);
-extern unsigned sendPatchMessage(FILE *out, const char *trampoline,
-    off_t offset, const Metadata *metadata = nullptr);
 extern unsigned sendReserveMessage(FILE *out, intptr_t addr, size_t len,
     bool absolute = false);
 extern unsigned sendReserveMessage(FILE *out, intptr_t addr,
@@ -2332,9 +2323,9 @@ extern unsigned sendReserveMessage(FILE *out, intptr_t addr,
     intptr_t mmap = 0x0, bool absolute = false);
 extern void sendELFFileMessage(FILE *out, const ELF *elf,
     bool absolute = false);
-extern unsigned sendPassthruTrampolineMessage(FILE *out);
-extern unsigned sendPrintTrampolineMessage(FILE *out, BinaryType type);
+extern unsigned sendEmptyTrampolineMessage(FILE *out);
 extern unsigned sendTrapTrampolineMessage(FILE *out);
+extern unsigned sendPrintTrampolineMessage(FILE *out, BinaryType type);
 extern unsigned sendExitTrampolineMessage(FILE *out, BinaryType type,
     int status);
 unsigned sendCallTrampolineMessage(FILE *out, const char *name,

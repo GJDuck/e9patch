@@ -1,0 +1,3 @@
+sub $0x8, %r8
+sub %r8, %r10
+PASSED

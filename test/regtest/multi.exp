@@ -1,0 +1,93 @@
+jnz 0xa0002ae: 
+push %r15: 
+js 0xa000106: 
+movq 0x5e(%rip), %rax: rax 
+mov $0x8877665544332211, %rbx: rbx 
+cmp %rax, %rbx: rax rbx 
+jz 0xa000122: 
+nop: 
+jns 0xa000128: 
+nopl %eax, (%rax): rax 
+jnl 0xa00012f: 
+jle 0xa000133: 
+cmp $0x33, %ebx: 
+jnle 0xa00013a: 
+jle 0xa0002ae: 
+movq 0x28(%rip), %r8: 
+movq 0x19a(%rip), %rcx: rcx 
+cmp %r8, %rcx: rcx 
+nopl %eax, (%rax): rax 
+jnz 0xa000159: 
+jnle 0xa00015d: 
+jrcxz 0xa000161: rcx 
+jmp 0xa000163: 
+call 0xa000168: 
+jmp 0xa00016d: 
+jmp 0xa000177: 
+lea 0x14(%rip), %r10: 
+push %r10: 
+push %r11: 
+mov $-0x7777, %rcx: rcx 
+jmpq *0x777f(%rsp,%rcx,1): rcx 
+call 0xa0001b5: 
+add $0x8, %rsp: 
+lea 0x2(%rip), %rdx: rdx 
+call *%rdx: rdx 
+pop %r14: 
+add $0x6, %r9: 
+add %r9, %r10: 
+sub $0x8, %r8: 
+sub %r8, %r10: 
+imul %r10: rax rdx 
+imul %r11, %r10: 
+imul $0x77, %r11, %r10: 
+and $0xfe, %rax: rax 
+and %rax, %rbx: rax rbx 
+or $0x13, %rbx: rbx 
+or %rcx, %rbx: rbx rcx 
+not %rcx: rcx 
+neg %rcx: rcx 
+shl $0x7, %rdi: 
+sar $0x3, %rdi: 
+push %r13: 
+mov $0x4519, %rax: rax 
+pxor %xmm0, %xmm0: 
+cvtsi2ss %rax, %xmm0: rax 
+sqrtss %xmm0, %xmm1: 
+comiss %xmm0, %xmm1: 
+jz 0xa0001fb: 
+cvttss2si %xmm1, %rax: rax 
+cmp $0x85, %rax: rax 
+jnz 0xa0001fb: 
+movq -0x100(%rsp), %rax: rax 
+test %rax, %rax: rax 
+jz 0xa000232: 
+xor %esi, %esi: 
+movq -0x100(%rsp,%rsi,8), %rax: rax 
+test %rax, %rax: rax 
+jz 0xa000243: 
+movq %cs:-0x100(%rsp,%rsi,8), %rax: rax 
+movq %ds:-0x100(%rsp,%rsi,8), %rcx: rcx 
+cmp %rax, %rcx: rax rcx 
+jz 0xa00025c: 
+lea -0x263(%rip), %rax: rax 
+lea -0xa000000(%rax), %rax: rax 
+movq 0xa000000(%rax), %rcx: rax rcx 
+jecxz 0xa0002ae: 
+inc %esi: 
+movq 0xa000000(%rax,%rsi,8), %rcx: rax rcx 
+jrcxz 0xa0002ae: rcx 
+movq 0xa000008(%rax), %rdx: rax rdx 
+cmp %rcx, %rdx: rcx rdx 
+jnz 0xa0002ae: 
+xor %eax, %eax: 
+inc %eax: 
+mov %eax, %edi: 
+inc %rdi: 
+lea 0x54(%rip), %rsi: 
+mov $0x7, %rdx: rdx 
+syscall: rcx 
+PASSED
+mov $0x3c, %eax: 
+xor %edi, %edi: 
+syscall: rcx 

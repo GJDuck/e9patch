@@ -1,1 +1,1 @@
-./test -M jump -A 'call[condjump] never_take(addr,size,asm)@patch'
+./test -M jump -P 'if never_take(addr,size,asm)@patch goto'

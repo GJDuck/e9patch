@@ -1,0 +1,187 @@
+jnz 0xa0002ae
+jnz 0xa0002ae
+push %r15
+push %r15
+js 0xa000106
+js 0xa000106
+movq 0x5e(%rip), %rax
+movq 0x5e(%rip), %rax
+mov $0x8877665544332211, %rbx
+mov $0x8877665544332211, %rbx
+cmp %rax, %rbx
+cmp %rax, %rbx
+jz 0xa000122
+jz 0xa000122
+nop
+nop
+jns 0xa000128
+jns 0xa000128
+nopl %eax, (%rax)
+nopl %eax, (%rax)
+jnl 0xa00012f
+jnl 0xa00012f
+jle 0xa000133
+jle 0xa000133
+cmp $0x33, %ebx
+cmp $0x33, %ebx
+jnle 0xa00013a
+jnle 0xa00013a
+jle 0xa0002ae
+jle 0xa0002ae
+movq 0x28(%rip), %r8
+movq 0x28(%rip), %r8
+movq 0x19a(%rip), %rcx
+movq 0x19a(%rip), %rcx
+cmp %r8, %rcx
+cmp %r8, %rcx
+nopl %eax, (%rax)
+nopl %eax, (%rax)
+jnz 0xa000159
+jnz 0xa000159
+jnle 0xa00015d
+jnle 0xa00015d
+jrcxz 0xa000161
+jrcxz 0xa000161
+jmp 0xa000163
+jmp 0xa000163
+call 0xa000168
+call 0xa000168
+jmp 0xa00016d
+jmp 0xa00016d
+jmp 0xa000177
+jmp 0xa000177
+lea 0x14(%rip), %r10
+lea 0x14(%rip), %r10
+push %r10
+push %r10
+push %r11
+push %r11
+mov $-0x7777, %rcx
+mov $-0x7777, %rcx
+jmpq *0x777f(%rsp,%rcx,1)
+jmpq *0x777f(%rsp,%rcx,1)
+call 0xa0001b5
+call 0xa0001b5
+add $0x8, %rsp
+add $0x8, %rsp
+lea 0x2(%rip), %rdx
+lea 0x2(%rip), %rdx
+call *%rdx
+call *%rdx
+pop %r14
+pop %r14
+add $0x6, %r9
+add $0x6, %r9
+add %r9, %r10
+add %r9, %r10
+sub $0x8, %r8
+sub $0x8, %r8
+sub %r8, %r10
+sub %r8, %r10
+imul %r10
+imul %r10
+imul %r11, %r10
+imul %r11, %r10
+imul $0x77, %r11, %r10
+imul $0x77, %r11, %r10
+and $0xfe, %rax
+and $0xfe, %rax
+and %rax, %rbx
+and %rax, %rbx
+or $0x13, %rbx
+or $0x13, %rbx
+or %rcx, %rbx
+or %rcx, %rbx
+not %rcx
+not %rcx
+neg %rcx
+neg %rcx
+shl $0x7, %rdi
+shl $0x7, %rdi
+sar $0x3, %rdi
+sar $0x3, %rdi
+push %r13
+push %r13
+mov $0x4519, %rax
+mov $0x4519, %rax
+pxor %xmm0, %xmm0
+pxor %xmm0, %xmm0
+cvtsi2ss %rax, %xmm0
+cvtsi2ss %rax, %xmm0
+sqrtss %xmm0, %xmm1
+sqrtss %xmm0, %xmm1
+comiss %xmm0, %xmm1
+comiss %xmm0, %xmm1
+jz 0xa0001fb
+jz 0xa0001fb
+cvttss2si %xmm1, %rax
+cvttss2si %xmm1, %rax
+cmp $0x85, %rax
+cmp $0x85, %rax
+jnz 0xa0001fb
+jnz 0xa0001fb
+movq -0x100(%rsp), %rax
+movq -0x100(%rsp), %rax
+test %rax, %rax
+test %rax, %rax
+jz 0xa000232
+jz 0xa000232
+xor %esi, %esi
+xor %esi, %esi
+movq -0x100(%rsp,%rsi,8), %rax
+movq -0x100(%rsp,%rsi,8), %rax
+test %rax, %rax
+test %rax, %rax
+jz 0xa000243
+jz 0xa000243
+movq %cs:-0x100(%rsp,%rsi,8), %rax
+movq %cs:-0x100(%rsp,%rsi,8), %rax
+movq %ds:-0x100(%rsp,%rsi,8), %rcx
+movq %ds:-0x100(%rsp,%rsi,8), %rcx
+cmp %rax, %rcx
+cmp %rax, %rcx
+jz 0xa00025c
+jz 0xa00025c
+movl 0xa000000, %ecx
+movl 0xa000000, %ecx
+jecxz 0xa0002ae
+jecxz 0xa0002ae
+inc %esi
+inc %esi
+movq 0xa000000(%rax,%rsi,8), %rcx
+movq 0xa000000(%rax,%rsi,8), %rcx
+jrcxz 0xa0002ae
+jrcxz 0xa0002ae
+movq 0xa000000(,%rsi,8), %rdx
+movq 0xa000000(,%rsi,8), %rdx
+cmp %rcx, %rdx
+cmp %rcx, %rdx
+jnz 0xa0002ae
+jnz 0xa0002ae
+movq 0xa000008, %rdx
+movq 0xa000008, %rdx
+cmp %rcx, %rdx
+cmp %rcx, %rdx
+jnz 0xa0002ae
+jnz 0xa0002ae
+xor %eax, %eax
+xor %eax, %eax
+inc %eax
+inc %eax
+mov %eax, %edi
+mov %eax, %edi
+inc %rdi
+inc %rdi
+lea 0x54(%rip), %rsi
+lea 0x54(%rip), %rsi
+mov $0x7, %rdx
+mov $0x7, %rdx
+syscall
+syscall
+PASSED
+mov $0x3c, %eax
+mov $0x3c, %eax
+xor %edi, %edi
+xor %edi, %edi
+syscall
+syscall

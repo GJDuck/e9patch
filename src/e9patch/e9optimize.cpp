@@ -138,6 +138,8 @@ void buildEntrySet(Binary *B)
  */
 const Instr *getTrampolinePrologueStart(const EntrySet &Es, const Instr *I)
 {
+    if (!option_Opeephole)
+        return nullptr;
     auto i = Es.find(I->addr);
     if (i == Es.end())
         return nullptr;
@@ -210,7 +212,8 @@ Instr *findInstr(const Binary *B, intptr_t addr)
 /*
  * Optimize a jump (or call) instruction.
  */
-void optimizeJump(const Binary *B, intptr_t addr, uint8_t *bytes, size_t size)
+static void optimizeJump(const Binary *B, intptr_t addr, uint8_t *bytes,
+    size_t size)
 {
     if (!option_Opeephole || size == 0)
         return;
@@ -275,6 +278,10 @@ void optimizeAllJumps(Binary *B)
 {
     if (!option_Opeephole)
         return;
+
+    for (const auto &J: B->Js)
+        optimizeJump(B, J.addr, J.bytes, J.size);
+    B->Js.clear();
 
     for (const auto &entry: B->Is)
     {

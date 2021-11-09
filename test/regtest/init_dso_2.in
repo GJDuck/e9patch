@@ -1,1 +1,1 @@
-./libtest.so -M false -A 'call nop@init'
+./libtest.so -M false -P 'nop()@init'

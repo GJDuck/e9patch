@@ -1,1 +1,1 @@
-./test -M 'imm[0] == 0x6 && %r9 in writes' -A 'call entry(r9,imm[0],0x6,instr,size,asm)@inst'
+./test -M 'imm[0] == 0x6 && %r9 in writes' -P 'entry(r9,imm[0],0x6,instr,size,asm)@inst'

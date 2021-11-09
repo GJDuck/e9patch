@@ -673,37 +673,6 @@ void optimizeMappings<Key4096>(const Allocator &allocator,
 /**************************************************************************/
 
 /*
- * Flatten a trampoline helper.
- */
-void flattenTrampoline(const Binary *B, uint8_t *buf, size_t size,
-    uint8_t fill, intptr_t base, intptr_t end, intptr_t lb, intptr_t ub,
-    unsigned entry, const Trampoline *T, const Instr *I)
-{
-    off_t offset = (I == nullptr? 0: lb - I->addr);
-    assert(offset >= INT32_MIN && offset <= INT32_MAX);
-    int32_t offset32 = (int32_t)offset;
-    int32_t entry32  = offset32 + (int32_t)entry;
-
-    if (lb >= base && ub <= end)
-    {
-        // Common case where the entire trampoline fits into the buffer.
-        // There is no need to use temporary memory.
-        flattenTrampoline(B, buf + (lb - base), (ub - lb), fill, offset32,
-            entry32, T, I);
-        return;
-    }
-
-    // The edge case where only part of the trampoline overlaps with the
-    // mapping.  We use a temporary buffer & copy the overlap.
-    uint8_t tmp_buf[ub - lb];
-    flattenTrampoline(B, tmp_buf, (ub - lb), fill, offset32, entry32, T, I);
-    offset = (lb < base? base - lb: 0);
-    lb = (lb < base? base: lb);
-    ub = (ub > end? end: ub);
-    memcpy(buf + (lb - base), tmp_buf + offset, (ub - lb));
-}
-
-/*
  * Flatten a mapping into a memory buffer.
  */
 void flattenMapping(const Binary *B, uint8_t *buf, const Mapping *mapping,
@@ -724,11 +693,14 @@ void flattenMapping(const Binary *B, uint8_t *buf, const Mapping *mapping,
             a = *i;
             if (a->lb >= END)
                 break;
-            if (a->T == nullptr)
+            if (a->bytes == nullptr)
                 continue;
 
-            flattenTrampoline(B, buf, SIZE, fill, BASE, END, a->lb, a->ub,
-                a->entry, a->T, a->I);
+            intptr_t lb = a->lb, ub = a->ub;
+            off_t offset = (lb < BASE? BASE - lb: 0);
+            lb = (lb < BASE? BASE: lb);
+            ub = (ub > END? END: ub);
+            memcpy(buf + (lb - BASE), a->bytes + offset, (ub - lb));
         }
     }
 }
@@ -759,7 +731,7 @@ void getVirtualBounds(const Mapping *mapping, size_t granularity,
         const Alloc *a = *i;
         if (a->lb >= END)
             break;
-        if (a->T == nullptr)
+        if (a->bytes == nullptr)
         {
             // Reserved memory.  We must split into two separate mappings.
             pushBounds(lb, ub, granularity, bounds);

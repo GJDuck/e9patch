@@ -1,1 +1,1 @@
-./test.libc -M 'addr == &main' -A 'call libc_fprintf(0xe9e9e9e9e9e9e9e9)@dl'
+./test.libc -M 'addr == &main' -P 'libc_fprintf(0xe9e9e9e9e9e9e9e9)@dl'

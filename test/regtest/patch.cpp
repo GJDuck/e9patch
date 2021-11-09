@@ -3,6 +3,7 @@
  */
 
 #include "stdlib.c"
+#include <cstddef>
 
 /*
  * Representation of the state structure.
@@ -189,6 +190,107 @@ void cmp_and_clr_z(int64_t x, int64_t y, uint16_t *flags, const char *_asm)
     *flags &= ~0x4000;
 }
 
+template <typename T>
+static void do_add(T x, T *y, uint16_t *flags)
+{
+    asm volatile (
+        "add %2,%1\n"
+        "seto %%al\n"
+        "lahf\n"
+        "mov %%ax,%0\n"
+        : "=m"(*flags), "=m"(*y) : "r"(x) : "rax");
+}
+
+void add64(int64_t x, int64_t *y, uint16_t *flags, const char *_asm)
+{
+    fprintf(stderr, "%s\n", _asm);
+    do_add(x, y, flags);
+}
+void add64(int32_t x, int64_t *y, uint16_t *flags, const char *_asm)
+{
+    fprintf(stderr, "%s\n", _asm);
+    do_add((int64_t)x, y, flags);
+}
+void add32(int32_t x, int64_t *y, uint16_t *flags, const char *_asm)
+{
+    fprintf(stderr, "%s\n", _asm);
+    int32_t y32 = (int32_t)*y;
+    do_add(x, &y32, flags);
+    *y = (int64_t)(uint32_t)y32;
+}
+void add32(int32_t x, int32_t *y, uint16_t *flags, const char *_asm)
+{
+    fprintf(stderr, "%s\n", _asm);
+    do_add(x, y, flags);
+}
+void add16(int16_t x, int16_t *y, uint16_t *flags, const char *_asm)
+{
+    fprintf(stderr, "%s\n", _asm);
+    do_add(x, y, flags);
+}
+void add8(int8_t x, int8_t *y, uint16_t *flags, const char *_asm)
+{
+    fprintf(stderr, "%s\n", _asm);
+    do_add(x, y, flags);
+}
+
+template <typename T>
+static void do_sub(T x, T *y, uint16_t *flags)
+{
+    asm volatile (
+        "sub %2,%1\n"
+        "seto %%al\n"
+        "lahf\n"
+        "mov %%ax,%0\n"
+        : "=m"(*flags), "=m"(*y) : "r"(x) : "rax");
+}
+
+void sub64(int64_t x, int64_t *y, uint16_t *flags, const char *_asm)
+{
+    fprintf(stderr, "%s\n", _asm);
+    do_sub(x, y, flags);
+}
+void sub64(int32_t x, int64_t *y, uint16_t *flags, const char *_asm)
+{
+    fprintf(stderr, "%s\n", _asm);
+    do_sub((int64_t)x, y, flags);
+}
+void sub32(int32_t x, int64_t *y, uint16_t *flags, const char *_asm)
+{
+    fprintf(stderr, "%s\n", _asm);
+    int32_t y32 = (int32_t)*y;
+    do_sub(x, &y32, flags);
+    *y = (int64_t)(uint32_t)y32;
+}
+void sub32(int32_t x, int32_t *y, uint16_t *flags, const char *_asm)
+{
+    fprintf(stderr, "%s\n", _asm);
+    do_sub(x, y, flags);
+}
+void sub16(int16_t x, int16_t *y, uint16_t *flags, const char *_asm)
+{
+    fprintf(stderr, "%s\n", _asm);
+    do_sub(x, y, flags);
+}
+void sub8(int8_t x, int8_t *y, uint16_t *flags, const char *_asm)
+{
+    fprintf(stderr, "%s\n", _asm);
+    do_sub(x, y, flags);
+}
+
+void lea(int32_t disp, int64_t base, int64_t index, int8_t scale, int64_t *dst)
+{
+    *dst = (int64_t)disp + base + (int64_t)scale * index;
+    fprintf(stderr, "LEA 0x%x(0x%lx,0x%lx,%u) = 0x%lx\n", disp, base, index,
+        scale, *dst);
+}
+void lea(int32_t disp, int64_t base, std::nullptr_t index, int8_t scale,
+    int64_t *dst)
+{
+    *dst = (int64_t)disp + base;
+    fprintf(stderr, "LEA 0x%x(0x%lx) = 0x%lx\n", disp, base, *dst);
+}
+
 const void *never_take(const void *addr, size_t size, const char *_asm)
 {
     const uint8_t *next = (const uint8_t *)addr + size;
@@ -318,6 +420,12 @@ asm
     ".type ret_0x0, @function\n"
     "ret_0x0:\n"
     "mov $0x0, %eax\n"
+    "retq\n"
+
+    ".globl ret_0x1\n"
+    ".type ret_0x1, @function\n"
+    "ret_0x1:\n"
+    "mov $0x1, %eax\n"
     "retq\n"
 
     ".global nop\n"
@@ -469,5 +577,15 @@ void diff(const void *a, const void *b, const char *_asm)
 {
     intptr_t diff = (intptr_t)b - (intptr_t)a;
     fprintf(stderr, "%s # diff = 0x%lx\n", _asm, diff);
+}
+
+void print(const char *_asm)
+{
+    fprintf(stderr, "%s\n", _asm);
+}
+
+void write(const char *str)
+{
+    fputs(str, stderr);
 }
 

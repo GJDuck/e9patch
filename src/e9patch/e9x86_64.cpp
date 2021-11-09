@@ -206,7 +206,7 @@ static int decodeOpcode(const uint8_t *bytes, unsigned size, int i,
  * Push the return address for a call onto the stack.
  */
 static int pushReturnAddress(intptr_t addr, intptr_t offset, unsigned size,
-    bool pic, Buffer &buf)
+    bool pic, Buffer *buf, size_t start)
 {
     intptr_t target = addr + size;
     if (!pic && target >= INT32_MIN && target <= INT32_MAX)
@@ -215,8 +215,8 @@ static int pushReturnAddress(intptr_t addr, intptr_t offset, unsigned size,
         int32_t target32 = (int32_t)target;
         
         // push target32
-        buf.push(0x68);
-        buf.push((const uint8_t *)&target32, sizeof(target32));
+        buf->push(0x68);
+        buf->push((const uint8_t *)&target32, sizeof(target32));
     }
     else if (!option_Oscratch_stack)
     {
@@ -224,24 +224,24 @@ static int pushReturnAddress(intptr_t addr, intptr_t offset, unsigned size,
         // (wihout using memory or affecting the flags).
 
         // push %rax
-        buf.push(0x50);
+        buf->push(0x50);
         
         // lea diff32(%rip),%rax
         intptr_t diff   = target -
-            (addr + offset + buf.size() + /*sizeof(leaq)=*/7);
+            (addr + offset + buf->size(start) + /*sizeof(leaq)=*/7);
         if (diff < INT32_MIN || diff > INT32_MAX)
             return -1;
         int32_t diff32  = (int32_t)diff;
-        buf.push(0x48); buf.push(0x8d); buf.push(0x05);
-        buf.push((const uint8_t *)&diff32, sizeof(diff32));
+        buf->push(0x48); buf->push(0x8d); buf->push(0x05);
+        buf->push((const uint8_t *)&diff32, sizeof(diff32));
 
         // WARNING: This instruction uses an implicit LOCK and
         //          is therefore very slow!  However, there is
         //          no great alternative AFAIK.
         //
         // xchg %rax,(%rsp)
-        buf.push(0x48); buf.push(0x87); buf.push(0x04);
-        buf.push(0x24);
+        buf->push(0x48); buf->push(0x87); buf->push(0x04);
+        buf->push(0x24);
     }
     else
     {
@@ -249,26 +249,26 @@ static int pushReturnAddress(intptr_t addr, intptr_t offset, unsigned size,
         // as scratch space.
 
         // mov %rax,-0x4000(%rsp)
-        buf.push(0x48); buf.push(0x89); buf.push(0x84);
-        buf.push(0x24); buf.push(0x00); buf.push(0xc0);
-        buf.push(0xff); buf.push(0xff);
+        buf->push(0x48); buf->push(0x89); buf->push(0x84);
+        buf->push(0x24); buf->push(0x00); buf->push(0xc0);
+        buf->push(0xff); buf->push(0xff);
 
         // lea diff32(%rip),%rax
         intptr_t diff   = target -
-            (addr + offset + buf.size() + /*sizeof(leaq)=*/7);
+            (addr + offset + buf->size(start) + /*sizeof(leaq)=*/7);
         if (diff < INT32_MIN || diff > INT32_MAX)
             return -1;
         int32_t diff32  = (int32_t)diff;
-        buf.push(0x48); buf.push(0x8d); buf.push(0x05);
-        buf.push((const uint8_t *)&diff32, sizeof(diff32));
+        buf->push(0x48); buf->push(0x8d); buf->push(0x05);
+        buf->push((const uint8_t *)&diff32, sizeof(diff32));
 
         // push %rax
-        buf.push(0x50);
+        buf->push(0x50);
 
         // mov -0x3ff8(%rsp),%rax
-        buf.push(0x48); buf.push(0x8b); buf.push(0x84);
-        buf.push(0x24); buf.push(0x08); buf.push(0xc0);
-        buf.push(0xff); buf.push(0xff);
+        buf->push(0x48); buf->push(0x8b); buf->push(0x84);
+        buf->push(0x24); buf->push(0x08); buf->push(0xc0);
+        buf->push(0xff); buf->push(0xff);
     }
 
     return 0;
@@ -279,9 +279,12 @@ static int pushReturnAddress(intptr_t addr, intptr_t offset, unsigned size,
  * Returns (-1) if the instruction cannot be relocated.
  */
 int relocateInstr(intptr_t addr, int32_t offset32, const uint8_t *bytes,
-    unsigned size, bool pic, uint8_t *new_bytes, bool relax)
+    unsigned size, bool pic, Buffer *buf, bool relax)
 {
-    Buffer buf(new_bytes);
+    Buffer buf_0(nullptr);
+    buf = (buf == nullptr? &buf_0: buf);
+    size_t start = buf->size();
+
     intptr_t offset = (intptr_t)offset32;
 
     uint8_t rex = 0;
@@ -291,8 +294,8 @@ int relocateInstr(intptr_t addr, int32_t offset32, const uint8_t *bytes,
     {
         // Instruction is not PC-relative:
 no_modification_necessary:
-        buf.push(bytes, size);
-        return buf.size();
+        buf->push(bytes, size);
+        return buf->commit(start);
     }
     Encoding encoding = ENCODING_SINGLE_BYTE;
     uint8_t opcode;
@@ -338,15 +341,15 @@ no_modification_necessary:
                             break;
                     }
 
-                    if (pushReturnAddress(addr, offset, size, pic, buf) < 0 &&
-                            !relax)
+                    if (pushReturnAddress(addr, offset, size, pic, buf, start)
+                            < 0 && !relax)
                         return -1;
 
                     // Convert the call into a jmp:
-                    size_t buf_size = buf.size();
-                    buf.push(bytes, i);
+                    size_t buf_size = buf->size(start);
+                    buf->push(bytes, i);
                     modRM = (modRM & ~0x38) | (0x04 << 3);  // jmp op
-                    buf.push(modRM);
+                    buf->push(modRM);
 
                     if (mod == 0x0 && rm == 0x05)
                     {
@@ -358,12 +361,12 @@ no_modification_necessary:
                         if (!relax && (diff < INT32_MIN || diff > INT32_MAX))
                             return -1;
                         int32_t diff32  = (int32_t)diff;
-                        buf.push((const uint8_t *)&diff32, sizeof(diff32));
-                        buf.push(bytes + i + 1 + sizeof(diff32),
+                        buf->push((const uint8_t *)&diff32, sizeof(diff32));
+                        buf->push(bytes + i + 1 + sizeof(diff32),
                             size - i - 1 - sizeof(diff32));
                     }
                     else
-                        buf.push(bytes + i + 1, size - i - 1);
+                        buf->push(bytes + i + 1, size - i - 1);
                 }
                 default:
                     break;
@@ -379,26 +382,27 @@ no_modification_necessary:
                     {
                         // jrcxz .Ltaken
                         if (addr32)
-                            buf.push(0x67);
-                        buf.push(0xe3); buf.push(0x02);
+                            buf->push(0x67);
+                        buf->push(0xe3); buf->push(0x02);
 
                         // jmp .Lnot_taken
-                        buf.push(0xeb); buf.push(0x05);
+                        buf->push(0xeb); buf->push(0x05);
 
                         // .Ltaken
                         // jmp diff32
                         int8_t pcrel8 = (int8_t)bytes[i];
                         intptr_t target = addr + size + (intptr_t)pcrel8;
                         intptr_t diff   = target -
-                            (addr + offset + buf.size() + /*sizeof(jmp)=*/5);
+                            (addr + offset + buf->size(start) +
+                                /*sizeof(jmp)=*/5);
                         if (!relax && (diff < INT32_MIN || diff > INT32_MAX))
                             return -1;
                         int32_t diff32  = (int32_t)diff;
-                        buf.push(0xE9);
-                        buf.push((const uint8_t *)&diff32, sizeof(diff32));
+                        buf->push(0xE9);
+                        buf->push((const uint8_t *)&diff32, sizeof(diff32));
 
                         // .Lnot_taken
-                        return buf.size();
+                        return buf->commit(start);
                     }
 
                     case 0xEB:          // JMP pcrel8
@@ -410,7 +414,7 @@ no_modification_necessary:
                         int8_t pcrel8 = (int8_t)bytes[i];
                         intptr_t target = addr + size + (intptr_t)pcrel8;
                         intptr_t diff   = target -
-                            (addr + offset + buf.size() +
+                            (addr + offset + buf->size(start) +
                                 /*sizeof(jmp)=*/(opcode == 0xEB? 5: 6));
                         if (!relax && (diff < INT32_MIN || diff > INT32_MAX))
                             return -1;
@@ -418,15 +422,15 @@ no_modification_necessary:
                         
                         // Promote jump to rel32 version:
                         if (opcode == 0xEB)
-                            buf.push(0xE9);
+                            buf->push(0xE9);
                         else
                         {
-                            buf.push(0x0F);
-                            buf.push((opcode - 0x70) + 0x80);
+                            buf->push(0x0F);
+                            buf->push((opcode - 0x70) + 0x80);
                         }
-                        buf.push((const uint8_t *)&diff32, sizeof(diff32));
+                        buf->push((const uint8_t *)&diff32, sizeof(diff32));
                         
-                        return buf.size();
+                        return buf->commit(start);
                     }
 
                     default:
@@ -439,22 +443,23 @@ no_modification_necessary:
                 {
                     case 0xE8:          // CALLQ pcrel32
                     {
-                        if (pushReturnAddress(addr, offset, size, pic, buf)
-                                < 0)
+                        if (pushReturnAddress(addr, offset, size, pic, buf,
+                                start) < 0)
                             return -1;
 
                         // jmpq diff32
                         int32_t pcrel32 = *(uint32_t *)(bytes + i);
                         intptr_t target = addr + size + (intptr_t)pcrel32;
                         intptr_t diff   = target -
-                            (addr + offset + buf.size() + /*sizeof(jmpq)=*/5);
+                            (addr + offset + buf->size(start) +
+                                /*sizeof(jmpq)=*/5);
                         if (!relax && (diff < INT32_MIN || diff > INT32_MAX))
                             return -1;
                         int32_t diff32  = (int32_t)diff;
-                        buf.push(0xE9);
-                        buf.push((const uint8_t *)&diff32, sizeof(diff32));
+                        buf->push(0xE9);
+                        buf->push((const uint8_t *)&diff32, sizeof(diff32));
                         
-                        return buf.size();
+                        return buf->commit(start);
                     }
                     case 0xE9:          // JMPQ pcrel32
                     {
@@ -462,14 +467,15 @@ no_modification_necessary:
                         int32_t pcrel32 = *(uint32_t *)(bytes + i);
                         intptr_t target = addr + size + (intptr_t)pcrel32;
                         intptr_t diff   = target -
-                            (addr + offset + buf.size() + /*sizeof(jmpq)=*/5);
+                            (addr + offset + buf->size(start) +
+                                /*sizeof(jmpq)=*/5);
                         if (!relax && (diff < INT32_MIN || diff > INT32_MAX))
                             return -1;
                         int32_t diff32  = (int32_t)diff;
-                        buf.push(0xE9); 
-                        buf.push((const uint8_t *)&diff32, sizeof(diff32));
+                        buf->push(0xE9); 
+                        buf->push((const uint8_t *)&diff32, sizeof(diff32));
 
-                        return buf.size();
+                        return buf->commit(start);
                     }
                     default:
                         break;
@@ -494,14 +500,15 @@ no_modification_necessary:
                         int32_t pcrel32 = *(int32_t *)(bytes + i);
                         intptr_t target = addr + size + (intptr_t)pcrel32;
                         intptr_t diff   = target -
-                            (addr + offset + buf.size() + /*sizeof(jcc)=*/6);
+                            (addr + offset + buf->size(start) +
+                                /*sizeof(jcc)=*/6);
                         if (!relax && (diff < INT32_MIN || diff > INT32_MAX))
                             return -1;
                         int32_t diff32  = (int32_t)diff;
-                        buf.push(0x0F); buf.push(opcode); 
-                        buf.push((const uint8_t *)&diff32, sizeof(diff32));
+                        buf->push(0x0F); buf->push(opcode); 
+                        buf->push((const uint8_t *)&diff32, sizeof(diff32));
                     
-                        return buf.size();
+                        return buf->commit(start);
                     }
                     default:
                         break;
@@ -547,15 +554,15 @@ no_modification_necessary:
         // i points to a %rip-relative displacement.  We adjust accordingly.
         int32_t pcrel32 = *(uint32_t *)(bytes + i);
         intptr_t target = addr + size + (intptr_t)pcrel32;
-        intptr_t diff   = target - (addr + offset + buf.size() + size);
+        intptr_t diff   = target - (addr + offset + buf->size(start) + size);
         if (diff < INT32_MIN || diff > INT32_MAX)
             return -1;
         int32_t diff32  = (int32_t)diff;
-        buf.push(bytes, i);
-        buf.push((const uint8_t *)&diff32, sizeof(diff32));
-        buf.push(bytes + i + sizeof(diff32), size - i - sizeof(diff32));
+        buf->push(bytes, i);
+        buf->push((const uint8_t *)&diff32, sizeof(diff32));
+        buf->push(bytes + i + sizeof(diff32), size - i - sizeof(diff32));
 
-        return buf.size();
+        return buf->commit(start);
     }
 
     goto no_modification_necessary;

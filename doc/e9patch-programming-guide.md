@@ -8,7 +8,7 @@ binaries, we recommend you read the documentation for E9Tool instead.
 
 There are three main ways to integrate E9Patch into your project:
 
-* [1. E9Tool Call Instrumentation](#e9tool-call)
+* [1. E9Tool Call Trampolines](#e9tool-call)
   [simple, high-level, rigid, **recommended method**]
 * [2. E9Patch JSON-RPC Interface](#json-rpc-interface)
   [advanced, low-level, flexible]
@@ -22,17 +22,21 @@ an [E9Tool plugin](#e9tool-plugin) or
 the [E9Patch JSON-RPC interface](#json-rpc-interface).
 
 ---
-## <a id="e9tool-call">1. E9Tool Call Instrumentation</a>
+## <a id="e9tool-call">1. E9Tool Call Trampolines</a>
 
 E9Tool supports a generic instruction patching capability in the form of
-*call instrumentation*.
+*call trampolines*.
 This is by far the simplest way to build a new application using E9Patch,
 and is also the recommended method unless you are specifically trying
 to generate optimized code, or if your application requires maximum
 flexibility.
 
-To use call instrumentation, you simply implement the desired instrumentation
-as a function using a suitable programming language (e.g., `C`).
+Call trampolines allow *patch code* to be implemented as ordinary functions
+using a supported programming language, such as `C`, `C++` or assembly.
+The patch code can then be compiled into a *patch binary* will be injected
+into the rewritten binary.
+The patch functions can then be called from the desired locations.
+
 For example, the following code defines a function that increments a
 counter.
 Once the counter exceeds some predefined maximum value, the function
@@ -48,56 +52,52 @@ the program.
                 asm volatile ("int3");
         }
 
-Once defined, the instrumentation will need to be compiled accordingly.
-For this, the `e9compile.sh` script has been included which invokes
-`gcc` with the correct options.
-The main limitation is that the instrumentation code cannot use dynamically
-linked libraries, including `libc.so`.
+Once defined, the patch code can then be compiled using the special
+`e9compile.sh` script.
+This script invokes `gcc` with the correct options necessary to be
+compatible with E9Tool:
 
         ./e9compile.sh counter.c
 
-This will build an ELF executable file `counter`.
-(Although the generated `counter` file is an ELF executable, it is not
-intended to be runnable, and it will crash if you attempt to execute it
-directly).
+This command will build a special ELF executable file named `counter`.
 
-Next, a binary can be instrumented using the `counter` executable.
-To do so, you simply use the `--action` option and select *call
-instrumentation*.
-For example, to instrument all jump instructions in `xterm` the command-line
-syntax is as follows:
+To rewrite a binary using `counter`, we use E9Tool and the `--patch`/`-P`
+options.
+For example, to instrument all jump instructions in the `xterm` binary
+with a call to the `entry()` function, we can use the following
+command-line syntax:
 
-        ./e9tool --match 'asm=j.*' --action 'call entry@counter' xterm
+        ./e9tool -M 'asm=j.*' -P 'entry()@counter' xterm
 
 The syntax is as follows:
 
-* `--match`: Selects the E9Tool "match" command-line option.
-   This is to specify which instructions to instrument/patch.
+* `-M`: Selects the E9Tool "match" command-line option.
+   This specifies which instructions should be instrumented.
 * `asm=j.*`: Specifies that we want to patch/instrument all instructions
   whose assembly syntax matches the regular expression `j.*`.
   For the `x86_64`, only jump instructions begin with `j`, so this
   syntax selects all jump instructions, e.g.
   `jmp`, `jnz`, `jg`, etc.
-* `--action`: Selects the E9Tool "action" command-line option.
-  This tells E9Tool what patching/instrumentation action to perform on
-  matching instructions.
-* `call entry@counter`: Specifies that the trampoline should call
-  the function `entry()` in the `counter` executable.
+* `-P`: Selects the E9Tool "patch" command-line option.
+  This tells E9Tool how to patch the matching instruction(s).
+* `entry()@counter`: Specifies that the trampoline should call
+  the function `entry()` in the `counter` binary.
 
-By default, *call instrumentation* will handle all low-level details, such as
+By default, *call trampolines* will handle all low-level details, such as
 saving and restoring the CPU state, and
-embedding the `counter` executable inside the patched binary.
-This makes *call instrumentation* relatively simple to use.
+injecting the `counter` executable into the rewritten binary.
 
-By default the modified binary will be wrtten to `a.out`.
+By default the modified binary will be written to `a.out`.
 The instrumented `a.out` file will call the `counter` function each
 time a jump instruction is executed.
 After 100000 jumps, the program will terminate with `SIGTRAP`.
 
-More information about *call instrumentation* can be found in the
+Call trampolines support many features, such as function arguments,
+selectable ABIs, and conditional control-flow redirection.
+More information about *call trampolines* can be found in the
 [E9Tool User's Guide](https://github.com/GJDuck/e9patch/blob/master/doc/e9tool-user-guide.md).
 
-Additional examples of *call instrumentation* are also
+Additional examples of *call trampolines* are also
 [available here](https://github.com/GJDuck/e9patch/tree/master/examples).
 
 ---
@@ -106,7 +106,7 @@ Additional examples of *call instrumentation* are also
 The E9Patch tool uses the [JSON-RPC](https://en.wikipedia.org/wiki/JSON-RPC)
 (version 2.0) as its API.
 Basically, the E9Patch tool expects a stream of JSON-RPC messages which
-describe which binary to rewrite, and how to rewrite it.
+describe which binary to rewrite and how to rewrite it.
 These JSON-RPC messages are fed from a frontend tool, such as E9Tool,
 but this design means that multiple different frontends can be supported.
 The choice of JSON-RPC as the API also means that the frontend can be
@@ -162,8 +162,8 @@ It must be the first message sent to E9Patch.
 
 * `"filename"`: the path to the binary file that is to be patched.
 * `"mode"`: the type of the binary file.
-    Valid values include `"exe"` for executables and `"shared"` for
-    shared objects.
+    Valid values include `"elf.exe"` for ELF executables and `"elf.so"` for
+    ELF shared objects.
 
 #### Example:
 
@@ -173,7 +173,7 @@ It must be the first message sent to E9Patch.
             "params":
             {
                 "filename": "/usr/bin/xterm",
-                "mode": "exe"
+                "mode": "elf.exe"
             },
             "id": 0
         }
@@ -208,7 +208,7 @@ any of the following:
 * A byte: represented by an integer *0..255*
 * A macro: represented by a string beginning with a dollar character,
   e.g. `"$asmStr`.
-  Macros are expanded with metadata values provided by the `"patch"` message
+  Macros are expanded with meta data values provided by the `"patch"` message
   (see below) or a template from another "trampoline" message.
   There are also some builtin macros (see below).
 * A label: represented by a string beginning with the string `".L"`,
@@ -226,25 +226,34 @@ any of the following:
   `{"rel8": ".Llabel"}`. where valid types are:
     * `"rel8"`: an 8bit relative offset 
     * `"rel32"`: a 32bit relative offset
+* An empty value: represented by the `null` token.
 
 Several builtin macros are implicitly defined, including:
 
 * `"$bytes"`: The original byte sequence of the instruction that was patched
-* `"$instruction"`: A byte sequence of instructions that emulates the
+* `"$instr"`: A byte sequence of instructions that emulates the
   patched instruction.
   Note that this is usually equivalent to `"$bytes"` except for
   instructions that are position-dependent.
-* `"$continue"`: A byte sequence of instructions that will return
-  control-flow to the next instruction after the patched instruction.
-  This can be used to return from trampolines.
-* `"$taken"`: Similar to `"$continue"`, but for the branch-taken case of
+* `"$break"` (thin break): A byte sequence of instructions that will return
+  control-flow to the next instruction after the matching instruction.
+  The `"$break"` builtin macro is guaranteed to be implemented as a single
+  `jmpq rel32` instruction.
+* `"$BREAK"` (fat break): Semantically equivalent to `"$break"`, but the
+  implementation is not limited to a single jump instruction.
+  This allows for a more aggressive optimization that is possible using a
+  thin `"$break"`, but at the cost of more space usage.
+  For optimal results, each trampoline should use exactly one fat `"$BREAK"`,
+  with thin `"$break"` used for the rest (if applicable).
+* `"$take"`: Similar to `"$break"`, but for the branch-taken case of
   conditional jumps.
 
 Several builtin labels are also implicitly defined, including:
 
-* `".Lcontinue"`: The address corresponding to `"$continue"`
-* `".Ltaken"`: The address corresponding to `$taken"`
-* `".Linstruction"`: The address of the patched instruction.
+* `".Lbreak"`: The address corresponding to `"$break"`
+* `".Ltake"`: The address corresponding to `$take"`
+* `".Linstr"`: The address of the matching instruction.
+* `".Lconfig"`: The address of the internal E9Patch configuration structure.
 
 #### Example:
 
@@ -262,7 +271,7 @@ Several builtin labels are also implicitly defined, including:
                     81,
                     82,
                     65, 83,
-                    72, 141, 53, {"rel32": ".Lstring"},
+                    72, 141, 53, {"rel32": ".LasmStr"},
                     186, "$asmStrLen",
                     191, 2, 0, 0, 0,
                     184, 1, 0, 0, 0,
@@ -274,9 +283,9 @@ Several builtin labels are also implicitly defined, including:
                     94,
                     95,
                     72, 141, 164, 36, 0, 64, 0, 0,
-                    "$instruction",
-                    "$continue",
-                    ".Lstring",
+                    "$instr",
+                    "$BREAK",
+                    ".LasmStr",
                     "$asmStr"
                 ]
             },
@@ -295,7 +304,7 @@ This is a representation of the following trampoline in assembly syntax:
             push %r11
     
             # Setup and execute a SYS_write system call:
-            leaq .Lstring(%rip),%rsi
+            leaq .LasmStr(%rip),%rsi
             mov $asmStrlen,%edx
             mov $0x2,%edi           # stderr
             mov $0x1,%eax           # SYS_write
@@ -311,13 +320,13 @@ This is a representation of the following trampoline in assembly syntax:
             lea 0x4000(%rsp),%rsp
     
             # Execute the displaced instruction:
-            $instruction
+            $instr
     
             # Return from the trampoline
-            $continue
+            $BREAK
     
             # Store the asm String here:
-        .Lstring:
+        .LasmStr:
             $asmStr
 
 Note that the interface is very low-level.
@@ -333,6 +342,11 @@ pointer may be used (the stack red zone), hence a pair of
 region, else the patched program may crash or misbehave.
 In general, the saving/restoring of the CPU state is solely the responsibility
 of the frontend, and E9Patch will simply execute the template "as-is".
+
+The above code uses two user-defined macros, namely `"$asmStr"` and
+`"$asmStrLen"`.
+The values of these macros depend on the matching instruction, so will be
+instantiated by meta data defined by the "patch" message (see below).
 
 ---
 ### <a id="reserve-message">2.3 Reserve Message</a>
@@ -541,57 +555,78 @@ below.  These functions will be invoked by E9Tool at different stages of
 the patching process.  Mundane tasks, such as disassembly, will be handled
 by the E9Tool frontend.
 
-The E9Tool plugin API is very simple and consists of just four functions:
+The E9Tool plugin API is very simple and consists of the following functions:
 
-1. `e9_plugin_init_v1(FILE *out, const ELF *in, ...)`:
+1. `e9_plugin_init_v1(const Context *cxt)`:
     Called once before the binary is disassembled.
-2. `e9_plugin_match_v1(FILE *out, const ELF *in, ...)`:
+2. `e9_plugin_match_v1(const Context *cxt)`:
     Called once for each match location.
-3. `e9_plugin_patch_v1(FILE *out, const ELF *in, ...)`:
-    Called for each patch location.
-4. `e9_plugin_fini_v1(FILE *out, const ELF *in, ...)`:
+3. `e9_plugin_patch_v1(const Context *cxt, Phase phase)`:
+    Called for each patch location (see the `Phase` enum).
+4. `e9_plugin_fini_v1(const Context *cxt)`:
     Called once after all instructions have been patched.
-5. `e9_plugin_event_v1(FILE *out, const ELF *in, ...)`:
+5. `e9_plugin_event_v1(const Context *cxt, void *arg)`:
     Called once for each event (see the `Event` enum).
 
 Note that each function is optional, and the plugin can choose not to
 define it.  However, The plugin must define at least one of these functions
 to be considered valid.
 
-Each function takes at least two arguments, namely:
+Each function takes at least one argument, namely the "context" of type
+`Context` defined in `e9plugin.h`.
+The `Context` structure contains several fields, including:
 
 * `out`: is the JSON-RPC output stream that is sent to the E9Patch
-  backend; and
-* `in`: a representation of the input ELF file, see e9frontend.h for
-  more information.
+   backend.
+   The plugin can directly emit messages to this stream.
+* `context`: is the plugin-defined context, which is the return value of
+   the `e9_plugin_init_v1()` function.
+* `elf`: is the input ELF file.
+* `Is`: is an array of all disassembled instructions, sorted by address.
+* `size`: is the number of elements in `Is`.
+* `idx`: is the index (into `Is`) of the instruction being matched/patched.
+* `I`: is detailed information about the instruction being matched/patched.
+* `id`: is the current patch ID.
 
-Some functions take additional arguments, including:
+Notes:
 
-* `event`: An `Event` enum value.
-* `Is`: An array of all disassembled instructions.
-* `size`: The number of elements in `Is`.
-* `idx`: The index (into `Is`) of the instruction being
-   matched/patched.
-* `info`: The detailed information about the instruction being
-   matched/patched.
-* `context`: An optional plugin-defined context returned by the
-  `e9_plugin_init_v1()` function.
+* Not all `Context` fields will be defined for each operation.
+  For example, the `Is` field will be undefined before the input binary has
+  been disassembled.
+  Undefined fields will have the value `NULL`/`-1`, depending on the type.
+* The `I` structure (if defined) is *temporary*, and will be immediately
+  destroyed once the plugin function returns.
+  Plugins must ***not*** store references to this object.
+* The `Is` array (if defined) is persistent, and the plugin may safely store
+  references to this object until `e9_plugin_fini_v1()` returns.
 
-Note that the `info` structure is temporary and will be immediately destroyed
-after the API call returns.
-In constrast, the `Is` array is persistent and will remain valid between calls.
+Some API functions take an additional enumeration value:
+
+* `e9_plugin_event_v1()` takes an `Event` enum value which indicates
+  one of the following:
+  - `EVENT_DISASSEMBLY_COMPLETE`: Disassembly completed.
+  - `EVENT_MATCHING_COMPLETE`: Matching completed.
+  - `EVENT_PATCHING_COMPLETE`: Patching completed.
+* `e9_plugin_patch_v1()` take a `Phase` enum value that represents what
+  part of the patch should be emitted:
+  - `PHASE_CODE`: Emit the executable code in trampoline template format.
+  - `PHASE_DATA`: Emit any data referenced by the code in trampoline template
+    format.
+  - `PHASE_METADATA`: Emit instruction-specific metadata as comma-separated
+    `key:value` pairs, where `key` is a macro name, and `value` is a value
+    specified in trampoline template format.
 
 Some API function return a value, including:
 
 * `e9_plugin_init_v1()` returns an optional `context` that will be
-   passed to all other API calls.
+   passed to all other API calls through the `cxt->context` field.
 * `e9_plugin_match_v1()` returns an integer value of the plugin's
-   choosing.  This integer value can be matched using by the `--match`
-   E9Tool command-line option, else the value will be ignored.
+   choosing.  This integer value can be matched using by the `--match`/`-M`
+   E9Tool command-line options, else the value will be ignored.
 
-The API is meant to be highly flexible.  Basically, the plugin API
-functions are expected to send JSON-RPC messages directly to the E9Patch
-backend by writing to the `out` output stream.
+The API is designed to be highly flexible.  Basically, the plugin API
+functions are expected to send JSON-RPC messages (or parts of messages)
+directly to the E9Patch backend by writing to the `out` output stream.
 See the [E9Patch JSON-RPC interface](#json-rpc-interface) for more
 information.
 
@@ -611,10 +646,13 @@ The `e9_plugin_match_v1()` function will do the following:
 
 The `e9_plugin_patch_v1()` function will do the following:
 
-1. Setup additional trampolines (if necessary)
-2. Send a "patch" JSON-RPC message with appropriate metadata.
+1. Send the code, data and metadata for each patch operation.
 
 The `e9_plugin_fini_v1()` function will do any cleanup if necessary.
+
+Note that the `e9_plugin_patch_v1()` sends *parts* of a JSON-RPC "patch"
+message, and not a whole message.
+This design is necessary to make trampolines composable with each other.
 
 See the `e9frontend.h` file for useful functions that can assist with these
 tasks.  Otherwise, there are no limitations on what these functions can do,
@@ -624,25 +662,25 @@ the plugin.  This makes the plugin API very powerful.
 ---
 ### 3.1 Using Plugins
 
-Plugins can be used by E9Tool and the `--action` option.
+Plugins can be used by E9Tool and the `--patch`/`-P` option.
 For example:
 
-        g++ -std=c++11 -fPIC -shared -o myPlugin.so myPlugin.cpp -I . -I capstone/include/
-        ./e9tool --match 'asm=j.*' --action 'plugin(myPlugin).patch()' xterm
+        g++ -std=c++11 -fPIC -shared -o myPlugin.so myPlugin.cpp -I src/e9tool/
+        ./e9tool -M 'plugin(myPlugin).match() > 0x333' -P 'plugin(myPlugin).patch()' xterm
 
 The syntax is as follows:
 
-* `--action`: Selects the E9Tool "action" command-line option.
-  This tells E9Tool what patching/instrumentation action to do.
+* `-M`: Selects the E9Tool "match" command-line option.
+* `-P`: Selects the E9Tool "patch" command-line option.
+  This tells E9Tool what patching/instrumentation to do.
+* `plugin(myPlugin).match() > 0x333`: Specifies that we should only rewrite
+  instructions for which the `e9_plugin_match_v1()`
+  function returns a value greater than `0x333`.
 * `plugin(myPlugin).patch()`: Specifies that instrument the program using the
-  `myPlugin.so` plugin.
+  `e9_plugin_patch_v1()` function.
 
-If `myPlugin.so` exports the `e9_plugin_match_v1()` function, it is also
-possible to match against the return value.
-For example:
+For this example to work, the `myPlugin.so` plugin must export both the
+`e9_plugin_match_v1()` and `e9_plugin_patch_v1()` functions.
 
-        ./e9tool --match 'plugin(myPlugin).match() > 0x333' --action 'plugin(myPlugin).patch()' xterm
-
-This command will only patch instructions where the `e9_plugin_match_v1()`
-function returns a value greater than `0x333`.
+For an example plugin, see `examples/plugin/example.cpp`.
 

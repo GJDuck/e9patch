@@ -1,0 +1,1 @@
+./test.pie -M 'plugin(example).match() == 3' -P print -P 'plugin(example).patch()'

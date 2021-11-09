@@ -1,1 +1,1 @@
-./test -M true -A 'call entry(rip,rsp,rflags,instr,size,asm)@inst'
+./test -M true -P 'entry(rip,rsp,rflags,instr,size,asm)@inst'

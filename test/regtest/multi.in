@@ -1,0 +1,1 @@
+./test.pie -M true -P 'write(asm)@patch' -P 'write(": ")@patch' -M 'rax in regs' -P 'write("rax ")@patch' -M 'rbx in regs' -P 'write("rbx ")@patch' -M 'rcx in regs' -P 'write("rcx ")@patch' -M 'rdx in regs' -P 'write("rdx ")@patch' -M true -P 'write("\n")@patch'

@@ -329,7 +329,7 @@ void deallocate(Binary *B, const Alloc *a)
 /*
  * Iterators.
  */
-const Alloc *Allocator::iterator::operator*()
+Alloc *Allocator::iterator::operator*()
 {
     return &node->alloc;
 }

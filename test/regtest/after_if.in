@@ -1,0 +1,4 @@
+./test.pie -M 'asm=.*p.*' -P 'after if ret_0x1<naked>()@patch break' -M 'asm=.*p.*' -P 'after print'
+
+Nothing should be printed b/c of the break.
+

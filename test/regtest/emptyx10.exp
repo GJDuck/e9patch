@@ -1,0 +1,7 @@
+push %r15
+push %r11
+pop %r14
+imul %r11, %r10
+imul $0x77, %r11, %r10
+push %r13
+PASSED

@@ -1,0 +1,44 @@
+
+---------
+jmpq *0x777f(%rsp,%rcx,1)
+---------
+before #1
+before #2
+before #3
+
+---------
+movq -0x100(%rsp,%rsi,8), %rax
+---------
+before #1
+before #2
+before #3
+movq -0x100(%rsp,%rsi,8), %rax
+after #1
+
+---------
+movq %cs:-0x100(%rsp,%rsi,8), %rax
+---------
+before #1
+before #2
+before #3
+movq %cs:-0x100(%rsp,%rsi,8), %rax
+after #1
+
+---------
+movq %ds:-0x100(%rsp,%rsi,8), %rcx
+---------
+before #1
+before #2
+before #3
+movq %ds:-0x100(%rsp,%rsi,8), %rcx
+after #1
+
+---------
+movq 0xa000000(%rax,%rsi,8), %rcx
+---------
+before #1
+before #2
+before #3
+movq 0xa000000(%rax,%rsi,8), %rcx
+after #1
+PASSED

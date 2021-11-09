@@ -1,0 +1,4 @@
+./test.pie -M 'asm=.*p.*' -P 'after if ret_0x0<naked>()@patch break' -M 'asm=.*p.*' -P 'after print'
+
+Everything should be printed, except CFTs
+

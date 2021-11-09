@@ -147,12 +147,7 @@ static void commit(Binary &B, Patch *P)
     while (P != nullptr)
     {
         if (P->A != nullptr)
-        {
             setTrampolineEntry(B.Es, P->I, P->A->lb + P->A->entry);
-            off_t offset = P->A->lb - P->I->addr;
-            assert(offset >= INT32_MIN && offset <= INT32_MAX);
-            calcEntryPoints(&B, P->A->T, P->I, (int32_t)offset);
-        }
 
         // Delete the P (we do not need it anymore)
         Patch *Q = P;
