@@ -28,6 +28,7 @@
 #include <cstdlib>
 #include <cstring>
 
+#include <list>
 #include <regex>
 #include <string>
 
@@ -1266,6 +1267,8 @@ namespace e9frontend
         Targets targets;                // Jump/Call targets [optional]
 
         mutable Symbols symbols;        // Symbol cache.
+        std::list<Elf64_Shdr> sec_cache;// Extra allocated sections (PE).
+        std::string str_cache;          // Extra allocated strings (PE).
     };
 };
 
@@ -2456,14 +2459,15 @@ ELF *e9frontend::parsePE(const char *filename)
      */
     SectionInfo sections;
     std::map<off_t, const Elf64_Shdr *> exes;
-    std::string strtab;
+    std::string strs;
+    std::list<Elf64_Shdr> secs;
     for (uint16_t i = 0; i < file_hdr->NumberOfSections; i++)
     {
         const IMAGE_SECTION_HEADER *shdr = shdrs + i;
         off_t offset  = (off_t)shdr->PointerToRawData;
         intptr_t addr = (intptr_t)shdr->VirtualAddress;
         size_t size   = (size_t)shdr->VirtualSize;
-        Elf64_Shdr *elf_shdr = new Elf64_Shdr;
+        Elf64_Shdr elf_shdr;
 
         uint64_t flags = 0;
         if (offset != 0)
@@ -2472,25 +2476,27 @@ ELF *e9frontend::parsePE(const char *filename)
             flags |= SHF_WRITE;
         if ((shdr->Characteristics & IMAGE_SCN_MEM_EXECUTE) != 0)
             flags |= SHF_EXECINSTR;
-        elf_shdr->sh_name      = strtab.size();
-        elf_shdr->sh_type      = SHT_PROGBITS;
-        elf_shdr->sh_flags     = flags;
-        elf_shdr->sh_addr      = addr;
-        elf_shdr->sh_offset    = offset;
-        elf_shdr->sh_size      = size;
-        elf_shdr->sh_link      = 0;
-        elf_shdr->sh_info      = 0;
-        elf_shdr->sh_addralign = PAGE_SIZE;
-        elf_shdr->sh_entsize   = 0;
+        elf_shdr.sh_name      = strs.size();
+        elf_shdr.sh_type      = SHT_PROGBITS;
+        elf_shdr.sh_flags     = flags;
+        elf_shdr.sh_addr      = addr;
+        elf_shdr.sh_offset    = offset;
+        elf_shdr.sh_size      = size;
+        elf_shdr.sh_link      = 0;
+        elf_shdr.sh_info      = 0;
+        elf_shdr.sh_addralign = PAGE_SIZE;
+        elf_shdr.sh_entsize   = 0;
 
         const char *name = shdr->Name;
-        strtab += shdr->Name;
-        strtab += '\0';
+        strs += shdr->Name;
+        strs += '\0';
 
-        sections.insert({name, elf_shdr});
+        secs.push_back(elf_shdr);
+        const Elf64_Shdr *elf_shdr_ptr = &secs.back();
+        sections.insert({name, elf_shdr_ptr});
         if ((shdr->Characteristics & IMAGE_SCN_MEM_EXECUTE) != 0 &&
                 (shdr->Characteristics & IMAGE_SCN_CNT_CODE) != 0)
-            exes.insert({offset, elf_shdr});
+            exes.insert({offset, elf_shdr_ptr});
     }
 
     ELF *elf = new ELF;
@@ -2499,7 +2505,7 @@ ELF *e9frontend::parsePE(const char *filename)
     elf->size           = size;
     elf->base           = (intptr_t)opt_hdr->ImageBase;
     elf->end            = elf->base + (intptr_t)opt_hdr->SizeOfImage;;
-    elf->strs           = new char[strtab.size()];
+    elf->strs           = strs.data();
     elf->phdrs          = nullptr;
     elf->phnum          = 0;
     elf->type           = type;
@@ -2509,7 +2515,8 @@ ELF *e9frontend::parsePE(const char *filename)
     elf->exes.reserve(exes.size());
     for (const auto &entry: exes)
         elf->exes.push_back(entry.second);
-    memcpy((void *)elf->strs, strtab.c_str(), strtab.size());
+    elf->sec_cache.swap(secs);
+    elf->str_cache.swap(strs);
 
     return elf;
 }
@@ -2543,17 +2550,6 @@ ELF *e9frontend::parseBinary(const char *filename, intptr_t base)
  */
 void freeELF(ELF *elf)
 {
-    switch (elf->type)
-    {
-        case BINARY_TYPE_PE_DLL: case BINARY_TYPE_PE_EXE:
-            // For Windows PE, the ELF objects are allocated by `new':
-            for (auto &entry: elf->sections)
-                delete entry.second;
-            delete elf->strs;
-            break;
-        default:
-            break;
-    }
     free((void *)elf->filename);
     munmap((void *)elf->data, elf->size);
     delete elf;
