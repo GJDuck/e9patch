@@ -1,10 +1,12 @@
 /*
  * Windows implementation of PRINT instrumentation (print.c)
  *
- * Usage:
+ * Example usage:
  *
  *    ./e9compile.sh examples/win64_demo.c -mabi=ms
- *    ./e9tool -M ... -A 'call entry(config,addr,instr,size,asm)@win64_demo' \
+ *    ./e9tool \
+ *          -M 'asm=xor.*' \
+ *          -P 'entry(config,addr,instr,size,asm)@win64_demo' \
  *          prog.exe
  *
  * NOTE: Do not forget to pass `-mabi=ms' to e9compile.sh else the demo will
