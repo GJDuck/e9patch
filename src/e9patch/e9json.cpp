@@ -535,6 +535,7 @@ static bool validateParam(Method method, ParamName paramName)
                 case PARAM_ABSOLUTE:
                 case PARAM_ADDRESS:
                 case PARAM_BYTES:
+                case PARAM_FINI:
                 case PARAM_INIT:
                 case PARAM_LENGTH:
                 case PARAM_MMAP:
@@ -1066,6 +1067,8 @@ static void parseParams(Parser &parser, Message &msg)
                     name = PARAM_FILENAME;
                 else if (strcmp(parser.s, "format") == 0)
                     name = PARAM_FORMAT;
+                else if (strcmp(parser.s, "fini") == 0)
+                    name = PARAM_FINI;
                 break;
             case 'i':
                 if (strcmp(parser.s, "init") == 0)
@@ -1115,6 +1118,7 @@ static void parseParams(Parser &parser, Message &msg)
                 case PARAM_OFFSET:
                 case PARAM_LENGTH:
                 case PARAM_INIT:
+                case PARAM_FINI:
                 case PARAM_MMAP:
                     token = expectToken2(parser, TOKEN_NUMBER, TOKEN_STRING);
                     if (token == TOKEN_NUMBER)

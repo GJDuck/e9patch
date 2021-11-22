@@ -475,7 +475,7 @@ struct JumpInfo
 typedef std::map<off_t, Instr *> InstrSet;
 typedef std::deque<PatchEntry> PatchQueue;
 typedef std::map<const char *, Trampoline *, CStrCmp> TrampolineSet;
-typedef std::vector<intptr_t> InitSet;
+typedef std::vector<intptr_t> FuncSet;
 typedef std::vector<JumpInfo> JumpSet;
 struct Binary
 {
@@ -514,7 +514,8 @@ struct Binary
     mutable JumpSet Js;                 // All observed jumps (-Opeephole).
     Allocator allocator;                // Virtual address allocation.
 
-    InitSet inits;                      // Initialization functions.
+    FuncSet inits;                      // Initialization functions.
+    FuncSet finis;                      // Finalization functions.
     intptr_t mmap = INTPTR_MIN;         // Mmap function.
 };
 

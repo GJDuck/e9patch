@@ -1,0 +1,1 @@
+./test.libc -M call -P '"trap"()@fini'

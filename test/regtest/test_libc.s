@@ -35,9 +35,8 @@ main:
     movl $1, %eax
     call fprintf@PLT
 
-    mov $60,%eax    # SYS_exit
-    mov $0, %edi
-    syscall
+    xor %edi,%edi
+    call exit@PLT
 
     movabs $0x1111111111111111, %r15
     movabs $0x1111111111111111, %r15

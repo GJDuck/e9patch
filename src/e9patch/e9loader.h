@@ -48,11 +48,14 @@ struct e9_config_s
     uint32_t size;                              // Loader total size
     intptr_t base;                              // Loader base address
     intptr_t entry;                             // Real entry point
+    intptr_t fini;                              // Real fini() function
     intptr_t mmap;                              // mmap(), or 0x0
     uint32_t num_maps[2];                       // # Mappings
     uint32_t maps[2];                           // Mappings offset
     uint32_t num_inits;                         // # Init functions
     uint32_t inits;                             // Init functions offset
+    uint32_t num_finis;                         // # Fini functions
+    uint32_t finis;                             // Fini functions offset
 };
 
 /*

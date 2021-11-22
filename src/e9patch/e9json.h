@@ -50,6 +50,7 @@ enum ParamName
     PARAM_ARGV,
     PARAM_BYTES,
     PARAM_FILENAME,
+    PARAM_FINI,
     PARAM_FORMAT,
     PARAM_INIT,
     PARAM_LENGTH,

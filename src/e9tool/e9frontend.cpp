@@ -1607,8 +1607,8 @@ unsigned e9frontend::sendReserveMessage(FILE *out, intptr_t addr, size_t len,
  * Send a "reserve" message.
  */
 unsigned e9frontend::sendReserveMessage(FILE *out, intptr_t addr,
-    const uint8_t *data, size_t len, int prot, intptr_t init, intptr_t mmap,
-    bool absolute)
+    const uint8_t *data, size_t len, int prot, intptr_t init, intptr_t fini,
+    intptr_t mmap, bool absolute)
 {
     sendMessageHeader(out, "reserve");
     sendParamHeader(out, "address");
@@ -1624,6 +1624,12 @@ unsigned e9frontend::sendReserveMessage(FILE *out, intptr_t addr,
     {
         sendParamHeader(out, "init");
         sendInteger(out, init);
+        sendSeparator(out);
+    }
+    if (fini != 0x0)
+    {
+        sendParamHeader(out, "fini");
+        sendInteger(out, fini);
         sendSeparator(out);
     }
     if (mmap != 0x0)
@@ -2716,6 +2722,8 @@ void e9frontend::sendELFFileMessage(FILE *out, const ELF *ptr, bool absolute)
         sig = TYPESIG_EMPTY;
         init = ::lookupSymbol(&elf, "init", sig);
     }
+    sig = TYPESIG_EMPTY;
+    intptr_t fini = ::lookupSymbol(&elf, "fini", sig);
     sig = getMMapSig();
     intptr_t mmap = ::lookupSymbol(&elf, "mmap", sig);
     if (mmap == INTPTR_MIN)
@@ -2755,6 +2763,13 @@ void e9frontend::sendELFFileMessage(FILE *out, const ELF *ptr, bool absolute)
         {
             sendParamHeader(out, "init");
             sendInteger(out, init);
+            sendSeparator(out);
+        }
+        if ((phdr->p_flags & PF_X) != 0 && fini >= phdr_base &&
+                fini <= phdr_end)
+        {
+            sendParamHeader(out, "fini");
+            sendInteger(out, fini);
             sendSeparator(out);
         }
         if ((phdr->p_flags & PF_X) != 0 && mmap >= phdr_base &&

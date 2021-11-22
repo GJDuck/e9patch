@@ -28,7 +28,7 @@ to be used directly.
         * [2.2.2 Call Trampoline ABI](#s222)
         * [2.2.3 Conditional Call Trampoline](#s223)
         * [2.2.4 Call Trampoline Standard Library](#s224)
-        * [2.2.5 Call Trampoline Initialization](#s225)
+        * [2.2.5 Call Trampoline Initialization and Finalization](#s225)
         * [2.2.6 Call Trampoline Dynamic Loading](#s226)
     - [2.3 Plugin Trampolines](#s23)
     - [2.4 Trampoline Composition](#s24)
@@ -998,9 +998,9 @@ Unlike `glibc` the parallel libc is designed to be compatible with the clean
 ABI and handle problems, such as deadlocks, more gracefully.
 
 ---
-#### <a id="s225">2.2.5 Call Trampoline Initialization</a>
+#### <a id="s225">2.2.5 Call Trampoline Initialization and Finalization</a>
 
-It is also possible to define an initialization function in the
+It is possible to define an initialization function in the
 instrumentation code.
 For example:
 
@@ -1024,6 +1024,22 @@ the environment pointer (`envp`) will be passed as arguments to the function.
 
 In the example above, the initialization function searches for an
 environment variable `MAX`, and sets the `max` counter accordingly.
+
+For dynamically linked binaries, it is also possible to define a finalization
+function that will be called during normal program exit.
+For example:
+
+        #include "stdlib.h"
+
+        void fini(void)
+        {
+            fflush(stdout);
+        }
+
+The finalization funtion must be named `fini` and takes no arguments.
+Note that the finalization function will not be called if the program exits
+abnormally, such as a signal (`SIGSEGV`) or if the program calls "fast" exit
+(`_exit()`).
 
 ---
 #### <a id="s226">2.2.6 Call Trampoline Dynamic Loading</a>

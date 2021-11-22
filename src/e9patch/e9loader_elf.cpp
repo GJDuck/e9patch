@@ -39,28 +39,36 @@
 
 extern "C"
 {
-    void *e9loader(int argc, char **argv, char **envp,
+    void *e9init(int argc, char **argv, char **envp,
         const struct e9_config_s *config);
+    void *e9fini(const struct e9_config_s *config);
     intptr_t e9syscall(long number, ...);
 }
 
+/*
+ * E9Patch loader entry point.
+ */
 asm (
-    /*
-     * E9Patch loader entry point.
-     */
-    ".globl _entry\n"
-    ".type _entry,@function\n"
     ".section .text.entry,\"x\",@progbits\n"
-    "_entry:\n"
-    "\tcallq e9loader\n"
+
+    "_init:\n"          // _init() offset = +0
+    "\tcallq e9init\n"
     "\tpop %rdx\n"
     "\tpop %rsi\n"
     "\tpop %rdi\n"
     "\tjmpq *%rax\n"
 
+    ".align 16\n"       // _fini() offset = +16
+    "_fini:\n"
+    "\tcallq e9fini\n"
+    "\tjmpq *%rax\n"
+
+    ".section .text\n"
+);
+
+asm (
     ".globl e9syscall\n"
     ".type e9syscall,@function\n"
-    ".section .text\n"
     "e9syscall:\n"
     "\tmov %edi, %eax\n"
     "\tmov %rsi, %rdi\n"
@@ -122,6 +130,7 @@ static intptr_t e9mmap(void *ptr, size_t len, int prot, int flags, int fd,
 
 typedef intptr_t (*mmap_t)(void *, size_t, int, int, int, off_t);
 typedef void (*init_t)(int, char **, char **, const void *, const void *);
+typedef void (*fini_t)(const void *);
 
 /*
  * Load a set of maps.
@@ -155,9 +164,9 @@ static NO_INLINE void e9load_maps(const e9_map_s *maps, uint32_t num_maps,
 }
 
 /*
- * Main loader code.
+ * Loader initialization code.
  */
-void *e9loader(int argc, char **argv, char **envp, const e9_config_s *config)
+void *e9init(int argc, char **argv, char **envp, const e9_config_s *config)
 {
     // Step (0): Sanity checks & initialization:
     if (config->magic[0] != 'E' || config->magic[1] != '9' ||
@@ -208,7 +217,7 @@ void *e9loader(int argc, char **argv, char **envp, const e9_config_s *config)
     if (config_elf->dynamic != 0x0)
         dynamic = (const void *)(elf_base + config_elf->dynamic);
     const intptr_t *inits = (const intptr_t *)(loader_base + config->inits);
-    for (uint16_t i = 0; i < config->num_inits; i++)
+    for (uint32_t i = 0; i < config->num_inits; i++)
     {
         init_t init = (init_t)(elf_base + inits[i]);
         init(argc, argv, envp, dynamic, config);
@@ -217,5 +226,24 @@ void *e9loader(int argc, char **argv, char **envp, const e9_config_s *config)
     // Step (4): Return the entry point:
     void *entry = (void *)(elf_base + config->entry);
     return entry;
+}
+
+/*
+ * Loader finalization code.
+ */
+void *e9fini(const e9_config_s *config)
+{
+    const uint8_t *loader_base = (const uint8_t *)config;
+    const uint8_t *elf_base    = loader_base - config->base;
+
+    const intptr_t *finis = (const intptr_t *)(loader_base + config->finis);
+    for (uint32_t i = 0; i < config->num_finis; i++)
+    {
+        fini_t fini = (fini_t)(elf_base + finis[i]);
+        fini(config);
+    }
+
+    void *fini = (void *)(elf_base + config->fini);
+    return fini;
 }
 

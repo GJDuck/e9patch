@@ -1,0 +1,4 @@
+./test.libc -M false -P '"trap"()@fini'
+
+fini() needs dynamic exes.
+

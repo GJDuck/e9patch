@@ -373,9 +373,11 @@ page level.
   This is mandatory if `"length"` is unspecified.
 * `"length"`: [optional] the length of the reservation.
   This is mandatory if `"bytes"` is unspecified.
-* `"init"`: [optional] an address of an initialization routine that will
+* `"init"`: [optional] the address of an initialization routine that will
   be called when the patched program is loaded into memory.
-* `"mmap"`: [optional] an address of a replacement implementation of
+* `"fini"`: [optional] the address of a finalization routine that will be
+  called when the patched program exits normally.
+* `"mmap"`: [optional] the address of a replacement implementation of
   `mmap()` that will be used during the patched program's initialization.
   This is for advanced applications only.
 * `"protection"`: [optional] the page permissions represented as a

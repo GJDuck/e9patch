@@ -522,13 +522,14 @@ static void parseReserve(Binary *B, const Message &msg)
     bool absolute     = false;
     intptr_t address  = 0;
     intptr_t init     = 0;
+    intptr_t fini     = 0;
     intptr_t mmap     = 0;
     size_t length     = 0;
     Trampoline *bytes = nullptr;
     int protection    = PROT_READ | PROT_EXEC;
     bool have_address = false, have_protection = false, have_init = false,
-        have_mmap = false, have_length = false, have_absolute = false,
-        dup = false;
+        have_fini = false, have_mmap = false, have_length = false,
+        have_absolute = false, dup = false;
     for (unsigned i = 0; i < msg.num_params; i++)
     {
         switch (msg.params[i].name)
@@ -551,6 +552,11 @@ static void parseReserve(Binary *B, const Message &msg)
                 dup = dup || have_init;
                 init = (intptr_t)msg.params[i].value.integer;
                 have_init = true;
+                break;
+            case PARAM_FINI:
+                dup = dup || have_fini;
+                fini = (intptr_t)msg.params[i].value.integer;
+                have_fini = true;
                 break;
             case PARAM_LENGTH:
                 dup = dup || have_length;
@@ -593,6 +599,17 @@ static void parseReserve(Binary *B, const Message &msg)
                 "parameter value (" ADDRESS_FORMAT ") is out-of-bounds",
                 msg.id, ADDRESS(address));
         B->inits.push_back(init);
+    }
+    if (have_fini)
+    {
+        if (absolute && B->pic)
+            fini = ABSOLUTE_ADDRESS(fini);
+        if (bytes == nullptr || fini < address ||
+                fini >= address + bytes->entries[0].length)
+            error("failed to parse \"reserve\" message (id=%u); \"fini\" "
+                "parameter value (" ADDRESS_FORMAT ") is out-of-bounds",
+                msg.id, ADDRESS(address));
+        B->finis.push_back(fini);
     }
     if (have_mmap)
     {

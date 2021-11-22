@@ -2320,7 +2320,7 @@ extern unsigned sendReserveMessage(FILE *out, intptr_t addr, size_t len,
     bool absolute = false);
 extern unsigned sendReserveMessage(FILE *out, intptr_t addr,
     const uint8_t *data, size_t len, int prot, intptr_t init = 0x0,
-    intptr_t mmap = 0x0, bool absolute = false);
+    intptr_t fini = 0x0, intptr_t mmap = 0x0, bool absolute = false);
 extern void sendELFFileMessage(FILE *out, const ELF *elf,
     bool absolute = false);
 extern unsigned sendEmptyTrampolineMessage(FILE *out);

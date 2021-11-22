@@ -515,6 +515,8 @@ void *e9loader(PEB *peb, const struct e9_config_s *config)
         e9error("missing \"E9PATCH\" magic number");
     if (config->inits != 0x0)
         e9error("custom initialization functions are not-yet-implemented");
+    if (config->finis != 0x0)
+        e9error("custom finalization functions are not-yet-implemented");
     if (config->mmap != 0x0)
         e9error("custom memory mapping functions are not-yet-implemented");
 

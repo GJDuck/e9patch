@@ -493,6 +493,12 @@ size_t emitPE(Binary *B, const MappingSet &mappings, size_t mapping_size)
         warning("ignoring `--loader-phdr' option for Windows PE binary");
     if (option_loader_static_set)
         warning("ignoring `--loader-static' option for Windows PE binary");
+    if (B->inits.size() > 0)
+        error("initialization routines are non-yet-implemented for "
+            "Windows PE binaries");
+    if (B->finis.size() > 0)
+        error("finalization routines are non-yet-implemented for "
+            "Windows PE binaries");
     stat_output_file_size = size;
     return size;
 }

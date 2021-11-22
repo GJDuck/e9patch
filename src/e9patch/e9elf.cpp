@@ -328,13 +328,21 @@ size_t emitElf(Binary *B, const MappingSet &mappings, size_t mapping_size)
     if (B->mmap != INTPTR_MIN)
         config->mmap = B->mmap;
 
-    config->inits = (uint32_t)(size - config_offset);
+    config->inits = (B->inits.size() > 0? (uint32_t)(size - config_offset): 0);
     for (auto init: B->inits)
     {
         memcpy(data + size, &init, sizeof(init));
         size += sizeof(init);
         config->num_inits++;
     }
+    config->finis = (B->finis.size() > 0? (uint32_t)(size - config_offset): 0);
+    for (auto fini: B->finis)
+    {
+        memcpy(data + size, &fini, sizeof(fini));
+        size += sizeof(fini);
+        config->num_finis++;
+    }
+
     std::vector<Bounds> bounds;
     intptr_t ub = INTPTR_MIN;
     // level 0 == non-trampoline mappings (reserves, refactors), default mmap()
@@ -402,6 +410,24 @@ size_t emitElf(Binary *B, const MappingSet &mappings, size_t mapping_size)
             "exceed maximum mapping address (0x%lx) (see `--mem-ub')",
             option_loader_base, ub);
     }
+
+    intptr_t fini = 0x0;
+    size_t fini_rel8_offset = 0;
+    int32_t config_rel32;
+    if (B->finis.size() > 0)
+    {
+        fini = (option_loader_base + (size - config_offset));
+        // lea config(%rip), %rdi
+        // jmp _fini
+        data[size++] = 0x48; data[size++] = 0x8D; data[size++] = 0x3D;
+        config_rel32 = -(int32_t)((size + sizeof(int32_t)) - config_offset);
+        memcpy(data + size, &config_rel32, sizeof(config_rel32));
+        size += sizeof(config_rel32);
+        data[size++] = 0xEB;
+        fini_rel8_offset = size;
+        data[size++] = 0x00;
+    }
+
     intptr_t entry = (option_loader_base + (size - config_offset));
     if (option_trap_entry)
         data[size++] = /*int3=*/0xCC;
@@ -428,21 +454,49 @@ size_t emitElf(Binary *B, const MappingSet &mappings, size_t mapping_size)
     }
     // lea config(%rip), %rcx
     data[size++] = 0x48; data[size++] = 0x8D; data[size++] = 0x0D;
-    int32_t config_rel32 =
-        -(int32_t)((size + sizeof(int32_t)) - config_offset);
+    config_rel32 = -(int32_t)((size + sizeof(int32_t)) - config_offset);
     memcpy(data + size, &config_rel32, sizeof(config_rel32));
     size += sizeof(config_rel32);
+    // Fallthrough to _init() ...
+
+    if (fini != 0x0)
+    {
+        int8_t fini_rel8 = (int8_t)(size - fini_rel8_offset - 1 +
+            /*_fini() offset=*/16);
+        data[fini_rel8_offset] = (uint8_t)fini_rel8;
+    }
+
     memcpy(data + size, e9loader_elf_bin, sizeof(e9loader_elf_bin));
     size += sizeof(e9loader_elf_bin);
     size_t config_size = size - config_offset;
     config->size = (uint32_t)(config_size % PAGE_SIZE == 0? config_size:
         config_size + PAGE_SIZE - (config_size % PAGE_SIZE));
 
-    // Step (5): Modify the entry address.
+    // Step (5): Modify the entry/fini addresses.
     Elf64_Phdr *phdr = B->elf.phdr_dynamic;
-    intptr_t dynamic = -1;
+    Elf64_Dyn *dyn_init = nullptr, *dyn_fini = nullptr;
     if (phdr != nullptr)
-        config_elf->dynamic = dynamic = (intptr_t)phdr->p_vaddr;
+    {
+        config_elf->dynamic = (intptr_t)phdr->p_vaddr;
+        Elf64_Dyn *dynamic = (Elf64_Dyn *)(data + phdr->p_offset);
+        size_t num_dynamic = phdr->p_memsz / sizeof(Elf64_Dyn);
+        for (size_t i = 0; i < num_dynamic; i++)
+        {
+            if (dynamic[i].d_tag == DT_NULL)
+                break;
+            switch (dynamic[i].d_tag)
+            {
+                case DT_INIT:
+                    dyn_init = dynamic + i;
+                    break;
+                case DT_FINI:
+                    dyn_fini = dynamic + i;
+                    break;
+                default:
+                    break;
+            }
+        }
+    }
     switch (B->mode)
     {
         case MODE_ELF_EXE:
@@ -454,30 +508,22 @@ size_t emitElf(Binary *B, const MappingSet &mappings, size_t mapping_size)
             break;
         }
         case MODE_ELF_DSO:
-        {
-            if (phdr == nullptr)
-                error("failed to replace DT_INIT entry; missing PT_DYNAMIC "
-                    "program header");
-            Elf64_Dyn *dynamic = (Elf64_Dyn *)(data + phdr->p_offset);
-            size_t num_dynamic = phdr->p_memsz / sizeof(Elf64_Dyn);
-            bool found = false;
-            for (size_t i = 0; !found && i < num_dynamic; i++)
-            {
-                if (dynamic[i].d_tag == DT_NULL)
-                    break;
-                if (dynamic[i].d_tag == DT_INIT)
-                {
-                    found = true;
-                    config->entry = (intptr_t)dynamic[i].d_un.d_ptr;
-                    dynamic[i].d_un.d_ptr = (Elf64_Addr)entry;
-                }
-            }
-            if (!found)
-                error("failed to replace DT_INIT entry; entry was not found");
+            if (dyn_init == nullptr)
+                error("failed to replace DT_INIT entry; no DT_INIT entry "
+                    "was found");
+            config->entry = (intptr_t)dyn_init->d_un.d_ptr;
+            dyn_init->d_un.d_ptr = (Elf64_Addr)entry;
             break;
-        }
         default:
             error("invalid mode");
+    }
+    if (fini != 0x0)
+    {
+        if (dyn_fini == nullptr)
+            error("failed to replace DT_FINI entry; no DT_FINI entry was "
+                "found");
+        config->fini = (intptr_t)dyn_fini->d_un.d_ptr;
+        dyn_fini->d_un.d_ptr = (Elf64_Addr)fini;
     }
 
     // Step (6): Modify the PHDR to load the loader.
@@ -503,8 +549,7 @@ size_t emitElf(Binary *B, const MappingSet &mappings, size_t mapping_size)
             break;
     }
     if (phdr == nullptr)
-        error("failed to replace PHDR entry; missing %s segment",
-            phdr_str);
+        error("failed to replace PHDR entry; missing %s segment", phdr_str);
     phdr->p_type   = PT_LOAD;
     phdr->p_flags  = PF_X | PF_R;
     phdr->p_offset = config_offset;
