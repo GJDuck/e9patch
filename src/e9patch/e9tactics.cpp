@@ -496,7 +496,7 @@ static Patch *tactic_T3b(Binary &B, Instr *I, const Trampoline *T)
     if (I->size != 1 || !option_tactic_T3 || !canInstrument(I))
         return nullptr;
     Instr *J = I->next;
-    if (J == nullptr)
+    if (J == nullptr || I->addr + I->size != J->addr)
         return nullptr;
     switch (J->patched.state[0])
     {
