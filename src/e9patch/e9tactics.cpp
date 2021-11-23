@@ -526,14 +526,14 @@ static Patch *tactic_T3b(Binary &B, Instr *I, const Trampoline *T)
     uint8_t state = J->patched.state[i];
     Patch *P = nullptr;
     const Alloc *A = nullptr;
-    bool save = (bool)J->no_optimize;
-    if (target < I->addr)
-        J->no_optimize = true;
     switch (state)
     {
         case STATE_INSTRUCTION:
         case STATE_FREE:
         {
+            bool save = (bool)J->no_optimize;
+            if (target < I->addr)
+                J->no_optimize = true;
             A = allocatePunnedJump(B, J, i, I, T);
             if (A == nullptr)
             {
@@ -558,8 +558,8 @@ static Patch *tactic_T3b(Binary &B, Instr *I, const Trampoline *T)
             if (Q == nullptr)
             {
                 // Eviction failed...
-                undo(B, P);
                 J->no_optimize = save;
+                undo(B, P);
                 return nullptr;
             }
             Q->next = P;
@@ -569,11 +569,6 @@ static Patch *tactic_T3b(Binary &B, Instr *I, const Trampoline *T)
         }
         default:
             return nullptr;
-    }
-    if (P == nullptr)
-    {
-        J->no_optimize = save;
-        return nullptr;
     }
 
     assert(A != nullptr);
@@ -613,7 +608,6 @@ static Patch *tactic_T3(Binary &B, Instr *I, const Trampoline *T)
     Patch *P = nullptr;
     const Alloc *A = nullptr;
     intptr_t addr = 0;
-    bool save = (bool)J->no_optimize;
     for (; P == nullptr; J = J->prev)
     {
         if (J == I)
@@ -622,8 +616,6 @@ static Patch *tactic_T3(Binary &B, Instr *I, const Trampoline *T)
             break;
         if (!option_tactic_backward_T3 && J->addr < I->addr)
             break;
-        if (J->addr < I->addr)
-            J->no_optimize = true;
         if ((I->addr + /*sizeof(short jmp)=*/2) - (J->addr + J->size -1) >
                 -SHORT_JMP_MIN)
         {
@@ -676,9 +668,15 @@ static Patch *tactic_T3(Binary &B, Instr *I, const Trampoline *T)
                 case STATE_INSTRUCTION:
                 {
                     // Step (2a): Attempt to insert a jump here:
+                    bool save = J->no_optimize;
+                    if (J->addr < I->addr)
+                        J->no_optimize = true;
                     A = allocatePunnedJump(B, J, i, I, T);
                     if (A == nullptr)
+                    {
+                        J->no_optimize = save;
                         continue;
+                    }
                     addr = J->addr + i;
                     P = new Patch(J, TACTIC_T3, A);
                     patchJump(P, i);
@@ -698,6 +696,7 @@ static Patch *tactic_T3(Binary &B, Instr *I, const Trampoline *T)
                     if (Q == nullptr)
                     {
                         // Eviction failed...
+                        J->no_optimize = save;
                         undo(B, P);
                         P = nullptr;
                         continue;
@@ -713,11 +712,7 @@ static Patch *tactic_T3(Binary &B, Instr *I, const Trampoline *T)
         }
     }
     if (P == nullptr)
-    {
-        if (J != nullptr)
-            J->no_optimize = save;
         return nullptr;             // T3 failed
-    }
 
     // Step (3): Insert a short jump to the trampoline jump:
     assert(A != nullptr);

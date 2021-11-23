@@ -406,7 +406,7 @@ void parseOptions(char * const argv[], bool api)
         {"tactic-T1",          opt_arg, nullptr, OPTION_TACTIC_T1},
         {"tactic-T2",          opt_arg, nullptr, OPTION_TACTIC_T2},
         {"tactic-T3",          opt_arg, nullptr, OPTION_TACTIC_T3},
-        {"tactic-backward-T3", no_arg,  nullptr, OPTION_TACTIC_BACKWARD_T3},
+        {"tactic-backward-T3", opt_arg, nullptr, OPTION_TACTIC_BACKWARD_T3},
         {"trap",               req_arg, nullptr, OPTION_TRAP},
         {"trap-all",           opt_arg, nullptr, OPTION_TRAP_ALL},
         {"trap-entry",         opt_arg, nullptr, OPTION_TRAP_ENTRY},
