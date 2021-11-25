@@ -252,7 +252,7 @@ static size_t emitRefactoredPatch(const uint8_t *original, uint8_t *data,
  * Emit a mapping.
  */
 size_t emitLoaderMap(uint8_t *data, intptr_t addr, size_t len, off_t offset,
-    bool r, bool w, bool x, intptr_t *ub)
+    bool r, bool w, bool x, uint32_t type, intptr_t *ub)
 {
     bool abs = IS_ABSOLUTE(addr);
     if (ub != nullptr && !abs)
@@ -278,6 +278,7 @@ size_t emitLoaderMap(uint8_t *data, intptr_t addr, size_t len, off_t offset,
     map->addr   = (int32_t)addr;
     map->offset = (uint32_t)offset;
     map->size   = (uint16_t)len;
+    map->type   = type;
     map->r      = (r? 1: 0);
     map->w      = (w? 1: 0);
     map->x      = (x? 1: 0);
@@ -380,7 +381,9 @@ size_t emitElf(Binary *B, const MappingSet &mappings, size_t mapping_size)
                     stat_num_virtual_bytes += len;
 
                     size += emitLoaderMap(data + size, base, len, offset,
-                        r, w, x, &ub);
+                        r, w, x,
+                        (level == 0? E9_TYPE_RESERVE: E9_TYPE_TRAMPOLINE),
+                        &ub);
                     config->num_maps[level]++;
                 }
             }
@@ -396,7 +399,7 @@ size_t emitElf(Binary *B, const MappingSet &mappings, size_t mapping_size)
                     refactor.patched.offset);
                 size += emitLoaderMap(data + size, refactor.addr,
                     refactor.size, refactor.patched.offset, /*r=*/true,
-                    /*w=*/false, /*x=*/true, nullptr);
+                    /*w=*/false, /*x=*/true, E9_TYPE_REFACTOR, nullptr);
                 config->num_maps[level]++;
             }
         }

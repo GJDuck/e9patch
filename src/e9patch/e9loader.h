@@ -29,12 +29,17 @@
 
 #define E9_FLAG_EXE                 0x1
 
+#define E9_TYPE_TRAMPOLINE          0x0
+#define E9_TYPE_RESERVE             0x1
+#define E9_TYPE_REFACTOR            0x2
+
 struct e9_map_s
 {
     int32_t  addr;                              // Address (/ PAGE_SIZE)
     uint32_t offset;                            // Offset  (/ PAGE_SIZE)
     uint32_t size:20;                           // Size    (/ PAGE_SIZE)
-    uint32_t __reserved:8;                      // Reserved
+    uint32_t type:2;                            // Type
+    uint32_t __reserved:6;                      // Reserved
     uint32_t r:1;                               // Read?
     uint32_t w:1;                               // Write?
     uint32_t x:1;                               // Execute?

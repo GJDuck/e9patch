@@ -324,7 +324,7 @@ size_t emitPE(Binary *B, const MappingSet &mappings, size_t mapping_size)
                 stat_num_virtual_bytes += len;
 
                 size += emitLoaderMap(data + size, base, len, offset,
-                    r, w, x, nullptr);
+                    r, w, x, E9_TYPE_TRAMPOLINE, nullptr);
                 config->num_maps[1]++;
             }
         }
