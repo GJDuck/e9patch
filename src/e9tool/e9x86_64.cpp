@@ -2278,3 +2278,73 @@ static uint16_t convert(ZydisInstructionCategory category, ZydisISAExt isa)
     }
 }
 
+/*
+ * Assigns a "suspiciousness" score to instructions.
+ */
+static int suspiciousness(const uint8_t *bytes, size_t size)
+{
+    if (size == 0) return INT32_MAX;
+    int score = 0;
+    uint8_t rex = 0x0, seg = 0x0, rep = 0x0;
+    int i;
+    for (i = 0; i < (int)size; i++)
+    {
+        bool done = false;
+        switch (bytes[i])
+        {
+            case 0x66: case 0x67:
+                break;      // redundant 0x66/0x67 prefixes allowable
+            case 0xf0: case 0xf2: case 0xf3:
+            case 0x2e: case 0x36: case 0x3e: case 0x26: case 0x64: case 0x65:
+            case 0x40: case 0x41: case 0x42: case 0x43: case 0x44: case 0x45:
+            case 0x46: case 0x47: case 0x48: case 0x49: case 0x4a: case 0x4b:
+            case 0x4c: case 0x4d: case 0x4e: case 0x4f:
+                for (int j = 0; j < i; j++)
+                    if (bytes[j] == bytes[i]) score++;
+                break;
+            default:
+                done = true;
+                break;
+        }
+        if (done) break;
+        switch (bytes[i])
+        {
+            case 0xf2: case 0xf3:
+                if (rep != 0x0) score++;
+                break;
+            case 0x2e: case 0x36: case 0x3e: case 0x26: case 0x64: case 0x65:
+                if (seg != 0x0) score++;
+                seg = bytes[i];
+                break;
+            case 0x40: case 0x41: case 0x42: case 0x43: case 0x44: case 0x45:
+            case 0x46: case 0x47: case 0x48: case 0x49: case 0x4a: case 0x4b:
+            case 0x4c: case 0x4d: case 0x4e: case 0x4f:
+                if (rex != 0x0) score++;
+                rex = bytes[i];
+                break;
+            default:
+                break;
+        }
+    }
+    if (i >= (int)size) return INT32_MAX;
+    switch (bytes[i])
+    {
+        case 0x00:
+            if (size == 2 && i == 0 && bytes[1] == 0x0)
+                return 2;       // add %al,(%rax)
+            return score;
+        case 0x6c: case 0x6d: case 0x6e: case 0x6f:
+        case 0xec: case 0xed: case 0xee: case 0xef:
+            return INT32_MAX;   // in/out
+        case 0xcf:
+            return INT32_MAX;   // iret
+        case 0x06: case 0x07: case 0x0e: case 0x16: case 0x17:
+        case 0x1e: case 0x27: case 0x2f: case 0x37: case 0x3f:
+        case 0x60: case 0x61: case 0x82: case 0x9a: case 0xd4:
+        case 0xd5: case 0xd6: case 0xea: 
+            return INT32_MAX;   // Invalid
+        default:
+            return score;
+    }
+}
+

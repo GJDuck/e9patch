@@ -69,6 +69,18 @@ struct Exclude
 };
 
 /*
+ * Disassembler desync information.
+ */
+struct Desync
+{
+    intptr_t lo;
+    intptr_t hi;
+    intptr_t addr;
+    const char *section;
+    uint8_t byte;
+};
+
+/*
  * Plugins.
  */
 struct Plugin
@@ -2304,6 +2316,15 @@ static void usage(FILE *stream, const char *progname)
         "\t\tHigher compression makes the output binary smaller, but also\n"
         "\t\tincreases the number of mappings (mmap() calls) required.\n"
         "\n"
+        "\t--Dsync N\n"
+        "\t\tIf the disassembler desyncs (e.g., data in the code section),\n"
+        "\t\tthen automatically exclude N surrounding instructions.\n"
+        "\t\tThe default is 64.\n"
+        "\n"
+        "\t--Dthreshold N\n"
+        "\t\tTreat suspicious instructions as data.  Lower numbers means\n"
+        "\t\tless tolerance.  The default is 2.\n"
+        "\n"
         "\t--debug\n"
         "\t\tEnable debug output.\n"
         "\n"
@@ -2399,6 +2420,8 @@ enum Option
     OPTION_ACTION,
     OPTION_BACKEND,
     OPTION_COMPRESSION,
+    OPTION_DSYNC,
+    OPTION_DTHRESHOLD,
     OPTION_DEBUG,
     OPTION_EXCLUDE,
     OPTION_EXECUTABLE,
@@ -2444,6 +2467,33 @@ static void getExePath(std::string &path)
 }
 
 /*
+ * Parse an integer from an optarg.
+ */
+static intptr_t parseIntOptArg(const char *option, const char *optarg,
+    intptr_t lb, intptr_t ub)
+{
+    const char *optarg_0 = optarg;
+    bool neg = (optarg[0] == '-');
+    if (neg)
+        optarg++;
+    int base = 10;
+    if (optarg[0] == '0' && optarg[1] == 'x')
+        base = 16;
+    errno = 0;
+    char *end = nullptr;
+    intptr_t r = (intptr_t)strtoul(optarg, &end, base);
+    r = (neg? -r: r);
+    if (errno != 0 || end == optarg ||
+            (end != nullptr && *end != '\0') || r < lb || r > ub)
+    {
+        error("failed to parse argument \"%s\" for the `%s' option; "
+            "expected a number within the range %zd..%zd", option,
+            optarg_0, lb, ub);
+    }
+    return r;
+}
+
+/*
  * Entry.
  */
 int main(int argc, char **argv)
@@ -2458,6 +2508,8 @@ int main(int argc, char **argv)
         {"action",        req_arg, nullptr, OPTION_ACTION},
         {"backend",       req_arg, nullptr, OPTION_BACKEND},
         {"compression",   req_arg, nullptr, OPTION_COMPRESSION},
+        {"Dsync",         req_arg, nullptr, OPTION_DSYNC},
+        {"Dthreshold",    req_arg, nullptr, OPTION_DTHRESHOLD},
         {"debug",         no_arg,  nullptr, OPTION_DEBUG},
         {"exclude",       req_arg, nullptr, OPTION_EXCLUDE},
         {"executable",    no_arg,  nullptr, OPTION_EXECUTABLE},
@@ -2490,6 +2542,7 @@ int main(int argc, char **argv)
     std::vector<std::string> option_patch;
     std::vector<ActionEntry> option_actions;
     std::vector<std::string> option_exclude;
+    int option_sync = 64, option_threshold = 2;
     srand(0xe9e9e9e9);
     while (true)
     {
@@ -2508,10 +2561,16 @@ int main(int argc, char **argv)
                 break;
             case OPTION_COMPRESSION:
             case 'c':
-                if (!isdigit(optarg[0]) || optarg[1] != '\0')
-                    error("bad value \"%s\" for `--compression' "
-                        "option; expected a number 0..9", optarg);
-                option_compression_level = optarg[0] - '0';
+                option_compression_level = (unsigned)parseIntOptArg(
+                    "--compression/-c", optarg, 0, 9);
+                break;
+            case OPTION_DSYNC:
+                option_sync = (int)parseIntOptArg("--Dsync", optarg,
+                    0, UINT16_MAX);
+                break;
+            case OPTION_DTHRESHOLD:
+                option_threshold = (int)parseIntOptArg("--Dthreshold", optarg,
+                    0, 10);
                 break;
             case OPTION_DEBUG:
                 option_debug = true;
@@ -2593,13 +2652,8 @@ int main(int argc, char **argv)
                 break;
             case OPTION_SEED:
             {
-                errno = 0;
-                char *end = nullptr;
-                unsigned long r = strtoul(optarg, &end, 0);
-                if (errno != 0 || end == optarg ||
-                        (end != nullptr && *end != '\0') || r > UINT32_MAX)
-                    error("bad value \"%s\" for `--seed' options; "
-                        "expected an integer 0..%u", optarg, UINT32_MAX);
+                unsigned long r = (unsigned long)parseIntOptArg(
+                    "--seed", optarg, 0, RAND_MAX);
                 srand((unsigned)r);
                 break;
             }
@@ -2852,7 +2906,7 @@ int main(int argc, char **argv)
             options.push_back("-Oorder=true");
             options.push_back("-Opeephole=true");
             options.push_back("-Oscratch-stack=true");
-            options.push_back("--mem-granularity=4096");
+            options.push_back("--mem-granularity=128");
             break;
         case '3':
             options.push_back("--batch");
@@ -2977,6 +3031,7 @@ int main(int argc, char **argv)
      */
     initDisassembler();
     std::vector<Instr> Is;
+    std::vector<Desync> desyncs;
     // Step (1): Find the locations of all instructions:
     for (const auto *shdr: elf.exes)
     {
@@ -2995,7 +3050,8 @@ int main(int argc, char **argv)
         off_t offset         = section_offset;
         intptr_t address     = section_addr;
 
-        bool failed = false;
+        int sync = 0;
+        bool first = true;
         while (true)
         {
             size_t skip = exclude(excludes, address);
@@ -3005,30 +3061,72 @@ int main(int argc, char **argv)
                 offset  += skip;
                 size     = (skip > size? 0: size - skip);
                 code    += skip;
+                sync     = 0;
+                first    = true;
             }
+
             Instr I;
+            const uint8_t *bytes = code;
             if (!decode(&code, &size, &offset, &address, &I))
                 break;
-            if (I.data)
+            I.first = first;
+            first = false;
+
+            int score = suspiciousness(bytes, I.size);
+            if (option_debug && !I.data)
             {
-                warning("failed to disassemble (.byte 0x%.2X) at address "
-                    "0x%lx in section \"%s\"", *(code - I.size), I.address,
-                    section);
-                failed = true;
+                InstrInfo J;
+                getInstrInfo(&elf, &I, &J);
+                debug("%s0x%lx%s: disassemble %s%s%s%s",
+                    (option_is_tty? "\33[31m": ""),
+                    J.address,
+                    (option_is_tty? "\33[0m": ""),
+                    (option_is_tty? "\33[32m": ""),
+                    J.string.instr,
+                    (option_is_tty? "\33[0m": ""),
+                    (score >= option_threshold? " <data?>": ""));
+            }
+
+            if (I.data || score >= option_threshold)
+            {
+                // Data has been detected in the code segment.  We attempt to
+                // handle this by nuking +/- option_sync instructions which
+                // may also be data.  This a very crude heuristic, so the
+                // user will be warned (below).
+                intptr_t lo = I.address, hi = lo + I.size;
+                for (int i = 0; Is.size() > 0 && i < option_sync; i++)
+                {
+                    const Instr J = Is.back();
+                    Is.pop_back();
+                    lo = J.address;
+                    if (J.first)
+                        break;
+                    if (J.sus)
+                        i = 0;
+                }
+                if (desyncs.size() > 0 && lo <= desyncs.back().hi)
+                    desyncs.back().hi = hi;
+                else if (sync >= 0)
+                    desyncs.push_back({lo, hi, (intptr_t)I.address, section,
+                        *bytes});
+                sync = -option_sync;
                 continue;
             }
-            Is.push_back(I);
+            I.sus = (score > 0);
+            if (++sync >= 0)
+                Is.push_back(I);
+            else
+            {
+                if (I.sus)
+                    sync = -option_sync;
+                desyncs.back().hi = I.address + I.size;
+            }
         }
         if (code < end)
             error("failed to disassemble the \"%s\" section 0x%lx..0x%lx; "
                 "could only disassemble the range 0x%lx..0x%lx",
                 section, section_addr, section_addr + section_size,
                 section_addr, section_addr + (code - start));
-        if (failed)
-            error("failed to disassemble the \"%s\" section of \"%s\"; "
-                "this may be caused by (1) data in the \"%s\" section, or "
-                "(2) a bug in the third party disassembler",
-                section, filename, section);
     }
     Is.shrink_to_fit();
     notifyPlugins(out, &elf, Is.data(), Is.size(), EVENT_DISASSEMBLY_COMPLETE);
@@ -3264,6 +3362,30 @@ int main(int argc, char **argv)
      * Finalize all plugins.
      */
     finiPlugins(out, &elf);
+
+    /*
+     * Give warnings if disassembly failed.
+     */
+    std::string exs;
+    for (const auto &entry: desyncs)
+    {
+        warning("failed to disassemble byte 0x%.2X at address 0x%lx in "
+            "section \"%s\"", entry.byte, entry.addr, entry.section);
+        char buf[BUFSIZ];
+        ssize_t r = snprintf(buf, sizeof(buf)-1, "\t\t-E 0x%lx..0x%lx\n",
+            entry.lo, entry.hi);
+        if (r > 0 && (size_t)r < sizeof(buf)-1)
+            exs += buf;
+    }
+    if (exs.size() > 0)
+        warning("failed to cleanly disassemble the binary \"%s\"; data was "
+            "detected in the code section(s):\n"
+            "\t(1) the following exclusions were automatically applied "
+                "(see --sync):\n%s"
+            "\t(2) some data may not have been detected.\n"
+            "\t(3) manually refine the exlusions (see -E) to resolve the "
+                "problem.",
+            filename, exs.c_str());
 
     return 0;
 }

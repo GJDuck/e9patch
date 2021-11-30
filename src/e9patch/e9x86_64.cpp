@@ -81,6 +81,7 @@ static int decodePrefix(const uint8_t *bytes, unsigned size, uint8_t &rex,
             case 0x64:      // FS segment override
             case 0x65:      // GS segment override
             case 0x66:      // Operand-size override
+                continue;
 
             // REX prefixes:
             case 0x40: case 0x41: case 0x42: case 0x43: case 0x44: case 0x45:
