@@ -29,6 +29,15 @@
  * - The current implementation is somewhat basic and could be improved.
  */
 
+#include <cstdint>
+
+#include <set>
+
+#include "e9cfg.h"
+#include "e9tool.h"
+
+using namespace e9tool;
+
 static bool option_cfg_debug = false;
 #define DEBUG(targets, target, msg, ...)                                \
     do                                                                  \
@@ -89,7 +98,7 @@ static std::pair<const T *, const T *> getBounds(const uint8_t *lb0,
  * Find the instruction corresponding to the address.  Returns a negative index
  * corresponding instruction is not found.
  */
-ssize_t e9frontend::findInstr(const Instr *Is, size_t size, intptr_t address)
+ssize_t e9tool::findInstr(const Instr *Is, size_t size, intptr_t address)
 {
     ssize_t lo = 0, hi = (ssize_t)size-1;
     while (lo <= hi)
@@ -343,7 +352,7 @@ static void CFGDataAnalysis(const ELF *elf, bool pic, const Instr *Is,
 /*
  * Analyze the given ELF binary for potential jump targets.
  */
-void e9frontend::CFGAnalysis(const ELF *elf, const Instr *Is, size_t size,
+void e9tool::CFGAnalysis(const ELF *elf, const Instr *Is, size_t size,
     Targets &targets)
 {
     bool pic = false;

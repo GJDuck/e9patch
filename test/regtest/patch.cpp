@@ -589,3 +589,33 @@ void write(const char *str)
     fputs(str, stderr);
 }
 
+void state_check(const void *addr, const void *state_0, intptr_t rsp,
+    intptr_t rax, intptr_t r15)
+{
+    const STATE *state = (const STATE *)state_0;
+    if (rsp != state->rsp)
+    {
+        fprintf(stderr, "%p: %%rsp mismatch (0x%lx vs 0x%lx)\n", addr, rsp,
+            state->rsp);
+        abort();
+    }
+    if ((intptr_t)addr != state->rip)
+    {
+        fprintf(stderr, "%p: %%rip mismatch (0x%p vs 0x%lx)\n", addr, addr,
+            state->rip);
+        abort();
+    }
+    if (rax != state->rax)
+    {
+        fprintf(stderr, "%p: %%rax mismatch (0x%lx vs 0x%lx)\n", addr, rax,
+            state->rax);
+        abort();
+    }
+    if (r15 != state->r15)
+    {
+        fprintf(stderr, "%p: %%r15 mismatch (0x%lx vs 0x%lx)\n", addr, r15,
+            state->r15);
+        abort();
+    }
+}
+

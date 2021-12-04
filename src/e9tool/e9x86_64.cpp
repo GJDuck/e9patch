@@ -1,5 +1,5 @@
 /*
- * e9frontend.h
+ * e9x86_64.cpp
  * Copyright (C) 2021 National University of Singapore
  *
  * This program is free software: you can redistribute it and/or modify
@@ -19,6 +19,12 @@
 /*
  * Disassembler interface.
  */
+
+#include "e9elf.h"
+#include "e9misc.h"
+#include "e9tool.h"
+
+using namespace e9tool;
 
 #include <Zydis/Zydis.h>
 typedef ZydisDecodedInstruction RawInstr;
@@ -40,7 +46,7 @@ static ZydisFormatter formatter;
 /*
  * Initialize the disassembler.
  */
-static void initDisassembler(void)
+void initDisassembler(void)
 {
     ZyanStatus result = ZydisDecoderInit(&decoder, ZYDIS_MACHINE_MODE_LONG_64,
         ZYDIS_ADDRESS_WIDTH_64);
@@ -116,7 +122,7 @@ bool decode(const uint8_t **code, size_t *size, off_t *offset,
 /*
  * Decompress an instruction.
  */
-void e9frontend::getInstrInfo(const ELF *elf, const Instr *I, InstrInfo *info,
+void e9tool::getInstrInfo(const ELF *elf, const Instr *I, InstrInfo *info,
     void *raw)
 {
     off_t offset = (off_t)I->offset;
@@ -2281,7 +2287,7 @@ static uint16_t convert(ZydisInstructionCategory category, ZydisISAExt isa)
 /*
  * Assigns a "suspiciousness" score to instructions.
  */
-static int suspiciousness(const uint8_t *bytes, size_t size)
+int suspiciousness(const uint8_t *bytes, size_t size)
 {
     if (size == 0) return INT32_MAX;
     int score = 0;
@@ -2346,5 +2352,25 @@ static int suspiciousness(const uint8_t *bytes, size_t size)
         default:
             return score;
     }
+}
+
+/*
+ * Get an operand.
+ */
+const OpInfo *getOperand(const InstrInfo *I, int idx, OpType type,
+	Access access)
+{
+    for (uint8_t i = 0; i < I->count.op; i++)
+    {
+        const OpInfo *op = I->op + i;
+        if ((type == OPTYPE_INVALID? true: op->type == type) &&
+            (op->access & access) == access)
+        {
+            if (idx == 0)
+                return op;
+            idx--;
+        }
+    }
+    return nullptr;
 }
 

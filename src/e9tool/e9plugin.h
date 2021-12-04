@@ -21,7 +21,7 @@
 
 #include <cstdio>
 
-#include "e9frontend.h"
+#include "e9tool.h"
 
 /*
  * See the e9path-programming-guide.md file for documentation.
@@ -56,11 +56,11 @@ extern "C"
     {
         FILE *out;                              // The output stream
         void *context;                          // The user context
-        const e9frontend::ELF * const elf;      // Input ELF file
-        const e9frontend::Instr * const Is;     // All disasm instructions
+        const e9tool::ELF * const elf;          // Input ELF file
+        const e9tool::Instr * const Is;         // All disasm instructions
         ssize_t size;                           // Size of Is
         ssize_t idx;                            // Current instruction idx
-        const e9frontend::InstrInfo * const I;  // Current instruction info
+        const e9tool::InstrInfo * const I;      // Current instruction info
         intptr_t id;                            // Current patch ID
     };
 

@@ -31,6 +31,7 @@
 #include <set>
 #include <string>
 
+#include <dlfcn.h>
 #include <fcntl.h>
 #include <getopt.h>
 #include <libgen.h>
@@ -50,14 +51,30 @@
  */
 static bool option_cfg          = false;
 static bool option_trap_all     = false;
-static bool option_intel_syntax = false;
 static std::string option_format("binary");
 static std::string option_output("");
 
+#include "e9action.h"
+#include "e9cfg.h"
+#include "e9csv.h"
+#include "e9elf.h"
+#include "e9metadata.h"
+#include "e9misc.h"
+#include "e9parser.h"
 #include "e9plugin.h"
-#include "e9frontend.cpp"
-#include "e9cfg.cpp"
-#include "e9x86_64.cpp"
+#include "e9tool.h"
+#include "e9x86_64.h"
+
+using namespace e9tool;
+
+/*
+ * Backend info.
+ */
+struct Backend
+{
+    FILE *out;                      // JSON RPC output.
+    pid_t pid;                      // Backend process ID.
+};
 
 /*
  * Excluded locations.
@@ -81,332 +98,69 @@ struct Desync
 };
 
 /*
- * Plugins.
+ * Spawn e9patch backend instance.
  */
-struct Plugin
+static void spawnBackend(const char *prog,
+    const std::vector<const char *> &options, Backend &backend)
 {
-    const char *filename;
-    void *handle;
-    void *context;
-    intptr_t result;
-    PluginInit initFunc;
-    PluginEvent eventFunc;
-    PluginMatch matchFunc;
-    PluginPatch patchFunc;
-    PluginFini finiFunc;
-};
+    int fds[2];
+    if (pipe(fds) != 0)
+        error("failed to open pipe to backend process: %s", strerror(errno));
+    pid_t pid = fork();
+    if (pid == 0)
+    {
+        close(fds[1]);
+        if (dup2(fds[0], STDIN_FILENO) < 0)
+            error("failed to dup backend process pipe file descriptor "
+                "(%d): %s", fds[0], strerror(errno));
+        close(fds[0]);
+        const char *argv[options.size() + 2];
+        prog = findBinary(prog, /*exe=*/true, /*dot=*/true);
+        argv[0] = "e9patch";
+        unsigned i = 1;
+        for (const char *option: options)
+            argv[i++] = option;
+        argv[i] = nullptr;
+        execvp(prog, (char * const *)argv);
+        error("failed to execute backend process \"%s\": %s", argv[0],
+            strerror(errno));
+    }
+    else if (pid < 0)
+        error("failed to fork backend process: %s", strerror(errno));
+
+    close(fds[0]);
+    FILE *out = fdopen(fds[1], "w");
+    if (out == nullptr)
+        error("failed to open backend process stream: %s", strerror(errno));
+
+    backend.out = out;
+    backend.pid = pid;
+}
 
 /*
- * Match kinds.
+ * Wait for e9patch instance to terminate.
  */
-enum MatchKind
+static void waitBackend(const Backend &backend)
 {
-    MATCH_INVALID,
-    MATCH_TRUE,
-    MATCH_FALSE,
-    MATCH_PLUGIN,
-    MATCH_ASSEMBLY,
-    MATCH_ADDRESS,
-    MATCH_CALL,
-    MATCH_CONDJUMP,
-    MATCH_JUMP,
-    MATCH_MMX,
-    MATCH_MNEMONIC,
-    MATCH_OFFSET,
-    MATCH_RANDOM,
-    MATCH_RETURN,
-    MATCH_SECTION,
-    MATCH_SIZE,
-    MATCH_TARGET,
-    MATCH_X87,
-    MATCH_SSE,
-    MATCH_AVX,
-    MATCH_AVX2,
-    MATCH_AVX512,
+    fclose(backend.out);
 
-    MATCH_BB_ENTRY,
-
-    MATCH_OP,
-    MATCH_SRC,
-    MATCH_DST,
-    MATCH_IMM,
-    MATCH_REG,
-    MATCH_MEM,
-
-    MATCH_REGS,
-    MATCH_READS,
-    MATCH_WRITES,
-};
-
-/*
- * Match fields.
- */
-enum MatchField
-{
-    MATCH_FIELD_NONE,
-    MATCH_FIELD_TYPE,
-    MATCH_FIELD_ACCESS,
-    MATCH_FIELD_SIZE,
-    MATCH_FIELD_SEG,
-    MATCH_FIELD_DISPL,
-    MATCH_FIELD_BASE,
-    MATCH_FIELD_INDEX,
-    MATCH_FIELD_SCALE,
-};
-
-/*
- * Match types.
- */
-typedef unsigned MatchType;
-#define MATCH_TYPE_UNDEFINED    0x00
-#define MATCH_TYPE_NIL          0x01
-#define MATCH_TYPE_INTEGER      0x02
-#define MATCH_TYPE_OPERAND      0x04
-#define MATCH_TYPE_ACCESS       0x08
-#define MATCH_TYPE_REGISTER     0x10
-#define MATCH_TYPE_MEMORY       0x20
-#define MATCH_TYPE_STRING       0x40
-
-/*
- * Parser implementation.
- */
-#include "e9parser.cpp"
-
-/*
- * Match value.
- */
-struct MatchValue
-{
-    MatchType type;
-    union
+    if (backend.pid == 0)
+        return;
+    int status;
+    do
     {
-        intptr_t i;
-        OpType op;
-        Access access;
-        Register reg;
-    };
-
-    int compare(const MatchValue &value) const
-    {
-        if (value.type < type)
-            return 1;
-        if (value.type > type)
-            return -1;
-        switch (type)
-        {
-            case MATCH_TYPE_INTEGER:
-                return (value.i < i? 1:
-                       (value.i > i? -1: 0));
-            case MATCH_TYPE_OPERAND:
-                return (value.op < op? 1:
-                       (value.op > op? -1: 0));
-            case MATCH_TYPE_ACCESS:
-                return (value.access < access? 1:
-                       (value.access > access? -1: 0));
-            case MATCH_TYPE_REGISTER:
-                return (value.reg < reg? 1:
-                       (value.reg > reg? -1: 0));
-            default:
-                return 0;
-        }
+        if (waitpid(backend.pid, &status, WUNTRACED | WCONTINUED) < 0)
+            error("failed to wait for backend process (%d): %s",
+                backend.pid, strerror(errno));
     }
-
-    bool operator==(const MatchValue &value) const
-    {
-        return (compare(value) == 0);
-    }
-    bool operator<(const MatchValue &value) const
-    {
-        return (compare(value) < 0);
-    }
-    bool operator<=(const MatchValue &value) const
-    {
-        return (compare(value) <= 0);
-    }
-    bool operator>(const MatchValue &value) const
-    {
-        return (compare(value) > 0);
-    }
-    bool operator>=(const MatchValue &value) const
-    {
-        return (compare(value) >= 0);
-    }
-};
-
-/*
- * Match comparison operator.
- */
-enum MatchCmp
-{
-    MATCH_CMP_INVALID,
-    MATCH_CMP_DEFINED,
-    MATCH_CMP_EQ_ZERO,
-    MATCH_CMP_NEQ_ZERO,
-    MATCH_CMP_EQ,
-    MATCH_CMP_NEQ,
-    MATCH_CMP_LT,
-    MATCH_CMP_LEQ,
-    MATCH_CMP_GT,
-    MATCH_CMP_GEQ,
-    MATCH_CMP_IN
-};
-
-/*
- * CSV implementation.
- */
-#include "e9csv.cpp"
-
-/*
- * A match entry.
- */
-struct MatchTest
-{
-    const MatchKind  match;
-    const int        idx;
-    const MatchField field;
-    const MatchCmp   cmp;
-    const char *     basename;
-    Plugin * const   plugin;
-    union
-    {
-        void *data;
-        std::regex *regex;
-        Index<MatchValue> *values;
-        std::set<Register> *regs;
-    };
-
-    MatchTest(MatchKind match, int idx, MatchField field, MatchCmp cmp,
-            Plugin *plugin, const char *basename) :
-        match(match), field(field), idx(idx), cmp(cmp), basename(basename),
-        plugin(plugin)
-    {
-        data = nullptr;
-    }
-};
-
-/*
- * Match operations.
- */
-enum MatchOp
-{
-    MATCH_OP_NOT,
-    MATCH_OP_AND,
-    MATCH_OP_OR,
-    MATCH_OP_TEST,
-};
-
-/*
- * A match expression.
- */
-struct MatchExpr
-{
-    const MatchOp op;
-    union
-    {
-        const MatchExpr *arg1;
-        const MatchTest *test;
-    };
-    const MatchExpr *arg2;
-
-    MatchExpr(MatchOp op, const MatchExpr *arg) :
-        op(op), arg1(arg), arg2(nullptr)
-    {
-        assert(op == MATCH_OP_NOT);
-    }
-
-    MatchExpr(MatchOp op, const MatchExpr *arg1, const MatchExpr *arg2) :
-        op(op), arg1(arg1), arg2(arg2)
-    {
-        assert(op == MATCH_OP_AND || op == MATCH_OP_OR);
-    }
-
-    MatchExpr(MatchOp op, const MatchTest *test) : op(op), test(test),
-        arg2(nullptr)
-    {
-        assert(op == MATCH_OP_TEST);
-    }
-};
-
-/*
- * Patch kind.
- */
-enum PatchKind
-{
-    PATCH_EMPTY,
-    PATCH_BREAK,
-    PATCH_TRAP,
-    PATCH_PRINT,
-    PATCH_EXIT,
-    PATCH_CALL,
-    PATCH_PLUGIN,
-};
-
-/*
- * Patch.
- */
-struct Patch
-{
-    const char * const name;
-    const PatchKind kind;
-    const PatchPos pos;
-
-    int status = 0;
-    const CallABI abi = ABI_CLEAN;
-    const CallJump jmp = JUMP_NONE;
-    const char * const symbol = nullptr;
-    const std::vector<Argument> args;
-    const char * const filename = nullptr;
-    mutable const ELF * elf = nullptr;
-    Plugin * const plugin = nullptr;
-
-    Patch(const char *name, PatchKind kind, PatchPos pos) :
-        name(name), kind(kind), pos(pos)
-    {
-        assert(kind == PATCH_EMPTY || kind == PATCH_BREAK ||
-            kind == PATCH_PRINT || kind == PATCH_TRAP);
-    };
-
-    Patch(const char *name, PatchKind kind, PatchPos pos, int status) :
-        name(name), kind(kind), pos(pos), status(status)
-    {
-        assert(kind == PATCH_EXIT);
-    }
-
-    Patch(const char *name, PatchKind kind, PatchPos pos, CallABI abi,
-            CallJump jmp, const char *symbol, const std::vector<Argument> &args,
-            const char *filename) :
-        name(name), kind(kind), pos(pos),
-        abi(abi), jmp(jmp), symbol(symbol), args(args), filename(filename)
-    {
-        assert(kind == PATCH_CALL);
-    }
-
-    Patch(const char *name, PatchKind kind, PatchPos pos, Plugin *plugin) :
-        name(name), kind(kind), pos(pos), plugin(plugin)
-    {
-        assert(kind == PATCH_PLUGIN);
-    }
-};
-
-/*
- * An "action" is a match/patch pair.
- */
-struct Action
-{
-    const MatchExpr * const match;
-    const std::vector<const Patch *> patch;
-
-    Action(const MatchExpr * match, std::vector<const Patch *> &&patch) :
-        match(match), patch(patch)
-    {
-        ;
-    }
-};
-
-/*
- * Metadata implementation.
- */
-#include "e9metadata.cpp"
+    while (!WIFEXITED(status) && !WIFSIGNALED(status));
+    if (WIFEXITED(status) && WEXITSTATUS(status) != 0)
+        error("backend process (%d) exitted with a non-zero status (%d)",
+            backend.pid, WEXITSTATUS(status));
+    else if (WIFSIGNALED(status))
+        error("backend process (%d) killed by signal (%s)", backend.pid,
+            strsignal(WTERMSIG(status)));
+}
 
 /*
  * Open a new plugin object.
@@ -892,7 +646,14 @@ static MatchTest *parseTest(Parser &parser)
             default:
                 parser.unexpectedToken();
         }
-        test->regex = new std::regex(str);
+        try
+        {
+            test->regex = new std::regex(str);
+        }
+        catch (const std::regex_error &e)
+        {
+            error("failed to parse regular expression \"%s\"", str.c_str());
+        }
     }
     else
     {
@@ -999,11 +760,11 @@ static void parseMemOp(Parser &parser, int t, MemOp &memop)
         case TOKEN_MEM8:
             memop.size = sizeof(int8_t); break;
         case TOKEN_MEM16:
-            memop.size = sizeof(int8_t); break;
+            memop.size = sizeof(int16_t); break;
         case TOKEN_MEM32:
-            memop.size = sizeof(int8_t); break;
+            memop.size = sizeof(int32_t); break;
         case TOKEN_MEM64:
-            memop.size = sizeof(int8_t); break;
+            memop.size = sizeof(int64_t); break;
         default:
             parser.unexpectedToken();
     }
@@ -1105,9 +866,8 @@ memop_validate:
         case REGISTER_DS: case REGISTER_FS: case REGISTER_GS:
             break;
         default:
-            error("failed to parse %s; invalid memory operand "
-                "segment register %s ", parser.mode,
-                getRegName(getReg(memop.seg)));
+            error("failed to parse %s; invalid memory operand segment "
+                "register %s ", parser.mode, getRegName(memop.seg));
     }
     switch (memop.base)
     {
@@ -1126,9 +886,8 @@ memop_validate:
         case REGISTER_R15D:
             break;
         default:
-            error("failed to parse %s; invalid memory operand "
-                "base register %s ", parser.mode,
-                getRegName(getReg(memop.base)));
+            error("failed to parse %s; invalid memory operand base register "
+                " %s ", parser.mode, getRegName(memop.base));
     }
     switch (memop.index)
     {
@@ -1147,9 +906,8 @@ memop_validate:
         case REGISTER_R15D:
             break;
         default:
-            error("failed to parse %s; invalid memory operand "
-                "index register %s ", parser.mode,
-                getRegName(getReg(memop.index)));
+            error("failed to parse %s; invalid memory operand index register "
+                "%s ", parser.mode, getRegName(memop.index));
     }
     switch (scale64)
     {
@@ -1680,26 +1438,6 @@ static const char *makeMatchString(MatchKind match, const InstrInfo *I)
 }
 
 /*
- * Get an operand.
- */
-static const OpInfo *getOperand(const InstrInfo *I, int idx, OpType type,
-    Access access)
-{
-    for (uint8_t i = 0; i < I->count.op; i++)
-    {
-        const OpInfo *op = I->op + i;
-        if ((type == OPTYPE_INVALID? true: op->type == type) &&
-            (op->access & access) == access)
-        {
-            if (idx == 0)
-                return op;
-            idx--;
-        }
-    }
-    return nullptr;
-}
-
-/*
  * Get number of operands.
  */
 static intptr_t getNumOperands(const InstrInfo *I, OpType type, Access access)
@@ -1902,7 +1640,7 @@ static MatchValue makeMatchValue(MatchKind match, int idx, MatchField field,
 /*
  * Evaluate a matching.
  */
-static bool matchEval(const MatchExpr *expr, const Targets &targets,
+bool matchEval(const MatchExpr *expr, const Targets &targets,
     const InstrInfo *I, const char *basename, const Record **record)
 {
     if (expr == nullptr)
@@ -2266,153 +2004,6 @@ static void checkCompatible(const ELF &elf, const ELF &target)
 }
 
 /*
- * Usage.
- */
-static void usage(FILE *stream, const char *progname)
-{
-    fprintf(stream,
-        "        ___  _              _\n"
-        "   ___ / _ \\| |_ ___   ___ | |\n"
-        "  / _ \\ (_) | __/ _ \\ / _ \\| |\n"
-        " |  __/\\__, | || (_) | (_) | |\n"
-        "  \\___|  /_/ \\__\\___/ \\___/|_|\n"
-        "\n"
-        "usage: %s [OPTIONS] --match MATCH --patch PATCH ... input-file\n"
-        "\n"
-        "MATCH\n"
-        "=====\n"
-        "\n"
-        "Matchings determine which instructions should be rewritten.  "
-            "Matchings are\n"
-        "specified using the `--match'/`-M' option:\n"
-        "\n"
-        "\t--match MATCH, -M MATCH\n"
-        "\t\tSpecifies an instruction matching MATCH.\n"
-        "\n"
-        "Please see the e9tool-user-guide for more information.\n"
-        "\n"
-        "PATCH\n"
-        "=====\n"
-        "\n"
-        "Patches determine how matching instructions should be rewritten.  "
-            "Patches are\n"
-        "specified using the `--patch'/`-P' option:\n"
-        "\n"
-        "\t--patch PATCH, -P patch\n"
-        "\t\tThe PATCH specifies how instructions matching the preceding\n"
-        "\t\t`--match'/`-M' options are to be rewritten.\n"
-        "\n"
-        "Please see the e9tool-user-guide for more information.\n"
-        "\n"
-        "OTHER OPTIONS\n"
-        "=============\n"
-        "\n"
-        "\t--backend PROG\n"
-        "\t\tUse PROG as the backend.  The default is \"e9patch\".\n"
-        "\n"
-        "\t--compression N, -c N\n"
-        "\t\tSet the compression level to be N, where N is a number within\n"
-        "\t\tthe range 0..9.  The default is 9 for maximum compression.\n"
-        "\t\tHigher compression makes the output binary smaller, but also\n"
-        "\t\tincreases the number of mappings (mmap() calls) required.\n"
-        "\n"
-        "\t--Dsync N\n"
-        "\t\tIf the disassembler desyncs (e.g., data in the code section),\n"
-        "\t\tthen automatically exclude N surrounding instructions.\n"
-        "\t\tThe default is 64.\n"
-        "\n"
-        "\t--Dthreshold N\n"
-        "\t\tTreat suspicious instructions as data.  Lower numbers means\n"
-        "\t\tless tolerance.  The default is 2.\n"
-        "\n"
-        "\t--debug\n"
-        "\t\tEnable debug output.\n"
-        "\n"
-        "\t--exclude RANGE, -E RANGE\n"
-        "\t\tExclude the address RANGE from disassembly and rewriting.\n"
-        "\t\tHere, RANGE has the format `LB .. UB', where LB/UB are\n"
-        "\t\tinteger addresses, section names or symbols.  The address\n"
-        "\t\trange [LB..UB) will be excluded, and UB must point to the\n"
-        "\t\tfirst instruction where disassembly should resume.\n"
-        "\n"
-        "\t--executable\n"
-        "\t\tTreat the input file as an executable, even if it appears to\n"
-        "\t\tbe a shared library.  See the `--shared' option for more\n"
-        "\t\tinformation.\n"
-        "\n"
-        "\t--format FORMAT\n"
-        "\t\tSet the output format to FORMAT which is one of {binary,\n"
-        "\t\tjson, patch, patch.gz, patch,bz2, patch.xz}.  Here:\n"
-        "\n"
-        "\t\t\t- \"binary\" is a modified ELF executable file;\n"
-        "\t\t\t- \"json\" is the raw JSON RPC stream for the e9patch\n"
-        "\t\t\t  backend; or\n"
-        "\t\t\t- \"patch\" \"patch.gz\" \"patch.bz2\" and \"patch.xz\"\n"
-        "\t\t\t  are (compressed) binary diffs in xxd format.\n"
-        "\n"
-        "\t\tThe default format is \"binary\".\n"
-        "\n"
-        "\t--help, -h\n"
-        "\t\tPrint this message and exit.\n"
-        "\n"
-        "\t--no-warnings\n"
-        "\t\tDo not print warning messages.\n"
-        "\n"
-        "\t--plt\n"
-        "\t\tEnable the disassembly/rewriting of the .plt/.plt.got sections.\n"
-        "\t\tThese sections are excluded by default.\n"
-        "\n"
-        "\t-O0, -O1, -O2, -O3, -Os\n"
-        "\t\tSet the optimization level.  Here:\n"
-        "\n"
-        "\t\t\t-O0 disables all optimization,\n"
-        "\t\t\t-O1 conservatively optimizes for performance,\n"
-        "\t\t\t-O2 optimizes for performance,\n"
-        "\t\t\t-O3 aggressively optimizes for performance, and \n"
-        "\t\t\t-Os optimizes for space.\n"
-        "\n"
-        "\t\tThe default is -O2.\n"
-        "\n"
-        "\t--option OPTION\n"
-        "\t\tPass OPTION to the e9patch backend.\n"
-        "\n"
-        "\t--output FILE, -o FILE\n"
-        "\t\tSpecifies the path to the output file.  The default filename is\n"
-        "\t\tone of {\"a.out\", \"a.so\", \"a.exe\", \"a.dll\"}, depending on\n"
-        "\t\tthe input binary type.\n"
-        "\n"
-        "\t--seed=SEED\n"
-        "\t\tSet SEED to be the random number seed.\n"
-        "\n"
-        "\t--shared\n"
-        "\t\tTreat the input file as a shared library, even if it appears to\n"
-        "\t\tbe an executable.  By default, the input file will only be\n"
-        "\t\ttreated as a shared library if (1) it is a dynamic executable\n"
-        "\t\t(ET_DYN) and (2) has a filename of the form:\n"
-        "\n"
-        "\t\t\t[PATH/]lib*.so[.VERSION]\n"
-        "\n"
-        "\t--static-loader, -s\n"
-        "\t\tReplace patched pages statically.  By default, patched pages\n"
-        "\t\tare loaded during program initialization as this is more\n"
-        "\t\treliable for large/complex binaries.  However, this may bloat\n"
-        "\t\tthe size of the output patched binary.\n"
-        "\n"
-        "\t--syntax SYNTAX\n"
-        "\t\tSelects the assembly syntax to be SYNTAX.  Possible values are:\n"
-        "\n"
-        "\t\t\t- \"ATT\"  : X86_64 ATT asm syntax; or\n"
-        "\t\t\t- \"intel\": X86_64 Intel asm syntax.\n"
-        "\n"
-        "\t\tThe default syntax is \"ATT\".\n"
-        "\n"
-        "\t--trap=ADDR, --trap-all\n"
-        "\t\tInsert a trap (int3) instruction at the corresponding\n"
-        "\t\ttrampoline entry.  This can be used for debugging with gdb.\n"
-        "\n", progname);
-}
-
-/*
  * Options.
  */
 enum Option
@@ -2451,22 +2042,6 @@ struct ActionEntry
 };
 
 /*
- * Get executable path.
- */
-static void getExePath(std::string &path)
-{
-    char buf[PATH_MAX+1];
-    ssize_t len = readlink("/proc/self/exe", buf, sizeof(buf)-1);
-    if (len < 0 || (size_t)len > sizeof(buf)-1)
-        error("failed to read executable path: %s", strerror(errno));
-    buf[len] = '\0';
-    char *dir = dirname(buf);
-    path += dir;
-    if (path.size() > 0 && path[path.size()-1] != '/')
-        path += '/';
-}
-
-/*
  * Parse an integer from an optarg.
  */
 static intptr_t parseIntOptArg(const char *option, const char *optarg,
@@ -2496,7 +2071,7 @@ static intptr_t parseIntOptArg(const char *option, const char *optarg,
 /*
  * Entry.
  */
-int main(int argc, char **argv)
+int main_2(int argc, char **argv)
 {
     /*
      * Parse options.
@@ -3142,9 +2717,8 @@ int main(int argc, char **argv)
     for (size_t i = 0; i < count; i++)
     {
         matching.clear();
-        RawInstr raw;
         InstrInfo I;
-        getInstrInfo(&elf, &Is[i], &I, &raw);
+        getInstrInfo(&elf, &Is[i], &I);
         matchPlugins(out, &elf, Is.data(), Is.size(), i, &I);
         match(actions, elf.targets, &I, matching);
         bool matched = (matching.size() > 0);
@@ -3270,9 +2844,8 @@ int main(int argc, char **argv)
             continue;
 
         // Disassmble the instruction again.
-        RawInstr raw;
         InstrInfo I;
-        getInstrInfo(&elf, &Is[i], &I, &raw);
+        getInstrInfo(&elf, &Is[i], &I);
         bool done = false;
         for (ssize_t j = i; !done && j >= 0; j--)
             done = !sendInstructionMessage(out, Is[j], Is[i].address);
@@ -3388,5 +2961,24 @@ int main(int argc, char **argv)
             filename, exs.c_str());
 
     return 0;
+}
+
+/*
+ * Main.
+ */
+int main(int argc, char **argv)
+{
+    try
+    {
+        main_2(argc, argv);
+    }
+    catch (const std::exception& e)
+    {
+        error("uncaught exception: %s", e.what());
+    }
+    catch (...)
+    {
+        error("uncaught exception");
+    }
 }
 

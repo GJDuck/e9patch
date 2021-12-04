@@ -26,106 +26,10 @@
 #include <cstdlib>
 #include <cstring>
 
-#include "e9frontend.h"
+#include "e9parser.h"
+#include "e9tool.h"
 
-using namespace e9frontend;
-
-/*
- * Tokens.
- */
-enum Token
-{
-    TOKEN_ERROR = -1,
-    TOKEN_EOF = '\0',
-    TOKEN_INTEGER = 2000,
-    TOKEN_REGISTER,
-    TOKEN_STRING,
-    TOKEN_NAME,
-    TOKEN_REGEX,
-
-    TOKEN_ACCESS = 4000,
-    TOKEN_ADDR,
-    TOKEN_AFTER,
-    TOKEN_AND,
-    TOKEN_ASM,
-    TOKEN_AVX,
-    TOKEN_AVX2,
-    TOKEN_AVX512,
-    TOKEN_BASE,
-    TOKEN_BB,
-    TOKEN_BEFORE,
-    TOKEN_BREAK,
-    TOKEN_CALL,
-    TOKEN_CLEAN,
-    TOKEN_CONDJUMP,
-    TOKEN_CONFIG,
-    TOKEN_DEFINED,
-    TOKEN_DISPLACEMENT,
-    TOKEN_DOTDOT,
-    TOKEN_DST,
-    TOKEN_EMPTY,
-    TOKEN_END,
-    TOKEN_ENTRY,
-    TOKEN_EXIT,
-    TOKEN_FALSE,
-    TOKEN_GEQ,
-    TOKEN_GOTO,
-    TOKEN_ID,
-    TOKEN_IF,
-    TOKEN_IMM,
-    TOKEN_IN,
-    TOKEN_INDEX,
-    TOKEN_INSTR,
-    TOKEN_JUMP,
-    TOKEN_LENGTH,
-    TOKEN_LEQ,
-    TOKEN_MATCH,
-    TOKEN_MEM,
-    TOKEN_MEM16,
-    TOKEN_MEM32,
-    TOKEN_MEM64,
-    TOKEN_MEM8,
-    TOKEN_MMX,
-    TOKEN_MNEMONIC,
-    TOKEN_NAKED,
-    TOKEN_NEQ,
-    TOKEN_NEXT,
-    TOKEN_NIL,
-    TOKEN_NONE,
-    TOKEN_NOT,
-    TOKEN_OFFSET,
-    TOKEN_OP,
-    TOKEN_OR,
-    TOKEN_PASSTHRU,
-    TOKEN_PATCH,
-    TOKEN_PLUGIN,
-    TOKEN_PRINT,
-    TOKEN_RANDOM,
-    TOKEN_READ,
-    TOKEN_READS,
-    TOKEN_REG,
-    TOKEN_REGS,
-    TOKEN_REPLACE,
-    TOKEN_RETURN,
-    TOKEN_RW,
-    TOKEN_SCALE,
-    TOKEN_SECTION,
-    TOKEN_SEGMENT,
-    TOKEN_SIZE,
-    TOKEN_SRC,
-    TOKEN_SSE,
-    TOKEN_START,
-    TOKEN_STATE,
-    TOKEN_STATIC,
-    TOKEN_TARGET,
-    TOKEN_TRAMPOLINE,
-    TOKEN_TRAP,
-    TOKEN_TRUE,
-    TOKEN_TYPE,
-    TOKEN_WRITE,
-    TOKEN_WRITES,
-    TOKEN_X87,
-};
+using namespace e9tool;
 
 /*
  * Token info.
@@ -493,272 +397,276 @@ static const char *getNameFromToken(Token token)
 }
 
 /*
- * Action string parser.
+ * Get token from name.
  */
-struct Parser
+Token Parser::getTokenFromName(const char *name)
 {
-    static const unsigned TOKEN_MAXLEN = 2048;
-
-    const ELF * elf;
-    const char * const mode;
-    const char * const buf;
-    size_t pos     = 0;
-    size_t prev    = 0;
-    int peek       = TOKEN_ERROR;
-    intptr_t i     = 0;
-    char s[TOKEN_MAXLEN+1];
-
-    Parser(const char *buf, const char *mode, const ELF &elf) :
-        buf(buf), mode(mode), elf(&elf)
-    {
-        ;
-    }
-
-    Token getTokenFromName(const char *name)
-    {
-        bool reg = (name[0] == '%');
-        if (reg)
-            name++;
-        const TokenInfo *info = getTokenInfo(name);
-        if (info == nullptr)
-            return TOKEN_ERROR;
-        if (reg && info->token != TOKEN_REGISTER)
-            return TOKEN_ERROR;
-        i = info->value;
-        return info->token;
-    }
-
-    int getToken()
-    {
-        prev = pos;
-        if (peek != TOKEN_ERROR)
-        {
-            int t = peek;
-            peek = TOKEN_ERROR;
-            return t;
-        }
-        char c = buf[pos];
-        while (isspace(c))
-            c = buf[++pos];
-        
-        // Operators:
-        switch (c)
-        {
-            case '\0':
-                strcpy(s, "<end-of-input>");
-                return TOKEN_EOF;
-            case '[': case ']': case '@': case ',': case '(': case ')':
-            case '&': case '.': case ':': case '+':
-                s[0] = c; s[1] = '\0';
-                pos++;
-                if ((c == '&' || c == '.') && buf[pos] == c)
-                {
-                    s[1] = c; s[2] = '\0';
-                    pos++;
-                }
-                return getTokenFromName(s);
-            case '!': case '<': case '>': case '=':
-                s[0] = c; s[1] = '\0';
-                pos++;
-                if (buf[pos] == '=')
-                {
-                    s[1] = '='; s[2] = '\0';
-                    pos++;
-                }
-                return getTokenFromName(s);
-            case '-':
-                s[0] = c; s[1] = '\0';
-                pos++;
-                if (buf[pos] == '-' || buf[pos] == 'w')
-                {
-                    s[1] = buf[pos]; s[2] = '\0';
-                    pos++;
-                }
-                return getTokenFromName(s);
-            case 'r':
-                if (buf[pos+1] == '-')
-                {
-                    s[0] = 'r'; s[1] = '-'; s[2] = '\0';
-                    pos += 2;
-                    return getTokenFromName(s);
-                }
-            case '|':
-                if (buf[pos+1] == '|')
-                {
-                    s[0] = s[1] = '|'; s[2] = '\0';
-                    pos += 2;
-                    return TOKEN_OR;
-                }
-                // Fallthrough:
-            default:
-                break;
-        }
-        
-        // Integers:
-        unsigned j = 0;
-        if (isdigit(c))
-        {
-            int base = 10;
-            if (c == '0' && buf[pos+1] == 'x')
-            {
-                base = 16;
-                s[j++] = buf[pos++]; s[j++] = buf[pos++];
-                c = buf[pos];
-            }
-            if (!(base == 10? isdigit(c): isxdigit(c)))
-            {
-                s[j++] = '\0';
-                return TOKEN_ERROR;
-            }
-            s[j++] = c;
-            pos++;
-            while ((base == 10? isdigit(buf[pos]): isxdigit(buf[pos])) &&
-                    j < TOKEN_MAXLEN)
-                s[j++] = buf[pos++];
-            s[j] = '\0';
-            if (j >= TOKEN_MAXLEN)
-                return TOKEN_ERROR;
-            char *end = nullptr;
-            i = (intptr_t)strtoull(s, &end, base);
-            if (end == nullptr || *end != '\0')
-                return TOKEN_ERROR;
-            return TOKEN_INTEGER;
-        }
-
-        // Strings:
-        if (c == '\"')
-        {
-            pos++;
-            while ((c = buf[pos++]) != '\"')
-            {
-                if (c == '\\')
-                {
-                    c = buf[pos++];
-                    switch (c)
-                    {
-                        case 'n':
-                            c = '\n'; break;
-                        case 't':
-                            c = '\t'; break;
-                        case 'r':
-                            c = '\r'; break;
-                        default:
-                            break;
-                    }
-                }
-                if (j >= TOKEN_MAXLEN-1)
-                {
-                    s[j] = '\0';
-                    return TOKEN_ERROR;
-                }
-                s[j++] = c;
-            }
-            s[j] = '\0';
-            return TOKEN_STRING;
-        }
-
-        // Names:
-        if (isalpha(c) || c == '_' || c == '%')
-        {
-            s[j++] = c;
-            pos++;
-            while ((isalnum(buf[pos]) || buf[pos] == '_') &&
-                    j < TOKEN_MAXLEN)
-                s[j++] = buf[pos++];
-            s[j] = '\0';
-            if (j >= TOKEN_MAXLEN)
-                return TOKEN_ERROR;
-            Token t = getTokenFromName(s);
-            if (t == TOKEN_ERROR)
-                return TOKEN_NAME;
-            return t;
-        }
-
-        // Unknown:
-        s[0] = c; s[1] = '\0';
+    bool reg = (name[0] == '%');
+    if (reg)
+        name++;
+    const TokenInfo *info = getTokenInfo(name);
+    if (info == nullptr)
         return TOKEN_ERROR;
-    }
+    if (reg && info->token != TOKEN_REGISTER)
+        return TOKEN_ERROR;
+    i = info->value;
+    return info->token;
+}
 
-    int peekToken()
+/*
+ * Get the next token.
+ */
+int Parser::getToken()
+{
+    prev = pos;
+    if (peek != TOKEN_ERROR)
     {
-        if (peek != TOKEN_ERROR)
-            return peek;
-        peek = getToken();
-        return peek;
+        int t = peek;
+        peek = TOKEN_ERROR;
+        return t;
     }
-
-    void getPositionStr(std::string &str)
+    char c = buf[pos];
+    while (isspace(c))
+        c = buf[++pos];
+    
+    // Operators:
+    switch (c)
     {
-        for (size_t i = 0; i < prev; i++)
-            str += buf[i];
-        str += " <--- here";
+        case '\0':
+            strcpy(s, "<end-of-input>");
+            return TOKEN_EOF;
+        case '[': case ']': case '@': case ',': case '(': case ')':
+        case '&': case '.': case ':': case '+':
+            s[0] = c; s[1] = '\0';
+            pos++;
+            if ((c == '&' || c == '.') && buf[pos] == c)
+            {
+                s[1] = c; s[2] = '\0';
+                pos++;
+            }
+            return getTokenFromName(s);
+        case '!': case '<': case '>': case '=':
+            s[0] = c; s[1] = '\0';
+            pos++;
+            if (buf[pos] == '=')
+            {
+                s[1] = '='; s[2] = '\0';
+                pos++;
+            }
+            return getTokenFromName(s);
+        case '-':
+            s[0] = c; s[1] = '\0';
+            pos++;
+            if (buf[pos] == '-' || buf[pos] == 'w')
+            {
+                s[1] = buf[pos]; s[2] = '\0';
+                pos++;
+            }
+            return getTokenFromName(s);
+        case 'r':
+            if (buf[pos+1] == '-')
+            {
+                s[0] = 'r'; s[1] = '-'; s[2] = '\0';
+                pos += 2;
+                return getTokenFromName(s);
+            }
+        case '|':
+            if (buf[pos+1] == '|')
+            {
+                s[0] = s[1] = '|'; s[2] = '\0';
+                pos += 2;
+                return TOKEN_OR;
+            }
+            // Fallthrough:
+        default:
+            break;
     }
-
-    void expectToken(int token)
+    
+    // Integers:
+    unsigned j = 0;
+    if (isdigit(c))
     {
-        if (getToken() != token)
+        int base = 10;
+        if (c == '0' && buf[pos+1] == 'x')
         {
-            std::string str;
-            getPositionStr(str);
-            error("failed to parse %s at position \"%s\"; expected token "
-                "\"%s\", found \"%s\"", mode, str.c_str(),
-                getNameFromToken((Token)token), s);
+            base = 16;
+            s[j++] = buf[pos++]; s[j++] = buf[pos++];
+            c = buf[pos];
         }
+        if (!(base == 10? isdigit(c): isxdigit(c)))
+        {
+            s[j++] = '\0';
+            return TOKEN_ERROR;
+        }
+        s[j++] = c;
+        pos++;
+        while ((base == 10? isdigit(buf[pos]): isxdigit(buf[pos])) &&
+                j < TOKEN_MAXLEN)
+            s[j++] = buf[pos++];
+        s[j] = '\0';
+        if (j >= TOKEN_MAXLEN)
+            return TOKEN_ERROR;
+        char *end = nullptr;
+        i = (intptr_t)strtoull(s, &end, base);
+        if (end == nullptr || *end != '\0')
+            return TOKEN_ERROR;
+        return TOKEN_INTEGER;
     }
 
-    int expectToken2(int token1, int token2)
+    // Strings:
+    if (c == '\"')
     {
-        int t = getToken();
-        if (t != token1 && t != token2)
+        pos++;
+        while ((c = buf[pos++]) != '\"')
         {
-            std::string str;
-            getPositionStr(str);
-            error("failed to parse %s at position \"%s\"; expected token "
-                "\"%s\" or \"%s\", found \"%s\"", mode, str.c_str(),
-                getNameFromToken((Token)token1),
-                getNameFromToken((Token)token2), s);
+            if (c == '\\')
+            {
+                c = buf[pos++];
+                switch (c)
+                {
+                    case 'n':
+                        c = '\n'; break;
+                    case 't':
+                        c = '\t'; break;
+                    case 'r':
+                        c = '\r'; break;
+                    default:
+                        break;
+                }
+            }
+            if (j >= TOKEN_MAXLEN-1)
+            {
+                s[j] = '\0';
+                return TOKEN_ERROR;
+            }
+            s[j++] = c;
         }
+        s[j] = '\0';
+        return TOKEN_STRING;
+    }
+
+    // Names:
+    if (isalpha(c) || c == '_' || c == '%')
+    {
+        s[j++] = c;
+        pos++;
+        while ((isalnum(buf[pos]) || buf[pos] == '_') &&
+                j < TOKEN_MAXLEN)
+            s[j++] = buf[pos++];
+        s[j] = '\0';
+        if (j >= TOKEN_MAXLEN)
+            return TOKEN_ERROR;
+        Token t = getTokenFromName(s);
+        if (t == TOKEN_ERROR)
+            return TOKEN_NAME;
         return t;
     }
 
-    NO_RETURN void unexpectedToken()
+    // Unknown:
+    s[0] = c; s[1] = '\0';
+    return TOKEN_ERROR;
+}
+
+/*
+ * Peek at the next token without consuming it.
+ */
+int Parser::peekToken()
+{
+    if (peek != TOKEN_ERROR)
+        return peek;
+    peek = getToken();
+    return peek;
+}
+
+/*
+ * Position string for error messages.
+ */
+void Parser::getPositionStr(std::string &str) const
+{
+    for (size_t i = 0; i < prev; i++)
+        str += buf[i];
+    str += " <--- here";
+}
+
+/*
+ * Expect a specific token, else error.
+ */
+void Parser::expectToken(int token)
+{
+    if (getToken() != token)
     {
         std::string str;
         getPositionStr(str);
-        error("failed to parse %s at position \"%s\"; unexpected token \"%s\"",
-            mode, str.c_str(), s);
+        error("failed to parse %s at position \"%s\"; expected token "
+            "\"%s\", found \"%s\"", mode, str.c_str(),
+            getNameFromToken((Token)token), s);
     }
+}
 
-    const char *getName(int token)
+/*
+ * Expect one of two tokens, else error.
+ */
+int Parser::expectToken2(int token1, int token2)
+{
+    int t = getToken();
+    if (t != token1 && t != token2)
     {
-        return getNameFromToken((Token)token);
+        std::string str;
+        getPositionStr(str);
+        error("failed to parse %s at position \"%s\"; expected token "
+            "\"%s\" or \"%s\", found \"%s\"", mode, str.c_str(),
+            getNameFromToken((Token)token1),
+            getNameFromToken((Token)token2), s);
     }
+    return t;
+}
 
-    int getBlob()
+/*
+ * Unexpected token error.
+ */
+NO_RETURN void Parser::unexpectedToken() const
+{
+    std::string str;
+    getPositionStr(str);
+    error("failed to parse %s at position \"%s\"; unexpected token \"%s\"",
+        mode, str.c_str(), s);
+}
+
+/*
+ * Get the name of a token.
+ */
+const char *Parser::getName(int token) const
+{
+    return getNameFromToken((Token)token);
+}
+
+/*
+ * Get a "blob" of characters.  Used for regex and filename tokens.
+ */
+int Parser::getBlob()
+{
+    if (peek != TOKEN_ERROR)
+        unexpectedToken();
+    while (isspace(buf[pos]))
+        pos++;
+    if (buf[pos] == '\"')
+        return getToken();
+    unsigned j;
+    for (j = 0; j < TOKEN_MAXLEN && buf[pos] != '\0'; j++)
     {
-        if (peek != TOKEN_ERROR)
-            unexpectedToken();
-        while (isspace(buf[pos]))
-            pos++;
-        if (buf[pos] == '\"')
-            return getToken();
-        unsigned j;
-        for (j = 0; j < TOKEN_MAXLEN && buf[pos] != '\0'; j++)
+        if (isspace(buf[pos]))
+            break;
+        if (buf[pos] == '\\' && isspace(buf[pos+1]))
         {
-            if (isspace(buf[pos]))
-                break;
-            if (buf[pos] == '\\' && isspace(buf[pos+1]))
-            {
-                s[j] = buf[pos+1];
-                pos += 2;
-                continue;
-            }
-            s[j] = buf[pos++];
+            s[j] = buf[pos+1];
+            pos += 2;
+            continue;
         }
-        if (j >= TOKEN_MAXLEN)
-            unexpectedToken();
-        s[j] = '\0';
-        return TOKEN_REGEX;
+        s[j] = buf[pos++];
     }
-};
+    if (j >= TOKEN_MAXLEN)
+        unexpectedToken();
+    s[j] = '\0';
+    return TOKEN_REGEX;
+}
 

@@ -17,15 +17,17 @@ E9PATCH_OBJS=\
     src/e9patch/e9trampoline.o \
     src/e9patch/e9x86_64.o
 
-E9TOOL_SRC=\
-    src/e9tool/e9cfg.cpp \
-    src/e9tool/e9csv.cpp \
-    src/e9tool/e9frontend.cpp \
-    src/e9tool/e9metadata.cpp \
-    src/e9tool/e9parser.cpp \
-    src/e9tool/e9tool.cpp \
-    src/e9tool/e9types.cpp \
-    src/e9tool/e9x86_64.cpp 
+E9TOOL_OBJS=\
+    src/e9tool/e9cfg.o \
+    src/e9tool/e9codegen.o \
+    src/e9tool/e9csv.o \
+    src/e9tool/e9frontend.o \
+    src/e9tool/e9metadata.o \
+    src/e9tool/e9misc.o \
+    src/e9tool/e9parser.o \
+    src/e9tool/e9tool.o \
+    src/e9tool/e9types.o \
+    src/e9tool/e9x86_64.o
 
 release: CXXFLAGS += -O2 -D NDEBUG
 release: $(E9PATCH_OBJS)
@@ -36,22 +38,19 @@ debug: CXXFLAGS += -O0 -g -fsanitize=address
 debug: $(E9PATCH_OBJS)
 	$(CXX) $(CXXFLAGS) $(E9PATCH_OBJS) -o e9patch
 
-e9tool.o: $(E9TOOL_SRC)
-	$(CXX) $(CXXFLAGS) -c src/e9tool/e9tool.cpp
-
 tool: CXXFLAGS += -O2 -I src/e9tool/ -I zydis/include/ \
     -I zydis/dependencies/zycore/include/ -Wno-unused-function
-tool: e9tool.o
-	$(CXX) $(CXXFLAGS) e9tool.o -o e9tool libZydis.a \
-        -Wl,--export-dynamic -ldl
+tool: $(E9TOOL_OBJS) 
+	$(CXX) $(CXXFLAGS) $(E9TOOL_OBJS) -o e9tool libZydis.a \
+        -Wl,--dynamic-list=src/e9tool/e9tool.syms -ldl 
 	strip e9tool
 
 tool.debug: CXXFLAGS += -O0 -g -I src/e9tool/ -I zydis/include/ \
     -I zydis/dependencies/zycore/include/ -Wno-unused-function \
     -fsanitize=address
-tool.debug: e9tool.o
-	$(CXX) $(CXXFLAGS) e9tool.o -o e9tool libZydis.a \
-        -Wl,--export-dynamic -ldl
+tool.debug: $(E9TOOL_OBJS)
+	$(CXX) $(CXXFLAGS) $(E9TOOL_OBJS) -o e9tool libZydis.a \
+        -Wl,--dynamic-list=src/e9tool/e9tool.syms -ldl
 
 loader_elf:
 	$(CXX) -std=c++11 -Wall -fno-stack-protector -Wno-unused-function -fPIC \
@@ -72,6 +71,6 @@ src/e9patch/e9elf.o: loader_elf
 src/e9patch/e9pe.o: loader_pe
 
 clean:
-	rm -rf $(E9PATCH_OBJS) e9tool.o e9patch e9tool a.out \
+	rm -rf $(E9PATCH_OBJS) $(E9TOOL_OBJS) e9tool.o e9patch e9tool a.out \
         src/e9patch/e9loader.c e9loader.out e9loader.o e9loader.bin
 

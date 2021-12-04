@@ -1,5 +1,5 @@
 /*
- * e9frontend.h
+ * e9tool.h
  * Copyright (C) 2021 National University of Singapore
  *
  * This program is free software: you can redistribute it and/or modify
@@ -16,8 +16,8 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#ifndef __E9FRONTEND_H
-#define __E9FRONTEND_H
+#ifndef __E9TOOL_H
+#define __E9TOOL_H
 
 #include <map>
 #include <vector>
@@ -32,7 +32,7 @@
 
 #define MAX_ARGNO       8
 
-namespace e9frontend
+namespace e9tool
 {
 
 /*
@@ -2317,6 +2317,8 @@ extern void sendCode(FILE *out, const char *code);
 /*
  * High-level functions that send complete E9PATCH JSONRPC messages:
  */
+extern unsigned sendBinaryMessage(FILE *out, const char *mode,
+    const char *filename);
 extern unsigned sendOptionsMessage(FILE *out, std::vector<const char *> &argv);
 extern unsigned sendReserveMessage(FILE *out, intptr_t addr, size_t len,
     bool absolute = false);
@@ -2330,11 +2332,15 @@ extern unsigned sendTrapTrampolineMessage(FILE *out);
 extern unsigned sendPrintTrampolineMessage(FILE *out, BinaryType type);
 extern unsigned sendExitTrampolineMessage(FILE *out, BinaryType type,
     int status);
-unsigned sendCallTrampolineMessage(FILE *out, const char *name,
+extern unsigned sendCallTrampolineMessage(FILE *out, const char *name,
     const std::vector<Argument> &args, BinaryType type, CallABI abi,
     CallJump jmp, PatchPos pos);
 extern unsigned sendTrampolineMessage(FILE *out, const char *name,
     const char *template_);
+extern unsigned sendInstructionMessage(FILE *out, intptr_t addr, size_t size,
+    off_t offset);
+extern unsigned sendEmitMessage(FILE *out, const char *filename,
+    const char *format);
 
 /*
  * ELF functions.
@@ -2360,6 +2366,7 @@ extern const SymbolInfo &getELFDynSymInfo(const ELF *elf);
 extern const SymbolInfo &getELFSymInfo(const ELF *elf);
 extern const GOTInfo &getELFGOTInfo(const ELF *elf);
 extern const PLTInfo &getELFPLTInfo(const ELF *elf);
+extern intptr_t getELFObject(const ELF *elf, const char *name);
 
 // Note: Windows PE files are parsed as "pseudo-ELF" files.  This saves having
 //       to rewrite/redesign large parts of E9Tool.  This may change in future.
@@ -2369,6 +2376,7 @@ extern const PLTInfo &getELFPLTInfo(const ELF *elf);
  */
 extern void getInstrInfo(const ELF *elf, const Instr *I, InstrInfo *info,
     void *raw = nullptr);
+extern const char *getRegName(Register r);
 extern ssize_t findInstr(const Instr *Is, size_t size, intptr_t address);
 extern void CFGAnalysis(const ELF *elf, const Instr *Is, size_t size,
     Targets &targets);
@@ -2377,6 +2385,6 @@ extern void NO_RETURN error(const char *msg, ...);
 extern void warning(const char *msg, ...);
 extern void debug(const char *msg, ...);
 
-}   // namespace e9frontend
+}   // namespace e9tool
 
 #endif

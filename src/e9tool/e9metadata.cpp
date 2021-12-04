@@ -5,7 +5,7 @@
  * |  __/\__, | || (_) | (_) | |
  *  \___|  /_/ \__\___/ \___/|_|
  *                              
- * Copyright (C) 2020 National University of Singapore
+ * Copyright (C) 2021 National University of Singapore
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -21,15 +21,340 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include <cassert>
+#include <sys/mman.h>
+
+#include "e9action.h"
+#include "e9csv.h"
+#include "e9codegen.h"
+#include "e9elf.h"
+#include "e9metadata.h"
+#include "e9misc.h"
+#include "e9tool.h"
+#include "e9x86_64.h"
+
+using namespace e9tool;
 
 /*
- * Prototypes.
+ * Call state helper class.
  */
-static const OpInfo *getOperand(const InstrInfo *I, int idx, OpType type,
-    Access access);
-static intptr_t makeMatchValue(MatchKind match, int idx, MatchField field,
-    const InstrInfo *I, intptr_t result, bool *defined);
+struct CallInfo
+{
+    /*
+     * Stored register information.
+     */
+    struct RegInfo
+    {
+        const int32_t offset;                   // Register stack offset.
+        const int32_t size;                     // Register storage size.
+        const int push;                         // Push index.
+        uint32_t saved:1;                       // Register saved?
+        uint32_t clobbered:1;                   // Register clobbered?
+        uint32_t used:1;                        // Register in use?
+        uint32_t caller_save:1;                 // Register caller save?
+
+        RegInfo(int32_t offset, int32_t size, int push) :
+            offset(offset), size(size), push(push), saved(0), clobbered(0),
+                used(0), caller_save(0)
+        {
+            ;
+        }
+    };
+
+    const int * const rsave;                    // Caller save regsters.
+    const bool before;                          // Before or after inst.
+    const bool pic;                             // PIC?
+    int32_t rsp_offset = 0x4000;                // Stack offset
+    std::map<Register, RegInfo> info;           // Register info
+    std::vector<Register> pushed;               // Pushed registers
+
+    /*
+     * Get register info.
+     */
+    RegInfo *getInfo(Register reg)
+    {
+        auto i = info.find(getCanonicalReg(reg));
+        if (i == info.end())
+            return nullptr;
+        return &i->second;
+    }
+
+    /*
+     * Get register info.
+     */
+    const RegInfo *getInfo(Register reg) const
+    {
+        auto i = info.find(getCanonicalReg(reg));
+        if (i == info.end())
+            return nullptr;
+        return &i->second;
+    }
+
+    /*
+     * Get register offset relative to the current %rsp value.
+     */
+    int32_t getOffset(Register reg) const
+    {
+        const RegInfo *rinfo = getInfo(reg);
+        assert(rinfo != nullptr);
+        return rsp_offset - rinfo->offset;
+    }
+
+    /*
+     * Get register saved.
+     */
+    bool getSaved(Register reg) const
+    {
+        const RegInfo *rinfo = getInfo(reg);
+        return (rinfo == nullptr? false: rinfo->saved != 0);
+    }
+
+    /*
+     * Get register clobbered.
+     */
+    bool getClobbered(Register reg) const
+    {
+        const RegInfo *rinfo = getInfo(reg);
+        return (rinfo == nullptr? false: rinfo->clobbered != 0);
+    }
+
+    /*
+     * Get register used.
+     */
+    bool getUsed(Register reg) const
+    {
+        const RegInfo *rinfo = getInfo(reg);
+        return (rinfo == nullptr? true: rinfo->used != 0);
+    }
+
+    /*
+     * Set register saved.
+     */
+    void setSaved(Register reg, bool saved)
+    {
+        RegInfo *rinfo = getInfo(reg);
+        assert(rinfo != nullptr);
+        rinfo->saved = saved;
+    }
+
+    /*
+     * Set register clobbered.
+     */
+    void setClobbered(Register reg, bool clobbered)
+    {
+        RegInfo *rinfo = getInfo(reg);
+        assert(rinfo != nullptr);
+        rinfo->clobbered = clobbered;
+    }
+
+    /*
+     * Set register used.
+     */
+    void setUsed(Register reg, bool used)
+    {
+        RegInfo *rinfo = getInfo(reg);
+        assert(rinfo != nullptr);
+        rinfo->used = used;
+    }
+
+    /*
+     * Save a register.
+     */
+    void save(Register reg)
+    {
+        setSaved(reg, true);
+    }
+
+    /*
+     * Check if a register is saved.
+     */
+    bool isSaved(Register reg) const
+    {
+        return getSaved(reg);
+    }
+
+    /*
+     * Clobber a register.
+     */
+    void clobber(Register reg)
+    {
+        setClobbered(reg, true);
+    }
+
+    /*
+     * Undo a register clobber.
+     */
+    void restore(Register reg)
+    {
+        setClobbered(reg, false);
+    }
+
+    /*
+     * Check if a register is clobbered.
+     */
+    bool isClobbered(Register reg) const
+    {
+        return getClobbered(reg);
+    }
+
+    /*
+     * Restore a register.
+     */
+    void use(Register reg)
+    {
+        assert(reg != REGISTER_RAX && reg != REGISTER_EFLAGS);
+        setUsed(reg, true);
+    }
+
+    /*
+     * Check if a register is used.
+     */
+    bool isUsed(Register reg) const
+    {
+        return getUsed(reg);
+    }
+
+    /*
+     * Get a suitable scratch register.
+     */
+    Register getScratch(const Register *exclude = nullptr)
+    {
+        Register reg = REGISTER_INVALID;
+        for (const auto &entry: info)
+        {
+            int regno = getRegIdx(entry.first);
+            if (regno < 0 || regno == RFLAGS_IDX || regno == RSP_IDX ||
+                    regno == RIP_IDX)
+                continue;
+            bool found = false;
+            for (unsigned i = 0; !found && exclude != nullptr &&
+                    exclude[i] != REGISTER_INVALID; i++)
+                found = (entry.first == exclude[i]);
+            if (found)
+                continue;
+            const RegInfo &rinfo = entry.second;
+            if (rinfo.used)
+                continue;
+            if (rinfo.clobbered)
+                return entry.first;
+            if (rinfo.saved)
+                reg = entry.first;
+        }
+        return reg;
+    }
+
+    /*
+     * Emulate a register push.
+     */
+    void push(Register reg, bool caller_save = false)
+    {
+        reg = getCanonicalReg(reg);
+        assert(getInfo(reg) == nullptr);
+
+        intptr_t reg_offset = 0;
+        switch (reg)
+        {
+            case REGISTER_EFLAGS:
+                rsp_offset += sizeof(int64_t);
+                reg_offset = rsp_offset;
+                break;
+            case REGISTER_RSP:
+                reg_offset = RSP_SLOT;
+                break;
+            case REGISTER_RIP:
+                reg_offset = RIP_SLOT;
+                break;
+            default:
+                rsp_offset += getRegSize(reg);
+                reg_offset = rsp_offset;
+        }
+        RegInfo rinfo(reg_offset, getRegSize(reg), (int)pushed.size());
+        rinfo.saved = true;
+        rinfo.caller_save = caller_save;
+        info.insert({reg, rinfo});
+        pushed.push_back(reg);
+    }
+
+    /*
+     * Emulate the call.
+     */
+    void call(bool conditional)
+    {
+        for (auto &entry: info)
+        {
+            RegInfo &rinfo = entry.second;
+            if (conditional && entry.first == REGISTER_RAX)
+            {
+                // %rax holds the return value:
+                assert(rinfo.saved);
+                rinfo.clobbered = true;
+                rinfo.used      = true;
+                continue;
+            }
+            if (rinfo.caller_save)
+            {
+                // Caller saved registers are clobbered and unused.
+                rinfo.clobbered = true;
+                rinfo.used      = false;
+            }
+            else if (!rinfo.clobbered)
+                rinfo.used = !rinfo.clobbered;
+        }
+    }
+
+    /*
+     * Emulate a register pop.
+     */
+    Register pop()
+    {
+        if (pushed.size() == 0)
+            return REGISTER_INVALID;
+        Register reg = pushed.back();
+        auto i = info.find(reg);
+        assert(i != info.end());
+        RegInfo &rinfo = i->second;
+        if (rinfo.caller_save)
+        {
+            // Stop at first caller-save.  These are handled by the
+            // trampoline template rather than the metadata.
+            return REGISTER_INVALID;
+        }
+        rinfo.used      = true;
+        rinfo.saved     = false;
+        rinfo.clobbered = false;
+        pushed.pop_back();
+        return reg;
+    }
+
+    /*
+     * Check if regsiter is caller-saved.
+     */
+    bool isCallerSave(Register reg)
+    {
+        const RegInfo *rinfo = getInfo(reg);
+        return (rinfo == nullptr? false: rinfo->caller_save != 0);
+    }
+
+    /*
+     * Constructor.
+     */
+    CallInfo(bool sysv, bool clean, bool state,  bool conditional,
+            size_t num_args, bool before, bool pic) :
+        rsave(getCallerSaveRegs(sysv, clean, state, conditional, num_args)),
+        before(before), pic(pic)
+    {
+        for (unsigned i = 0; rsave[i] >= 0; i++)
+            push(getReg(rsave[i]), /*caller_save=*/true);
+        if (clean || state)
+        {
+            // For clean/state calls, %rax will be clobbered when %rflags
+            // is pushed.
+            clobber(REGISTER_RAX);
+        }
+    }
+
+    CallInfo() = delete;
+    CallInfo(const CallInfo &) = delete;
+};
 
 /*
  * Get the type of an operand.
@@ -493,7 +818,7 @@ static void sendLoadRegToArg(FILE *out, Register reg, CallInfo &info, int regno)
                 break;
             case sizeof(int8_t):
                 sendMovFromStack8ToR64(out,
-                    info.getOffset(reg) + (getRegHigh(reg)? 1: 0), regno);
+                    info.getOffset(reg) + (isHighReg(reg)? 1: 0), regno);
                 break;
         }
     }
@@ -512,7 +837,7 @@ static void sendLoadRegToArg(FILE *out, Register reg, CallInfo &info, int regno)
                 sendMovFromR16ToR64(out, getRegIdx(reg), regno);
                 break;
             case sizeof(int8_t):
-                sendMovFromR8ToR64(out, getRegIdx(reg), getRegHigh(reg),
+                sendMovFromR8ToR64(out, getRegIdx(reg), isHighReg(reg),
                     regno);
                 break;
         }
@@ -537,7 +862,7 @@ static bool sendLoadRegToArg(FILE *out, const InstrInfo *I, Register reg,
         }
 
         sendLeaFromStackToR64(out,
-            info.getOffset(reg) + (getRegHigh(reg)? 1: 0), regno);
+            info.getOffset(reg) + (isHighReg(reg)? 1: 0), regno);
     }
     else
     {
@@ -1056,9 +1381,6 @@ static void sendBytesData(FILE *out, const uint8_t *bytes, size_t len)
 /*
  * Lookup a value from a CSV file based on the matching.
  */
-static bool matchEval(const MatchExpr *expr, const Targets &targets,
-    const InstrInfo *I, const char *basename = nullptr,
-    const Record **record = nullptr);
 static intptr_t lookupValue(const Action *action, size_t idx,
     const Targets &targets, const InstrInfo *I, const char *basename,
     intptr_t pos)
@@ -1491,8 +1813,8 @@ static void sendArgumentDataMetadata(FILE *out, const char *name,
 /*
  * Build metadata.
  */
-static void sendMetadata(FILE *out, const ELF *elf, const Action *action,
-    size_t idx, const InstrInfo *I, intptr_t id, Context *cxt)
+void sendMetadata(FILE *out, const ELF *elf, const Action *action, size_t idx,
+	const InstrInfo *I, intptr_t id, Context *cxt)
 {
     if (action == nullptr)
         return;

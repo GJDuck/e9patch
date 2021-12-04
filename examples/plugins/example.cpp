@@ -46,7 +46,7 @@
 
 #include "e9plugin.h"
 
-using namespace e9frontend;
+using namespace e9tool;
 
 #define COUNTERS         0x789a0000        // Arbitrary
 
@@ -62,7 +62,7 @@ extern void *e9_plugin_init_v1(const Context *cxt)
     /* 
      * This example uses 3 counters (one for calls/jumps/returns).
      * We allocate and initialize the counters to UINT16_MAX (or the value
-     * of the CFLIMIT environment variable) and place the counters at the
+     * of the LIMIT environment variable) and place the counters at the
      * virtual address COUNTERS.  For this, we use a "reserve" E9Patch API
      * message.
      */

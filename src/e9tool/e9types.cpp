@@ -27,28 +27,17 @@
 #include <map>
 #include <vector>
 
-static inline Type getType(TypeSig sig, unsigned idx)
-{
-    return (Type)(sig >> (64 - 8 * (idx + 1)));
-}
+#include "e9elf.h"
+#include "e9misc.h"
+#include "e9tool.h"
+#include "e9types.h"
 
-static inline TypeSig setType(TypeSig sig, Type t, unsigned idx)
-{
-    assert(((t & TYPE_PTR_PTR) != 0? (t & TYPE_PTR) == 0: true));
-    assert(((t & TYPE_PTR_PTR) != 0? t != TYPE_NULL_PTR: true));
-    assert(((t & TYPE_PTR) != 0? t != TYPE_NULL_PTR: true));
-    assert(((t & TYPE_PTR) == 0? (t & TYPE_CONST) == 0: true));
-
-    unsigned shift = (64 - 8 * (idx + 1));
-    sig &= ~(0xFFull << shift);
-    sig |= ((TypeSig)t << shift);
-    return sig;
-}
+using namespace e9tool;
 
 /*
  * Get init() signature.
  */
-static TypeSig getInitSig(bool env)
+TypeSig getInitSig(bool env)
 {
     TypeSig sig = TYPESIG_EMPTY;
     sig = setType(sig, TYPE_INT32, 0);                          // argc
@@ -61,7 +50,7 @@ static TypeSig getInitSig(bool env)
 /*
  * Get mmap() signature.
  */
-static TypeSig getMMapSig()
+TypeSig getMMapSig()
 {
     TypeSig sig = TYPESIG_EMPTY;
     sig = setType(sig, (TYPE_PTR | TYPE_VOID), 0);              // addr
@@ -189,7 +178,7 @@ static void getSymbolString(const Symbol &sym, std::string &str)
     }
     str += ')';
 }
-static void getSymbolString(const char *name, TypeSig sig, std::string &str)
+void getSymbolString(const char *name, TypeSig sig, std::string &str)
 {
     Symbol sym(name, sig);
     getSymbolString(sym, str);
@@ -329,7 +318,7 @@ static bool parseSymbol(Symbols &symbols, const char *name, intptr_t addr)
  * Lookup a symbol from the cache.  If no match is found, attempt to find the
  * optimal coercion to an existing symbol and cache the result.
  */
-static intptr_t lookupSymbol(const ELF *elf, const char *name, TypeSig sig)
+intptr_t lookupSymbol(const ELF *elf, const char *name, TypeSig sig)
 {
     Symbols &symbols = elf->symbols;
     if (symbols.size() == 0)
@@ -384,8 +373,8 @@ static intptr_t lookupSymbol(const ELF *elf, const char *name, TypeSig sig)
 /*
  * Print warning for symbol mismatch.
  */
-static void lookupSymbolWarnings(const ELF *elf, const InstrInfo *I,
-    const char *name, TypeSig sig)
+void lookupSymbolWarnings(const ELF *elf, const InstrInfo *I, const char *name,
+    TypeSig sig)
 {
     Symbols &symbols = elf->symbols;
     Symbol min(name, TYPESIG_MIN), max(name, TYPESIG_MAX);

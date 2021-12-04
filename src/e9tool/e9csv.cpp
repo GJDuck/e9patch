@@ -21,6 +21,18 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include <cstdint>
+#include <cstdio>
+
+#include <map>
+
+#include "e9action.h"
+#include "e9csv.h"
+#include "e9tool.h"
+#include "e9misc.h"
+
+using namespace e9tool;
+
 /*
  * CSV stream representation.
  */
@@ -31,14 +43,6 @@ struct CSV
     int length;                     // Record length
     unsigned lineno;                // Lineno
 };
-
-/*
- * CSV data representation.
- */
-typedef std::vector<const char *> Record;
-typedef std::vector<Record> Data;
-template <typename T, class Cmp = std::less<T>>
-using Index = std::map<T, const Record *, Cmp>;
 
 /*
  * CSV data cache.
@@ -175,7 +179,7 @@ static bool parseRecord(CSV &csv, Record &record, std::string &name)
 /*
  * Parse a CSV file.
  */
-static Data *parseCSV(const char *filename)
+Data *parseCSV(const char *filename)
 {
     char *path = realpath(filename, nullptr);
     if (path == nullptr)
@@ -224,7 +228,7 @@ static Data *parseCSV(const char *filename)
 /*
  * Convert a name into an integer.
  */
-static intptr_t nameToInt(const char *basename, const char *name)
+intptr_t nameToInt(const char *basename, const char *name)
 {
     const char *s = name;
     while (isspace(*s))
@@ -257,7 +261,7 @@ parse_error:
 /*
  * Build an integer index.
  */
-static void buildIntIndex(const char *basename, const Data &data, unsigned i,
+void buildIntIndex(const char *basename, const Data &data, unsigned i,
     Index<MatchValue> &index)
 {
     for (const auto &record: data)
