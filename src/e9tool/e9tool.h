@@ -2173,7 +2173,7 @@ struct InstrInfo
     }
     uint8_t getSIB() const
     {
-        return (hasMODRM()? data[encoding.offset.sib]: 0);
+        return (hasSIB()? data[encoding.offset.sib]: 0);
     }
     int32_t getDISP() const
     {
