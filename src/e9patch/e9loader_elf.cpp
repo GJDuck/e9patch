@@ -164,6 +164,20 @@ static NO_INLINE void e9load_maps(const e9_map_s *maps, uint32_t num_maps,
 }
 
 /*
+ * Get an address.
+ */
+static NO_INLINE const void *e9addr(intptr_t addr, const uint8_t *elf_base)
+{
+    if ((addr & E9_ABS_ADDR) != 0x0)
+    {
+        addr &= ~E9_ABS_ADDR;
+        return (const void *)addr;
+    }
+    else
+        return (const void *)(elf_base + addr);
+}
+
+/*
  * Loader initialization code.
  */
 void *e9init(int argc, char **argv, char **envp, const e9_config_s *config)
@@ -205,7 +219,7 @@ void *e9init(int argc, char **argv, char **envp, const e9_config_s *config)
         (const struct e9_map_s *)(loader_base + config->maps[0]);
     e9load_maps(maps, config->num_maps[0], elf_base, fd, mmap);
     if (config->mmap != 0x0)
-        mmap = (mmap_t)(elf_base + config->mmap);
+        mmap = (mmap_t)e9addr(config->mmap, elf_base);
     maps = (const struct e9_map_s *)(loader_base + config->maps[1]);
     e9load_maps(maps, config->num_maps[1], elf_base, fd, mmap);
     e9syscall(SYS_close, fd);
@@ -219,12 +233,12 @@ void *e9init(int argc, char **argv, char **envp, const e9_config_s *config)
     const intptr_t *inits = (const intptr_t *)(loader_base + config->inits);
     for (uint32_t i = 0; i < config->num_inits; i++)
     {
-        init_t init = (init_t)(elf_base + inits[i]);
+        init_t init = (init_t)e9addr(inits[i], elf_base);
         init(argc, argv, envp, dynamic, config);
     }
 
     // Step (4): Return the entry point:
-    void *entry = (void *)(elf_base + config->entry);
+    void *entry = (void *)e9addr(config->entry, elf_base);
     return entry;
 }
 
@@ -239,11 +253,11 @@ void *e9fini(const e9_config_s *config)
     const intptr_t *finis = (const intptr_t *)(loader_base + config->finis);
     for (uint32_t i = 0; i < config->num_finis; i++)
     {
-        fini_t fini = (fini_t)(elf_base + finis[i]);
+        fini_t fini = (fini_t)e9addr(finis[i], elf_base);
         fini(config);
     }
 
-    void *fini = (void *)(elf_base + config->fini);
+    void *fini = (void *)e9addr(config->fini, elf_base);
     return fini;
 }
 

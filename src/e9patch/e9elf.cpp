@@ -327,20 +327,26 @@ size_t emitElf(Binary *B, const MappingSet &mappings, size_t mapping_size)
     memcpy(config->magic, magic, sizeof(magic));
     config->base = option_loader_base;
     if (B->mmap != INTPTR_MIN)
-        config->mmap = B->mmap;
-
+    {
+        config->mmap  = BASE_ADDRESS(B->mmap);
+        config->mmap |= (IS_ABSOLUTE(config->mmap)? E9_ABS_ADDR: 0);
+    }
     config->inits = (B->inits.size() > 0? (uint32_t)(size - config_offset): 0);
     for (auto init: B->inits)
     {
-        memcpy(data + size, &init, sizeof(init));
-        size += sizeof(init);
+        intptr_t addr = BASE_ADDRESS(init);
+        addr |= (IS_ABSOLUTE(init)? E9_ABS_ADDR: 0);
+        memcpy(data + size, &addr, sizeof(addr));
+        size += sizeof(addr);
         config->num_inits++;
     }
     config->finis = (B->finis.size() > 0? (uint32_t)(size - config_offset): 0);
     for (auto fini: B->finis)
     {
-        memcpy(data + size, &fini, sizeof(fini));
-        size += sizeof(fini);
+        intptr_t addr = BASE_ADDRESS(fini);
+        addr |= (IS_ABSOLUTE(fini)? E9_ABS_ADDR: 0);
+        memcpy(data + size, &addr, sizeof(addr));
+        size += sizeof(addr);
         config->num_finis++;
     }
 

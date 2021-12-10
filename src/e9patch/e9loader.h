@@ -33,6 +33,8 @@
 #define E9_TYPE_RESERVE             0x1
 #define E9_TYPE_REFACTOR            0x2
 
+#define E9_ABS_ADDR        			0x4000000000000000ll
+
 struct e9_map_s
 {
     int32_t  addr;                              // Address (/ PAGE_SIZE)
