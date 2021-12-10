@@ -186,33 +186,29 @@ void e9tool::getInstrInfo(const ELF *elf, const Instr *I, InstrInfo *info,
             (D->raw.imm[0].offset != 0? D->raw.imm[0].offset: -1);
 
         info->flags.read = 0x0;
-        if (D->cpu_flags_read & ZYDIS_CPUFLAG_CF)
+        if (D->cpu_flags_read & (1 << ZYDIS_CPUFLAG_CF))
             info->flags.read |= FLAG_CF;
-        if (D->cpu_flags_read & ZYDIS_CPUFLAG_PF)
+        if (D->cpu_flags_read & (1 << ZYDIS_CPUFLAG_PF))
             info->flags.read |= FLAG_PF;
-        if (D->cpu_flags_read & ZYDIS_CPUFLAG_AF)
+        if (D->cpu_flags_read & (1 << ZYDIS_CPUFLAG_AF))
             info->flags.read |= FLAG_AF;
-        if (D->cpu_flags_read & ZYDIS_CPUFLAG_ZF)
+        if (D->cpu_flags_read & (1 << ZYDIS_CPUFLAG_ZF))
             info->flags.read |= FLAG_ZF;
-        if (D->cpu_flags_read & ZYDIS_CPUFLAG_SF)
+        if (D->cpu_flags_read & (1 << ZYDIS_CPUFLAG_SF))
             info->flags.read |= FLAG_SF;
         info->flags.write = 0x0;
-        if (D->cpu_flags_written & ZYDIS_CPUFLAG_CF)
+        if (D->cpu_flags_written & (1 << ZYDIS_CPUFLAG_CF))
             info->flags.write |= FLAG_CF;
-        if (D->cpu_flags_written & ZYDIS_CPUFLAG_PF)
+        if (D->cpu_flags_written & (1 << ZYDIS_CPUFLAG_PF))
             info->flags.write |= FLAG_PF;
-        if (D->cpu_flags_written & ZYDIS_CPUFLAG_AF)
+        if (D->cpu_flags_written & (1 << ZYDIS_CPUFLAG_AF))
             info->flags.write |= FLAG_AF;
-        if (D->cpu_flags_written & ZYDIS_CPUFLAG_ZF)
+        if (D->cpu_flags_written & (1 << ZYDIS_CPUFLAG_ZF))
             info->flags.write |= FLAG_ZF;
-        if (D->cpu_flags_written & ZYDIS_CPUFLAG_SF)
+        if (D->cpu_flags_written & (1 << ZYDIS_CPUFLAG_SF))
             info->flags.write |= FLAG_SF;
 
-        unsigned j = 0, k = 0, l = 0;
-        if (D->cpu_flags_read != 0x0)
-            info->regs.read[k++] = REGISTER_EFLAGS;
-        if (D->cpu_flags_written != 0x0)
-            info->regs.write[l++] = REGISTER_EFLAGS;
+        unsigned j = 0, k = 0, l = 0, m = 0, n = 0;
         Register seg = REGISTER_NONE;
         if (D->attributes & ZYDIS_ATTRIB_HAS_SEGMENT_CS)
             seg = REGISTER_CS;
@@ -230,13 +226,16 @@ void e9tool::getInstrInfo(const ELF *elf, const Instr *I, InstrInfo *info,
         {
             unsigned i = (option_intel_syntax? i0: D->operand_count - i0 - 1);
             bool read =
-                (((D->operands[i].actions & ZYDIS_OPERAND_ACTION_READ) != 0) ||
-                 ((D->operands[i].actions & ZYDIS_OPERAND_ACTION_CONDREAD) != 0));
+                ((D->operands[i].actions & ZYDIS_OPERAND_ACTION_READ) != 0);
             bool write =
-                (((D->operands[i].actions & ZYDIS_OPERAND_ACTION_WRITE) != 0) ||
-                 ((D->operands[i].actions & ZYDIS_OPERAND_ACTION_CONDWRITE) != 0));
+                ((D->operands[i].actions & ZYDIS_OPERAND_ACTION_WRITE) != 0);
+            bool condread =
+                ((D->operands[i].actions & ZYDIS_OPERAND_ACTION_CONDREAD) != 0);
+            bool condwrite =
+                 ((D->operands[i].actions & ZYDIS_OPERAND_ACTION_CONDWRITE)
+                    != 0);
             if (D->mnemonic == ZYDIS_MNEMONIC_NOP)
-                read = write = false;
+                condread = read = condwrite = write = false;
 
             switch (D->operands[i].type)
             {
@@ -247,6 +246,10 @@ void e9tool::getInstrInfo(const ELF *elf, const Instr *I, InstrInfo *info,
                         info->regs.read[k++] = r;
                     if (write && r != REGISTER_INVALID)
                         info->regs.write[l++] = r;
+                    if (condread && r != REGISTER_INVALID)
+                        info->regs.condread[m++] = r;
+                    if (condwrite && r != REGISTER_INVALID)
+                        info->regs.condwrite[n++] = r;
                     break;
                 }
                 case ZYDIS_OPERAND_TYPE_MEMORY:
@@ -297,17 +300,26 @@ void e9tool::getInstrInfo(const ELF *elf, const Instr *I, InstrInfo *info,
                 default:
                     continue;
             }
-            info->op[j].access = (read? ACCESS_READ: 0) | (write? ACCESS_WRITE: 0);
+            info->op[j].access =
+                (read || condread? ACCESS_READ: 0) |
+                (write || condwrite? ACCESS_WRITE: 0);
             info->op[j].size = D->operands[i].size / 8;
             j++;
         }
         assert(k < (sizeof(info->regs.read) / sizeof(info->regs.read[0])) - 1);
-        assert(l < (sizeof(info->regs.write) / sizeof(info->regs.write[0])) - 1);
-        info->regs.read[k]   = REGISTER_INVALID;
-        info->regs.write[l]  = REGISTER_INVALID;
-        info->op[j].type     = OPTYPE_INVALID;
-        info->count.op       = j;
-        info->string.section = elf->strs + shdr->sh_name;
+        assert(l < (sizeof(info->regs.write) /
+            sizeof(info->regs.write[0])) - 1);
+        assert(m < (sizeof(info->regs.condread) /
+            sizeof(info->regs.condread[0])) - 1);
+        assert(n < (sizeof(info->regs.condwrite) /
+            sizeof(info->regs.condwrite[0])) - 1);
+        info->regs.read[k]      = REGISTER_INVALID;
+        info->regs.write[l]     = REGISTER_INVALID;
+        info->regs.condread[m]  = REGISTER_INVALID;
+        info->regs.condwrite[n] = REGISTER_INVALID;
+        info->op[j].type        = OPTYPE_INVALID;
+        info->count.op          = j;
+        info->string.section    = elf->strs + shdr->sh_name;
         result = ZydisFormatterFormatInstruction(&formatter, D,
             info->string.instr, sizeof(info->string.instr)-1, I->address);
         if (!ZYAN_SUCCESS(result))

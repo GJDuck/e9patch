@@ -1736,6 +1736,19 @@ static MatchValue makeMatchValue(const MatchTest *test, const ELF *elf,
 }
 
 /*
+ * Match a register.
+ */
+static bool matchReg(const std::set<Register> *Rs, const Register *regs)
+{
+    for (uint8_t i = 0; regs[i] != REGISTER_INVALID; i++)
+    {
+        if (Rs->find(regs[i]) != Rs->end())
+            return true;
+    }
+    return false;
+}
+
+/*
  * Evaluate a matching.
  */
 bool matchEval(const MatchExpr *expr, const ELF *elf,
@@ -1812,27 +1825,32 @@ bool matchEval(const MatchExpr *expr, const ELF *elf,
             pass = (test->cmp == MATCH_CMP_NEQ? !pass: pass);
             break;
         }
-        case MATCH_READS: case MATCH_WRITES: case MATCH_REGS:
-        {
-            if (test->cmp == MATCH_CMP_DEFINED)
-            {
-                pass = true;
-                break;
-            }
-            for (uint8_t i = 0; !pass && test->match != MATCH_WRITES &&
-                    I->regs.read[i] != REGISTER_INVALID; i++)
-            {
-                auto j = test->regs->find(I->regs.read[i]);
-                pass = (j != test->regs->end());
-            }
-            for (uint8_t i = 0; !pass && test->match != MATCH_READS &&
-                    I->regs.write[i] != REGISTER_INVALID; i++)
-            {
-                auto j = test->regs->find(I->regs.write[i]);
-                pass = (j != test->regs->end());
-            }
+        case MATCH_READS:
+            pass = (test->cmp == MATCH_CMP_DEFINED);
+            pass = pass || matchReg(test->regs, I->regs.read);
+            pass = pass || matchReg(test->regs, I->regs.condread);
+            pass = pass ||
+                (I->flags.read != 0x0 &&
+                 test->regs->find(REGISTER_EFLAGS) != test->regs->end());
             break;
-        }
+        case MATCH_WRITES:
+            pass = (test->cmp == MATCH_CMP_DEFINED);
+            pass = pass || matchReg(test->regs, I->regs.write);
+            pass = pass || matchReg(test->regs, I->regs.condwrite);
+            pass = pass ||
+                (I->flags.write != 0x0 &&
+                 test->regs->find(REGISTER_EFLAGS) != test->regs->end());
+            break;
+        case MATCH_REGS:
+            pass = (test->cmp == MATCH_CMP_DEFINED);
+            pass = pass || matchReg(test->regs, I->regs.read);
+            pass = pass || matchReg(test->regs, I->regs.condread);
+            pass = pass || matchReg(test->regs, I->regs.write);
+            pass = pass || matchReg(test->regs, I->regs.condwrite);
+            pass = pass ||
+                ((I->flags.write | I->flags.read) != 0x0 &&
+                 test->regs->find(REGISTER_EFLAGS) != test->regs->end());
+            break;
         case MATCH_TRUE: case MATCH_FALSE: case MATCH_ADDRESS:
         case MATCH_CALL: case MATCH_JUMP: case MATCH_OFFSET:
         case MATCH_OP: case MATCH_SRC: case MATCH_DST:

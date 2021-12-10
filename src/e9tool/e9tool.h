@@ -2122,6 +2122,8 @@ struct InstrInfo
     {
         Register    read[16];       // Instruction register reads
         Register    write[16];      // Instruction register writes
+        Register    condread[16];   // Instruction register conditional reads
+        Register    condwrite[16];  // Instruction register conditional writes
     } regs;
     struct
     {
