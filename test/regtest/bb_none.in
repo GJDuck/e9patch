@@ -1,0 +1,5 @@
+./test -M '!defined(BB[0])' -P print
+
+Note: it is possible for an instruction to not belong to a BB and still be
+      executed.
+

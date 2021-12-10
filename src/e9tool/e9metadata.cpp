@@ -1381,12 +1381,12 @@ static void sendBytesData(FILE *out, const uint8_t *bytes, size_t len)
 /*
  * Lookup a value from a CSV file based on the matching.
  */
-static intptr_t lookupValue(const Action *action, size_t idx,
-    const Targets &targets, const InstrInfo *I, const char *basename,
-    intptr_t pos)
+static intptr_t lookupValue(const Action *action, size_t idx, const ELF *elf,
+    const std::vector<Instr> &Is, size_t i, const InstrInfo *I,
+    const char *basename, intptr_t pos)
 {
     const Record *record = nullptr;
-    bool pass = matchEval(action->match, targets, I, basename, &record);
+    bool pass = matchEval(action->match, elf, Is, i, I, basename, &record);
     if (!pass || record == nullptr)
         error("failed to lookup value from file \"%s.csv\"; matching is "
             "ambiguous", basename);
@@ -1403,7 +1403,8 @@ static intptr_t lookupValue(const Action *action, size_t idx,
  */
 static Type sendLoadArgumentMetadata(FILE *out, CallInfo &info,
     const ELF *elf, const Action *action, size_t idx, const Argument &arg,
-    const InstrInfo *I, intptr_t id, int argno, int regno)
+    const std::vector<Instr> &Is, size_t i, const InstrInfo *I, intptr_t id,
+    int argno, int regno)
 {
     if (regno < 0)
         error("failed to load argument; call instrumentation exceeds the "
@@ -1418,7 +1419,7 @@ static Type sendLoadArgumentMetadata(FILE *out, CallInfo &info,
     {
         case ARGUMENT_USER:
         {
-            intptr_t value = lookupValue(action, idx, elf->targets, I,
+            intptr_t value = lookupValue(action, idx, elf, Is, i, I,
                 arg.name, arg.value);
             sendLoadValueMetadata(out, value, regno);
             break;
@@ -1814,7 +1815,8 @@ static void sendArgumentDataMetadata(FILE *out, const char *name,
  * Build metadata.
  */
 void sendMetadata(FILE *out, const ELF *elf, const Action *action, size_t idx,
-	const InstrInfo *I, intptr_t id, Context *cxt)
+	const std::vector<Instr> &Is, size_t i, const InstrInfo *I, intptr_t id,
+    Context *cxt)
 {
     if (action == nullptr)
         return;
@@ -1880,7 +1882,7 @@ void sendMetadata(FILE *out, const ELF *elf, const Action *action, size_t idx,
             {
                 int regno = getArgRegIdx(sysv, argno);
                 Type t = sendLoadArgumentMetadata(out, info, elf, action, idx,
-                    arg, I, id, argno, regno);
+                    arg, Is, i, I, id, argno, regno);
                 sig = setType(sig, t, argno);
                 argno++;
             }

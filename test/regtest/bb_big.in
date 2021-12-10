@@ -1,0 +1,1 @@
+./test -M 'defined(BB[15])' -P print

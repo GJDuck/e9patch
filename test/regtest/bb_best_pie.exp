@@ -1,0 +1,29 @@
+000000000a000106:ffffffffffffffe9:ffffffffffffe9e9: 41 57                   push %r15
+000000000a00010a:ffffffffffffffe9:ffffffffffffe9e9: 48 8b 05 5e 00 00 00    movq 0x5e(%rip), %rax
+000000000a000124:ffffffffffffffe9:ffffffffffffe9e9: 79 02                   jns 0xa000128
+000000000a00012b:ffffffffffffffe9:ffffffffffffe9e9: 7d 02                   jnl 0xa00012f
+000000000a00012f:ffffffffffffffe9:ffffffffffffe9e9: 7e 02                   jle 0xa000133
+000000000a000133:ffffffffffffffe9:ffffffffffffe9e9: 83 fb 33                cmp $0x33, %ebx
+000000000a00013a:ffffffffffffffe9:ffffffffffffe9e9: 0f 8e 6e 01 00 00       jle 0xa0002ae
+000000000a000140:ffffffffffffffe9:ffffffffffffe9e9: 4c 8b 05 28 00 00 00    movq 0x28(%rip), %r8
+000000000a000159:ffffffffffffffe9:ffffffffffffe9e9: 7f 02                   jnle 0xa00015d
+000000000a00015d:ffffffffffffffe9:ffffffffffffe9e9: e3 02                   jrcxz 0xa000161
+000000000a00015f:ffffffffffffffe9:ffffffffffffe9e9: eb 02                   jmp 0xa000163
+000000000a000163:ffffffffffffffe9:ffffffffffffe9e9: e8 00 00 00 00          call 0xa000168
+000000000a000168:ffffffffffffffe9:ffffffffffffe9e9: e9 00 00 00 00          jmp 0xa00016d
+000000000a00016d:ffffffffffffffe9:ffffffffffffe9e9: eb 08                   jmp 0xa000177
+000000000a000177:ffffffffffffffe9:ffffffffffffe9e9: 4c 8d 15 14 00 00 00    lea 0x14(%rip), %r10
+000000000a000192:ffffffffffffffe9:ffffffffffffe9e9: e8 1e 00 00 00          call 0xa0001b5
+000000000a0001b9:ffffffffffffffe9:ffffffffffffe9e9: 48 8d 15 02 00 00 00    lea 0x2(%rip), %rdx
+000000000a0001dd:ffffffffffffffe9:ffffffffffffe9e9: 48 25 fe 00 00 00       and $0xfe, %rax
+000000000a0001fd:ffffffffffffffe9:ffffffffffffe9e9: 48 c7 c0 19 45 00 00    mov $0x4519, %rax
+000000000a000216:ffffffffffffffe9:ffffffffffffe9e9: f3 48 0f 2c c1          cvttss2si %xmm1, %rax
+000000000a000223:ffffffffffffffe9:ffffffffffffe9e9: 48 8b 84 24 00 ff ff ff movq -0x100(%rsp), %rax
+000000000a000234:ffffffffffffffe9:ffffffffffffe9e9: 48 8b 84 f4 00 ff ff ff movq -0x100(%rsp,%rsi,8), %rax
+000000000a000243:ffffffffffffffe9:ffffffffffffe9e9: 2e 48 8b 84 f4 00 ff ff movq %cs:-0x100(%rsp,%rsi,8), %rax
+                                                    ff 
+000000000a00025c:ffffffffffffffe9:ffffffffffffe9e9: 48 8d 05 9d fd ff ff    lea -0x263(%rip), %rax
+000000000a000276:ffffffffffffffe9:ffffffffffffe9e9: 48 8b 8c f0 00 00 00 0a movq 0xa000000(%rax,%rsi,8), %rcx
+000000000a000280:ffffffffffffffe9:ffffffffffffe9e9: 48 8b 90 08 00 00 0a    movq 0xa000008(%rax), %rdx
+000000000a000295:ffffffffffffffe9:ffffffffffffe9e9: 48 8d 35 54 00 00 00    lea 0x54(%rip), %rsi
+PASSED

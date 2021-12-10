@@ -1,0 +1,3 @@
+nop
+nopl %eax, (%rax)
+PASSED

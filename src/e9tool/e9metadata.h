@@ -26,7 +26,7 @@
 #include "e9tool.h"
 
 extern void sendMetadata(FILE *out, const e9tool::ELF *elf,
-	const Action *action, size_t idx, const e9tool::InstrInfo *I,
-	intptr_t id, Context *cxt);
+	const Action *action, size_t idx, const std::vector<e9tool::Instr> &Is,
+    size_t i, const e9tool::InstrInfo *I, intptr_t id, Context *cxt);
 
 #endif

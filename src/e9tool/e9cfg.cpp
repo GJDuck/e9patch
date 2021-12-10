@@ -33,7 +33,6 @@
 
 #include <set>
 
-#include "e9cfg.h"
 #include "e9tool.h"
 
 using namespace e9tool;
@@ -350,9 +349,9 @@ static void CFGDataAnalysis(const ELF *elf, bool pic, const Instr *Is,
 }
 
 /*
- * Analyze the given ELF binary for potential jump targets.
+ * Build the set of potential jump targets.
  */
-void e9tool::CFGAnalysis(const ELF *elf, const Instr *Is, size_t size,
+void e9tool::buildTargets(const ELF *elf, const Instr *Is, size_t size,
     Targets &targets)
 {
     bool pic = false;
@@ -384,7 +383,7 @@ void e9tool::CFGAnalysis(const ELF *elf, const Instr *Is, size_t size,
         if (i < 0)
             continue;
 
-        // Skip any NOPs/INTs/UDs:
+        // Skip any NOPs
         InstrInfo I0, *I = &I0;
         for (; i < (ssize_t)size; i++)
         {
@@ -393,9 +392,6 @@ void e9tool::CFGAnalysis(const ELF *elf, const Instr *Is, size_t size,
             switch (I->mnemonic)
             {
                 case MNEMONIC_NOP:
-                case MNEMONIC_INT: case MNEMONIC_INT1: case MNEMONIC_INT3:
-                case MNEMONIC_INTO:
-                case MNEMONIC_UD0: case MNEMONIC_UD1: case MNEMONIC_UD2:
                     break;
                 default:
                     stop = true;
@@ -414,5 +410,78 @@ void e9tool::CFGAnalysis(const ELF *elf, const Instr *Is, size_t size,
         addTarget((intptr_t)Is[i].address, kind, new_targets);
     }
     targets.swap(new_targets);
+}
+
+/*
+ * Build the set of basic blocks.
+ */
+void e9tool::buildBBs(const ELF *elf, const Instr *Is, size_t size,
+    const Targets &targets, BBs &bbs)
+{
+    for (const auto &entry: targets)
+    {
+        intptr_t target = entry.first;
+        size_t i = findInstr(Is, size, target);
+        if (i >= size)
+            continue;
+        uint32_t lb = i, ub = i, best = i;
+        const Instr *I = Is + i;
+
+        for (++i; i < size; i++)
+        {
+            InstrInfo info0, *info = &info0;
+            getInstrInfo(elf, I, info);
+            bool cft = false;
+            switch (info->mnemonic)
+            {
+                case MNEMONIC_RET:
+                case MNEMONIC_JMP:
+                case MNEMONIC_JO: case MNEMONIC_JNO: case MNEMONIC_JB:
+                case MNEMONIC_JAE: case MNEMONIC_JE: case MNEMONIC_JNE:
+                case MNEMONIC_JBE: case MNEMONIC_JA: case MNEMONIC_JS:
+                case MNEMONIC_JNS: case MNEMONIC_JP: case MNEMONIC_JNP:
+                case MNEMONIC_JL: case MNEMONIC_JGE: case MNEMONIC_JLE:
+                case MNEMONIC_JG: 
+                    cft = true;
+                    break;
+                case MNEMONIC_INT: case MNEMONIC_INT1: case MNEMONIC_INT3:
+                case MNEMONIC_INTO:
+                case MNEMONIC_UD0: case MNEMONIC_UD1: case MNEMONIC_UD2:
+                case MNEMONIC_HLT:
+                    cft = true;     // Treat as end-of-BB
+                    break;
+                default:
+                    break;
+            }
+            if (cft)
+                break;
+            const Instr *J = I+1;
+            if (I->address + I->size != J->address)
+                break;
+            if (targets.find(J->address) != targets.end())
+                break;
+            ub++;
+            if (Is[best].size < /*sizeof(jmpq)=*/5 &&
+                    Is[ub].size > Is[best].size)
+                best = ub;
+            I = J;
+        }
+        BB bb(lb, ub, best);
+        bbs.insert({lb, bb});
+    }
+}
+
+/*
+ * Find a basic block based on an instruction index.
+ */
+BBs::const_iterator e9tool::findBB(const BBs &bbs, size_t idx)
+{
+    auto i = bbs.lower_bound(idx);
+    if (i == bbs.end())
+        return i;
+    const BB &bb = i->second;
+    if (idx < bb.lb || idx > bb.ub)
+        return bbs.end();
+    return i;
 }
 

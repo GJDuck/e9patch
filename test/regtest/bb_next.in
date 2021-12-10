@@ -1,0 +1,1 @@
+./test -M 'BB.len != 16 && I[1].BB.len == 16' -P print

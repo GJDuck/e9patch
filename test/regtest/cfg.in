@@ -1,1 +1,0 @@
-./test -M bb.entry -P 'entry(static addr,r15b,r15w,instr,size,asm)@inst'

@@ -49,13 +49,13 @@
 /*
  * Options.
  */
-static bool option_cfg          = false;
-static bool option_trap_all     = false;
+static bool option_targets  = false;
+static bool option_bbs      = false;
+static bool option_trap_all = false;
 static std::string option_format("binary");
 static std::string option_output("");
 
 #include "e9action.h"
-#include "e9cfg.h"
 #include "e9csv.h"
 #include "e9elf.h"
 #include "e9metadata.h"
@@ -304,8 +304,15 @@ static NO_RETURN void deprecated(const char *what)
 static intptr_t parseIndex(Parser &parser, intptr_t lb, intptr_t ub)
 {
     parser.expectToken('[');
+    bool neg = false;
+    if (parser.peekToken() == '-')
+    {
+        neg = true;
+        parser.getToken();
+    }
     parser.expectToken(TOKEN_INTEGER);
     intptr_t idx = parser.i;
+    idx = (neg? -idx: idx);
     parser.expectToken(']');
     if (idx < lb || idx > ub)
         error("failed to parse %s; expected index within the range "
@@ -392,21 +399,68 @@ static void parseValues(Parser &parser, MatchType type, MatchCmp cmp,
 }
 
 /*
+ * Parse an instruction specifier.
+ */
+static std::pair<MatchSet, int> parseSpecifier(Parser &parser, int *tptr)
+{
+    *tptr = -1;
+    int t = parser.peekToken();
+    MatchSet set = MATCH_Is;
+    int i;
+    switch (t)
+    {
+        case TOKEN_BB:
+            parser.getToken();
+            option_targets = option_bbs = true;
+            if (tptr != nullptr && parser.peekToken() == '.')
+            {
+                *tptr = TOKEN_BB;
+                return {MATCH_Is, 0};
+            }
+            set = MATCH_BBs;
+            break;
+        case TOKEN_I:
+            parser.getToken();
+            set = MATCH_Is;
+            break;
+        default:
+            return {MATCH_Is, 0};
+    }
+    i = (int)parseIndex(parser, INT32_MIN, INT32_MAX);
+    if (parser.peekToken() == '.')
+    {
+        parser.getToken();
+        if (parser.peekToken() == TOKEN_REGISTER)
+        {
+            parser.getToken();
+            parser.unexpectedToken();
+        }
+    }
+    else
+        *tptr = TOKEN_TRUE;
+    return {set, i};
+}
+
+/*
  * Parse a match test.
  */
 static MatchTest *parseTest(Parser &parser)
 {
-    int t = parser.getToken();
     MatchKind match = MATCH_INVALID;
     MatchType type  = MATCH_TYPE_INTEGER;
     MatchCmp  cmp   = MATCH_CMP_INVALID;
     std::set<Register> regs;
-    if (t == TOKEN_DEFINED)
+    if (parser.peekToken() == TOKEN_DEFINED)
     {
+        parser.getToken();
         parser.expectToken('(');
         cmp = MATCH_CMP_DEFINED;
-        t = parser.getToken();
     }
+    int t;
+    auto spec    = parseSpecifier(parser, &t);
+    MatchSet set = spec.first;
+    int i        = spec.second;
+    t            = (t >= 0? t: parser.getToken());
     switch (t)
     {
         case TOKEN_ASM:
@@ -464,7 +518,10 @@ static MatchTest *parseTest(Parser &parser)
                 regs.insert((Register)parser.i);
             }
             parser.expectToken(TOKEN_IN);
-            t = parser.getToken();
+            spec = parseSpecifier(parser, &t);
+            set  = spec.first;
+            i    = spec.second;
+            t    = (t >= 0? t: parser.getToken());
             // Fallthrough:
         case TOKEN_READS: case TOKEN_WRITES: case TOKEN_REGS:
             if (cmp == MATCH_CMP_INVALID)
@@ -497,19 +554,30 @@ static MatchTest *parseTest(Parser &parser)
             parser.expectToken('.');
             switch (parser.getToken())
             {
+                case TOKEN_SIZE:
+                    match = MATCH_BB_SIZE; break;
+                case TOKEN_LENGTH:
+                    match = MATCH_BB_LEN; break;
+                case TOKEN_ADDR:
+                    match = MATCH_BB_ADDR; break;
+                case TOKEN_OFFSET:
+                    match = MATCH_BB_OFFSET; break;
                 case TOKEN_ENTRY:
                     match = MATCH_BB_ENTRY; break;
+                case TOKEN_EXIT:
+                    match = MATCH_BB_EXIT; break;
+                case TOKEN_BEST:
+                    match = MATCH_BB_BEST; break;
                 default:
                     parser.unexpectedToken();
             }
-            option_cfg = true;
             break;
         default:
             parser.unexpectedToken();
     }
     int attr = t;
     Plugin *plugin = nullptr;
-    int idx = -1;
+    int j = -1;
     MatchField field = MATCH_FIELD_NONE;
     switch (match)
     {
@@ -538,7 +606,7 @@ static MatchTest *parseTest(Parser &parser)
                 case '.':
                     break;
                 case '[':
-                    idx = (unsigned)parseIndex(parser, 0, 7);
+                    j = (unsigned)parseIndex(parser, 0, 7);
                     break;
                 default:
                     parser.unexpectedToken();
@@ -574,11 +642,11 @@ static MatchTest *parseTest(Parser &parser)
                     default:
                         parser.unexpectedToken();
                 }
-                if (need_idx && idx < 0)
+                if (need_idx && j < 0)
                     parser.unexpectedToken();
                 parser.getToken();
             }
-            else if (idx >= 0)
+            else if (j >= 0)
                 type = MATCH_TYPE_INTEGER | MATCH_TYPE_REGISTER;
             break;
 
@@ -623,7 +691,8 @@ static MatchTest *parseTest(Parser &parser)
             break;
     }
 
-    MatchTest *test = new MatchTest(match, idx, field, cmp, plugin, nullptr);
+    MatchTest *test = new MatchTest(set, i, match, j, field, cmp, plugin,
+        nullptr);
     if (cmp == MATCH_CMP_DEFINED)
         return test;
     else if (cmp == MATCH_CMP_IN)
@@ -1458,14 +1527,19 @@ static intptr_t getNumOperands(const InstrInfo *I, OpType type, Access access)
 /*
  * Create match value.
  */
-static MatchValue makeMatchValue(MatchKind match, int idx, MatchField field,
-    const Targets &targets, const InstrInfo *I, intptr_t plugin_val)
+static MatchValue makeMatchValue(const MatchTest *test, const ELF *elf,
+    const std::vector<Instr> &Is, size_t idx, const InstrInfo *I,
+    intptr_t plugin_val)
 {
+    MatchKind match = test->match;
+    MatchField field = test->field;
+
     MatchValue result = {0};
     result.type = MATCH_TYPE_INTEGER;
     const OpInfo *op = nullptr;
     OpType type = OPTYPE_INVALID;
     uint8_t access = 0;
+    const BB *bb = nullptr;
     switch (match)
     {
         case MATCH_SRC:
@@ -1478,6 +1552,16 @@ static MatchValue makeMatchValue(MatchKind match, int idx, MatchField field,
             type = OPTYPE_REG; break;
         case MATCH_MEM:
             type = OPTYPE_MEM; break;
+        case MATCH_BB_ENTRY: case MATCH_BB_EXIT: case MATCH_BB_BEST:
+        case MATCH_BB_SIZE: case MATCH_BB_LEN: case MATCH_BB_ADDR:
+        case MATCH_BB_OFFSET:
+        {
+            auto i = findBB(elf->bbs, idx);
+            if (i == elf->bbs.end())
+                goto undefined;
+            bb = &i->second;
+            break;
+        }
         default:
             break;
     }
@@ -1499,7 +1583,7 @@ static MatchValue makeMatchValue(MatchKind match, int idx, MatchField field,
             result.i = ((I->category & CATEGORY_JUMP) != 0); return result;
         case MATCH_OP: case MATCH_SRC: case MATCH_DST:
         case MATCH_IMM: case MATCH_REG: case MATCH_MEM:
-            if (idx < 0)
+            if (test->j < 0)
             {
                 switch (field)
                 {
@@ -1512,7 +1596,7 @@ static MatchValue makeMatchValue(MatchKind match, int idx, MatchField field,
             }
             else
             {
-                op = getOperand(I, idx, type, access);
+                op = getOperand(I, test->j, type, access);
                 if (op == nullptr)
                     goto undefined;
                 switch (field)
@@ -1628,7 +1712,21 @@ static MatchValue makeMatchValue(MatchKind match, int idx, MatchField field,
         case MATCH_X87:
             result.i = ((I->category & CATEGORY_X87) != 0); return result;
         case MATCH_BB_ENTRY:
-            result.i = (targets.find((intptr_t)I->address) != targets.end());
+            result.i = (idx == bb->lb); return result;
+        case MATCH_BB_EXIT:
+            result.i = (idx == bb->ub); return result;
+        case MATCH_BB_LEN:
+            result.i = (intptr_t)(bb->ub - bb->lb  + 1); return result;
+        case MATCH_BB_SIZE:
+            result.i = (Is[bb->ub].address - Is[bb->lb].address +
+                Is[bb->ub].size);
+            return result;
+        case MATCH_BB_ADDR:
+            result.i = (intptr_t)Is[bb->lb].address; return result;
+        case MATCH_BB_OFFSET:
+            result.i = (intptr_t)Is[bb->lb].offset; return result;
+        case MATCH_BB_BEST:
+            result.i = (idx == bb->best);
             return result;
         default:
         undefined:
@@ -1640,8 +1738,9 @@ static MatchValue makeMatchValue(MatchKind match, int idx, MatchField field,
 /*
  * Evaluate a matching.
  */
-bool matchEval(const MatchExpr *expr, const Targets &targets,
-    const InstrInfo *I, const char *basename, const Record **record)
+bool matchEval(const MatchExpr *expr, const ELF *elf,
+    const std::vector<Instr> &Is, size_t idx, const InstrInfo *I,
+    const char *basename, const Record **record)
 {
     if (expr == nullptr)
         return true;
@@ -1650,23 +1749,52 @@ bool matchEval(const MatchExpr *expr, const Targets &targets,
     switch (expr->op)
     {
         case MATCH_OP_NOT:
-            pass = matchEval(expr->arg1, targets, I, nullptr, nullptr);
+            pass = matchEval(expr->arg1, elf, Is, idx, I, nullptr, nullptr);
             return !pass;
         case MATCH_OP_AND:
-            pass = matchEval(expr->arg1, targets, I, basename, record);
+            pass = matchEval(expr->arg1, elf, Is, idx, I, basename, record);
             if (!pass)
                 return false;
-            return matchEval(expr->arg2, targets, I, basename, record);
+            return matchEval(expr->arg2, elf, Is, idx, I, basename, record);
         case MATCH_OP_OR:
-            pass = matchEval(expr->arg1, targets, I, basename, record);
+            pass = matchEval(expr->arg1, elf, Is, idx, I, basename, record);
             if (pass)
                 return true;
-            return matchEval(expr->arg2, targets, I, basename, record);
+            return matchEval(expr->arg2, elf, Is, idx, I, basename, record);
         case MATCH_OP_TEST:
             test = expr->test;
             break;
         default:
             return false;
+    }
+
+    InstrInfo info;
+    if (test->i != 0 || test->set != MATCH_Is)
+    {
+        ssize_t i = (ssize_t)idx + test->i;
+        if (i < 0 || i >= (ssize_t)Is.size())
+            return false;
+        switch (test->set)
+        {
+            case MATCH_BBs:
+            {
+                auto j = findBB(elf->bbs, idx);
+                if (j == elf->bbs.end())
+                    return false;   // No BB
+                const BB &bb = j->second;
+                if (i < (ssize_t)bb.lb || i > (ssize_t)bb.ub)
+                    return false;   // i is OOB of BB
+                break;
+            }
+            case MATCH_Is:
+                break;
+        }
+        if (test->i != 0)
+        {
+            getInstrInfo(elf, &Is[i], &info);
+            I = &info;
+            idx = (size_t)i;
+        }
     }
 
     switch (test->match)
@@ -1713,14 +1841,15 @@ bool matchEval(const MatchExpr *expr, const Targets &targets,
         case MATCH_SIZE: case MATCH_TARGET: case MATCH_CONDJUMP:
         case MATCH_AVX: case MATCH_AVX2: case MATCH_AVX512:
         case MATCH_MMX: case MATCH_SSE: case MATCH_X87:
-        case MATCH_BB_ENTRY:
+        case MATCH_BB_ENTRY: case MATCH_BB_EXIT: case MATCH_BB_BEST:
+        case MATCH_BB_SIZE: case MATCH_BB_LEN:
+        case MATCH_BB_ADDR: case MATCH_BB_OFFSET:
         {
             if (test->cmp != MATCH_CMP_EQ_ZERO &&
                 test->cmp != MATCH_CMP_NEQ_ZERO &&
                 test->cmp != MATCH_CMP_DEFINED && test->values->size() == 0)
                 break;
-            MatchValue x = makeMatchValue(test->match, test->idx,
-                test->field, targets, I, 
+            MatchValue x = makeMatchValue(test, elf, Is, idx, I, 
                 (test->match == MATCH_PLUGIN? test->plugin->result: 0));
             switch (test->cmp)
             {
@@ -1775,7 +1904,6 @@ bool matchEval(const MatchExpr *expr, const Targets &targets,
             break;
         }
         case MATCH_INVALID:
-        default:
             return false;
     }
 
@@ -1820,12 +1948,13 @@ struct MatchingCache
 /*
  * Matching.
  */
-static void match(const std::vector<Action *> &actions, const Targets &targets,
-    const InstrInfo *I, std::vector<Action *> &matching)
+static void match(const std::vector<Action *> &actions, const ELF *elf,
+    const std::vector<Instr> &Is, size_t idx, const InstrInfo *I,
+    std::vector<Action *> &matching)
 {
     for (auto *action: actions)
     {
-        if (!matchEval(action->match, targets, I))
+        if (!matchEval(action->match, elf, Is, idx, I))
             continue;
         matching.push_back(action);
     }
@@ -2708,8 +2837,10 @@ int main_2(int argc, char **argv)
     size_t count = Is.size();
 
     // Step (1a): CFG Analysis (if necessary).
-    if (option_cfg)
-        CFGAnalysis(&elf, Is.data(), Is.size(), elf.targets);
+    if (option_targets)
+        buildTargets(&elf, Is.data(), Is.size(), elf.targets);
+    if (option_bbs)
+        buildBBs(&elf, Is.data(), Is.size(), elf.targets, elf.bbs);
 
     // Step (2): Find all matching instructions:
     std::vector<Action *> matching;
@@ -2720,7 +2851,7 @@ int main_2(int argc, char **argv)
         InstrInfo I;
         getInstrInfo(&elf, &Is[i], &I);
         matchPlugins(out, &elf, Is.data(), Is.size(), i, &I);
-        match(actions, elf.targets, &I, matching);
+        match(actions, &elf, Is, i, &I, matching);
         bool matched = (matching.size() > 0);
         if (matched)
         {
@@ -2892,8 +3023,8 @@ int main_2(int argc, char **argv)
             sendParamHeader(out, "metadata");
             sendMetadataHeader(out);
             for (const auto &entry: metadatas[tid])
-                sendMetadata(out, &elf, entry.action, entry.idx, &I, id,
-                    &cxt);
+                sendMetadata(out, &elf, entry.action, entry.idx, Is,
+                    (size_t)i, &I, id, &cxt);
             sendMetadataFooter(out);
             sendSeparator(out);
         }

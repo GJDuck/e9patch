@@ -1,0 +1,28 @@
+000000000a000100:ffffffffffffffe9:ffffffffffffe9e9: 0f 85 a8 01 00 00       jnz 0xa0002ae
+000000000a000108:ffffffffffffffe9:ffffffffffffe9e9: 78 fc                   js 0xa000106
+000000000a00011e:ffffffffffffffe9:ffffffffffffe9e9: 74 02                   jz 0xa000122
+000000000a000124:ffffffffffffffe9:ffffffffffffe9e9: 79 02                   jns 0xa000128
+000000000a00012b:ffffffffffffffe9:ffffffffffffe9e9: 7d 02                   jnl 0xa00012f
+000000000a00012f:ffffffffffffffe9:ffffffffffffe9e9: 7e 02                   jle 0xa000133
+000000000a000136:ffffffffffffffe9:ffffffffffffe9e9: 7f 02                   jnle 0xa00013a
+000000000a00013a:ffffffffffffffe9:ffffffffffffe9e9: 0f 8e 6e 01 00 00       jle 0xa0002ae
+000000000a000155:ffffffffffffffe9:ffffffffffffe9e9: 75 02                   jnz 0xa000159
+000000000a000159:ffffffffffffffe9:ffffffffffffe9e9: 7f 02                   jnle 0xa00015d
+000000000a00015d:ffffffffffffffe9:ffffffffffffe9e9: e3 02                   jrcxz 0xa000161
+000000000a00015f:ffffffffffffffe9:ffffffffffffe9e9: eb 02                   jmp 0xa000163
+000000000a000163:ffffffffffffffe9:ffffffffffffe9e9: e8 00 00 00 00          call 0xa000168
+000000000a000168:ffffffffffffffe9:ffffffffffffe9e9: e9 00 00 00 00          jmp 0xa00016d
+000000000a00016d:ffffffffffffffe9:ffffffffffffe9e9: eb 08                   jmp 0xa000177
+000000000a000189:ffffffffffffffe9:ffffffffffffe9e9: ff a4 0c 7f 77 00 00    jmpq *0x777f(%rsp,%rcx,1)
+000000000a0001c0:ffffffffffffffe9:ffffffffffffe9e9: ff d2                   call *%rdx
+000000000a0001f7:ffffffffffffffe9:ffffffffffffe9e9: 48 c1 ff 03             sar $0x3, %rdi
+000000000a000214:ffffffffffffffe9:ffffffffffffe9e9: 74 e5                   jz 0xa0001fb
+000000000a000221:ffffffffffffffe9:ffffffffffffe9e9: 75 d8                   jnz 0xa0001fb
+000000000a00022e:ffffffffffffffe9:ffffffffffffe9e9: 74 02                   jz 0xa000232
+000000000a00023f:ffffffffffffffe9:ffffffffffffe9e9: 74 02                   jz 0xa000243
+000000000a000258:ffffffffffffffe9:ffffffffffffe9e9: 74 02                   jz 0xa00025c
+000000000a000271:ffffffffffffffe9:ffffffffffffe9e9: 67 e3 3a                jecxz 0xa0002ae
+000000000a00027e:ffffffffffffffe9:ffffffffffffe9e9: e3 2e                   jrcxz 0xa0002ae
+000000000a00028a:ffffffffffffffe9:ffffffffffffe9e9: 75 22                   jnz 0xa0002ae
+PASSED
+000000000a0002ac:ffffffffffffffe9:ffffffffffffe9e9: 0f 05                   syscall

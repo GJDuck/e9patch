@@ -40,7 +40,7 @@ namespace e9tool
  */
 struct CStrCmp
 {
-    bool operator()(const char* a, const char* b) const
+    bool operator()(const char *a, const char *b) const
     {
         return (strcmp(a, b) < 0);
     }
@@ -2288,7 +2288,7 @@ struct Argument
 };
 
 /*
- * Jump/call targets.
+ * CFG information.
  */
 enum TargetKind : uint8_t
 {
@@ -2297,6 +2297,28 @@ enum TargetKind : uint8_t
     TARGET_INDIRECT
 };
 typedef std::map<intptr_t, TargetKind> Targets;
+
+struct BB
+{
+    const uint32_t lb;              // Entry instruction index
+    const uint32_t ub;              // Exit instruction index
+    const uint32_t best;            // Best instruction to instrument
+
+    BB(uint32_t lb, uint32_t ub, uint32_t best) :
+        lb(lb), ub(ub), best(best)
+    {
+        ;
+    }
+};
+struct RevCmp
+{
+    // Reverse comparison so lower_bound() can find BB
+    bool operator()(uint32_t a, uint32_t b) const
+    {
+        return (a > b);
+    }
+};
+typedef std::map<uint32_t, BB, RevCmp> BBs;
 
 /*
  * Low-level functions that send fragments of JSONRPC messages:
@@ -2378,8 +2400,11 @@ extern void getInstrInfo(const ELF *elf, const Instr *I, InstrInfo *info,
     void *raw = nullptr);
 extern const char *getRegName(Register r);
 extern ssize_t findInstr(const Instr *Is, size_t size, intptr_t address);
-extern void CFGAnalysis(const ELF *elf, const Instr *Is, size_t size,
+extern BBs::const_iterator findBB(const BBs &bbs, size_t idx);
+extern void buildTargets(const ELF *elf, const Instr *Is, size_t size,
     Targets &targets);
+extern void buildBBs(const ELF *elf, const Instr *Is, size_t size,
+    const Targets &targets, BBs &bbs);
 extern intptr_t getSymbol(const ELF *elf, const char *symbol);
 extern void NO_RETURN error(const char *msg, ...);
 extern void warning(const char *msg, ...);

@@ -1,0 +1,4 @@
+000000000a0001dd:ffffffffffffffe9:ffffffffffffe9e9: 48 25 fe 00 00 00       and $0xfe, %rax
+000000000a0001fd:ffffffffffffffe9:ffffffffffffe9e9: 48 c7 c0 19 45 00 00    mov $0x4519, %rax
+000000000a000295:ffffffffffffffe9:ffffffffffffe9e9: 48 8d 35 54 00 00 00    lea 0x54(%rip), %rsi
+PASSED

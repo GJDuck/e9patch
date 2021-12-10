@@ -146,7 +146,13 @@ enum MatchKind
     MATCH_AVX2,
     MATCH_AVX512,
 
+    MATCH_BB_BEST,
     MATCH_BB_ENTRY,
+    MATCH_BB_EXIT,
+    MATCH_BB_ADDR,
+    MATCH_BB_OFFSET,
+    MATCH_BB_SIZE,
+    MATCH_BB_LEN,
 
     MATCH_OP,
     MATCH_SRC,
@@ -158,6 +164,15 @@ enum MatchKind
     MATCH_REGS,
     MATCH_READS,
     MATCH_WRITES,
+};
+
+/*
+ * Match sets.
+ */
+enum MatchSet
+{
+    MATCH_Is,                   // Instructions
+    MATCH_BBs                   // Basic blocks
 };
 
 /*
@@ -207,8 +222,10 @@ using Index = std::map<T, const Record *, Cmp>;
  */
 struct MatchTest
 {
+    const MatchSet   set;
+    const int        i;
     const MatchKind  match;
-    const int        idx;
+    const int        j;
     const MatchField field;
     const MatchCmp   cmp;
     const char *     basename;
@@ -221,10 +238,10 @@ struct MatchTest
         std::set<e9tool::Register> *regs;
     };
 
-    MatchTest(MatchKind match, int idx, MatchField field, MatchCmp cmp,
-            Plugin *plugin, const char *basename) :
-        match(match), field(field), idx(idx), cmp(cmp), basename(basename),
-        plugin(plugin)
+    MatchTest(MatchSet set, int i, MatchKind match, int j, MatchField field,
+            MatchCmp cmp, Plugin *plugin, const char *basename) :
+        set(set), i(i), match(match), field(field), j(j), cmp(cmp),
+        basename(basename), plugin(plugin)
     {
         data = nullptr;
     }
@@ -353,8 +370,9 @@ struct Action
 /*
  * Prototypes.
  */
-extern bool matchEval(const MatchExpr *expr,
-    const e9tool::Targets &targets, const e9tool::InstrInfo *I,
-    const char *basename = nullptr, const Record **record = nullptr);
+extern bool matchEval(const MatchExpr *expr, const e9tool::ELF *elf,
+    const std::vector<e9tool::Instr> &Is, size_t idx,
+    const e9tool::InstrInfo *I, const char *basename = nullptr,
+    const Record **record = nullptr);
 
 #endif

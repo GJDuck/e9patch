@@ -1,0 +1,1 @@
+./test -M 'I[0].size == 3 && I[1].size == 4 && I[2].size == 3 && I[3].size == 3 && I[4].size == 4 && I[5].size == 4 && I[6].size == 6 && I[7].size == 3' -P print

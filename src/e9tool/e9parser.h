@@ -43,6 +43,7 @@ enum Token
     TOKEN_BASE,
     TOKEN_BB,
     TOKEN_BEFORE,
+    TOKEN_BEST,
     TOKEN_BREAK,
     TOKEN_CALL,
     TOKEN_CLEAN,
@@ -59,6 +60,7 @@ enum Token
     TOKEN_FALSE,
     TOKEN_GEQ,
     TOKEN_GOTO,
+    TOKEN_I,
     TOKEN_ID,
     TOKEN_IF,
     TOKEN_IMM,
@@ -126,10 +128,10 @@ struct Parser
     const e9tool::ELF * elf;
     const char * const mode;
     const char * const buf;
-    size_t pos     = 0;
-    size_t prev    = 0;
-    int peek       = TOKEN_ERROR;
-    intptr_t i     = 0;
+    size_t pos  = 0;
+    size_t prev = 0;
+    int peek    = TOKEN_ERROR;
+    intptr_t i  = 0;
     char s[TOKEN_MAXLEN+1];
 
     Parser(const char *buf, const char *mode, const e9tool::ELF &elf) :

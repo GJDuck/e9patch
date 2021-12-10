@@ -15,8 +15,9 @@ to be used directly.
 * [1. Matching Language](#s1)
     - [1.1 Attributes](#s11)
     - [1.2 Definedness](#s12)
-    - [1.3 Examples](#s13)
-    - [1.4 Exclusions](#s14)
+    - [1.3 Instruction Specifiers](#s13)
+    - [1.4 Examples](#s14)
+    - [1.5 Exclusions](#s15)
 * [2. Patch Language](#s2)
     - [2.1 Builtin Trampolines](#s21)
     - [2.2 Call Trampolines](#s22)
@@ -62,6 +63,8 @@ instruction, defined using the following grammar:
     TEST ::=   <b>defined</b> <b>(</b> ATTRIBUTE <b>)</b>
              | VALUES <b>in</b> ATTRIBUTE
              | ATTRIBUTE [ CMP VALUES ]
+
+    ATTRIBUTE ::= [ SPECIFIER <b>.</b> ] EXPR
 
     VALUES ::=   REGULAR-EXPRESSION
                | VALUE [ <b>,</b> VALUE ] *
@@ -113,21 +116,20 @@ depending on the comparison operator.
 ---
 ### <a id="s11">1.1 Attributes</a>
 
-The following `ATTRIBUTE`s (with corresponding types) are
-supported:
+The following attribute `EXPR`s (with corresponding types) are supported:
 
 <table border="1">
 <tr><th>Attribute</th><th>Type</th><th>Description</th></tr>
 <tr><td><b><tt>true</tt></b></td><td><tt>Boolean</tt></td><td>True</td></tr>
 <tr><td><b><tt>false</tt></b></td><td><tt>Boolean</tt></td><td>False</td></tr>
 <tr><td><b><tt>jump<tt></b></td><td><tt>Boolean</tt></td>
-    <td>True for jump instructions, false otherwise</tt></td>
+    <td>True for jump instructions, false otherwise</td></tr>
 <tr><td><b><tt>condjump<tt></b></td><td><tt>Boolean</tt></td>
-    <td>True for conditional jump instructions, false otherwise</tt></td>
+    <td>True for conditional jump instructions, false otherwise</td></tr>
 <tr><td><b><tt>call<tt></b></td><td><tt>Boolean</tt></td>
-    <td>True for call instructions, false otherwise</tt></td>
+    <td>True for call instructions, false otherwise</td></tr>
 <tr><td><b><tt>return<tt></b></td><td><tt>Boolean</tt></td>
-    <td>True for return instructions, false otherwise</tt></td>
+    <td>True for return instructions, false otherwise</td></tr>
 <tr><td><b><tt>asm</tt></b></td><td><tt>String</tt></td>
     <td>The assembly string representation</td></tr>
 <tr><td><b><tt>mnemonic</tt></b></td><td><tt>String</tt></td>
@@ -145,17 +147,17 @@ supported:
 <tr><td><b><tt>target</tt></b></td><td><tt>Integer</tt></td>
     <td>The jump/call target (if statically known).</td></tr>
 <tr><td><b><tt>x87<tt></b></td><td><tt>Boolean</tt></td>
-    <td>True for x87 instructions, false otherwise</tt></td>
+    <td>True for x87 instructions, false otherwise</td></tr>
 <tr><td><b><tt>mmx<tt></b></td><td><tt>Boolean</tt></td>
-    <td>True for MMX instructions, false otherwise</tt></td>
+    <td>True for MMX instructions, false otherwise</td></tr>
 <tr><td><b><tt>sse<tt></b></td><td><tt>Boolean</tt></td>
-    <td>True for SSE instructions, false otherwise</tt></td>
+    <td>True for SSE instructions, false otherwise</td></tr>
 <tr><td><b><tt>avx<tt></b></td><td><tt>Boolean</tt></td>
-    <td>True for AVX instructions, false otherwise</tt></td>
+    <td>True for AVX instructions, false otherwise</td></tr>
 <tr><td><b><tt>avx2<tt></b></td><td><tt>Boolean</tt></td>
-    <td>True for AVX2 instructions, false otherwise</tt></td>
+    <td>True for AVX2 instructions, false otherwise</td></tr>
 <tr><td><b><tt>avx512<tt></b></td><td><tt>Boolean</tt></td>
-    <td>True for AVX512 instructions, false otherwise</tt></td>
+    <td>True for AVX512 instructions, false otherwise</td></tr>
 <tr><td><b><tt>op.size</tt></b></td><td><tt>Integer</tt></td>
     <td>The number of operands</td></tr>
 <tr><td><b><tt>src.size</tt></b></td><td><tt>Integer</tt></td>
@@ -242,6 +244,23 @@ supported:
     <td>The set of all read-from registers</td></tr>
 <tr><td><b><tt>writes</tt></b></td><td><tt>Set&lt;Register&gt;</tt></td>
     <td>The set of all written-to registers</td></tr>
+<tr><td><b><tt>BB.entry</tt></b></td><td><tt>Boolean</tt></td>
+    <td>True for the first instruction in the current basic-block,
+        false otherwise.</td></tr>
+<tr><td><b><tt>BB.exit</tt></b></td><td><tt>Boolean</tt></td>
+    <td>True for the last instruction in the current basic-block,
+        false otherwise.</td></tr>
+<tr><td><b><tt>BB.best</tt></b></td><td><tt>Boolean</tt></td>
+    <td>True for the "best" instruction in the current basic-block,
+        false otherwise.</td></tr>
+<tr><td><b><tt>BB.addr</tt></b></td><td><tt>Integer</tt></td>
+    <td>The ELF virtual address of the current basic-block</td></tr>
+<tr><td><b><tt>BB.offset</tt></b></td><td><tt>Integer</tt></td>
+    <td>The ELF file offset of the current basic-block</td></tr>
+<tr><td><b><tt>BB.size</tt></b></td><td><tt>Integer</tt></td>
+    <td>The size of the current basic-block in bytes</td></tr>
+<tr><td><b><tt>BB.len</tt></b></td><td><tt>Integer</tt></td>
+    <td>The number of instructions in the current basic-block</td></tr>
 <tr><td><b><tt>plugin(NAME).match()</tt></b></td><td><tt>Integer</tt></td>
     <td>Value from <tt>NAME.so</tt> plugin</td></tr>
 </table>
@@ -271,6 +290,27 @@ Thus the `Operand` type is the union of the `Integer` and `Register` types:
 
         Operand = Integer | Register
 
+The `BB.*` attributes represent properties over the current *basic-block*
+which contains the instruction being matched.
+Here, a basic-block is a straight-line instruction sequence a single entry
+point and a single exit (excluding function calls).
+The set of basic-blocks are recovered from the input binary using a
+simple built-in static analysis.
+That said, basic-block recovery is well-known to be an undeciable
+problem in the general case, meaning that the built-in analysis must rely
+on several heuristics that may not be perfectly accurate.
+As such, the `BB.*` attributes should should only be used for applications
+(e.g., optimization) where some inaccuracy can be tolerated.
+Finally, we note that the recovered basic-block information is only made
+available to the the application layer.
+The recovered information is not passed to (or used by) the
+underlying E9Patch binary rewriter.
+
+The `BB.best` attribute selects the "best" instruction in a basic-block to
+instrument in order to maximum coverage and speed.
+This is useful for applications that need to instrument at the basic-block
+level (rather than the instruction level).
+
 ---
 ### <a id="s12">1.2 Definedness</a>
 
@@ -293,7 +333,45 @@ The special `defined(ATTRIBUTE)` test can be used to determine if
 an attribute is defined or not.
 
 ---
-### <a id="s13">1.3 Examples</a>
+### <a id="s13">1.3 Instruction Specifiers</a>
+
+The attribute expression may be annotated by an explicit instruction
+`SPECIFIER` of the following form:
+
+<pre>
+        SPECIFIER ::= INSTR-SET <b>[</b> INDEX <b>]</b>
+        INSTR-SET ::= ( <b>I</b> | <b>BB</b> )
+</pre>
+
+Here `INSTR-SET` is one of the following instruction sets:
+
+* `I`: The set of all disassembled instructions.
+* `BB`: The set of all instructions in the current basic-block.
+
+The `INDEX` is a signed integer which represents of offset relative to the
+current instruction.
+For example, `I[0]` is the current instruction, `I[1]` is the next
+instruction, `I[-1]` is the previous instruction, etc.
+Similarly, `BB[1]` is the next instruction in the current basic-block,
+`BB[-1]` is the previous instruction in the current basic-block, etc.
+Note that previous/next instructions may not exist, in which case the result
+will be *undefined*.
+
+If unspecified, the instruction specifier is implicitly `I[0]`
+(i.e., the *current* instruction).
+Note that `BB[0]` may be undefined if the current instruction does not
+belong to any basic block, such as NOPs inserted by the compiler for
+alignment.
+
+Instruction specifiers are useful for matching some context around
+the current instruction.
+For example, the following matches all conditional jump instructions that are
+immediately preceded by a comparison in the same basic block:
+
+        condjump and BB[-1].mnemonic == cmp
+
+---
+### <a id="s14">1.4 Examples</a>
 
 * (`true`):
   match every instruction.
@@ -345,7 +423,7 @@ an attribute is defined or not.
   match all direct calls to `malloc()`.
 
 ---
-### <a id="s14">1.4 Exclusions</a>
+### <a id="s15">1.5 Exclusions</a>
 
 *Exclusions* are an additional method for controlling which instructions are
 patched.
