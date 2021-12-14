@@ -384,6 +384,8 @@ static Type getOperandType(const InstrInfo *I, const OpInfo *op, bool ptr,
             return (op->type == OPTYPE_MEM? TYPE_INT8: t);
         case FIELD_NONE:
             break;
+        default:
+            error("unknown field (%d)", field);
     }
 
     switch (op->type)
@@ -1755,6 +1757,86 @@ static Type sendLoadArgumentMetadata(FILE *out, CallInfo &info,
                 t = TYPE_NULL_PTR;
             break;
         }
+        case ARGUMENT_BB:
+        {
+            const BB *bb = findBB(elf->bbs, i);
+            if (bb == nullptr)
+            {
+                sendSExtFromI32ToR64(out, 0, regno);
+                t = TYPE_NULL_PTR;
+                break;
+            }
+            switch (arg.field)
+            {
+                case FIELD_ADDR:
+                    sendLoadPointerMetadata(out, info, _static,
+                        Is[bb->lb].address, regno);
+                    t = TYPE_CONST_VOID_PTR;
+                    break;
+                case FIELD_OFFSET:
+                    sendLoadValueMetadata(out, Is[bb->lb].address, regno);
+                    break;
+                case FIELD_SIZE:
+                    sendLoadValueMetadata(out, Is[bb->ub].address -
+                        Is[bb->lb].address + Is[bb->ub].size, regno);
+                    break;
+                case FIELD_LEN:
+                    sendLoadValueMetadata(out, bb->ub - bb->lb + 1, regno);
+                    break;
+                default:
+                    error("unknown field (%d)", arg.field);
+            }
+            break;
+        }
+        case ARGUMENT_F:
+        {
+            const F *f = findF(elf->fs, i);
+            if (f == nullptr)
+            {
+                sendSExtFromI32ToR64(out, 0, regno);
+                t = TYPE_NULL_PTR;
+                break;
+            }
+            switch (arg.field)
+            {
+                case FIELD_ADDR:
+                    sendLoadPointerMetadata(out, info, _static,
+                        Is[f->lb].address, regno);
+                    t = TYPE_CONST_VOID_PTR;
+                    break;
+                case FIELD_OFFSET:
+                    sendLoadValueMetadata(out, Is[f->lb].address, regno);
+                    break;
+                case FIELD_SIZE:
+                    sendLoadValueMetadata(out, Is[f->ub].address -
+                        Is[f->lb].address + Is[f->ub].size, regno);
+                    break;
+                case FIELD_LEN:
+                    sendLoadValueMetadata(out, f->ub - f->lb + 1, regno);
+                    break;
+                case FIELD_NAME:
+                {
+                    if (f->name == nullptr)
+                    {
+                        sendSExtFromI32ToR64(out, 0, regno);
+                        t = TYPE_NULL_PTR;
+                        break;
+                    }
+                    t = TYPE_CONST_CHAR_PTR;
+                    std::string offset("{\"rel32\":\".Lfn");
+                    offset += std::to_string(regno);
+                    offset += '@';
+                    offset += name;
+                    offset += "\"}";
+                    sendLeaFromPCRelToR64(out, offset.c_str(), regno);
+                    t = TYPE_CONST_CHAR_PTR;
+                    break;
+                }
+                default:
+                    error("unknown field (%d)", arg.field);
+            }
+            break;
+        }
         default:
             error("NYI argument (%d)", arg.kind);
     }
@@ -1768,7 +1850,8 @@ static Type sendLoadArgumentMetadata(FILE *out, CallInfo &info,
  * Send argument data metadata.
  */
 static void sendArgumentDataMetadata(FILE *out, const char *name,
-    const Argument &arg, const InstrInfo *I, int regno)
+    const ELF *elf, const Argument &arg, size_t i, const InstrInfo *I,
+    int regno)
 {
     switch (arg.kind)
     {
@@ -1804,6 +1887,18 @@ static void sendArgumentDataMetadata(FILE *out, const char *name,
                                 OPTYPE_INVALID)));
             const OpInfo *op = getOperand(I, (int)arg.value, type, access);
             sendOperandDataMetadata(out, name, I, op, regno);
+            break;
+        }
+        case ARGUMENT_F:
+        {
+            if (arg.field != FIELD_NAME || arg.duplicate)
+                return;
+            const F *f = findF(elf->fs, i);
+            if (f == nullptr || f->name == nullptr)
+                return;
+            fprintf(out, "\".Lfn%d@%s\",{\"string\":", regno, name);
+            sendString(out, f->name);
+            fputs("},", out);
             break;
         }
         default:
@@ -1977,7 +2072,7 @@ void sendMetadata(FILE *out, const ELF *elf, const Action *action, size_t idx,
             for (const auto &arg: patch->args)
             {
                 int regno = getArgRegIdx(sysv, argno);
-                sendArgumentDataMetadata(out, name, arg, I, regno);
+                sendArgumentDataMetadata(out, name, elf, arg, i, I, regno);
                 argno++;
             }
             sendDefinitionFooter(out);

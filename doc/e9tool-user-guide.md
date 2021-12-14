@@ -15,9 +15,10 @@ to be used directly.
 * [1. Matching Language](#s1)
     - [1.1 Attributes](#s11)
     - [1.2 Definedness](#s12)
-    - [1.3 Instruction Specifiers](#s13)
-    - [1.4 Examples](#s14)
-    - [1.5 Exclusions](#s15)
+    - [1.3 Control-flow](#s13)
+    - [1.4 Instruction Specifiers](#s14)
+    - [1.5 Examples](#s15)
+    - [1.6 Exclusions](#s16)
 * [2. Patch Language](#s2)
     - [2.1 Builtin Trampolines](#s21)
     - [2.2 Call Trampolines](#s22)
@@ -32,7 +33,7 @@ to be used directly.
         * [2.2.5 Call Trampoline Initialization and Finalization](#s225)
         * [2.2.6 Call Trampoline Dynamic Loading](#s226)
     - [2.3 Plugin Trampolines](#s23)
-    - [2.4 Trampoline Composition](#s24)
+    - [2.4 Composing Trampolines](#s24)
 
 ---
 ## <a id="s1">1. Matching Language</a>
@@ -244,6 +245,12 @@ The following attribute `EXPR`s (with corresponding types) are supported:
     <td>The set of all read-from registers</td></tr>
 <tr><td><b><tt>writes</tt></b></td><td><tt>Set&lt;Register&gt;</tt></td>
     <td>The set of all written-to registers</td></tr>
+<tr><td><b><tt>BB</tt></b></td><td><tt>Integer</tt></td>
+    <td>The ELF virtual address of the current basic-block</td></tr>
+<tr><td><b><tt>BB.addr</tt></b></td><td><tt>Integer</tt></td>
+    <td>Alias for <tt>BB</tt></td></tr>
+<tr><td><b><tt>BB.offset</tt></b></td><td><tt>Integer</tt></td>
+    <td>The ELF file offset of the current basic-block</td></tr>
 <tr><td><b><tt>BB.entry</tt></b></td><td><tt>Boolean</tt></td>
     <td>True for the first instruction in the current basic-block,
         false otherwise.</td></tr>
@@ -253,14 +260,28 @@ The following attribute `EXPR`s (with corresponding types) are supported:
 <tr><td><b><tt>BB.best</tt></b></td><td><tt>Boolean</tt></td>
     <td>True for the "best" instruction in the current basic-block,
         false otherwise.</td></tr>
-<tr><td><b><tt>BB.addr</tt></b></td><td><tt>Integer</tt></td>
-    <td>The ELF virtual address of the current basic-block</td></tr>
-<tr><td><b><tt>BB.offset</tt></b></td><td><tt>Integer</tt></td>
-    <td>The ELF file offset of the current basic-block</td></tr>
 <tr><td><b><tt>BB.size</tt></b></td><td><tt>Integer</tt></td>
     <td>The size of the current basic-block in bytes</td></tr>
 <tr><td><b><tt>BB.len</tt></b></td><td><tt>Integer</tt></td>
     <td>The number of instructions in the current basic-block</td></tr>
+<tr><td><b><tt>F</tt></b></td><td><tt>Integer</tt></td>
+    <td>The ELF virtual address of the current function</td></tr>
+<tr><td><b><tt>F.addr</tt></b></td><td><tt>Integer</tt></td>
+    <td>Alias for <tt>F</tt></td></tr>
+<tr><td><b><tt>F.offset</tt></b></td><td><tt>Integer</tt></td>
+    <td>The ELF file offset of the current function</td></tr>
+<tr><td><b><tt>F.entry</tt></b></td><td><tt>Boolean</tt></td>
+    <td>True for the first instruction in the current function,
+        false otherwise.</td></tr>
+<tr><td><b><tt>F.best</tt></b></td><td><tt>Boolean</tt></td>
+    <td>True for the "best" instruction in the current function,
+        false otherwise.</td></tr>
+<tr><td><b><tt>F.size</tt></b></td><td><tt>Integer</tt></td>
+    <td>The size of the current function in bytes</td></tr>
+<tr><td><b><tt>F.len</tt></b></td><td><tt>Integer</tt></td>
+    <td>The number of instructions in the current function</td></tr>
+<tr><td><b><tt>F.name</tt></b></td><td><tt>String</tt></td>
+    <td>The name of the function (if available)</td></tr>
 <tr><td><b><tt>plugin(NAME).match()</tt></b></td><td><tt>Integer</tt></td>
     <td>Value from <tt>NAME.so</tt> plugin</td></tr>
 </table>
@@ -290,27 +311,6 @@ Thus the `Operand` type is the union of the `Integer` and `Register` types:
 
         Operand = Integer | Register
 
-The `BB.*` attributes represent properties over the current *basic-block*
-which contains the instruction being matched.
-Here, a basic-block is a straight-line instruction sequence a single entry
-point and a single exit (excluding function calls).
-The set of basic-blocks are recovered from the input binary using a
-simple built-in static analysis.
-That said, basic-block recovery is well-known to be an undeciable
-problem in the general case, meaning that the built-in analysis must rely
-on several heuristics that may not be perfectly accurate.
-As such, the `BB.*` attributes should should only be used for applications
-(e.g., optimization) where some inaccuracy can be tolerated.
-Finally, we note that the recovered basic-block information is only made
-available to the the application layer.
-The recovered information is not passed to (or used by) the
-underlying E9Patch binary rewriter.
-
-The `BB.best` attribute selects the "best" instruction in a basic-block to
-instrument in order to maximum coverage and speed.
-This is useful for applications that need to instrument at the basic-block
-level (rather than the instruction level).
-
 ---
 ### <a id="s12">1.2 Definedness</a>
 
@@ -333,35 +333,71 @@ The special `defined(ATTRIBUTE)` test can be used to determine if
 an attribute is defined or not.
 
 ---
-### <a id="s13">1.3 Instruction Specifiers</a>
+### <a id="s13">1.3 Control-flow</a>
+
+The `BB.*` attributes represent properties over the current *basic-block*
+which contains the instruction being matched.
+Here, a basic-block is a straight-line instruction sequence a single entry
+point and a single exit (excluding function calls).
+The set of basic-blocks are recovered from the input binary using a
+simple built-in static analysis.
+That said, basic-block recovery is well-known to be an undeciable
+problem in the general case, meaning that the built-in analysis must rely
+on several heuristics that may not be perfectly accurate.
+As such, the `BB.*` attributes should should only be used for applications
+(e.g., optimization) where some inaccuracy can be tolerated.
+Finally, we note that the recovered basic-block information is only made
+available to the the application layer.
+The recovered information is not passed to (or used by) the
+underlying E9Patch binary rewriter.
+
+The `BB.best` attribute selects the "best" instruction in a basic-block to
+instrument in order to maximum coverage and speed.
+This is useful for applications that need to instrument at the basic-block
+level (rather than the instruction level).
+
+Similarly, the `F.*` attributes represent properties over the current
+*function* which contains the instruction being matched.
+As with basic-blocks, E9Tool uses a very simple (heuristic-based) function
+recovery analysis that is not guaranteed to be accurate, so function
+matching should only be used for applications where some 
+inaccuracy can be tolerated.
+The `F.name` attribute is the name of the current function if known
+(i.e., there exists an entry in an ELF symbol table), else
+the result is *undefined*.
+
+---
+### <a id="s14">1.4 Instruction Specifiers</a>
 
 The attribute expression may be annotated by an explicit instruction
 `SPECIFIER` of the following form:
 
 <pre>
         SPECIFIER ::= INSTR-SET <b>[</b> INDEX <b>]</b>
-        INSTR-SET ::= ( <b>I</b> | <b>BB</b> )
+        INSTR-SET ::= ( <b>I</b> | <b>BB</b> | <b>F</b>)
 </pre>
 
 Here `INSTR-SET` is one of the following instruction sets:
 
 * `I`: The set of all disassembled instructions.
 * `BB`: The set of all instructions in the current basic-block.
+* `F`: The set of all instructions in the current function.
 
 The `INDEX` is a signed integer which represents of offset relative to the
 current instruction.
 For example, `I[0]` is the current instruction, `I[1]` is the next
 instruction, `I[-1]` is the previous instruction, etc.
 Similarly, `BB[1]` is the next instruction in the current basic-block,
-`BB[-1]` is the previous instruction in the current basic-block, etc.
+`F[-1]` is the previous instruction in the current function, etc.
 Note that previous/next instructions may not exist, in which case the result
 will be *undefined*.
 
 If unspecified, the instruction specifier is implicitly `I[0]`
 (i.e., the *current* instruction).
-Note that `BB[0]` may be undefined if the current instruction does not
-belong to any basic block, such as NOPs inserted by the compiler for
-alignment.
+Note that `BB[0]` and `F[0]` may be undefined if the current instruction
+does not belong to any basic block or function.
+For example, padding NOPs that inserted by the compiler for alignment
+purposes are not considered part of a basic block.
 
 Instruction specifiers are useful for matching some context around
 the current instruction.
@@ -371,7 +407,7 @@ immediately preceded by a comparison in the same basic block:
         condjump and BB[-1].mnemonic == cmp
 
 ---
-### <a id="s14">1.4 Examples</a>
+### <a id="s15">1.5 Examples</a>
 
 * (`true`):
   match every instruction.
@@ -423,7 +459,7 @@ immediately preceded by a comparison in the same basic block:
   match all direct calls to `malloc()`.
 
 ---
-### <a id="s15">1.5 Exclusions</a>
+### <a id="s16">1.6 Exclusions</a>
 
 *Exclusions* are an additional method for controlling which instructions are
 patched.
@@ -622,9 +658,9 @@ The following arguments are supported:
     <td>An integer constant</td></tr>
 <tr><td><i>String</i></td><td><tt>const char &#42;</tt></td>
     <td>A string constant</td></tr>
-<tr><td><tt>&amp;</tt><i>Name</i></td><td><tt>const void &#42;</tt></td>
+<tr><td><b><tt>&amp;</tt></b><i>Name</i></td><td><tt>const void &#42;</tt></td>
     <td>The runtime address of the named section/symbol/PLT/GOT entry</td></tr>
-<tr><td><tt>static &amp;</tt><i>Name</i></td><td><tt>const void &#42;</tt></td>
+<tr><td><b><tt>static &amp;</tt></b><i>Name</i></td><td><tt>const void &#42;</tt></td>
     <td>The ELF address of the named section/symbol/PLT/GOT entry</td></tr>
 <tr><td><b><tt>asm</tt></b></td><td><tt>const char &#42;</tt></td>
     <td>Assembly representation of the matching instruction</td></tr>
@@ -850,6 +886,34 @@ The following arguments are supported:
     <td>An explicit 32-bit <tt>MEMOP</tt> (passed-by-pointer)</td></tr>
 <tr><td><b><tt>&amp;mem64&lt;MEMOP&gt;</tt></b></td><td><tt>int64_t &#42;</tt></td>
     <td>An explicit 64-bit <tt>MEMOP</tt> (passed-by-pointer)</td></tr>
+<tr><td><b><tt>BB</tt></b></td><td><tt>const void &#42;</tt></td>
+    <td>The address of the matching instruction's basic block</td></tr>
+<tr><td><b><tt>static BB</tt></b></td><td><tt>const void &#42;</tt></td>
+    <td>The ELF address of the matching instruction's basic block</td></tr>
+<tr><td><b><tt>BB.addr</tt></b></td><td><tt>const void &#42;</tt></td>
+    <td>Alias for <tt>BB</tt></td></tr>
+<tr><td><b><tt>BB.offset</tt></b></td><td><tt>off_t</tt></td>
+    <td>The ELF file offset of the matching instruction's basic block</td></tr>
+<tr><td><b><tt>BB.size</tt></b></td><td><tt>size_t</tt></td>
+    <td>The size of the matching instruction's basic block in bytes</td></tr>
+<tr><td><b><tt>BB.len</tt></b></td><td><tt>size_t</tt></td>
+    <td>The number of instructions in the matching instruction's basic
+    block</td></tr>
+<tr><td><b><tt>F</tt></b></td><td><tt>const void &#42;</tt></td>
+     <td>The address of the matching instruction's function</td></tr> 
+<tr><td><b><tt>static F</tt></b></td><td><tt>const void &#42;</tt></td>
+     <td>The ELF address of the matching instruction's function</td></tr> 
+<tr><td><b><tt>F.addr</tt></b></td><td><tt>const void &#42;</tt></td>
+     <td>Alias for <tt>F</tt></td></tr> 
+<tr><td><b><tt>F.offset</tt></b></td><td><tt>off_t</tt></td>
+    <td>The ELF file offset of the matching instruction's function</td></tr>
+<tr><td><b><tt>F.size</tt></b></td><td><tt>size_t</tt></td>
+    <td>The size of the matching instruction's function in bytes</td></tr>
+<tr><td><b><tt>F.len</tt></b></td><td><tt>size_t</tt></td>
+    <td>The number of instructions in the matching instruction's 
+    function</td></tr>
+<tr><td><b><tt>F.name</tt></b></td><td><tt>const char &#42;</tt></td>
+    <td>The matching instruction's function name</td></tr>
 </table>
 
 Notes:
@@ -860,6 +924,7 @@ Notes:
   native layout is a relatively slow operation.
 * For technical reasons, the `%rip` register is considered constant and cannot
   be modified.
+  To implement jumps, use [conditional call trampolines](#s223) instead.
 * The `state` argument is a pointer to a structure containing all
   general-purpose registers, the flag register (`%rflags`), the stack register
   (`%rsp`) and the instruction pointer register (`%rip`).
@@ -1031,7 +1096,6 @@ There are two basic forms of conditional call trampolines:
 
 * `if func(...) break`: if the function returns a non-zero value, then
   immediately return from the trampoline back to the main program.
-  to the main program if the function returns a non-zero value.
 * `if func(...) goto`: if the function returns a non-zero value interpreted
   as an *address*, then immediately jump to that *address*.
 
@@ -1196,7 +1260,7 @@ For more information, please see the
 [E9Patch Programmer's Guide](https://github.com/GJDuck/e9patch/blob/master/doc/e9patch-programming-guide.md).
 
 ---
-### <a id="s24">2.4 Trampoline Composition</a>
+### <a id="s24">2.4 Composing Trampolines</a>
 
 Depending on the `--match`/`-M` and `--patch`/`-P` options, more than
 one patch may match a given instruction.

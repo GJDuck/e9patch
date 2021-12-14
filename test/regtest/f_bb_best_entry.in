@@ -1,0 +1,1 @@
+./test -M F.best -M BB.best -M F.entry -M BB.entry -P print

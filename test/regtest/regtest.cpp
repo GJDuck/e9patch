@@ -63,6 +63,11 @@ static bool runTest(const struct dirent *test, const std::string &options)
     std::string cmd(basename);
     cmd += ".cmd";
 
+    // Step (0): reset
+    unlink(out.c_str());
+    unlink(exe.c_str());
+    unlink(log.c_str());
+
     // Step (1): generate the EXE
     std::string command("../../e9tool ");
     if (options != "")

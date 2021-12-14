@@ -98,6 +98,7 @@ namespace e9tool
 
         Targets targets;                // Jump/Call targets [optional]
         BBs bbs;                        // Basic blocks [optional]
+        Fs fs;                          // Functions [optional]
 
         mutable Symbols symbols;        // Symbol cache.
         std::list<Elf64_Shdr> sec_cache;// Extra allocated sections (PE).

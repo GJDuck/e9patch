@@ -1,0 +1,1 @@
+./test -M BB.best -P 'entry(addr,BB,F,instr,size,asm)@inst'

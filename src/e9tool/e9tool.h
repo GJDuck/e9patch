@@ -2217,9 +2217,13 @@ enum FieldKind
     FIELD_BASE,                     // Base register.
     FIELD_INDEX,                    // Index register.
     FIELD_SCALE,                    // Scale.
-    FIELD_SIZE,                     // Operand size.
     FIELD_TYPE,                     // Type.
     FIELD_ACCESS,                   // Access.
+    FIELD_SIZE,                     // Size.
+    FIELD_ADDR,                     // Address.
+    FIELD_OFFSET,                   // Offset.
+    FIELD_LEN,                      // Length.
+    FIELD_NAME,                     // Name.
 };
 
 /*
@@ -2263,6 +2267,9 @@ enum ArgumentKind
     ARGUMENT_SYMBOL,                // Symbol value argument
     ARGUMENT_CONFIG,                // Pointer to the e9_config_s struct
 
+    ARGUMENT_BB,                    // Basic block
+    ARGUMENT_F,                     // Function
+
     ARGUMENT_OP,                    // Operand[i]
     ARGUMENT_SRC,                   // Source operand[i]
     ARGUMENT_DST,                   // Dest operand[i]
@@ -2292,12 +2299,11 @@ struct Argument
 /*
  * CFG information.
  */
-enum TargetKind : uint8_t
-{
-    TARGET_ENTRY,
-    TARGET_DIRECT,
-    TARGET_INDIRECT
-};
+typedef uint8_t TargetKind;
+#define TARGET_ENTRY    0x1
+#define TARGET_DIRECT   0x2
+#define TARGET_INDIRECT 0x4
+#define TARGET_FUNCTION 0x8
 typedef std::map<intptr_t, TargetKind> Targets;
 
 struct BB
@@ -2312,15 +2318,22 @@ struct BB
         ;
     }
 };
-struct RevCmp
+typedef std::vector<BB> BBs;
+
+struct F
 {
-    // Reverse comparison so lower_bound() can find BB
-    bool operator()(uint32_t a, uint32_t b) const
+    const char * const name;        // Function name (or nullptr if no name).
+    const uint32_t lb;              // Entry instruction index
+    const uint32_t ub;              // Last instruction index
+    const uint32_t best;            // Best instruction to instrument
+
+    F(const char *name, uint32_t lb, uint32_t ub, uint32_t best) :
+        name(name), lb(lb), ub(ub), best(best)
     {
-        return (a > b);
+        ;
     }
 };
-typedef std::map<uint32_t, BB, RevCmp> BBs;
+typedef std::vector<F> Fs;
 
 /*
  * Low-level functions that send fragments of JSONRPC messages:
@@ -2402,11 +2415,14 @@ extern void getInstrInfo(const ELF *elf, const Instr *I, InstrInfo *info,
     void *raw = nullptr);
 extern const char *getRegName(Register r);
 extern ssize_t findInstr(const Instr *Is, size_t size, intptr_t address);
-extern BBs::const_iterator findBB(const BBs &bbs, size_t idx);
+extern const BB *findBB(const BBs &bbs, size_t idx);
+extern const F *findF(const Fs &fs, size_t idx);
 extern void buildTargets(const ELF *elf, const Instr *Is, size_t size,
     Targets &targets);
 extern void buildBBs(const ELF *elf, const Instr *Is, size_t size,
     const Targets &targets, BBs &bbs);
+extern void buildFs(const ELF *elf, const Instr *Is, size_t size,
+    const Targets &targets, Fs &fs);
 extern intptr_t getSymbol(const ELF *elf, const char *symbol);
 extern void NO_RETURN error(const char *msg, ...);
 extern void warning(const char *msg, ...);

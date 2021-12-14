@@ -33,19 +33,17 @@
 
 #include <set>
 
+#include "e9elf.h"
 #include "e9tool.h"
 
 using namespace e9tool;
 
-static bool option_cfg_debug = false;
+extern bool option_debug;
 #define DEBUG(targets, target, msg, ...)                                \
     do                                                                  \
     {                                                                   \
-        if (option_cfg_debug &&                                         \
-                (targets).find(target) == (targets).end())              \
-        {                                                               \
-            fprintf(stderr, msg "\n", ##__VA_ARGS__);                   \
-        }                                                               \
+        if (option_debug && (targets).find(target) == (targets).end())  \
+            debug("CFG: " msg, ##__VA_ARGS__);                          \
     }                                                                   \
     while (false)
 
@@ -60,18 +58,7 @@ static void addTarget(intptr_t target, TargetKind kind, Targets &targets)
     if (!r.second)
     {
         // Existing entry found:
-        switch (r.first->second)
-        {
-            case TARGET_ENTRY:
-                r.first->second = kind;
-                break;
-            case TARGET_DIRECT:
-                if (kind == TARGET_INDIRECT)
-                    r.first->second = kind;
-                break;
-            default:
-                break;
-        }
+        r.first->second |= kind;
     }  
 }
 
@@ -136,6 +123,7 @@ static void CFGCodeAnalysis(const ELF *elf, bool pic, const Instr *Is,
         next = I->address + I->size;
 
         intptr_t target = INTPTR_MIN;
+        bool call = false;
         switch (I->mnemonic)
         {
             case MNEMONIC_MOV:
@@ -146,11 +134,14 @@ static void CFGCodeAnalysis(const ELF *elf, bool pic, const Instr *Is,
                 // into another location for later use.  Thus, we consider the
                 // immediate value to be a target if it happens to point to a
                 // valid instruction.
+                //
+                // [HEURISTIC] The target is assumed to be a function.
                 target = (intptr_t)I->op[0].imm;
                 if (findInstr(Is, size, target) >= 0)
                 {
                     DEBUG(targets, target, "Load  : %p", (void *)target);
-                    addTarget(target, TARGET_INDIRECT, targets);
+                    addTarget(target, TARGET_INDIRECT | TARGET_FUNCTION,
+                        targets);
                 }
                 continue;
 
@@ -165,7 +156,8 @@ static void CFGCodeAnalysis(const ELF *elf, bool pic, const Instr *Is,
                 if (findInstr(Is, size, target) >= 0)
                 {
                     DEBUG(targets, target, "Load  : %p", (void *)target);
-                    addTarget(target, TARGET_INDIRECT, targets);
+                    addTarget(target, TARGET_INDIRECT | TARGET_FUNCTION,
+                        targets);
                 }
                 else if (pic)
                 {
@@ -181,10 +173,20 @@ static void CFGCodeAnalysis(const ELF *elf, bool pic, const Instr *Is,
                 addTarget(next, TARGET_ENTRY, targets);
                 continue;
             case MNEMONIC_JMP:
+                if (!pic &&
+                        I->op[0].type == OPTYPE_MEM &&
+                        I->op[0].mem.base == REGISTER_NONE &&
+                        I->op[0].mem.index != REGISTER_NONE &&
+                        I->op[0].mem.scale == sizeof(void *))
+                {
+                    target = (intptr_t)I->op[0].mem.disp;
+                    tables.insert(target);
+                }
                 DEBUG(targets, next, "Next  : %p", (void *)next);
                 addTarget(next, TARGET_ENTRY, targets);
                 break;
             case MNEMONIC_CALL:
+                call = true;
                 break;
             case MNEMONIC_JO: case MNEMONIC_JNO: case MNEMONIC_JB:
             case MNEMONIC_JAE: case MNEMONIC_JE: case MNEMONIC_JNE:
@@ -208,11 +210,12 @@ static void CFGCodeAnalysis(const ELF *elf, bool pic, const Instr *Is,
         }
         target = (intptr_t)I->address + (intptr_t)I->size +
             (intptr_t)I->op[0].imm;
-        DEBUG(targets, target, "Target: %p", (void *)target);
-        addTarget(target, TARGET_DIRECT, targets);
+        DEBUG(targets, target, "Target: %p%s", (void *)target,
+            (call? " (F)": ""));
+        addTarget(target, TARGET_DIRECT | (call? TARGET_FUNCTION: 0), targets);
     }
 
-    // Symbols are assumed to be jump targets:
+    // Symbols are assumed to be functions:
     for (unsigned i = 0; i < 2; i++)
     {
         const SymbolInfo &syms = (i == 0? getELFDynSymInfo(elf):
@@ -224,8 +227,8 @@ static void CFGCodeAnalysis(const ELF *elf, bool pic, const Instr *Is,
                     ELF64_ST_TYPE(sym->st_info) != STT_FUNC)
                 continue;
             intptr_t target = sym->st_value;
-            DEBUG(targets, target, "Symbol: %p", (void *)target);
-            addTarget(target, TARGET_INDIRECT, targets);
+            DEBUG(targets, target, "Symbol: %p (F)", (void *)target);
+            addTarget(target, TARGET_INDIRECT | TARGET_FUNCTION, targets);
         }
     }
 }
@@ -250,15 +253,24 @@ static void CFGSectionAnalysis(const ELF *elf, bool pic, const char *name,
 
         // Scan the data for absolute addresses.
         auto bounds = getBounds<intptr_t>(sh_data, sh_data + sh_size);
+        bool call = true;
         for (const intptr_t *p = bounds.first; p < bounds.second; p++)
         {
+            intptr_t table = (intptr_t)shdr->sh_addr +
+                ((intptr_t)p - (intptr_t)sh_data);
+            if (tables.find(table) != tables.end())
+                call = false;
             intptr_t target = *p;
             if (target != 0 && findInstr(Is, size, target) >= 0)
             {
                 // "Probably" a jump target.
-                DEBUG(targets, target, "Data  : %p", (void *)target);
-                addTarget(target, TARGET_INDIRECT, targets);
+                DEBUG(targets, target, "%s: %p%s", (call? "Data  ": "JmpTbl"),
+                    (void *)target, (call? " (F)": ""));
+                addTarget(target,
+                    TARGET_INDIRECT | (call? TARGET_FUNCTION: 0), targets);
             }
+            else
+                call = true;
         }
         return;
     }
@@ -309,8 +321,8 @@ static void CFGSectionAnalysis(const ELF *elf, bool pic, const char *name,
                 intptr_t target = *p;
                 if (findInstr(Is, size, target) < 0)
                     continue;
-                DEBUG(targets, target, "Reloc : %p", (void *)target);
-                addTarget(target, TARGET_INDIRECT, targets);
+                DEBUG(targets, target, "Reloc : %p (F)", (void *)target);
+                addTarget(target, TARGET_INDIRECT | TARGET_FUNCTION, targets);
             }
         }
     }
@@ -418,6 +430,7 @@ void e9tool::buildTargets(const ELF *elf, const Instr *Is, size_t size,
 void e9tool::buildBBs(const ELF *elf, const Instr *Is, size_t size,
     const Targets &targets, BBs &bbs)
 {
+    std::map<uint32_t, BB> tmp;
     for (const auto &entry: targets)
     {
         intptr_t target = entry.first;
@@ -466,22 +479,143 @@ void e9tool::buildBBs(const ELF *elf, const Instr *Is, size_t size,
                 best = ub;
             I = J;
         }
+        debug("basic block 0x%lx..0x%lx [%zui,%zuB]", Is[lb].address,
+            Is[ub].address, ub - lb + 1, 
+            Is[ub].address - Is[lb].address + Is[ub].size);
         BB bb(lb, ub, best);
-        bbs.insert({lb, bb});
+        tmp.insert({lb, bb});
     }
+
+    bbs.reserve(tmp.size());
+    for (const auto &entry: tmp)
+        bbs.push_back(entry.second);
 }
 
 /*
  * Find a basic block based on an instruction index.
  */
-BBs::const_iterator e9tool::findBB(const BBs &bbs, size_t idx)
+const BB *e9tool::findBB(const BBs &bbs, size_t idx)
 {
-    auto i = bbs.lower_bound(idx);
-    if (i == bbs.end())
-        return i;
-    const BB &bb = i->second;
-    if (idx < bb.lb || idx > bb.ub)
-        return bbs.end();
-    return i;
+    ssize_t lo = 0, hi = (ssize_t)bbs.size()-1;
+    while (lo <= hi)
+    {
+        ssize_t mid = (lo + hi) / 2;
+        if (bbs[mid].ub < idx)
+            lo = mid+1;
+        else if (bbs[mid].lb > idx)
+            hi = mid-1;
+        else
+            return &bbs[mid];
+    }
+    return nullptr;
+}
+
+/*
+ * Build the set of functions.
+ */
+void e9tool::buildFs(const ELF *elf, const Instr *Is, size_t size,
+    const Targets &targets, Fs &fs)
+{
+    std::map<intptr_t, const char *> names;
+    for (unsigned i = 0; i < 2; i++)
+    {
+        const SymbolInfo &syms = (i == 0? getELFDynSymInfo(elf):
+                                          getELFSymInfo(elf));
+        for (auto &entry: syms)
+        {
+            const Elf64_Sym *sym = entry.second;
+            if (sym->st_shndx == SHN_UNDEF ||
+                    ELF64_ST_TYPE(sym->st_info) != STT_FUNC)
+                continue;
+            intptr_t target = sym->st_value;
+            const char *name = entry.first;
+            names.insert({target, name});
+        }
+    }
+    std::map<uint32_t, F> tmp;
+    for (const auto &entry: targets)
+    {
+        if ((entry.second & TARGET_FUNCTION) == 0)
+            continue;
+        intptr_t target = entry.first;
+        size_t i = findInstr(Is, size, target);
+        if (i >= size)
+            continue;
+        uint32_t lb = i, ub = i, best = i;
+        bool found = false;
+        const Instr *I = Is + i;
+
+        for (++i; i < size; i++)
+        {
+            InstrInfo info0, *info = &info0;
+            getInstrInfo(elf, I, info);
+            bool cft = false;
+            switch (info->mnemonic)
+            {
+                case MNEMONIC_RET:
+                case MNEMONIC_JMP:
+                case MNEMONIC_JO: case MNEMONIC_JNO: case MNEMONIC_JB:
+                case MNEMONIC_JAE: case MNEMONIC_JE: case MNEMONIC_JNE:
+                case MNEMONIC_JBE: case MNEMONIC_JA: case MNEMONIC_JS:
+                case MNEMONIC_JNS: case MNEMONIC_JP: case MNEMONIC_JNP:
+                case MNEMONIC_JL: case MNEMONIC_JGE: case MNEMONIC_JLE:
+                case MNEMONIC_JG: 
+                    cft = true;
+                    break;
+                case MNEMONIC_INT: case MNEMONIC_INT1: case MNEMONIC_INT3:
+                case MNEMONIC_INTO:
+                case MNEMONIC_UD0: case MNEMONIC_UD1: case MNEMONIC_UD2:
+                case MNEMONIC_HLT:
+                    cft = true;     // Treat as end-of-BB
+                    break;
+                default:
+                    break;
+            }
+            if (cft)
+                found = true;
+            const Instr *J = I+1;
+            if (I->address + I->size != J->address)
+                break;
+            auto j = targets.find(J->address);
+            if (j != targets.end() && (j->second & TARGET_FUNCTION) != 0)
+                break;
+            ub++;
+            if (!found && Is[best].size < /*sizeof(jmpq)=*/5 &&
+                    Is[ub].size > Is[best].size)
+                best = ub;
+            I = J;
+        }
+        auto j = names.find(Is[lb].address);
+        const char *name = (j == names.end()? nullptr: j->second);
+        debug("function 0x%lx..0x%lx [%zui,%zuB%s%s]", Is[lb].address,
+            Is[ub].address, ub - lb + 1, 
+            Is[ub].address - Is[lb].address + Is[ub].size,
+            (name == nullptr? "": ",name="), (name == nullptr? "": name));
+        F f(name, lb, ub, best);
+        tmp.insert({lb, f});
+    }
+
+    fs.reserve(tmp.size());
+    for (const auto &entry: tmp)
+        fs.push_back(entry.second);
+}
+
+/*
+ * Find a function based on an instruction index.
+ */
+const F *e9tool::findF(const Fs &fs, size_t idx)
+{
+    ssize_t lo = 0, hi = (ssize_t)fs.size()-1;
+    while (lo <= hi)
+    {
+        ssize_t mid = (lo + hi) / 2;
+        if (fs[mid].ub < idx)
+            lo = mid+1;
+        else if (fs[mid].lb > idx)
+            hi = mid-1;
+        else
+            return &fs[mid];
+    }
+    return nullptr;
 }
 

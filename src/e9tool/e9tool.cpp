@@ -51,6 +51,7 @@
  */
 static bool option_targets  = false;
 static bool option_bbs      = false;
+static bool option_fs       = false;
 static bool option_trap_all = false;
 static std::string option_format("binary");
 static std::string option_output("");
@@ -412,12 +413,22 @@ static std::pair<MatchSet, int> parseSpecifier(Parser &parser, int *tptr)
         case TOKEN_BB:
             parser.getToken();
             option_targets = option_bbs = true;
-            if (tptr != nullptr && parser.peekToken() == '.')
+            if (tptr != nullptr && parser.peekToken() != '[')
             {
                 *tptr = TOKEN_BB;
                 return {MATCH_Is, 0};
             }
             set = MATCH_BBs;
+            break;
+        case TOKEN_F:
+            parser.getToken();
+            option_targets = option_fs = true;
+            if (tptr != nullptr && parser.peekToken() != '[')
+            {
+                *tptr = TOKEN_F;
+                return {MATCH_Is, 0};
+            }
+            set = MATCH_Fs;
             break;
         case TOKEN_I:
             parser.getToken();
@@ -551,26 +562,59 @@ static MatchTest *parseTest(Parser &parser)
         case TOKEN_X87:
             match = MATCH_X87; break;
         case TOKEN_BB:
-            parser.expectToken('.');
-            switch (parser.getToken())
+            if (parser.peekToken() == '.')
             {
-                case TOKEN_SIZE:
-                    match = MATCH_BB_SIZE; break;
-                case TOKEN_LENGTH:
-                    match = MATCH_BB_LEN; break;
-                case TOKEN_ADDR:
-                    match = MATCH_BB_ADDR; break;
-                case TOKEN_OFFSET:
-                    match = MATCH_BB_OFFSET; break;
-                case TOKEN_ENTRY:
-                    match = MATCH_BB_ENTRY; break;
-                case TOKEN_EXIT:
-                    match = MATCH_BB_EXIT; break;
-                case TOKEN_BEST:
-                    match = MATCH_BB_BEST; break;
-                default:
-                    parser.unexpectedToken();
+                parser.getToken();
+                switch (parser.getToken())
+                {
+                    case TOKEN_SIZE:
+                        match = MATCH_BB_SIZE; break;
+                    case TOKEN_LENGTH:
+                        match = MATCH_BB_LEN; break;
+                    case TOKEN_ADDR:
+                        match = MATCH_BB_ADDR; break;
+                    case TOKEN_OFFSET:
+                        match = MATCH_BB_OFFSET; break;
+                    case TOKEN_ENTRY:
+                        match = MATCH_BB_ENTRY; break;
+                    case TOKEN_EXIT:
+                        match = MATCH_BB_EXIT; break;
+                    case TOKEN_BEST:
+                        match = MATCH_BB_BEST; break;
+                    default:
+                        parser.unexpectedToken();
+                }
             }
+            else
+                match = MATCH_BB_ADDR;
+            break;
+        case TOKEN_F:
+            if (parser.peekToken() == '.')
+            {
+                parser.getToken();
+                switch (parser.getToken())
+                {
+                    case TOKEN_SIZE:
+                        match = MATCH_F_SIZE; break;
+                    case TOKEN_LENGTH:
+                        match = MATCH_F_LEN; break;
+                    case TOKEN_ADDR:
+                        match = MATCH_F_ADDR; break;
+                    case TOKEN_OFFSET:
+                        match = MATCH_F_OFFSET; break;
+                    case TOKEN_ENTRY:
+                        match = MATCH_F_ENTRY; break;
+                    case TOKEN_BEST:
+                        match = MATCH_F_BEST; break;
+                    case TOKEN_NAME_2:
+                        type = MATCH_TYPE_STRING;
+                        match = MATCH_F_NAME; break;
+                    default:
+                        parser.unexpectedToken();
+                }
+            }
+            else
+                match = MATCH_F_ADDR;
             break;
         default:
             parser.unexpectedToken();
@@ -681,6 +725,7 @@ static MatchTest *parseTest(Parser &parser)
     switch (match)
     {
         case MATCH_ASSEMBLY: case MATCH_MNEMONIC: case MATCH_SECTION:
+        case MATCH_F_NAME:
             if (cmp != MATCH_CMP_EQ && cmp != MATCH_CMP_NEQ &&
                     cmp != MATCH_CMP_DEFINED)
                 error("failed to parse matching; invalid match "
@@ -1156,10 +1201,16 @@ static const Patch *parsePatch(const ELF &elf, const char *str)
                         arg = ARGUMENT_ADDR; break;
                     case TOKEN_BASE:
                         arg = ARGUMENT_BASE; break;
+                    case TOKEN_BB:
+                        option_targets = option_bbs = true;
+                        arg = ARGUMENT_BB; break;
                     case TOKEN_DST:
                         arg = ARGUMENT_DST; break;
                     case TOKEN_CONFIG:
                         arg = ARGUMENT_CONFIG; break;
+                    case TOKEN_F:
+                        option_targets = option_fs = true;
+                        arg = ARGUMENT_F; break;
                     case TOKEN_ID:
                         arg = ARGUMENT_ID; break;
                     case TOKEN_IMM:
@@ -1257,19 +1308,39 @@ static const Patch *parsePatch(const ELF &elf, const char *str)
                             }
                         }
                         break;
-
+                    case ARGUMENT_BB: case ARGUMENT_F:
+                        field = FIELD_ADDR;
+                        if (parser.peekToken() == '.')
+                        {
+                            parser.getToken();
+                            switch (parser.getToken())
+                            {
+                                case TOKEN_ADDR:
+                                    field = FIELD_ADDR; break;
+                                case TOKEN_OFFSET:
+                                    field = FIELD_OFFSET; break;
+                                case TOKEN_SIZE:
+                                    field = FIELD_SIZE; break;
+                                case TOKEN_LENGTH:
+                                    field = FIELD_LEN; break;
+                                case TOKEN_NAME_2:
+                                    if (arg != ARGUMENT_F)
+                                        parser.unexpectedToken();
+                                    field = FIELD_NAME; break;
+                                default:
+                                    parser.unexpectedToken();
+                            }
+                        }
+                        break;
                     case ARGUMENT_MEMOP: case ARGUMENT_SYMBOL:
                         break;
-
                     case ARGUMENT_REGISTER:
                         if ((Register)value == REGISTER_RIP)
                             goto not_a_ptr;
                         break;
-
                     case ARGUMENT_USER:
                         value = parseIndex(parser, INTPTR_MIN, INTPTR_MAX);
                         // Fallthrough:
-
                     default:
                     not_a_ptr:
                         if (ptr)
@@ -1284,6 +1355,10 @@ static const Patch *parsePatch(const ELF &elf, const char *str)
                         case ARGUMENT_ADDR: case ARGUMENT_NEXT:
                         case ARGUMENT_SYMBOL: case ARGUMENT_TARGET:
                             break;
+                        case ARGUMENT_BB: case ARGUMENT_F:
+                            if (field == FIELD_ADDR)
+                                break;
+                            // Fallthrough:
                         default:
                             error("failed to parse call trampoline; cannot "
                                 "use `static' with `%s' argument",
@@ -1293,7 +1368,7 @@ static const Patch *parsePatch(const ELF &elf, const char *str)
                 bool duplicate = false;
                 for (const auto &prevArg: args)
                 {
-                    if (prevArg.kind == arg)
+                    if (prevArg.kind == arg && prevArg.field == field)
                     {
                         duplicate = true;
                         break;
@@ -1491,7 +1566,8 @@ static Exclude parseExclude(const ELF &elf, const char *str)
 /*
  * Create match string.
  */
-static const char *makeMatchString(MatchKind match, const InstrInfo *I)
+static const char *makeMatchString(MatchKind match, const ELF *elf,
+    size_t idx, const InstrInfo *I)
 {
     switch (match)
     {
@@ -1501,8 +1577,15 @@ static const char *makeMatchString(MatchKind match, const InstrInfo *I)
             return I->string.mnemonic;
         case MATCH_SECTION:
             return I->string.section;
+        case MATCH_F_NAME:
+        {
+            const F *f = findF(elf->fs, idx);
+            if (f == nullptr)
+                return nullptr;
+            return f->name;
+        }
         default:
-            return "";
+            return nullptr;
     }
 }
 
@@ -1540,6 +1623,7 @@ static MatchValue makeMatchValue(const MatchTest *test, const ELF *elf,
     OpType type = OPTYPE_INVALID;
     uint8_t access = 0;
     const BB *bb = nullptr;
+    const F *f   = nullptr;
     switch (match)
     {
         case MATCH_SRC:
@@ -1555,13 +1639,17 @@ static MatchValue makeMatchValue(const MatchTest *test, const ELF *elf,
         case MATCH_BB_ENTRY: case MATCH_BB_EXIT: case MATCH_BB_BEST:
         case MATCH_BB_SIZE: case MATCH_BB_LEN: case MATCH_BB_ADDR:
         case MATCH_BB_OFFSET:
-        {
-            auto i = findBB(elf->bbs, idx);
-            if (i == elf->bbs.end())
+            bb = findBB(elf->bbs, idx);
+            if (bb == nullptr)
                 goto undefined;
-            bb = &i->second;
             break;
-        }
+        case MATCH_F_ENTRY: case MATCH_F_BEST:
+        case MATCH_F_SIZE: case MATCH_F_LEN: case MATCH_F_ADDR:
+        case MATCH_F_OFFSET:
+            f = findF(elf->fs, idx);
+            if (f == nullptr)
+                goto undefined;
+            break;
         default:
             break;
     }
@@ -1726,8 +1814,21 @@ static MatchValue makeMatchValue(const MatchTest *test, const ELF *elf,
         case MATCH_BB_OFFSET:
             result.i = (intptr_t)Is[bb->lb].offset; return result;
         case MATCH_BB_BEST:
-            result.i = (idx == bb->best);
+            result.i = (idx == bb->best); return result;
+        case MATCH_F_ENTRY:
+            result.i = (idx == f->lb); return result;
+        case MATCH_F_LEN:
+            result.i = (intptr_t)(f->ub - f->lb  + 1); return result;
+        case MATCH_F_SIZE:
+            result.i = (Is[f->ub].address - Is[f->lb].address +
+                Is[f->ub].size);
             return result;
+        case MATCH_F_ADDR:
+            result.i = (intptr_t)Is[f->lb].address; return result;
+        case MATCH_F_OFFSET:
+            result.i = (intptr_t)Is[f->lb].offset; return result;
+        case MATCH_F_BEST:
+            result.i = (idx == f->best); return result;
         default:
         undefined:
             result.type = MATCH_TYPE_UNDEFINED;
@@ -1791,12 +1892,16 @@ bool matchEval(const MatchExpr *expr, const ELF *elf,
         {
             case MATCH_BBs:
             {
-                auto j = findBB(elf->bbs, idx);
-                if (j == elf->bbs.end())
-                    return false;   // No BB
-                const BB &bb = j->second;
-                if (i < (ssize_t)bb.lb || i > (ssize_t)bb.ub)
-                    return false;   // i is OOB of BB
+                const BB *bb = findBB(elf->bbs, idx);
+                if (bb == nullptr || i < (ssize_t)bb->lb || i > (ssize_t)bb->ub)
+                    return false;
+                break;
+            }
+            case MATCH_Fs:
+            {
+                const F *f = findF(elf->fs, idx);
+                if (f == nullptr || i < (ssize_t)f->lb || i > (ssize_t)f->ub)
+                    return false;
                 break;
             }
             case MATCH_Is:
@@ -1813,13 +1918,14 @@ bool matchEval(const MatchExpr *expr, const ELF *elf,
     switch (test->match)
     {
         case MATCH_ASSEMBLY: case MATCH_MNEMONIC: case MATCH_SECTION:
+        case MATCH_F_NAME:
         {
-            if (test->cmp == MATCH_CMP_DEFINED)
+            const char *str = makeMatchString(test->match, elf, idx, I);
+            if (test->cmp == MATCH_CMP_DEFINED || str == nullptr)
             {
-                pass = true;
+                pass = (str != nullptr);
                 break;
             }
-            const char *str = makeMatchString(test->match, I);
             std::cmatch cmatch;
             pass = std::regex_match(str, cmatch, *test->regex);
             pass = (test->cmp == MATCH_CMP_NEQ? !pass: pass);
@@ -1862,6 +1968,9 @@ bool matchEval(const MatchExpr *expr, const ELF *elf,
         case MATCH_BB_ENTRY: case MATCH_BB_EXIT: case MATCH_BB_BEST:
         case MATCH_BB_SIZE: case MATCH_BB_LEN:
         case MATCH_BB_ADDR: case MATCH_BB_OFFSET:
+        case MATCH_F_ENTRY: case MATCH_F_BEST:
+        case MATCH_F_SIZE: case MATCH_F_LEN:
+        case MATCH_F_ADDR: case MATCH_F_OFFSET:
         {
             if (test->cmp != MATCH_CMP_EQ_ZERO &&
                 test->cmp != MATCH_CMP_NEQ_ZERO &&
@@ -2859,6 +2968,8 @@ int main_2(int argc, char **argv)
         buildTargets(&elf, Is.data(), Is.size(), elf.targets);
     if (option_bbs)
         buildBBs(&elf, Is.data(), Is.size(), elf.targets, elf.bbs);
+    if (option_fs)
+        buildFs(&elf, Is.data(), Is.size(), elf.targets, elf.fs);
 
     // Step (2): Find all matching instructions:
     std::vector<Action *> matching;

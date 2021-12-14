@@ -1,0 +1,1 @@
+./test.pie -M F.best -P '"print"(F.name)@patch'

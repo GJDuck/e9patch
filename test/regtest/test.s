@@ -205,6 +205,9 @@ data_END:
 .Lpass_z:
 
 .if PIE
+.global func
+.type func, @function
+func:
     lea _start(%rip),%rax
     lea -0xa000000(%rax),%rax
     mov 0xa000000(%rax),%rcx

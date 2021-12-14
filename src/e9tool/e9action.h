@@ -154,6 +154,14 @@ enum MatchKind
     MATCH_BB_SIZE,
     MATCH_BB_LEN,
 
+    MATCH_F_BEST,
+    MATCH_F_ENTRY,
+    MATCH_F_ADDR,
+    MATCH_F_OFFSET,
+    MATCH_F_SIZE,
+    MATCH_F_LEN,
+    MATCH_F_NAME,
+
     MATCH_OP,
     MATCH_SRC,
     MATCH_DST,
@@ -172,7 +180,8 @@ enum MatchKind
 enum MatchSet
 {
     MATCH_Is,                   // Instructions
-    MATCH_BBs                   // Basic blocks
+    MATCH_BBs,                  // Basic blocks
+    MATCH_Fs,                   // Functions
 };
 
 /*
