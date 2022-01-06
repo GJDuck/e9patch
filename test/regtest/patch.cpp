@@ -619,3 +619,74 @@ void state_check(const void *addr, const void *state_0, intptr_t rsp,
     }
 }
 
+struct NODE
+{
+    intptr_t val;
+    struct NODE *next;
+};
+
+void record(const void *addr, intptr_t val)
+{
+    static struct NODE *vals = nullptr;
+    struct NODE *n;
+    for (n = vals; n != nullptr; n = n->next)
+    {
+        if (val == n->val)
+            return;
+    }
+    fprintf(stderr, "%p: add 0x%.16lx\n", addr, val);
+    n = (struct NODE *)malloc(sizeof(struct NODE));
+    if (n == NULL)
+    {
+        fprintf(stderr, "malloc() failed (%s)\n", strerror(errno));
+        abort();
+    }
+    n->val  = val;
+    n->next = vals;
+    vals = n;
+}
+
+struct ENTRY
+{
+    const void *addr;
+    intptr_t val;
+};
+
+void log(const void *addr, intptr_t val)
+{
+    static struct ENTRY **log = nullptr;
+    static size_t log_size = 0;
+    static size_t log_ptr  = 0;
+
+    struct ENTRY *entry = (struct ENTRY *)malloc(sizeof(struct ENTRY));
+    if (entry == nullptr)
+    {
+        fprintf(stderr, "malloc() failed (%s)\n", strerror(errno));
+        abort();
+    }
+    entry->addr = addr;
+    entry->val  = val;
+    if (log_ptr >= log_size)
+    {
+        log_size = (log_size == 0? 1: 2 * log_size);
+        log = (struct ENTRY **)realloc(log, log_size * sizeof(struct ENTRY *));
+        if (log == nullptr)
+        {
+            fprintf(stderr, "realloc() failed (%s)\n", strerror(errno));
+            abort();
+        }
+    }
+    log[log_ptr++] = entry;
+    if (addr != (const void *)0xa0002ac)
+        return;
+    fputc('{', stderr);
+    for (size_t i = 0; i < log_ptr; i++)
+    {
+        fprintf(stderr, "<%p:0x%lx>%s", log[i]->addr, log[i]->val,
+            (i == log_ptr-1? "": ", "));
+        free(log[i]);
+    }
+    fputs("}\n", stderr);
+    free(log);
+}
+

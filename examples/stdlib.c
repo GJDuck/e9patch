@@ -147,6 +147,7 @@
 #define isatty              __hide__isatty
 
 #define malloc              __hide__malloc
+#define calloc              __hide__calloc
 #define realloc             __hide__realloc
 #define free                __hide__free
 #define getenv              __hide__getenv
@@ -315,6 +316,7 @@
 #undef isatty
 
 #undef malloc
+#undef calloc
 #undef realloc
 #undef free
 #undef getenv
@@ -994,444 +996,772 @@ asm (
 /****************************************************************************/
 
 /*
- * We use a variant of the LowFat allocator (https://github.com/GJDuck/LowFat).
- * This is mainly due its small size and simple design.
+ * This is a malloc() implementation based on interval-trees.  This algorithm
+ * is chosen because (1) it is relatively simple, and (2) the worst-case time
+ * and memory performance should be reasonable.
+ *
+ * The implementation uses code that is dervied from Niels Provos' red-black
+ * tree implementation.  See the copyright and license (BSD) below.
  */
 
-#define MALLOC_PAGE_SIZE        4096
-#define MALLOC_POOL_SIZE        (1ull << 30)        // 1GB
-#define MALLOC_POOL_MAX         61
+/*
+ * Copyright 2002 Niels Provos <provos@citi.umich.edu>
+ * All rights reserved.
+ *
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions
+ * are met:
+ * 1. Redistributions of source code must retain the above copyright
+ *    notice, this list of conditions and the following disclaimer.
+ * 2. Redistributions in binary form must reproduce the above copyright
+ *    notice, this list of conditions and the following disclaimer in the
+ *    documentation and/or other materials provided with the distribution.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
+ * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
+ * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT,
+ * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
+ * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+ * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+ * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+ * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
+ * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ */
 
-struct malloc_header_s
+static void *memset(void *s, int c, size_t n);
+static void *memcpy(void *dest, const void *src, size_t n);
+
+/*
+ * Malloc metadata node.
+ */
+struct malloc_node_s
 {
-    size_t size:32;                                 // malloc size
-    size_t idx:32;                                  // region index
-    struct malloc_header_s *next;                   // freelist next
+    uint32_t color:1;       // RB-tree color
+    uint32_t parent:31;     // RB-tree parent
+    uint32_t alloced:1;     // Allocated?
+    uint32_t left:31;       // RB-tree left
+    uint32_t __unused:1;    // Not used.
+    uint32_t right:31;      // RB-tree right
+    uint32_t base;          // allocation BASE
+    uint32_t size;          // allocation SIZE
+    uint32_t lb;            // sub-tree LB
+    uint32_t ub;            // sub-tree UB
+    uint32_t gap;           // sub-tree max GAP
 };
 
+/*
+ * Malloc pool.
+ */
 struct malloc_pool_s
 {
-    mutex_t mutex;                                  // region mutex
-    uint8_t *base;                                  // region base
-    uint8_t *next;                                  // next free
-    uint8_t *access;                                // next accessible
-    uint8_t *end;                                   // region end
-    struct malloc_header_s *free;                   // freelist
+    mutex_t mutex;
+    struct malloc_node_s *nodes;
+    uint32_t root;
+    struct
+    {
+        uint8_t *base;
+        uint32_t mmap;
+        uint32_t free;
+        uint32_t next;
+    } node;
+    struct
+    {
+        uint8_t *base;
+        uint32_t mmap;
+    } mem;
 };
 
-static struct malloc_pool_s malloc_pools[MALLOC_POOL_MAX];
+static struct malloc_pool_s malloc_pool = {MUTEX_INITIALIZER, 0};
 
-static const size_t malloc_sizes[] =
-{
-    16, /* idx=0 */
-    32, /* idx=1 */
-    48, /* idx=2 */
-    64, /* idx=3 */
-    80, /* idx=4 */
-    96, /* idx=5 */
-    112, /* idx=6 */
-    128, /* idx=7 */
-    144, /* idx=8 */
-    160, /* idx=9 */
-    192, /* idx=10 */
-    224, /* idx=11 */
-    256, /* idx=12 */
-    272, /* idx=13 */
-    320, /* idx=14 */
-    384, /* idx=15 */
-    448, /* idx=16 */
-    512, /* idx=17 */
-    528, /* idx=18 */
-    640, /* idx=19 */
-    768, /* idx=20 */
-    896, /* idx=21 */
-    1024, /* idx=22 */
-    1040, /* idx=23 */
-    1280, /* idx=24 */
-    1536, /* idx=25 */
-    1792, /* idx=26 */
-    2048, /* idx=27 */
-    2064, /* idx=28 */
-    2560, /* idx=29 */
-    3072, /* idx=30 */
-    3584, /* idx=31 */
-    4096, /* idx=32 */
-    4112, /* idx=33 */
-    5120, /* idx=34 */
-    6144, /* idx=35 */
-    7168, /* idx=36 */
-    8192, /* idx=37 */
-    8208, /* idx=38 */
-    10240, /* idx=39 */
-    12288, /* idx=40 */
-    16384, /* idx=41 */
-    32768, /* idx=42 */
-    65536, /* idx=43 */
-    131072, /* idx=44 */
-    262144, /* idx=45 */
-    524288, /* idx=46 */
-    1048576, /* idx=47 */
-    2097152, /* idx=48 */
-    4194304, /* idx=49 */
-    8388608, /* idx=50 */
-    16777216, /* idx=51 */
-    33554432, /* idx=52 */
-    67108864, /* idx=53 */
-    134217728, /* idx=54 */
-    268435456, /* idx=55 */
-    536870912, /* idx=56 */
-    1073741824, /* idx=57 */
-    2147483648, /* idx=58 */
-    4294967296, /* idx=59 */
-    8589934592, /* idx=60 */
-};
+#define MA_UNIT                     16
+#define MA_NIL                      0x0
+#define MA_ZERO                     ((void *)-((intptr_t)UINT32_MAX + 1))
+#define MA_PAGE_SIZE                4096
+#define MA_BLACK                    0
+#define MA_RED                      1
+#define MA_PARENT(pool, N)          (pool->nodes[(N)].parent)
+#define MA_LEFT(pool, N)            (pool->nodes[(N)].left)
+#define MA_RIGHT(pool, N)           (pool->nodes[(N)].right)
+#define MA_COLOR(pool, N)           (pool->nodes[(N)].color)
+#define MA_ALLOCED(pool, N)         (pool->nodes[(N)].alloced)
+#define MA_BASE(pool, N)            (pool->nodes[(N)].base)
+#define MA_SIZE(pool, N)            (pool->nodes[(N)].size)
+#define MA_LB(pool, N)              (pool->nodes[(N)].lb)
+#define MA_UB(pool, N)              (pool->nodes[(N)].ub)
+#define MA_GAP(pool, N)             (pool->nodes[(N)].gap)
 
-static size_t malloc_index(size_t size)
+#define MA_MAX(n, m)                ((n) > (m)? (n): (m))
+#define MA_MIN(n, m)                ((n) < (m)? (n): (m))
+
+/*
+ * Malloc init.
+ */
+static void malloc_init(struct malloc_pool_s *pool)
 {
-    size += sizeof(struct malloc_header_s);
-    switch (__builtin_clzll(size))
+    if (mutex_lock(&pool->mutex) < 0)
+        return;
+    if (pool->node.base != NULL)
     {
-        case 64: case 63: case 62: case 61: case 60: case 59:
-            if (size <= 16)
-                return 0;
-        case 58:
-            if (size <= 32)
-                return 1;
-            if (size <= 48)
-                return 2;
-        case 57:
-            if (size <= 64)
-                return 3;
-            if (size <= 80)
-                return 4;
-            if (size <= 96)
-                return 5;
-            if (size <= 112)
-                return 6;
-        case 56:
-            if (size <= 128)
-                return 7;
-            if (size <= 144)
-                return 8;
-            if (size <= 160)
-                return 9;
-            if (size <= 192)
-                return 10;
-            if (size <= 224)
-                return 11;
-        case 55:
-            if (size <= 256)
-                return 12;
-            if (size <= 272)
-                return 13;
-            if (size <= 320)
-                return 14;
-            if (size <= 384)
-                return 15;
-            if (size <= 448)
-                return 16;
-        case 54:
-            if (size <= 512)
-                return 17;
-            if (size <= 528)
-                return 18;
-            if (size <= 640)
-                return 19;
-            if (size <= 768)
-                return 20;
-            if (size <= 896)
-                return 21;
-        case 53:
-            if (size <= 1024)
-                return 22;
-            if (size <= 1040)
-                return 23;
-            if (size <= 1280)
-                return 24;
-            if (size <= 1536)
-                return 25;
-            if (size <= 1792)
-                return 26;
-        case 52:
-            if (size <= 2048)
-                return 27;
-            if (size <= 2064)
-                return 28;
-            if (size <= 2560)
-                return 29;
-            if (size <= 3072)
-                return 30;
-            if (size <= 3584)
-                return 31;
-        case 51:
-            if (size <= 4096)
-                return 32;
-            if (size <= 4112)
-                return 33;
-            if (size <= 5120)
-                return 34;
-            if (size <= 6144)
-                return 35;
-            if (size <= 7168)
-                return 36;
-        case 50:
-            if (size <= 8192)
-                return 37;
-            if (size <= 8208)
-                return 38;
-            if (size <= 10240)
-                return 39;
-            if (size <= 12288)
-                return 40;
-        case 49:
-            if (size <= 16384)
-                return 41;
-        case 48:
-            if (size <= 32768)
-                return 42;
-        case 47:
-            if (size <= 65536)
-                return 43;
-        case 46:
-            if (size <= 131072)
-                return 44;
-        case 45:
-            if (size <= 262144)
-                return 45;
-        case 44:
-            if (size <= 524288)
-                return 46;
-        case 43:
-            if (size <= 1048576)
-                return 47;
-        case 42:
-            if (size <= 2097152)
-                return 48;
-        case 41:
-            if (size <= 4194304)
-                return 49;
-        case 40:
-            if (size <= 8388608)
-                return 50;
-        case 39:
-            if (size <= 16777216)
-                return 51;
-        case 38:
-            if (size <= 33554432)
-                return 52;
-        case 37:
-            if (size <= 67108864)
-                return 53;
-        case 36:
-            if (size <= 134217728)
-                return 54;
-        case 35:
-            if (size <= 268435456)
-                return 55;
-        case 34:
-            if (size <= 536870912)
-                return 56;
-        case 33:
-            if (size <= 1073741824)
-                return 57;
-        case 32:
-            if (size <= 2147483648)
-                return 58;
-        case 31:
-            if (size <= 4294967296)
-                return 59;
-        case 30:
-            if (size <= 8589934592)
-                return 60;
-        default:
-            return SIZE_MAX;
+        mutex_unlock(&pool->mutex);
+        return;
     }
-}
-
-static bool malloc_recover(struct malloc_pool_s *pool)
-{
-    if (errno != EOWNERDEAD)
-        return false;
-    // Recovery from EOWNERDEAD may leak memory (or entire mappings).
-    if (pool->base != NULL && pool->end == NULL)
-    {
-        // Complete partial initialization
-        pool->next   = pool->base;
-        pool->access = pool->base;
-        pool->end    = pool->base + MALLOC_POOL_SIZE;
-    }
+    uint32_t buf[2];
+    syscall(SYS_getrandom, buf, sizeof(buf), 0);
+    buf[0] &= ~(MA_PAGE_SIZE-1); buf[1] &= ~(MA_PAGE_SIZE-1);
+    pool->root = MA_NIL;
+    pool->node.base = (uint8_t *)(0xaaa00000000ull | (uintptr_t)buf[0]);
+    pool->node.mmap = 0;
+    pool->node.free = MA_NIL;
+    pool->node.next = 1;
+    pool->mem.base = (uint8_t *)(0xbbb00000000ull | (uintptr_t)buf[1]);
+    pool->mem.mmap = 0;
+    pool->nodes = (struct malloc_node_s *)pool->node.base;
+    pool->nodes--;
     mutex_unlock(&pool->mutex);
-    return false;
 }
 
-static __attribute__((__noinline__)) void *malloc_allocate(size_t size,
-    size_t idx, bool lock)
+/*
+ * Fix the interval-tree invariant (RB-tree augmentation).
+ */
+static void malloc_fix_invariant(struct malloc_pool_s *pool, uint32_t n)
 {
-    if (idx > MALLOC_POOL_MAX)
-    {
-        errno = EINVAL;
-        return NULL;
-    }
-    struct malloc_pool_s *pool = malloc_pools + idx;
-    size_t alloc_size = malloc_sizes[idx];
+    if (n == MA_NIL)
+        return;
+    uint32_t l = MA_LEFT(pool, n), r = MA_RIGHT(pool, n);
+    uint32_t llb = (l != MA_NIL? MA_LB(pool, l): UINT32_MAX);
+    intptr_t rub = (r != MA_NIL? MA_UB(pool, r): 0);
+    MA_LB(pool, n) = MA_MIN(llb, MA_BASE(pool, n));
+    MA_UB(pool, n) = MA_MAX(rub, MA_BASE(pool, n) + MA_SIZE(pool, n));
+    uint32_t lgap = (l != MA_NIL? MA_GAP(pool, l): 0);
+    uint32_t rgap = (r != MA_NIL? MA_GAP(pool, r): 0);
+    uint32_t gap  = MA_MAX(lgap, rgap);
+    gap = MA_MAX(gap, (uint32_t)(l != MA_NIL?
+        MA_BASE(pool, n) - MA_UB(pool, l): 0));
+    gap = MA_MAX(gap, (uint32_t)(r != MA_NIL?
+        MA_LB(pool, r) - (MA_BASE(pool, n) + MA_SIZE(pool, n)): 0));
+    MA_GAP(pool, n) = gap;
+}
 
-    struct malloc_header_s *node = pool->free;
-    while (node != NULL)
+static void malloc_rotate_left(struct malloc_pool_s *pool, uint32_t n)
+{
+    uint32_t tmp = MA_RIGHT(pool, n);
+    if ((MA_RIGHT(pool, n) = MA_LEFT(pool, tmp)) != MA_NIL)
+        MA_PARENT(pool, MA_LEFT(pool, tmp)) = n;
+    malloc_fix_invariant(pool, n);
+    if ((MA_PARENT(pool, tmp) = MA_PARENT(pool, n)) != MA_NIL)
     {
-        struct malloc_header_s *next = node->next;
-        struct malloc_header_s *curr =
-            __sync_val_compare_and_swap(&pool->free, node, next);
-        if (node == curr)
+        if (n == MA_LEFT(pool, MA_PARENT(pool, n)))
+            MA_LEFT(pool, MA_PARENT(pool, n)) = tmp;
+        else
+            MA_RIGHT(pool, MA_PARENT(pool, n)) = tmp;
+    }
+    else
+        pool->root = tmp;
+    MA_LEFT(pool, tmp) = n;
+    MA_PARENT(pool, n) = tmp;
+    malloc_fix_invariant(pool, tmp);
+    if (MA_PARENT(pool, tmp) != MA_NIL)
+        malloc_fix_invariant(pool, MA_PARENT(pool, tmp));
+}
+
+static void malloc_rotate_right(struct malloc_pool_s *pool, uint32_t n)
+{
+    uint32_t tmp = MA_LEFT(pool, n);
+    if ((MA_LEFT(pool, n) = MA_RIGHT(pool, tmp)) != MA_NIL)
+        MA_PARENT(pool, MA_RIGHT(pool, tmp)) = n;
+    malloc_fix_invariant(pool, n);
+    if ((MA_PARENT(pool, tmp) = MA_PARENT(pool, n)) != MA_NIL)
+    {
+        if (n == MA_LEFT(pool, MA_PARENT(pool, n)))
+            MA_LEFT(pool, MA_PARENT(pool, n)) = tmp;
+        else
+            MA_RIGHT(pool, MA_PARENT(pool, n)) = tmp;
+    } else
+        pool->root = tmp;
+    MA_RIGHT(pool, tmp) = n;
+    MA_PARENT(pool, n) = tmp;
+    malloc_fix_invariant(pool, tmp);
+    if (MA_PARENT(pool, tmp) != MA_NIL)
+        malloc_fix_invariant(pool, MA_PARENT(pool, tmp));
+}
+
+static void malloc_rebalance_insert(struct malloc_pool_s *pool, uint32_t n)
+{
+    uint32_t parent, gparent, tmp;
+    for (uint32_t m = n; m != MA_NIL; m = MA_PARENT(pool, m))
+        malloc_fix_invariant(pool, m);
+    while ((parent = MA_PARENT(pool, n)) != MA_NIL &&
+                MA_COLOR(pool, parent) == MA_RED)
+    {
+        gparent = MA_PARENT(pool, parent);
+        if (parent == MA_LEFT(pool, gparent))
         {
-            node->size = size;
-            node->idx  = idx;
-            node->next = NULL;
-            return (void *)(node+1);
+            tmp = MA_RIGHT(pool, gparent);
+            if (tmp != MA_NIL && MA_COLOR(pool, tmp) == MA_RED)
+            {
+                MA_COLOR(pool, tmp)     = MA_BLACK;
+                MA_COLOR(pool, parent)  = MA_BLACK;
+                MA_COLOR(pool, gparent) = MA_RED;
+                n = gparent;
+                continue;
+            }
+            if (MA_RIGHT(pool, parent) == n)
+            {
+                malloc_rotate_left(pool, parent);
+                tmp = parent;
+                parent = n;
+                n = tmp;
+            }
+            MA_COLOR(pool, parent)  = MA_BLACK;
+            MA_COLOR(pool, gparent) = MA_RED;
+            malloc_rotate_right(pool, gparent);
         }
-        node = curr;
-    }
-
-    if (lock && mutex_lock(&pool->mutex) < 0 && !malloc_recover(pool))
-        return NULL;
-
-    if (pool->base == NULL)
-    {
-        void *addr = mmap(NULL, MALLOC_POOL_SIZE, PROT_NONE,
-            MAP_ANONYMOUS | MAP_PRIVATE | MAP_NORESERVE, -1, 0);
-        if (addr == MAP_FAILED)
+        else
         {
-            if (lock)
-                mutex_unlock(&pool->mutex);
-            return NULL;
+            tmp = MA_LEFT(pool, gparent);
+            if (tmp != MA_NIL && MA_COLOR(pool, tmp) == MA_RED)
+            {
+                MA_COLOR(pool, tmp)     = MA_BLACK;
+                MA_COLOR(pool, parent)  = MA_BLACK;
+                MA_COLOR(pool, gparent) = MA_RED;
+                n = gparent;
+                continue;
+            }
+            if (MA_LEFT(pool, parent) == n)
+            {
+                malloc_rotate_right(pool, parent);
+                tmp = parent;
+                parent = n;
+                n = tmp;
+            }
+            MA_COLOR(pool, parent)  = MA_BLACK;
+            MA_COLOR(pool, gparent) = MA_RED;
+            malloc_rotate_left(pool, gparent);
         }
-        pool->base   = (uint8_t *)addr;
-        pool->next   = pool->base;
-        pool->access = pool->base;
-        pool->end    = pool->base + MALLOC_POOL_SIZE;
-        pool->free   = NULL;
     }
+    MA_COLOR(pool, pool->root) = MA_BLACK;
+}
 
-    if (pool->next + alloc_size > pool->end)
+static void malloc_rebalance_remove(struct malloc_pool_s *pool,
+    uint32_t parent, uint32_t n)
+{
+    uint32_t tmp;
+    while ((n == MA_NIL || MA_COLOR(pool, n) == MA_BLACK) && n != pool->root)
     {
-        if (lock)
-            mutex_unlock(&pool->mutex);
+        if (MA_LEFT(pool, parent) == n)
+        {
+            tmp = MA_RIGHT(pool, parent);
+            if (MA_COLOR(pool, tmp) == MA_RED)
+            {
+                MA_COLOR(pool, tmp) = MA_BLACK;
+                MA_COLOR(pool, parent) = MA_RED;
+                malloc_rotate_left(pool, parent);
+                tmp = MA_RIGHT(pool, parent);
+            }
+            if ((MA_LEFT(pool, tmp) == MA_NIL ||
+                    MA_COLOR(pool, MA_LEFT(pool, tmp)) == MA_BLACK) &&
+                (MA_RIGHT(pool, tmp) == MA_NIL ||
+                    MA_COLOR(pool, MA_RIGHT(pool, tmp)) == MA_BLACK))
+            {
+                MA_COLOR(pool, tmp) = MA_RED;
+                n = parent;
+                parent = MA_PARENT(pool, n);
+            }
+            else
+            {
+                if (MA_RIGHT(pool, tmp) == MA_NIL ||
+                    MA_COLOR(pool, MA_RIGHT(pool, tmp)) == MA_BLACK)
+                {
+                    uint32_t oleft;
+                    if ((oleft = MA_LEFT(pool, tmp)) != MA_NIL)
+                        MA_COLOR(pool, oleft) = MA_BLACK;
+                    MA_COLOR(pool, tmp) = MA_RED;
+                    malloc_rotate_right(pool, tmp);
+                    tmp = MA_RIGHT(pool, parent);
+                }
+                MA_COLOR(pool, tmp) = MA_COLOR(pool, parent);
+                MA_COLOR(pool, parent) = MA_BLACK;
+                if (MA_RIGHT(pool, tmp))
+                    MA_COLOR(pool, MA_RIGHT(pool, tmp)) = MA_BLACK;
+                malloc_rotate_left(pool, parent);
+                n = pool->root;
+                break;
+            }
+        }
+        else
+        {
+            tmp = MA_LEFT(pool, parent);
+            if (MA_COLOR(pool, tmp) == MA_RED)
+            {
+                MA_COLOR(pool, tmp) = MA_BLACK;
+                MA_COLOR(pool, parent) = MA_RED;
+                malloc_rotate_right(pool, parent);
+                tmp = MA_LEFT(pool, parent);
+            }
+            if ((MA_LEFT(pool, tmp) == MA_NIL ||
+                    MA_COLOR(pool, MA_LEFT(pool, tmp)) == MA_BLACK) &&
+                (MA_RIGHT(pool, tmp) == MA_NIL ||
+                    MA_COLOR(pool, MA_RIGHT(pool, tmp)) == MA_BLACK))
+            {
+                MA_COLOR(pool, tmp) = MA_RED;
+                n = parent;
+                parent = MA_PARENT(pool, n);
+            }
+            else
+            {
+                if (MA_LEFT(pool, tmp) == MA_NIL ||
+                    MA_COLOR(pool, MA_LEFT(pool, tmp)) == MA_BLACK)
+                {
+                    uint32_t oright;
+                    if ((oright = MA_RIGHT(pool, tmp)) != MA_NIL)
+                        MA_COLOR(pool, oright) = MA_BLACK;
+                    MA_COLOR(pool, tmp) = MA_RED;
+                    malloc_rotate_left(pool, tmp);
+                    tmp = MA_LEFT(pool, parent);
+                }
+                MA_COLOR(pool, tmp) = MA_COLOR(pool, parent);
+                MA_COLOR(pool, parent) = MA_BLACK;
+                if (MA_LEFT(pool, tmp))
+                    MA_COLOR(pool, MA_LEFT(pool, tmp)) = MA_BLACK;
+                malloc_rotate_right(pool, parent);
+                n = pool->root;
+                break;
+            }
+        }
+    }
+    if (n != MA_NIL)
+        MA_COLOR(pool, n) = MA_BLACK;
+}
+
+static uint32_t malloc_remove(struct malloc_pool_s *pool, uint32_t n)
+{
+    uint32_t child, parent, old = n, color;
+    if (MA_LEFT(pool, n) == MA_NIL)
+        child = MA_RIGHT(pool, n);
+    else if (MA_RIGHT(pool, n) == MA_NIL)
+        child = MA_LEFT(pool, n);
+    else
+    {
+        uint32_t left;
+        n = MA_RIGHT(pool, n);
+        while ((left = MA_LEFT(pool, n)) != MA_NIL)
+            n = left;
+        child = MA_RIGHT(pool, n);
+        parent = MA_PARENT(pool, n);
+        color = MA_COLOR(pool, n);
+        if (child != MA_NIL)
+            MA_PARENT(pool, child) = parent;
+        if (parent != MA_NIL)
+        {
+            if (MA_LEFT(pool, parent) == n)
+                MA_LEFT(pool, parent) = child;
+            else 
+                MA_RIGHT(pool, parent) = child;
+            malloc_fix_invariant(pool, parent);
+        }
+        else
+            pool->root = child;
+        if (MA_PARENT(pool, n) == old)
+            parent = n;
+        MA_PARENT(pool, n) = MA_PARENT(pool, old);
+        MA_LEFT(pool, n)   = MA_LEFT(pool, old);
+        MA_RIGHT(pool, n)  = MA_RIGHT(pool, old);
+        MA_COLOR(pool, n)  = MA_COLOR(pool, old);
+        if (MA_PARENT(pool, old) != MA_NIL)
+        {
+            if (MA_LEFT(pool, MA_PARENT(pool, old)) == old)
+                MA_LEFT(pool, MA_PARENT(pool, old)) = n;
+            else
+                MA_RIGHT(pool, MA_PARENT(pool, old)) = n;
+            malloc_fix_invariant(pool, MA_PARENT(pool, old));
+        }
+        else
+            pool->root = n;
+        MA_PARENT(pool, MA_LEFT(pool, old)) = n;
+        if (MA_RIGHT(pool, old) != MA_NIL)
+            MA_PARENT(pool, MA_RIGHT(pool, old)) = n;
+        if (parent)
+        {
+            left = parent;
+            do
+            {
+                malloc_fix_invariant(pool, left);
+            }
+            while ((left = MA_PARENT(pool, left)) != MA_NIL);
+        }
+        goto color;
+    }
+    parent = MA_PARENT(pool, n);
+    color = MA_COLOR(pool, n);
+    if (child != MA_NIL)
+        MA_PARENT(pool, child) = parent;
+    if (parent)
+    {
+        if (MA_LEFT(pool, parent) == n)
+            MA_LEFT(pool, parent) = child;
+        else
+            MA_RIGHT(pool, parent) = child;
+        n = parent;
+        do
+        {
+            malloc_fix_invariant(pool, n);
+        }
+        while ((n = MA_PARENT(pool, n)) != MA_NIL);
+    }
+    else
+        pool->root = child;
+color:
+    if (color == MA_BLACK)
+        malloc_rebalance_remove(pool, parent, child);
+    return old;
+}
+
+static uint32_t malloc_node_alloc(struct malloc_pool_s *pool)
+{
+    if (pool->node.free != MA_NIL)
+    {
+        uint32_t n = pool->node.free;
+        pool->node.free = MA_PARENT(pool, n);
+        MA_ALLOCED(pool, n) = true;
+        return n;
+    }
+    uint32_t n = pool->node.next;
+    if (n == UINT32_MAX)
+    {
+        errno = ENOMEM;
+        return MA_NIL;
+    }
+    pool->node.next++;
+    if (n >= pool->node.mmap)
+    {
+        size_t size = 2 * MA_PAGE_SIZE;
+        uint8_t *base = pool->node.base +
+            pool->node.mmap * sizeof(struct malloc_node_s);
+        uint8_t *ptr = (uint8_t *)mmap(base, size, PROT_READ | PROT_WRITE,
+            MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED | MAP_NORESERVE, -1, 0);
+        if (ptr != base)
+            return MA_NIL;
+        pool->node.mmap += size / sizeof(struct malloc_node_s);
+    }
+    MA_ALLOCED(pool, n) = true;
+    return n;
+}
+
+static void malloc_node_free(struct malloc_pool_s *pool, uint32_t n)
+{
+    if (!MA_ALLOCED(pool, n))
+        panic("bad free() detected");
+    MA_ALLOCED(pool, n) = false;
+    MA_PARENT(pool, n)  = pool->node.free;
+    pool->node.free     = n;
+}
+
+static bool malloc_mem_grow(struct malloc_pool_s *pool, uint32_t hi)
+{
+    if (hi <= pool->mem.mmap)
+        return true;
+    uint8_t *base = pool->mem.base + (size_t)pool->mem.mmap * MA_UNIT;
+    size_t extension = (size_t)(hi - pool->mem.mmap) * MA_UNIT;
+    extension -= extension % MA_PAGE_SIZE;
+    extension += 4 * MA_PAGE_SIZE;          // Extra padding
+    uint8_t *ptr = (uint8_t *)mmap(base, extension, PROT_READ | PROT_WRITE,
+        MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED | MAP_NORESERVE, -1, 0);
+    if (ptr != base)
+        return false;
+    pool->mem.mmap += extension / MA_UNIT;
+    return true;
+}
+
+static uint32_t malloc_mem_alloc(struct malloc_pool_s *pool, uint32_t size,
+    uint32_t lb, uint32_t ub)
+{
+    if (ub - lb < size)
+    {
+        errno = ENOMEM;
+        return MA_NIL;
+    }
+    uint32_t lo = lb;
+    uint32_t hi = lo + size;
+    if (!malloc_mem_grow(pool, hi))
+        return MA_NIL;
+    return lo;
+}
+
+static bool malloc_mem_realloc(struct malloc_pool_s *pool, uint32_t base,
+    uint32_t size)
+{
+    uint32_t hi = base + size;
+    return malloc_mem_grow(pool, hi);
+}
+
+static void *malloc_impl(size_t size, bool lock)
+{
+    if (size == 0)
+        return MA_ZERO;
+    size_t size128 = size / MA_UNIT;
+    size128 += (size % MA_UNIT != 0);
+    if (size128 > UINT32_MAX)
+    {
         errno = ENOMEM;
         return NULL;
     }
 
-    uint8_t *next = pool->next;
-    node = (struct malloc_header_s *)next;
-    next += alloc_size;
-    if (next > pool->access)
+    struct malloc_pool_s *pool = &malloc_pool;
+    if (pool->node.base == NULL)
+        malloc_init(pool);
+
+    if (lock && mutex_lock(&pool->mutex) < 0)
+        return NULL;
+
+    uint32_t n = pool->root, parent = MA_NIL;
+    uint32_t lb = 1, ub = UINT32_MAX;
+    bool left = false;
+    while (true)
     {
-        size_t access_size = ((next - pool->access) / MALLOC_PAGE_SIZE) + 1;
-        access_size = (access_size < 4? 4: access_size);
-        access_size *= MALLOC_PAGE_SIZE;
-        if (mprotect(pool->access, access_size, PROT_READ | PROT_WRITE) < 0)
+        if (n == MA_NIL)
+            break;
+        uint32_t l = MA_LEFT(pool, n), r = MA_RIGHT(pool, n);
+        if (size128 <= MA_GAP(pool, n))
         {
-            if (lock)
-                mutex_unlock(&pool->mutex);
+            // Inner
+            uint32_t lgap = (l != MA_NIL?
+                MA_MAX(MA_GAP(pool, l), MA_BASE(pool, n) - MA_UB(pool, l)): 0);
+            if (size128 <= lgap)
+            {
+                ub = MA_BASE(pool, n);
+                parent = n;
+                n = l;
+                left = true;
+                continue;
+            }
+            lb = MA_BASE(pool, n) + MA_SIZE(pool, n);
+            parent = n;
+            n = r;
+            left = false;
+            continue;
+        }
+        else
+        {
+            // Outer
+            if (size128 <= MA_MAX(lb, MA_LB(pool, n)) - lb)
+            {
+                ub = MA_LB(pool, n);
+                parent = n;
+                n = l;
+                left = true;
+                continue;
+            }
+            if (size128 <= ub - MA_MIN(ub, MA_UB(pool, n)))
+            {
+                lb = MA_UB(pool, n);
+                parent = n;
+                n = r;
+                left = false;
+                continue;
+            }
+            if (lock) mutex_unlock(&pool->mutex);
+            errno = ENOMEM;
             return NULL;
         }
-        pool->access += access_size;
     }
-    pool->next = next;
-    if (lock)
-        mutex_unlock(&pool->mutex);
 
-    node->size = size;
-    node->idx  = idx;
+    uint32_t i = malloc_node_alloc(pool);
+    if (i == MA_NIL)
+    {
+        if (lock) mutex_unlock(&pool->mutex);
+        return NULL;
+    }
+    uint32_t j = malloc_mem_alloc(pool, (uint32_t)size128, lb, ub);
+    if (j == MA_NIL)
+    {
+        malloc_node_free(pool, i);
+        if (lock) mutex_unlock(&pool->mutex);
+        return NULL;
+    }
+    struct malloc_node_s *node = pool->nodes + i;
+    node->parent = parent;
+    node->base   = j;
+    node->size   = size128;
+    node->lb     = j;
+    node->ub     = j + size128;
+    node->left   = node->right = MA_NIL;
+    node->gap    = 0;
+    if (parent == MA_NIL)
+    {
+        node->color = MA_BLACK;
+        pool->root = i;
+    }
+    else
+    {
+        node->color = MA_RED;
+        if (left)
+            MA_LEFT(pool, parent) = i;
+        else
+            MA_RIGHT(pool, parent) = i;
+        malloc_rebalance_insert(pool, i);
+    }
+    if (lock) mutex_unlock(&pool->mutex);
+    void *ptr = (void *)(pool->mem.base + (size_t)j * MA_UNIT);
+    return ptr;
+}
+
+static void free_impl(void *ptr, bool lock)
+{
+    if (ptr == NULL || ptr == MA_ZERO)
+        return;
+
+    struct malloc_pool_s *pool = &malloc_pool;
+    if ((uint8_t *)ptr < pool->mem.base ||
+            (uint8_t *)ptr >= pool->mem.base + MA_UNIT * (size_t)UINT32_MAX)
+        panic("bad free() detected");
+    if ((uintptr_t)ptr % MA_UNIT != 0)
+        panic("bad free() detected");
+    off_t diff = (uint8_t *)ptr - pool->mem.base;
+    uint32_t i = (uint32_t)(diff / MA_UNIT);
+
+    if (lock && mutex_lock(&pool->mutex) < 0)
+        panic("failed to acquire malloc() lock");
+
+    uint32_t n = pool->root;
+    while (true)
+    {
+        if (n == MA_NIL)
+            panic("bad free() detected");
+        if (MA_BASE(pool, n) == i)
+        {
+            n = malloc_remove(pool, n);
+            malloc_node_free(pool, n);
+            if (lock) mutex_unlock(&pool->mutex);
+            return;
+        }
+        n = (i < MA_BASE(pool, n)? MA_LEFT(pool, n): MA_RIGHT(pool, n));
+    }
+}
+
+static void *calloc_impl(size_t nmemb, size_t size, bool lock)
+{
+    void *ptr = malloc_impl(nmemb * size, lock);
+    if (ptr == NULL || ptr == MA_ZERO)
+        return ptr;
+    memset(ptr, 0, nmemb * size);
+    return ptr;
+}
+
+static void *realloc_impl(void *ptr, size_t size, bool lock)
+{
+    if (ptr == NULL || ptr == MA_ZERO)
+        return malloc_impl(size, lock);
+
+    struct malloc_pool_s *pool = &malloc_pool;
+    if ((uint8_t *)ptr < pool->mem.base ||
+            (uint8_t *)ptr >= pool->mem.base + MA_UNIT * (size_t)UINT32_MAX)
+        panic("bad realloc() detected");
+    if ((uintptr_t)ptr % MA_UNIT != 0)
+        panic("bad realloc() detected");
+    if (size == 0)
+    {
+        free_impl(ptr, lock);
+        return MA_ZERO;
+    }
+    off_t diff = (uint8_t *)ptr - pool->mem.base;
+    uint32_t i = (uint32_t)(diff / MA_UNIT);
+ 
+    size_t size128 = size / MA_UNIT;
+    size128 += (size % MA_UNIT != 0);
+    if (size128 > UINT32_MAX)
+    {
+        errno = ENOMEM;
+        return NULL;
+    }
+
+    if (lock && mutex_lock(&pool->mutex) < 0)
+        return NULL;
+    uint32_t n = pool->root, ub = UINT32_MAX;
+    bool left = false;
+    while (true)
+    {
+        if (n == MA_NIL)
+            panic("bad realloc() detected");
+        if (MA_BASE(pool, n) == i)
+            break;
+        left = (i < MA_BASE(pool, n));
+        if (left)
+            ub = MA_BASE(pool, n);
+        n = (left? MA_LEFT(pool, n): MA_RIGHT(pool, n));
+    }
+    uint32_t r = MA_RIGHT(pool, n);
+    ub = (r != MA_NIL? MA_LB(pool, r): ub);
+
+    if (MA_BASE(pool, n) + size128 <= ub)
+    {
+        // In-place realloc:
+        if (MA_SIZE(pool, n) == size128)
+        {
+            if (lock) mutex_unlock(&pool->mutex);
+            return ptr;
+        }
+        if (!malloc_mem_realloc(pool, MA_BASE(pool, n), size128))
+        {
+            if (lock) mutex_unlock(&pool->mutex);
+            return NULL;
+        }
+        MA_SIZE(pool, n) = size128;
+        for (; n != MA_NIL; n = MA_PARENT(pool, n))
+            malloc_fix_invariant(pool, n);
+        if (lock) mutex_unlock(&pool->mutex);
+        return ptr;
+    }
+    size_t copy_size = MA_SIZE(pool, n) * MA_UNIT;
+    MA_ALLOCED(pool, n) = false;        // Take ownership
+    if (lock) mutex_unlock(&pool->mutex);
+
+    void *new_ptr = malloc_impl(size, lock);
+    if (new_ptr == NULL)
+        return new_ptr;
+    memcpy(new_ptr, ptr, copy_size);
     
-    return (void *)(node+1);
+    if (lock && mutex_lock(&pool->mutex) < 0)
+        return NULL;
+    MA_ALLOCED(pool, n) = true;
+    n = malloc_remove(pool, n);
+    malloc_node_free(pool, n);
+    if (lock) mutex_unlock(&pool->mutex);
+    return new_ptr;
 }
 
 static void *malloc(size_t size)
 {
-    size_t idx = malloc_index(size);
-    return malloc_allocate(size, idx, /*lock=*/true);
+    return malloc_impl(size, /*lock=*/true);
+}
+static void *calloc(size_t nmemb, size_t size)
+{
+    return calloc_impl(nmemb, size, /*lock=*/true);
+}
+static void *realloc(void *ptr, size_t size)
+{
+    return realloc_impl(ptr, size, /*lock=*/true);
+}
+static void free(void *ptr)
+{
+    free_impl(ptr, /*lock=*/true);
 }
 
 static void *malloc_unlocked(size_t size)
 {
-    size_t idx = malloc_index(size);
-    return malloc_allocate(size, idx, /*lock=*/false);
+    return malloc_impl(size, /*lock=*/false);
 }
-
-static void free(void *ptr)
+static void *calloc_unlocked(size_t nmemb, size_t size)
 {
-    if (ptr == NULL)
-        return;
- 
-    struct malloc_header_s *node = (struct malloc_header_s *)ptr;
-    node--;
-    if (node->next != NULL || node->idx == 0 || node->idx >= MALLOC_POOL_MAX)
-        panic("bad-free() detected");
-
-    struct malloc_pool_s *pool = malloc_pools + node->idx;
-    if ((uint8_t *)node < pool->base || (uint8_t *)node >= pool->end)
-        panic("bad free() detected");
-
-    size_t alloc_size = malloc_sizes[node->idx]; 
-    if (node->size > MALLOC_PAGE_SIZE)
-    {
-        uintptr_t start = (uintptr_t)ptr;
-        uintptr_t end   = start + alloc_size;
-        start += (start % MALLOC_PAGE_SIZE != 0? MALLOC_PAGE_SIZE: 0);
-        start -= (start % MALLOC_PAGE_SIZE);
-        end   -= (end % MALLOC_PAGE_SIZE);
-        if (end > start)
-            (void)madvise((void *)start, end - start, MADV_DONTNEED);
-    }
-
-    struct malloc_header_s *next = pool->free;
-    while (true)
-    {
-        node->next = next;
-        struct malloc_header_s *curr =
-            __sync_val_compare_and_swap(&pool->free, next, node);
-        if (curr == next)
-            return;
-        next = curr;
-    }
+    return calloc_impl(nmemb, size, /*lock=*/false);
 }
-
-static void free_unlocked(void *ptr) __attribute__((__alias__("free")));
-
-static void *memcpy(void *dst, const void *src, size_t n);
-static void *malloc_reallocate(void *ptr, size_t size, bool lock)
-{
-    if (ptr == NULL)
-        return (lock? malloc(size): malloc_unlocked(size));
-
-    struct malloc_header_s *node = (struct malloc_header_s *)ptr;
-    node--;
-    if (node->idx == malloc_index(size))
-    {
-        node->size = size;
-        return ptr;
-    }
-
-    void *new_ptr = (lock? malloc(size): malloc_unlocked(size));
-    if (new_ptr == NULL)
-        return new_ptr;
-
-    size_t copy_size = (size < node->size? size: node->size);
-    memcpy(new_ptr, ptr, copy_size);
-    if (lock)
-        free(ptr);
-    else
-        free_unlocked(ptr);
-    return new_ptr;
-}
-
-static void *realloc(void *ptr, size_t size)
-{
-    return malloc_reallocate(ptr, size, /*lock=*/true);
-}
-
 static void *realloc_unlocked(void *ptr, size_t size)
 {
-    return malloc_reallocate(ptr, size, /*lock=*/false);
+    return realloc_impl(ptr, size, /*lock=*/false);
+}
+static void free_unlocked(void *ptr)
+{
+    free_impl(ptr, /*lock=*/false);
 }
 
 /****************************************************************************/
@@ -3126,7 +3456,7 @@ static int printf_unlocked(const char *format, ...)
  *  - BE AWARE OF ABI ISSUES.  External library code probably uses the SYSV
  *    ABI meaning that the program may crash if you try and call it from a
  *    clean call.  To avoid this, the dlcall() helper function may be used
- *	  to safely switch to the SYSV ABI.
+ *    to safely switch to the SYSV ABI.
  *
  */
 
@@ -3203,7 +3533,7 @@ static int dlinit(const void *dynamic_0)
         return -1;
     }
 
-	// Get the linkmap from DT_DEBUG
+    // Get the linkmap from DT_DEBUG
     struct r_debug *debug = NULL;
     for (size_t i = 0; dynamic[i].d_tag != DT_NULL; i++)
     {
@@ -3218,7 +3548,7 @@ static int dlinit(const void *dynamic_0)
     struct link_map *link_map = debug->r_map;
     dldefault = link_map;
 
-	// Scan all objects to find the __libc_dl*() functions.
+    // Scan all objects to find the __libc_dl*() functions.
     for (struct link_map *l = link_map; l != NULL; l = l->l_next)
     {
         const Elf64_Dyn *dynamic = l->l_ld;
