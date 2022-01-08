@@ -1,15 +1,3 @@
-/*
- * e9rbtree.h
- *
- * Slightly modified Red-black tree implementation by Niels Provos.
- *
- * The main modification is ensuring that RB_AUGMENT() is called all the
- * way to the root for red-node deletion.  This is necessary for interval
- * trees.
- */
-#ifndef __E9RBTREE_H
-#define __E9RBTREE_H
-
 /*-
  * Copyright 2002 Niels Provos <provos@citi.umich.edu>
  * All rights reserved.
@@ -530,4 +518,3 @@ name##_RB_MINMAX(struct name *head, int val)                            \
             ((x) != NULL) && ((y) = name##_RB_PREV(x), (x) != NULL);    \
              (x) = (y))
 
-#endif

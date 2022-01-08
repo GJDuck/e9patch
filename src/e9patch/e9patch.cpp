@@ -26,6 +26,10 @@
 #include <getopt.h>
 #include <unistd.h>
 
+#include <sys/time.h>
+#include <sys/resource.h>
+#include <sys/mman.h>
+
 #include "e9api.h"
 #include "e9json.h"
 #include "e9patch.h"
@@ -614,8 +618,6 @@ extern "C"
 };
 int realMain(int argc, char **argv)
 {
-    clock_t c0 = clock();
-
     option_is_tty = (isatty(STDERR_FILENO) != 0);
     if (getenv("E9PATCH_TTY") != nullptr)
         option_is_tty = true;
@@ -653,10 +655,17 @@ int realMain(int argc, char **argv)
     if (B == nullptr)
         exit(EXIT_SUCCESS);
 
-    clock_t c1 = clock();
+    struct rusage usage;
+    memset(&usage, 0x0, sizeof(usage));
+    if (getrusage(RUSAGE_SELF, &usage) < 0)
+        warning("failed to get resource usage measures: %s", strerror(errno));
 
     size_t stat_num_total = stat_num_patched + stat_num_failed;
-    clock_t stat_time = c1 - c0;
+    size_t stat_time = usage.ru_utime.tv_sec * 1000 +
+                       usage.ru_utime.tv_usec / 1000 +
+                       usage.ru_stime.tv_sec * 1000 +
+                       usage.ru_stime.tv_usec / 1000;
+    size_t stat_memory = usage.ru_maxrss;
 
     ssize_t MAX_MAPPINGS = 65530;
     const ssize_t MAX_MAPPINGS_DELTA = 128;
@@ -730,8 +739,8 @@ int realMain(int argc, char **argv)
     printf("output_file_size      = %zu (%.2f%%)\n",
         stat_output_file_size,
         (double)stat_output_file_size / (double)stat_input_file_size * 100.0);
-    printf("time_elapsed          = %zdms\n",
-        stat_time * 1000 / CLOCKS_PER_SEC);
+    printf("time_elapsed          = %zums\n", stat_time);
+    printf("memory_used           = %zuKB\n", stat_memory);
     printf("-----------------------------------------------\n");
 
     if ((ssize_t)stat_num_virtual_mappings >= MAX_MAPPINGS - MAX_MAPPINGS_DELTA)

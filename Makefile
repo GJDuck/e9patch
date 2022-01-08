@@ -65,8 +65,6 @@ loader_pe:
 	$(CXX) -pie -nostdlib -o e9loader_pe.bin e9loader_pe.o -T e9loader.ld
 	xxd -i e9loader_pe.bin > src/e9patch/e9loader_pe.c
 
-src/e9patch/e9alloc.o: CXXFLAGS += -Wno-unused-function
-
 src/e9patch/e9elf.o: loader_elf
 src/e9patch/e9pe.o: loader_pe
 

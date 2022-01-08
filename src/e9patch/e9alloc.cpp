@@ -27,13 +27,9 @@
 
 #include <sys/mman.h>
 
-#include "e9rbtree.h"
 #include "e9alloc.h"
 #include "e9patch.h"
 #include "e9trampoline.h"
-
-#define BLACK       0       // RB-tree black
-#define RED         1       // RB-tree red
 
 /*
  * Interval tree node.
@@ -41,7 +37,12 @@
 struct Node
 {
     Alloc alloc;            // Allocation
-    RB_ENTRY(Node) entry;   // RB-tree entry
+    struct
+    {
+        Node *parent;       // RB-tree parent
+        Node *left;         // RB-tree left
+        Node *right;        // RB-tree right
+    } entry;
     uint64_t gap:63;        // Largest free gap in sub-tree (ub - lb)
     uint64_t color:1;       // RB-tree node color
     intptr_t lb;            // tree lower bound
@@ -80,13 +81,324 @@ static void fix(Node *n)
     n->gap = gap;
 }
 
+/****************************************************************************/
+/* INTERVAL TREES                                                           */
+/****************************************************************************/
+
 /*
- * Interval-tree definition.
+ * The implementation uses code that is dervied from Niels Provos' red-black
+ * tree implementation.  See the copyright and license (BSD) below.
  */
-#define RB_AUGMENT(n)               fix(n)
-RB_GENERATE_STATIC(Tree, Node, entry, compare);
-#define rebalanceInsert(t, n)       Tree_RB_INSERT_COLOR((t), (n))
-#define rebalanceRemove(t, n)       Tree_RB_REMOVE((t), (n))
+
+/*
+ * Copyright 2002 Niels Provos <provos@citi.umich.edu>
+ * All rights reserved.
+ *
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions
+ * are met:
+ * 1. Redistributions of source code must retain the above copyright
+ *    notice, this list of conditions and the following disclaimer.
+ * 2. Redistributions in binary form must reproduce the above copyright
+ *    notice, this list of conditions and the following disclaimer in the
+ *    documentation and/or other materials provided with the distribution.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
+ * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
+ * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT,
+ * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
+ * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+ * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+ * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+ * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
+ * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ */
+
+#define RB_BLACK                    0
+#define RB_RED                      1
+#define RB_PARENT(N)                (N)->entry.parent
+#define RB_LEFT(N)                  (N)->entry.left
+#define RB_RIGHT(N)                 (N)->entry.right
+#define RB_COLOR(N)                 (N)->color
+
+static void rotateLeft(Tree *t, Node *n)
+{
+    Node *tmp = RB_RIGHT(n);
+    if ((RB_RIGHT(n) = RB_LEFT(tmp)) != nullptr)
+        RB_PARENT(RB_LEFT(tmp)) = n;
+    fix(n);
+    if ((RB_PARENT(tmp) = RB_PARENT(n)) != nullptr)
+    {
+        if (n == RB_LEFT(RB_PARENT(n)))
+            RB_LEFT(RB_PARENT(n)) = tmp;
+        else
+            RB_RIGHT(RB_PARENT(n)) = tmp;
+    }
+    else
+        t->root = tmp;
+    RB_LEFT(tmp) = n;
+    RB_PARENT(n) = tmp;
+    fix(tmp);
+    if (RB_PARENT(tmp) != nullptr)
+        fix(RB_PARENT(tmp));
+}
+
+static void rotateRight(Tree *t, Node *n)
+{
+    Node *tmp = RB_LEFT(n);
+    if ((RB_LEFT(n) = RB_RIGHT(tmp)) != nullptr)
+        RB_PARENT(RB_RIGHT(tmp)) = n;
+    fix(n);
+    if ((RB_PARENT(tmp) = RB_PARENT(n)) != nullptr)
+    {
+        if (n == RB_LEFT(RB_PARENT(n)))
+            RB_LEFT(RB_PARENT(n)) = tmp;
+        else
+            RB_RIGHT(RB_PARENT(n)) = tmp;
+    } else
+        t->root = tmp;
+    RB_RIGHT(tmp) = n;
+    RB_PARENT(n) = tmp;
+    fix(tmp);
+    if (RB_PARENT(tmp) != nullptr)
+        fix(RB_PARENT(tmp));
+}
+
+static void rebalanceInsert(Tree *t, Node *n)
+{
+    Node *parent, *gparent, *tmp;
+    for (Node *m = n; m != nullptr; m = RB_PARENT(m))
+        fix(m);
+    while ((parent = RB_PARENT(n)) != nullptr &&
+                RB_COLOR(parent) == RB_RED)
+    {
+        gparent = RB_PARENT(parent);
+        if (parent == RB_LEFT(gparent))
+        {
+            tmp = RB_RIGHT(gparent);
+            if (tmp != nullptr && RB_COLOR(tmp) == RB_RED)
+            {
+                RB_COLOR(tmp)     = RB_BLACK;
+                RB_COLOR(parent)  = RB_BLACK;
+                RB_COLOR(gparent) = RB_RED;
+                n = gparent;
+                continue;
+            }
+            if (RB_RIGHT(parent) == n)
+            {
+                rotateLeft(t, parent);
+                tmp = parent;
+                parent = n;
+                n = tmp;
+            }
+            RB_COLOR(parent)  = RB_BLACK;
+            RB_COLOR(gparent) = RB_RED;
+            rotateRight(t, gparent);
+        }
+        else
+        {
+            tmp = RB_LEFT(gparent);
+            if (tmp != nullptr && RB_COLOR(tmp) == RB_RED)
+            {
+                RB_COLOR(tmp)     = RB_BLACK;
+                RB_COLOR(parent)  = RB_BLACK;
+                RB_COLOR(gparent) = RB_RED;
+                n = gparent;
+                continue;
+            }
+            if (RB_LEFT(parent) == n)
+            {
+                rotateRight(t, parent);
+                tmp = parent;
+                parent = n;
+                n = tmp;
+            }
+            RB_COLOR(parent)  = RB_BLACK;
+            RB_COLOR(gparent) = RB_RED;
+            rotateLeft(t, gparent);
+        }
+    }
+    RB_COLOR(t->root) = RB_BLACK;
+}
+
+static void rebalanceRemove(Tree *t, Node *parent, Node *n)
+{
+    Node *tmp;
+    while ((n == nullptr || RB_COLOR(n) == RB_BLACK) && n != t->root)
+    {
+        if (RB_LEFT(parent) == n)
+        {
+            tmp = RB_RIGHT(parent);
+            if (RB_COLOR(tmp) == RB_RED)
+            {
+                RB_COLOR(tmp) = RB_BLACK;
+                RB_COLOR(parent) = RB_RED;
+                rotateLeft(t, parent);
+                tmp = RB_RIGHT(parent);
+            }
+            if ((RB_LEFT(tmp) == nullptr ||
+                    RB_COLOR(RB_LEFT(tmp)) == RB_BLACK) &&
+                (RB_RIGHT(tmp) == nullptr ||
+                    RB_COLOR(RB_RIGHT(tmp)) == RB_BLACK))
+            {
+                RB_COLOR(tmp) = RB_RED;
+                n = parent;
+                parent = RB_PARENT(n);
+            }
+            else
+            {
+                if (RB_RIGHT(tmp) == nullptr ||
+                    RB_COLOR(RB_RIGHT(tmp)) == RB_BLACK)
+                {
+                    Node *oleft;
+                    if ((oleft = RB_LEFT(tmp)) != nullptr)
+                        RB_COLOR(oleft) = RB_BLACK;
+                    RB_COLOR(tmp) = RB_RED;
+                    rotateRight(t, tmp);
+                    tmp = RB_RIGHT(parent);
+                }
+                RB_COLOR(tmp) = RB_COLOR(parent);
+                RB_COLOR(parent) = RB_BLACK;
+                if (RB_RIGHT(tmp))
+                    RB_COLOR(RB_RIGHT(tmp)) = RB_BLACK;
+                rotateLeft(t, parent);
+                n = t->root;
+                break;
+            }
+        }
+        else
+        {
+            tmp = RB_LEFT(parent);
+            if (RB_COLOR(tmp) == RB_RED)
+            {
+                RB_COLOR(tmp) = RB_BLACK;
+                RB_COLOR(parent) = RB_RED;
+                rotateRight(t, parent);
+                tmp = RB_LEFT(parent);
+            }
+            if ((RB_LEFT(tmp) == nullptr ||
+                    RB_COLOR(RB_LEFT(tmp)) == RB_BLACK) &&
+                (RB_RIGHT(tmp) == nullptr ||
+                    RB_COLOR(RB_RIGHT(tmp)) == RB_BLACK))
+            {
+                RB_COLOR(tmp) = RB_RED;
+                n = parent;
+                parent = RB_PARENT(n);
+            }
+            else
+            {
+                if (RB_LEFT(tmp) == nullptr ||
+                    RB_COLOR(RB_LEFT(tmp)) == RB_BLACK)
+                {
+                    Node *oright;
+                    if ((oright = RB_RIGHT(tmp)) != nullptr)
+                        RB_COLOR(oright) = RB_BLACK;
+                    RB_COLOR(tmp) = RB_RED;
+                    rotateLeft(t, tmp);
+                    tmp = RB_LEFT(parent);
+                }
+                RB_COLOR(tmp) = RB_COLOR(parent);
+                RB_COLOR(parent) = RB_BLACK;
+                if (RB_LEFT(tmp))
+                    RB_COLOR(RB_LEFT(tmp)) = RB_BLACK;
+                rotateRight(t, parent);
+                n = t->root;
+                break;
+            }
+        }
+    }
+    if (n != nullptr)
+        RB_COLOR(n) = RB_BLACK;
+}
+
+static Node *remove(Tree *t, Node *n)
+{
+    Node *child, *parent, *old = n;
+    size_t color;
+    if (RB_LEFT(n) == nullptr)
+        child = RB_RIGHT(n);
+    else if (RB_RIGHT(n) == nullptr)
+        child = RB_LEFT(n);
+    else
+    {
+        Node *left;
+        n = RB_RIGHT(n);
+        while ((left = RB_LEFT(n)) != nullptr)
+            n = left;
+        child = RB_RIGHT(n);
+        parent = RB_PARENT(n);
+        color = RB_COLOR(n);
+        if (child != nullptr)
+            RB_PARENT(child) = parent;
+        if (parent != nullptr)
+        {
+            if (RB_LEFT(parent) == n)
+                RB_LEFT(parent) = child;
+            else
+                RB_RIGHT(parent) = child;
+            fix(parent);
+        }
+        else
+            t->root = child;
+        if (RB_PARENT(n) == old)
+            parent = n;
+        RB_PARENT(n) = RB_PARENT(old);
+        RB_LEFT(n)   = RB_LEFT(old);
+        RB_RIGHT(n)  = RB_RIGHT(old);
+        RB_COLOR(n)  = RB_COLOR(old);
+        if (RB_PARENT(old) != nullptr)
+        {
+            if (RB_LEFT(RB_PARENT(old)) == old)
+                RB_LEFT(RB_PARENT(old)) = n;
+            else
+                RB_RIGHT(RB_PARENT(old)) = n;
+            fix(RB_PARENT(old));
+        }
+        else
+            t->root = n;
+        RB_PARENT(RB_LEFT(old)) = n;
+        if (RB_RIGHT(old) != nullptr)
+            RB_PARENT(RB_RIGHT(old)) = n;
+        if (parent)
+        {
+            left = parent;
+            do
+            {
+                fix(left);
+            }
+            while ((left = RB_PARENT(left)) != nullptr);
+        }
+        goto color;
+    }
+    parent = RB_PARENT(n);
+    color = RB_COLOR(n);
+    if (child != nullptr)
+        RB_PARENT(child) = parent;
+    if (parent)
+    {
+        if (RB_LEFT(parent) == n)
+            RB_LEFT(parent) = child;
+        else
+            RB_RIGHT(parent) = child;
+        n = parent;
+        do
+        {
+            fix(n);
+        }
+        while ((n = RB_PARENT(n)) != nullptr);
+    }
+    else
+        t->root = child;
+color:
+    if (color == RB_BLACK)
+        rebalanceRemove(t, parent, child);
+    return old;
+}
+
+
+
+/****************************************************************************/
 
 #define FLAG_LB                     0x1
 #define FLAG_UB                     0x2
@@ -104,10 +416,7 @@ static Node *insert(Node *root, intptr_t lb, intptr_t ub, size_t size,
  */
 static Node *alloc()
 {
-    Node *n = (Node *)malloc(sizeof(Node));
-    if (n == nullptr)
-        error("failed to allocate %zu bytes for interval tree node: %s",
-            sizeof(Node), strerror(ENOMEM));
+    Node *n        = new Node;
     n->alloc.T     = nullptr;
     n->alloc.I     = nullptr;
     n->alloc.entry = 0;
@@ -186,8 +495,8 @@ static Node *insertLeftChild(Node *root, intptr_t lb, intptr_t ub, size_t size,
 /*
  * Insert right-child helper.
  */
-static Node *insertRightChild(Node *root, intptr_t lb, intptr_t ub,
-    size_t size, uint32_t flags)
+static Node *insertRightChild(Node *root, intptr_t lb, intptr_t ub, size_t size,
+    uint32_t flags)
 {
     lb = std::max(lb, root->alloc.ub);
     if ((intptr_t)size > ub - lb)
@@ -205,8 +514,8 @@ static Node *insertRightChild(Node *root, intptr_t lb, intptr_t ub,
 /*
  * Insert a new allocation or reservation into the interval tree node `root`.
  */
-static Node *insert(Node *root, intptr_t lb, intptr_t ub, size_t size,
-    uint32_t flags)
+static Node *insert(Node *root, intptr_t lb, intptr_t ub,
+    size_t size, uint32_t flags)
 {
     if ((intptr_t)size > ub - lb)
         return nullptr;
@@ -227,9 +536,6 @@ static Node *insert(Node *root, intptr_t lb, intptr_t ub, size_t size,
         n = insertRightChild(root, std::max(lb, root->ub), ub, size, flags);
     if (n == nullptr && lb < root->lb)
         n = insertLeftChild(root, lb, std::min(ub, root->lb), size, flags);
-
-    if (n != nullptr)
-        fix(root);
 
     return n;
 }
@@ -322,8 +628,8 @@ void deallocate(Binary *B, const Alloc *a)
         return;
     Node *n = (Node *)(a);
     assert(n->alloc.T != nullptr);
-    rebalanceRemove(&allocator.tree, n);
-    free(n);
+    remove(&allocator.tree, n);
+    delete n;
 }
 
 /*
@@ -333,7 +639,6 @@ Alloc *Allocator::iterator::operator*()
 {
     return &node->alloc;
 }
-
 static Node *next(Node *n)
 {
     if (n == nullptr)
@@ -358,12 +663,10 @@ static Node *next(Node *n)
         }
     }
 }
-
 void Allocator::iterator::operator++()
 {
     node = next(node);
 }
-
 Allocator::iterator Allocator::begin() const
 {
     Node *n = tree.root;
@@ -374,7 +677,6 @@ Allocator::iterator Allocator::begin() const
     Allocator::iterator i = {n};
     return i;
 }
-
 Allocator::iterator Allocator::find(intptr_t addr) const
 {
     Node *n = this->tree.root;

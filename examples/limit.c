@@ -11,7 +11,7 @@
 
 // Reuse the e9patch RB-tree implementation:
 #define RB_AUGMENT(_)       /* NOP */
-#include "../src/e9patch/e9rbtree.h"
+#include "rbtree.c"
 
 struct NODE;
 typedef struct NODE NODE;
