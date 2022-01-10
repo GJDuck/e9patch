@@ -481,6 +481,7 @@ struct Binary
 {
     const char *filename;               // The binary's path.
     size_t size;                        // The binary's size.
+    const char *output;                 // The rewritten binary's path.
     union
     {
         ElfInfo elf;                    // ELF information.
@@ -559,6 +560,8 @@ extern bool option_loader_base_set;
 extern bool option_loader_phdr_set;
 extern bool option_loader_static_set;
 extern bool option_mem_rebase_set;
+extern bool option_log;
+extern int option_log_color;
 
 /*
  * Special values for option_mem_rebase.
@@ -566,6 +569,17 @@ extern bool option_mem_rebase_set;
 #define OPTION_REBASE_NONE      0
 #define OPTION_REBASE_AUTO      -1
 #define OPTION_REBASE_RANDOM    -2
+
+/*
+ * Log colors.
+ */
+#define COLOR_NONE              0
+#define COLOR_RED               1
+#define COLOR_GREEN             2
+#define COLOR_BLUE              3
+#define COLOR_CYAN              4
+#define COLOR_MAGENTA           5
+#define COLOR_YELLOW            6
 
 /*
  * Global statistics.
@@ -588,11 +602,27 @@ extern void parseOptions(char * const argv[], bool api = false);
 extern void NO_RETURN error(const char *msg, ...);
 extern void warning(const char *msg, ...);
 extern void debugImpl(const char *msg, ...);
+extern void logSetColor(int color);
+
+static inline void logImpl(char c)
+{
+    putchar(c);
+}
+static inline void logImpl(const char *s)
+{
+    fputs(s, stdout);
+}
 
 #define debug(msg, ...)                                                 \
     do {                                                                \
         if (__builtin_expect(option_debug, false))                      \
             debugImpl((msg), ##__VA_ARGS__);                            \
+    } while (false)
+#define log(color, msg, ...)                                            \
+    do {                                                                \
+        if (!option_log) break;                                         \
+        if ((color) != option_log_color) logSetColor(color);            \
+        logImpl(msg, ##__VA_ARGS__);                                    \
     } while (false)
 
 #define ADDRESS_FORMAT              "%s%s0x%lx"

@@ -547,7 +547,7 @@ static Radix::Node<Key> *merge(Radix::Node<Key> *tree, Key key,
         // Add to existing node for key:
         mapping->next = node->leaf.mappings;
         node->leaf.mappings = mapping;
-        putchar('+');
+        log(COLOR_NONE, '+');
         return tree;
     }
 
@@ -565,10 +565,10 @@ static Radix::Node<Key> *merge(Radix::Node<Key> *tree, Key key,
             // Leaf node is now empty, so remove it.
             tree = remove(tree, node->key);
         }
-        printf("\33[32mM\33[0m");
+        log(COLOR_GREEN, 'M');
     }
     else
-        putchar('+');
+        log(COLOR_NONE, '+');
 
     // Insert a new node:
     tree = insert(tree, key, mapping);
@@ -590,7 +590,9 @@ static void collectMappings(Radix::Node<Key> *node, MappingSet &mappings)
         {
             std::string str;
             bitstring(node->key, str);
-            printf("[\33[33m%s\33[0m]", str.c_str());
+            log(COLOR_NONE, '[');
+            log(COLOR_YELLOW, str.c_str());
+            log(COLOR_NONE, ']');
             insertMapping(mapping, mappings);
             stat_num_physical_mappings++;
         }
@@ -652,11 +654,11 @@ void optimizeMappings(const Allocator &allocator, const size_t MAPPING_SIZE,
         Key key = calculateKey<Key>(allocator, MAPPING_SIZE, mapping);
         tree = merge(tree, key, mapping);
     }
-    putchar('\n');
+    log(COLOR_NONE, '\n');
 
     mappings.clear();
     collectMappings(tree, mappings);
-    putchar('\n');
+    log(COLOR_NONE, '\n');
 
     for (auto mapping: mappings)
         shrinkMapping(mapping, granularity);

@@ -756,7 +756,7 @@ bool patch(Binary &B, Instr *I, const Trampoline *T)
     {
         debug("failed to patch instruction at address 0x%lx (%zu)", I->addr,
             I->size);
-        printf("\33[31mX\33[0m");
+        log(COLOR_RED, 'X');
         return false;       // Failed :(
     }
 
@@ -774,7 +774,7 @@ bool patch(Binary &B, Instr *I, const Trampoline *T)
             ADDRESS(entry), ADDRESS(lb), ADDRESS(ub),
             (ssize_t)(entry - lb));
     }
-    printf("\33[32m.\33[0m");
+    log(COLOR_GREEN, '.');
     return true;            // Success!
 }
 

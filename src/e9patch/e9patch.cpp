@@ -71,6 +71,8 @@ bool option_loader_base_set    = false;
 bool option_loader_phdr_set    = false;
 bool option_loader_static_set  = false;
 bool option_mem_rebase_set     = false;
+bool option_log                = true;
+int option_log_color           = COLOR_NONE;
 
 /*
  * Global statistics.
@@ -140,6 +142,33 @@ void debugImpl(const char *msg, ...)
     va_end(ap);
 
     putc('\n', stderr);
+}
+
+/*
+ * Print logging information.
+ */
+void logSetColor(int color)
+{
+    option_log_color = color;
+    if (!option_is_tty || !option_log)
+        return;
+    switch (color)
+    {
+        case COLOR_NONE:
+            fputs("\33[0m", stdout); break;
+        case COLOR_RED:
+            fputs("\33[31m", stdout); break;
+        case COLOR_GREEN:
+            fputs("\33[32m", stdout); break;
+        case COLOR_BLUE:
+            fputs("\33[34m", stdout); break;
+        case COLOR_CYAN:
+            fputs("\33[36m", stdout); break;
+        case COLOR_MAGENTA:
+            fputs("\33[35m", stdout); break;
+        case COLOR_YELLOW:
+            fputs("\33[33m", stdout); break;
+    }
 }
 
 /*
@@ -236,8 +265,9 @@ static void usage(FILE *stream, const char *progname)
         "\t\tRewrite the binary in one batch rather than incrementally.\n"
         "\t\tDefault: false (disabled)\n"
         "\n"
-        "\t--debug\n"
-        "\t\tEnable debug log messages.\n"
+        "\t--debug[=false]\n"
+        "\t\tEnable [disable] debug log messages.\n"
+        "\t\tDefault: false (disabled)\n"
         "\n"
         "\t--help, -h\n"
         "\t\tPrint this help message.\n"
@@ -271,6 +301,10 @@ static void usage(FILE *stream, const char *progname)
         "\t\tHowever, this can also bloat patched binary size.\n"
         "\t\tOnly relevant for ELF binaries.\n"
         "\t\tDefault: false (disabled)\n"
+        "\n"
+        "\t--log=[false]\n"
+        "\t\tEnable [disable] log output.\n"
+        "\t\tDefault: true (enabled)\n"
         "\n"
         "\t--mem-granularity=SIZE\n"
         "\t\tSet SIZE to be the granularity used for the physical page\n"
@@ -347,6 +381,7 @@ enum Option
     OPTION_LOADER_BASE,
     OPTION_LOADER_PHDR,
     OPTION_LOADER_STATIC,
+    OPTION_LOG,
     OPTION_MEM_GRANULARITY,
     OPTION_MEM_LB,
     OPTION_MEM_MAPPING_SIZE,
@@ -392,12 +427,13 @@ void parseOptions(char * const argv[], bool api)
         {"Oprologue-size",     req_arg, nullptr, OPTION_OPROLOGUE_SIZE},
         {"Oscratch-stack",     opt_arg, nullptr, OPTION_OSCRATCH_STACK},
         {"batch",              opt_arg, nullptr, OPTION_BATCH},
-        {"debug",              no_arg,  nullptr, OPTION_DEBUG},
+        {"debug",              opt_arg, nullptr, OPTION_DEBUG},
         {"help",               no_arg,  nullptr, OPTION_HELP},
         {"input",              req_arg, nullptr, OPTION_INPUT},
         {"loader-base",        req_arg, nullptr, OPTION_LOADER_BASE},
         {"loader-phdr",        req_arg, nullptr, OPTION_LOADER_PHDR},
         {"loader-static",      opt_arg, nullptr, OPTION_LOADER_STATIC},
+        {"log",                opt_arg, nullptr, OPTION_LOG},
         {"mem-granularity",    req_arg, nullptr, OPTION_MEM_GRANULARITY},
         {"mem-lb",             req_arg, nullptr, OPTION_MEM_LB},
         {"mem-mapping-size",   req_arg, nullptr, OPTION_MEM_MAPPING_SIZE},
@@ -441,7 +477,7 @@ void parseOptions(char * const argv[], bool api)
                 option_batch = parseBoolOptArg("--batch", optarg);
                 break;
             case OPTION_DEBUG:
-                option_debug = true;
+                option_debug = parseBoolOptArg("--debug", optarg);
                 break;
             case 'h':
             case OPTION_HELP:
@@ -547,6 +583,9 @@ void parseOptions(char * const argv[], bool api)
                 option_loader_static =
                     parseBoolOptArg("--loader-static", optarg);
                 break;
+            case OPTION_LOG:
+                option_log = parseBoolOptArg("--log", optarg);
+                break;
             case OPTION_MEM_GRANULARITY:
                 option_mem_granularity = parseIntOptArg("--mem-granularity",
                     optarg, INTPTR_MIN, INTPTR_MAX);
@@ -619,11 +658,6 @@ extern "C"
 int realMain(int argc, char **argv)
 {
     option_is_tty = (isatty(STDERR_FILENO) != 0);
-    if (getenv("E9PATCH_TTY") != nullptr)
-        option_is_tty = true;
-    if (getenv("E9PATCH_DEBUG") != nullptr)
-        option_debug = true;
-
     parseOptions(argv);
 
     if (option_input != "-")
@@ -642,7 +676,7 @@ int realMain(int argc, char **argv)
     }
     if (isatty(STDIN_FILENO))
         warning("reading JSON-RPC from a terminal (this is probably not "
-            "what you want, please use an E9PATCH frontend instead!)");
+            "what you want, please use E9Tool instead!)");
     
     Binary *B = nullptr;
     Message msg;
@@ -696,9 +730,11 @@ int realMain(int argc, char **argv)
             mode_str = "Windows PE dynamic link library"; break;
     }
 
-    printf("\n\n-----------------------------------------------\n");
+    log(COLOR_NONE, '\n');
+    printf("-----------------------------------------------\n");
+    printf("mode                  = %s\n", mode_str);
     printf("input_binary          = %s\n", B->filename);
-    printf("input_mode            = %s\n", mode_str);
+    printf("output_binary         = %s\n", B->output);
     printf("num_patched           = %zu / %zu (%s%s%%)\n",
         stat_num_patched, stat_num_total, (approx? "~": ""),
         percent);
@@ -749,7 +785,7 @@ int realMain(int argc, char **argv)
             "\t(1) raising the limit, e.g.:\n"
             "\t    sudo sysctl -w vm.max_map_count=%zu\n"
             "\t(2) rewriting the binary with a larger mapping size\n"
-            "\t    (see the `--mem-mapping-size' option).",
+            "\t    (see the `--size' option).",
                 stat_num_virtual_mappings,
                 ((ssize_t)stat_num_virtual_mappings >= MAX_MAPPINGS?
                     "exceeds": "may exceed"),
@@ -837,4 +873,20 @@ asm (
     "jmp *%rax\n"
     ".Lskip:\n"
 );
+
+#ifndef NDEBUG
+/*
+ * ASAN options.
+ */
+extern "C"
+{
+    /*
+     * E9Patch deliberately leaks memory & leaves it to the OS to clean-up.
+     */
+    const char *__asan_default_options()
+    {
+        return "detect_leaks=0";
+    }
+}
+#endif
 

@@ -210,6 +210,7 @@ static Binary *parseBinary(const Message &msg)
 
     Binary *B = new Binary;
     B->filename = filename;
+    B->output   = nullptr;
     B->mode     = mode;
     B->cursor   = INTPTR_MAX;
 
@@ -440,13 +441,14 @@ static void parseEmit(Binary *B, const Message &msg)
     if (dup)
         error("failed to parse \"emit\" message (id=%u); duplicate "
             "parameters detected");
+    B->output = filename;
 
     // Build trampoline entry set (b4 flush)
     buildEntrySet(B);
 
     // Flush the queue:
     queueFlush(B, INTPTR_MIN);
-    putchar('\n');
+    log(COLOR_NONE, '\n');
 
     // Create and optimize the mappings:
     MappingSet mappings;
