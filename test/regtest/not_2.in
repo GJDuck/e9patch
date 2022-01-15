@@ -1,0 +1,1 @@
+./test -M 'not x87 && not sse && not jump && not call && not condjump && not defined(op[0]) || addr == 0xa0001cf' -P print

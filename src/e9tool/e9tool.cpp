@@ -809,7 +809,7 @@ static MatchExpr *parseTestExpr(Parser &parser)
             break;
         case '!': case TOKEN_NOT:
             (void)parser.getToken();
-            expr = parseMatchExpr(parser, MATCH_OP_OR);
+            expr = parseTestExpr(parser);
             expr = new MatchExpr(MATCH_OP_NOT, expr);
             break;
         default:

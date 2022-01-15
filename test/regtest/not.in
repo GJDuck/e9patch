@@ -1,0 +1,1 @@
+./test -M '!sse and op.size == 2 && op[0] == %rax && x87' -P print

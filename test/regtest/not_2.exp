@@ -1,0 +1,5 @@
+nop
+sub %r8, %r10
+syscall
+PASSED
+syscall
