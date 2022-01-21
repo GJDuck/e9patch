@@ -1,0 +1,1 @@
+./test -M 'src[0] == mem64<0x777f(%rsp,%rcx,1)> || mem[0] == mem64<%ds:-0x100(%rsp,%rsi,8)>' -P print

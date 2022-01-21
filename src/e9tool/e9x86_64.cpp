@@ -254,12 +254,13 @@ void e9tool::getInstrInfo(const ELF *elf, const Instr *I, InstrInfo *info,
                 }
                 case ZYDIS_OPERAND_TYPE_MEMORY:
                 {
-                    info->regs.read[k++] = seg;
+                    if (seg != REGISTER_NONE)
+                        info->regs.read[k++] = seg;
                     Register r = convert(D->operands[i].mem.base);
-                    if (r != REGISTER_INVALID)
+                    if (r != REGISTER_NONE)
                         info->regs.read[k++] = r;
                     r = convert(D->operands[i].mem.index);
-                    if (r != REGISTER_INVALID)
+                    if (r != REGISTER_NONE)
                         info->regs.read[k++] = r;
                     break;
                 }

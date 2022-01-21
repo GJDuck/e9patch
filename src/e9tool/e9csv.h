@@ -19,9 +19,6 @@
 
 #include "e9action.h"
 
-extern Data *parseCSV(const char *filename);
-extern intptr_t nameToInt(const char *basename, const char *name);
-extern void buildIntIndex(const char *basename, const Data &data, unsigned i,
-    Index<MatchValue> &index);
+extern MatchVal getCSVValue(intptr_t addr, const char *basename, uint16_t idx);
 
 #endif

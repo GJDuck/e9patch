@@ -1,0 +1,34 @@
+push %r15
+mov $0x8877665544332211, %rbx
+nop
+cmp $0x33, %ebx
+movq 0x28(%rip), %r8
+cmp %r8, %rcx
+push %r10
+push %r11
+mov $-0x7777, %rcx
+jmpq *0x777f(%rsp,%rcx,1)
+pop %r14
+sub $0x8, %r8
+sub %r8, %r10
+imul %r10
+imul %r11, %r10
+imul $0x77, %r11, %r10
+or $0x13, %rbx
+or %rcx, %rbx
+not %rcx
+neg %rcx
+shl $0x7, %rdi
+push %r13
+pxor %xmm0, %xmm0
+sqrtss %xmm0, %xmm1
+comiss %xmm0, %xmm1
+xor %esi, %esi
+movq %ds:-0x100(%rsp,%rsi,8), %rcx
+inc %esi
+cmp %rcx, %rdx
+cmp %rcx, %rdx
+inc %rdi
+mov $0x7, %rdx
+PASSED
+xor %edi, %edi

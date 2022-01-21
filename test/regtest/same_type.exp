@@ -1,0 +1,21 @@
+cmp %rax, %rbx
+cmp %r8, %rcx
+add %r9, %r10
+sub %r8, %r10
+imul %r11, %r10
+and %rax, %rbx
+or %rcx, %rbx
+pxor %xmm0, %xmm0
+cvtsi2ss %rax, %xmm0
+sqrtss %xmm0, %xmm1
+comiss %xmm0, %xmm1
+cvttss2si %xmm1, %rax
+test %rax, %rax
+xor %esi, %esi
+test %rax, %rax
+cmp %rax, %rcx
+cmp %rcx, %rdx
+xor %eax, %eax
+mov %eax, %edi
+PASSED
+xor %edi, %edi

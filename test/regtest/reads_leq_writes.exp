@@ -1,0 +1,62 @@
+movq 0x5e(%rip), %rax
+mov $0x8877665544332211, %rbx
+cmp %rax, %rbx
+nop
+cmp $0x33, %ebx
+movq 0x28(%rip), %r8
+movq 0x19a(%rip), %rcx
+cmp %r8, %rcx
+jmp 0xa000163
+call 0xa000168
+jmp 0xa00016d
+jmp 0xa000177
+lea 0x14(%rip), %r10
+mov $-0x7777, %rcx
+call 0xa0001b5
+add $0x8, %rsp
+lea 0x2(%rip), %rdx
+pop %r14
+add $0x6, %r9
+add %r9, %r10
+sub $0x8, %r8
+sub %r8, %r10
+imul %r10
+imul %r11, %r10
+imul $0x77, %r11, %r10
+and $0xfe, %rax
+and %rax, %rbx
+or $0x13, %rbx
+or %rcx, %rbx
+not %rcx
+neg %rcx
+shl $0x7, %rdi
+sar $0x3, %rdi
+mov $0x4519, %rax
+pxor %xmm0, %xmm0
+comiss %xmm0, %xmm1
+cvttss2si %xmm1, %rax
+cmp $0x85, %rax
+movq -0x100(%rsp), %rax
+test %rax, %rax
+xor %esi, %esi
+movq -0x100(%rsp,%rsi,8), %rax
+test %rax, %rax
+movq %cs:-0x100(%rsp,%rsi,8), %rax
+movq %ds:-0x100(%rsp,%rsi,8), %rcx
+cmp %rax, %rcx
+movl 0xa000000, %ecx
+inc %esi
+movq 0xa000000(,%rsi,8), %rdx
+cmp %rcx, %rdx
+movq 0xa000008, %rdx
+cmp %rcx, %rdx
+xor %eax, %eax
+inc %eax
+inc %rdi
+lea 0x54(%rip), %rsi
+mov $0x7, %rdx
+syscall
+PASSED
+mov $0x3c, %eax
+xor %edi, %edi
+syscall

@@ -1381,26 +1381,6 @@ static void sendBytesData(FILE *out, const uint8_t *bytes, size_t len)
 }
 
 /*
- * Lookup a value from a CSV file based on the matching.
- */
-static intptr_t lookupValue(const Action *action, size_t idx, const ELF *elf,
-    const std::vector<Instr> &Is, size_t i, const InstrInfo *I,
-    const char *basename, intptr_t pos)
-{
-    const Record *record = nullptr;
-    bool pass = matchEval(action->match, elf, Is, i, I, basename, &record);
-    if (!pass || record == nullptr)
-        error("failed to lookup value from file \"%s.csv\"; matching is "
-            "ambiguous", basename);
-    if (pos >= (intptr_t)record->size())
-        error("failed to lookup value from file \"%s.csv\"; index %zd is "
-            "out-of-range 0..%zu", basename, pos, record->size()-1);
-    const char *str = record->at(pos);
-    intptr_t x = nameToInt(basename, str);
-    return x;
-}
-
-/*
  * Send instructions to load an argument into a register.
  */
 static Type sendLoadArgumentMetadata(FILE *out, CallInfo &info,
@@ -1421,9 +1401,20 @@ static Type sendLoadArgumentMetadata(FILE *out, CallInfo &info,
     {
         case ARGUMENT_USER:
         {
-            intptr_t value = lookupValue(action, idx, elf, Is, i, I,
-                arg.name, arg.value);
-            sendLoadValueMetadata(out, value, regno);
+            MatchVal val = getCSVValue(I->address, arg.name, arg.value);
+            if (val.type != MATCH_TYPE_INTEGER)
+            {
+                warning(CONTEXT_FORMAT "failed to load CSV file value %s[%ld] "
+                    "into register %s; entry for address 0x%lx %s",
+                    CONTEXT(I), arg.name, arg.value, getRegName(getReg(regno)),
+                    I->address,
+                    (val.type == MATCH_TYPE_UNDEFINED? "is missing":
+                                                       "is not an integer"));
+                sendSExtFromI32ToR64(out, 0, regno);
+                t = TYPE_NULL_PTR;
+                break;
+            }
+            sendLoadValueMetadata(out, val.i, regno);
             break;
         }
         case ARGUMENT_INTEGER:

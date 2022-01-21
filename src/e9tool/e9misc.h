@@ -47,5 +47,9 @@ extern bool option_is_tty;
 extern bool option_no_warnings;
 extern bool option_debug;
 extern bool option_intel_syntax;
+extern bool option_targets;
+extern bool option_bbs;
+extern bool option_fs;
+extern bool option_trap_all;
 
 #endif

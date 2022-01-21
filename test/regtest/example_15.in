@@ -1,0 +1,1 @@
+./test -M '{rax, rdx} in writes' -P print

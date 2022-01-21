@@ -1,1 +1,1 @@
-./test -M 'I[-106].mnemonic == push && I[-106].op[0] == %r15' -P print
+./test -M 'I[-106].mnemonic == "push" && I[-106].op[0] == %r15' -P print

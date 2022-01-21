@@ -1,1 +1,1 @@
-./test.pie -M 'asm=.*rip.*' -P 'after entry(static addr,static next,static target,"Hello",5,"World!")@inst'
+./test.pie -M 'asm=/.*rip.*/' -P 'after entry(static addr,static next,static target,"Hello",5,"World!")@inst'

@@ -1,0 +1,9 @@
+nop
+jmp 0xa000163
+call 0xa000168
+jmp 0xa00016d
+jmp 0xa000177
+call 0xa0001b5
+not %rcx
+pxor %xmm0, %xmm0
+PASSED

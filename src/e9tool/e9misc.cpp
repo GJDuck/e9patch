@@ -36,6 +36,10 @@ bool option_is_tty       = false;
 bool option_no_warnings  = false;
 bool option_debug        = false;
 bool option_intel_syntax = false;
+bool option_targets      = false;
+bool option_bbs          = false;
+bool option_fs           = false;
+bool option_trap_all     = false;
 
 /*
  * Duplicate a string.

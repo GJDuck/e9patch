@@ -1,0 +1,1 @@
+./test -M 'data[3]=="String"' -P 'entry(data[1],data[2],data[4],instr,size,asm)@inst'

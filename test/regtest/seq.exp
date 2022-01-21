@@ -1,0 +1,3 @@
+neg %rcx
+mov %eax, %edi
+PASSED

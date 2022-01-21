@@ -45,10 +45,44 @@ struct CSV
 };
 
 /*
+ * CSV data representation.
+ */
+typedef std::vector<MatchVal> Record;
+typedef std::map<intptr_t, Record> Data;
+
+/*
  * CSV data cache.
  */
-typedef std::map<const char *, Data *, CStrCmp> Cache;
-static Cache cache;
+typedef std::map<const char *, Data, CStrCmp> Cache;
+
+/*
+ * Convert an entry into an integer.
+ */
+static bool entryToInt(const char *entry, intptr_t *val)
+{
+    const char *s = entry;
+    while (isspace(*s))
+        s++;
+    bool neg = false;
+    if (s[0] == '+')
+        s++;
+    else if (s[0] == '-')
+    {
+        neg = true;
+        s++;
+    }
+    int base = (s[0] == '0' && s[1] == 'x'? 16: 10);
+    char *end = nullptr;
+    intptr_t x = (intptr_t)strtoull(s, &end, base);
+    if (end == nullptr || end == s)
+        return false;
+    while (isspace(*end))
+        end++;
+    if (*end != '\0')
+        return false;
+    *val = (neg? -x: x);
+    return true;
+}
 
 /*
  * Checked getc.
@@ -57,12 +91,12 @@ static char getChar(CSV &csv)
 {
     char c = getc(csv.stream);
     if (ferror(csv.stream))
-        error("failed to parse CSV file \"%s\" line %u: %s", csv.filename,
+        error("failed to parse CSV file \"%s\" at line %u: %s", csv.filename,
             csv.lineno, strerror(errno));
     if (feof(csv.stream))
         return EOF;
     if (!isascii(c))
-        error("failed to parse CSV file \"%s\" line %u; file contains a "
+        error("failed to parse CSV file \"%s\" at line %u; file contains a "
             "non-ASCII character `\\x%.2X'", csv.filename, csv.lineno,
             (unsigned)c);
     if (c == '\n')
@@ -89,16 +123,18 @@ static void unGetChar(char c, CSV &csv)
 }
 
 /*
- * Parse a CSV name.
+ * Parse a CSV entry.
  */
-static bool parseName(CSV &csv, std::string &name)
+static bool parseEntry(CSV &csv, MatchVal &val)
 {
+    std::string entry;
     char c = getChar(csv);
     switch (c)
     {
         case EOF:
             return false;
         case '\r': case '\n': case ',':
+            val = MatchVal();
             unGetChar(c, csv);
             return true;
         case '\"':
@@ -108,7 +144,7 @@ static bool parseName(CSV &csv, std::string &name)
                 switch (c)
                 {
                     case EOF:
-                        error("failed to parse CSV file \"%s\" line %u; "
+                        error("failed to parse CSV file \"%s\" at line %u; "
                             "unexpected end-of-file", csv.filename,
                             csv.lineno);
                     case '\"':
@@ -116,24 +152,32 @@ static bool parseName(CSV &csv, std::string &name)
                         if (c != '\"')
                         {
                             unGetChar(c, csv);
+                            val = MatchVal(strDup(entry.c_str()));
                             return true;
                         }
                         break;
                 }
-                name += c;
+                entry += c;
             }
         default:
-            name += c;
+            entry += c;
             while (true)
             {
                 c = getChar(csv);
                 switch (c)
                 {
                     case ',': case '\n': case '\r': case EOF:
+                    {
                         unGetChar(c, csv);
+                        intptr_t x;
+                        if (entryToInt(entry.c_str(), &x))
+                            val = MatchVal(x);
+                        else
+                            val = MatchVal(strDup(entry.c_str()));
                         return true;
+                    }
                     default:
-                        name += c;
+                        entry += c;
                         break;
                 }
             }
@@ -143,12 +187,12 @@ static bool parseName(CSV &csv, std::string &name)
 /*
  * Parse a CSV record.
  */
-static bool parseRecord(CSV &csv, Record &record, std::string &name)
+static bool parseRecord(CSV &csv, Record &record)
 {
-    if (!parseName(csv, name))
+    MatchVal val;
+    if (!parseEntry(csv, val))
         return false;
-    record.push_back(strDup(name.c_str()));
-    name.clear();
+    record.push_back(val);
 
     while (true)
     {
@@ -158,8 +202,8 @@ static bool parseRecord(CSV &csv, Record &record, std::string &name)
             case '\r':
                 c = getChar(csv);
                 if (c != '\n')
-                    error("failed to parse CSV file \"%s\" line %u; expected "
-                        "newline after carriage return", csv.filename,
+                    error("failed to parse CSV file \"%s\" at line %u; "
+                        "expected newline after carriage return", csv.filename,
                         csv.lineno);
                 return true;
             case '\n': case EOF:
@@ -167,118 +211,75 @@ static bool parseRecord(CSV &csv, Record &record, std::string &name)
             case ',':
                 break;
             default:
-                error("failed to parse CSV file \"%s\" line %u; unexpected "
+                error("failed to parse CSV file \"%s\" at line %u; unexpected "
                     "character `%c'", csv.filename, csv.lineno);
         }
-        parseName(csv, name);
-        record.push_back(strDup(name.c_str()));
-        name.clear();
+        if (!parseEntry(csv, val))
+            return false;
+        record.push_back(val);
     }
 }
 
 /*
  * Parse a CSV file.
  */
-Data *parseCSV(const char *filename)
+static void parseCSV(const char *filename, Data &data)
 {
-    char *path = realpath(filename, nullptr);
-    if (path == nullptr)
-        error("failed to get real path for \"%s\": %s", filename, 
-            strerror(errno));
-    auto i = cache.find(path);
-    if (i != cache.end())
-    {
-        free(path);
-        return i->second;
-    }
-
-    FILE *stream = fopen(path, "r");
+    FILE *stream = fopen(filename, "r");
     if (stream == nullptr)
         error("failed to open CSV file \"%s\" for reading: %s", filename,
             strerror(errno));
 
-    Data *data = new Data;
     CSV csv = {stream, filename, -1, 0};
-    std::string name;
-   
     while (true)
     {
         Record record;
-        if (!parseRecord(csv, record, name))
-        {
-            fclose(stream);
+        if (!parseRecord(csv, record))
             break;
-        }
         if (csv.length < 0)
             csv.length = (unsigned)record.size();
         else if ((unsigned)record.size() != (unsigned)csv.length)
-            error("failed to parse CSV file \"%s\" line %u; record with "
+            error("failed to parse CSV file \"%s\" at line %u; record with "
                 "invalid length %zu (expected %u)", csv.filename,
                 csv.lineno, record.size(), csv.length);
-
+        MatchVal &addr = record[0];
+        if (addr.type != MATCH_TYPE_INTEGER)
+            error("failed to parse CSV file \"%s\" at line %u; first record "
+                "entry must be an address", csv.filename, csv.lineno);
+        auto r = data.emplace(std::piecewise_construct,
+            std::make_tuple(addr.i), std::make_tuple());
+        if (!r.second)
+            error("failed to parse CSV file \"%s\" at line %u; duplicate "
+                "record with address 0x%lx", csv.filename, csv.lineno,
+                addr);
         record.shrink_to_fit();
-        data->push_back(std::move(record));
+        record.swap(r.first->second);
     }
 
-    data->shrink_to_fit();
-    cache.insert({path, data});
-    return data;
+    fclose(stream);
 }
 
 /*
- * Convert a name into an integer.
+ * Lookup a value from a CSV file.
  */
-intptr_t nameToInt(const char *basename, const char *name)
+MatchVal getCSVValue(intptr_t addr, const char *basename, uint16_t idx)
 {
-    const char *s = name;
-    while (isspace(*s))
-        s++;
-    bool neg = false;
-    if (s[0] == '+')
-        s++;
-    else if (s[0] == '-')
+    static Cache cache;
+    auto r = cache.emplace(std::piecewise_construct,
+        std::make_tuple(basename), std::make_tuple());
+    Data &data = r.first->second;
+    if (r.second)
     {
-        neg = true;
-        s++;
+        std::string filename(basename);
+        filename += ".csv";
+        parseCSV(filename.c_str(), data);
     }
-    int base = (s[0] == '0' && s[1] == 'x'? 16: 10);
-    char *end = nullptr;
-    intptr_t x = (intptr_t)strtoull(s, &end, base);
-    if (end == nullptr || end == s)
-    {
-parse_error:
-        error("failed to convert value \"%s\" from CSV file \"%s.csv\" "
-            "into an integer", name, basename);
-    }
-    while (isspace(*end))
-        end++;
-    if (*end != '\0')
-        goto parse_error;
-    x = (neg? -x: x);
-    return x;
-}
-
-/*
- * Build an integer index.
- */
-void buildIntIndex(const char *basename, const Data &data, unsigned i,
-    Index<MatchValue> &index)
-{
-    for (const auto &record: data)
-    {
-        if (i >= record.size())
-            error("failed to build index for CSV file \"%s.csv\"; index %u is "
-                "out-of-range (0..%zu)\n", basename, i, record.size()-1);
-        const char *name = record[i];
-        intptr_t x = nameToInt(basename, name);
-        MatchValue key = {0};
-        key.type = MATCH_TYPE_INTEGER;
-        key.i    = x;
-        auto i = index.find(key);
-        if (i != index.end())
-            error("failed to build index for CSV file \"%s.csv\"; duplicate "
-                "value \"%s\"", basename, name);
-        index.insert(i, {key, &record});
-    }
+    auto i = data.find(addr);
+    if (i == data.end())
+        return MatchVal();
+    const Record &record = i->second;
+    if (idx >= record.size())
+        return MatchVal();
+    return record[idx];
 }
 

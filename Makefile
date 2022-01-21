@@ -18,6 +18,7 @@ E9PATCH_OBJS=\
     src/e9patch/e9x86_64.o
 
 E9TOOL_OBJS=\
+    src/e9tool/e9action.o \
     src/e9tool/e9cfg.o \
     src/e9tool/e9codegen.o \
     src/e9tool/e9csv.o \

@@ -1,0 +1,3 @@
+./test.pie -M 'op[0].type == op[1].type' -P print
+
+

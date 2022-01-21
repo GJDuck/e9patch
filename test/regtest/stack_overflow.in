@@ -1,4 +1,4 @@
-./test -M 'mnemonic == (push.*|call.*)' -P 'if stack_overflow(addr,&rsp,asm)@patch goto'
+./test -M 'mnemonic == /(push.*|call.*)/' -P 'if stack_overflow(addr,&rsp,asm)@patch goto'
 
 # Induces a stack overflow.
 

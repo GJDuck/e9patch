@@ -1,0 +1,1 @@
+./test -M 'src[1] == dst[0]' -P print

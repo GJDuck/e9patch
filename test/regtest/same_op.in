@@ -1,0 +1,1 @@
+./test -M 'op[0] == op[1]' -P print

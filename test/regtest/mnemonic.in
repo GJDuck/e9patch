@@ -1,1 +1,1 @@
-./test -M 'mnemonic == (i.*|j.*|x.*)' -P 'entry(rax,ah,al,instr,size,asm)@inst'
+./test -M 'mnemonic == /(i.*|j.*|x.*)/' -P 'entry(rax,ah,al,instr,size,asm)@inst'

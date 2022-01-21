@@ -1,1 +1,1 @@
-./test.pie -M 'asm=.*%cs:.*' -P 'bug_18()@patch'
+./test.pie -M 'asm=/.*%cs:.*/' -P 'bug_18()@patch'

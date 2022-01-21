@@ -331,7 +331,9 @@ static const TokenInfo tokens[] =
     {"zmm7",            TOKEN_REGISTER,         REGISTER_ZMM7},
     {"zmm8",            TOKEN_REGISTER,         REGISTER_ZMM8},
     {"zmm9",            TOKEN_REGISTER,         REGISTER_ZMM9},
+    {"{",               (Token)'{',             0},
     {"||",              TOKEN_OR,               0},
+    {"}",               (Token)'}',             0},
 };
 
 /*
@@ -440,7 +442,7 @@ int Parser::getToken()
             strcpy(s, "<end-of-input>");
             return TOKEN_EOF;
         case '[': case ']': case '@': case ',': case '(': case ')':
-        case '&': case '.': case ':': case '+':
+        case '&': case '.': case ':': case '+': case '{': case '}':
             s[0] = c; s[1] = '\0';
             pos++;
             if ((c == '&' || c == '.') && buf[pos] == c)
@@ -547,6 +549,28 @@ int Parser::getToken()
         }
         s[j] = '\0';
         return TOKEN_STRING;
+    }
+
+    // Regexes:
+    if (c == '/')
+    {
+        pos++;
+        while ((c = buf[pos++]) != '/')
+        {
+            if (c == '\\' && buf[pos+1] == '/')
+            {
+                c = '/';
+                pos++;
+            }
+            if (j >= TOKEN_MAXLEN-1)
+            {
+                s[j] = '\0';
+                return TOKEN_ERROR;
+            }
+            s[j++] = c;
+        }
+        s[j] = '\0';
+        return TOKEN_REGEX;
     }
 
     // Names:
@@ -671,6 +695,6 @@ int Parser::getBlob()
     if (j >= TOKEN_MAXLEN)
         unexpectedToken();
     s[j] = '\0';
-    return TOKEN_REGEX;
+    return TOKEN_STRING;
 }
 

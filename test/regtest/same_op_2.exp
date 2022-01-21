@@ -1,0 +1,17 @@
+add $0x8, %rsp
+add $0x6, %r9
+add %r9, %r10
+sub $0x8, %r8
+sub %r8, %r10
+imul %r11, %r10
+and $0xfe, %rax
+and %rax, %rbx
+or $0x13, %rbx
+or %rcx, %rbx
+shl $0x7, %rdi
+sar $0x3, %rdi
+pxor %xmm0, %xmm0
+xor %esi, %esi
+xor %eax, %eax
+PASSED
+xor %edi, %edi

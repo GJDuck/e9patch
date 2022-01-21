@@ -1,0 +1,4 @@
+nop
+syscall
+PASSED
+syscall

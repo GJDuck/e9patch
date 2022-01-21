@@ -1,1 +1,1 @@
-./test -M 'asm=xor.*' -P 'exit(0)'
+./test -M 'asm=/xor.*/' -P 'exit(0)'

@@ -1,0 +1,1 @@
+./test -M 'mem[0] >= mem8<-2147483648(%rip)> && mem[0] <= mem64<2147483647(%rip)>' -P print

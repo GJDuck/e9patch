@@ -2231,12 +2231,12 @@ enum FieldKind
  */
 struct MemOp
 {
-    Register seg;
-    int32_t disp;
-    Register base;
-    Register index;
-    int8_t scale;
-    int8_t size;
+    int32_t disp;                   // Displacement
+    Register seg;                   // Segment register
+    Register base;                  // Base register
+    Register index;                 // Index register
+    uint8_t scale;                  // Scale
+    uint8_t size;                   // Size
 };
 
 /*

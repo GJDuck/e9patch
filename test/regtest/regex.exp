@@ -1,0 +1,4 @@
+movq -0x100(%rsp,%rsi,8), %rax
+movq %cs:-0x100(%rsp,%rsi,8), %rax
+movq %ds:-0x100(%rsp,%rsi,8), %rcx
+PASSED

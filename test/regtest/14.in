@@ -1,4 +1,4 @@
-./test -M 'jump and (rflags in reads or (ecx,rcx in reads && !defined(mem[0])))' -P 'entry(rflags,target,next,instr,size,asm)@inst'
+./test -M 'jump and (rflags in reads or ((ecx in reads || rcx in reads) && !defined(mem[0])))' -P 'entry(rflags,target,next,instr,size,asm)@inst'
 
 # All conditional jumps; the rcx logic is for the j?cxz special case
 

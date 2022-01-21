@@ -1,1 +1,1 @@
-./test -M 'I[0].mnemonic == imul && I[-1].mnemonic == imul && I[-2].mnemonic == imul' -P print
+./test -M 'I[0].mnemonic == "imul" && I[-1].mnemonic == "imul" && I[-2].mnemonic == "imul"' -P print

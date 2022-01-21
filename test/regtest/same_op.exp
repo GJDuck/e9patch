@@ -1,0 +1,7 @@
+pxor %xmm0, %xmm0
+test %rax, %rax
+xor %esi, %esi
+test %rax, %rax
+xor %eax, %eax
+PASSED
+xor %edi, %edi

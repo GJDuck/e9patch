@@ -1,1 +1,1 @@
-./test -M 'addr == 0xa000100,0xa00012f,0xa00015d,0xa0001b5,0xa00022b,0xb000011,0xc000022' -P 'entry(r13,r14,r15,instr,size,asm)@inst'
+./test -M 'addr in {0xa000100,0xa00012f,0xa00015d,0xa0001b5,0xa00022b,0xb000011,0xc000022}' -P 'entry(r13,r14,r15,instr,size,asm)@inst'

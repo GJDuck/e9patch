@@ -45,76 +45,121 @@ struct Plugin
 };
 
 /*
+ * Match regex.
+ */
+struct MatchRegex
+{
+    const std::regex regex;
+    const std::string str;
+
+    MatchRegex(const char *str) : str(str), regex(str)
+    {
+        ;
+    }
+
+    bool match(const char *str) const
+    {
+        std::cmatch cmatch;
+        return std::regex_match(str, cmatch, regex);
+    }
+};
+
+/*
  * Match types.
  */
-typedef unsigned MatchType;
-#define MATCH_TYPE_UNDEFINED    0x00
-#define MATCH_TYPE_NIL          0x01
-#define MATCH_TYPE_INTEGER      0x02
-#define MATCH_TYPE_OPERAND      0x04
-#define MATCH_TYPE_ACCESS       0x08
-#define MATCH_TYPE_REGISTER     0x10
-#define MATCH_TYPE_MEMORY       0x20
-#define MATCH_TYPE_STRING       0x40
+typedef uint16_t MatchType;
+#define MATCH_TYPE_UNDEFINED    0x0000
+#define MATCH_TYPE_NIL          0x0001
+#define MATCH_TYPE_INTEGER      0x0002
+#define MATCH_TYPE_OPERAND      0x0004
+#define MATCH_TYPE_ACCESS       0x0008
+#define MATCH_TYPE_REGISTER     0x0010
+#define MATCH_TYPE_MEMORY       0x0020
+#define MATCH_TYPE_STRING       0x0040
+#define MATCH_TYPE_REGEX        0x0080
+#define MATCH_TYPE_SET          0x0100
 
 /*
  * Match value.
  */
-struct MatchValue
+struct MatchVal
 {
-    MatchType type;
     union
     {
         intptr_t i;
+        const char *str;
         e9tool::OpType op;
         e9tool::Access access;
         e9tool::Register reg;
+        e9tool::MemOp mem;
+        const MatchRegex *regex;
+        const MatchVal *vals;
     };
+    MatchType type;
 
-    int compare(const MatchValue &value) const
+    MatchVal() : type(MATCH_TYPE_UNDEFINED), i(0)
     {
-        if (value.type < type)
-            return 1;
-        if (value.type > type)
-            return -1;
-        switch (type)
-        {
-            case MATCH_TYPE_INTEGER:
-                return (value.i < i? 1:
-                       (value.i > i? -1: 0));
-            case MATCH_TYPE_OPERAND:
-                return (value.op < op? 1:
-                       (value.op > op? -1: 0));
-            case MATCH_TYPE_ACCESS:
-                return (value.access < access? 1:
-                       (value.access > access? -1: 0));
-            case MATCH_TYPE_REGISTER:
-                return (value.reg < reg? 1:
-                       (value.reg > reg? -1: 0));
-            default:
-                return 0;
-        }
+        ;
+    }
+    MatchVal(std::nullptr_t) : type(MATCH_TYPE_NIL), i(0)
+    {
+        ;
+    }
+    MatchVal(intptr_t i) : type(MATCH_TYPE_INTEGER), i(i)
+    {
+        ;
+    }
+    MatchVal(const char *str) : type(MATCH_TYPE_STRING), str(str)
+    {
+        ;
+    }
+    MatchVal(e9tool::OpType op) : type(MATCH_TYPE_OPERAND), op(op)
+    {
+        ;
+    }
+    MatchVal(e9tool::Access access) : type(MATCH_TYPE_ACCESS), access(access)
+    {
+        ;
+    }
+    MatchVal(e9tool::Register reg) : type(MATCH_TYPE_REGISTER), reg(reg)
+    {
+        ;
+    }
+    MatchVal(const e9tool::MemOp &mem) : type(MATCH_TYPE_MEMORY), mem(mem)
+    {
+        ;
+    }
+    MatchVal(const MatchRegex *regex) : type(MATCH_TYPE_REGEX), regex(regex)
+    {
+        ;
+    }
+    MatchVal(const MatchVal *vals) : type(MATCH_TYPE_SET), vals(vals)
+    {
+        ;
     }
 
-    bool operator==(const MatchValue &value) const
+    int compare(const MatchVal &val) const;
+
+    bool operator==(const MatchVal &val) const;
+    bool operator!=(const MatchVal &val) const
     {
-        return (compare(value) == 0);
+        return !(MatchVal::operator==(val));
     }
-    bool operator<(const MatchValue &value) const
+    bool operator<(const MatchVal &val) const
     {
-        return (compare(value) < 0);
+        return (compare(val) < 0);
     }
-    bool operator<=(const MatchValue &value) const
+    bool operator<=(const MatchVal &val) const
     {
-        return (compare(value) <= 0);
+        return (compare(val) <= 0);
     }
-    bool operator>(const MatchValue &value) const
+    bool operator>(const MatchVal &val) const
     {
-        return (compare(value) > 0);
+        return (compare(val) > 0);
     }
-    bool operator>=(const MatchValue &value) const
+    bool operator>=(const MatchVal &val) const
     {
-        return (compare(value) >= 0);
+        return (compare(val) >= 0);
     }
 };
 
@@ -145,6 +190,8 @@ enum MatchKind
     MATCH_AVX,
     MATCH_AVX2,
     MATCH_AVX512,
+
+    MATCH_CSV,
 
     MATCH_BB_BEST,
     MATCH_BB_ENTRY,
@@ -179,9 +226,9 @@ enum MatchKind
  */
 enum MatchSet
 {
-    MATCH_Is,                   // Instructions
-    MATCH_BBs,                  // Basic blocks
-    MATCH_Fs,                   // Functions
+    MATCH_Is,                           // Instructions
+    MATCH_BBs,                          // Basic blocks
+    MATCH_Fs,                           // Functions
 };
 
 /*
@@ -201,14 +248,35 @@ enum MatchField
 };
 
 /*
- * Match comparison operator.
+ * Match variable.
+ */
+struct MatchVar
+{
+    const MatchSet     set;             // Instruction set
+    const int          i;               // Instruction set index
+    const MatchKind    match;           // Variable name
+    const int          j;               // Variable index
+    const MatchField   field;           // Variable field
+    const char * const basename;        // Basename (if applicable)
+    Plugin * const     plugin;          // Plugin (if applicable)
+
+    MatchVar(MatchSet set, int i, MatchKind match, int j, MatchField field,
+            const char *basename, Plugin *plugin) :
+        set(set), i(i), match(match), j(j), field(field), basename(basename),
+        plugin(plugin)
+    {
+        ;
+    }
+};
+
+/*
+ * Match comparison.
  */
 enum MatchCmp
 {
     MATCH_CMP_INVALID,
     MATCH_CMP_DEFINED,
-    MATCH_CMP_EQ_ZERO,
-    MATCH_CMP_NEQ_ZERO,
+    MATCH_CMP_NOT_ZERO,
     MATCH_CMP_EQ,
     MATCH_CMP_NEQ,
     MATCH_CMP_LT,
@@ -219,40 +287,59 @@ enum MatchCmp
 };
 
 /*
- * An index.
+ * Match instantiation.
  */
-typedef std::vector<const char *> Record;
-typedef std::vector<Record> Data;
-template <typename T, class Cmp = std::less<T>>
-using Index = std::map<T, const Record *, Cmp>;
+enum MatchInst : uint8_t
+{
+    MATCH_INST_VAL,
+    MATCH_INST_VAR,
+    MATCH_INST_EMPTY
+};
 
 /*
- * A match entry.
+ * A match arg.
+ */
+struct MatchArg
+{
+    union
+    {
+        const MatchVar * const var;
+        const MatchVal * const val;
+    };
+    const MatchInst inst;
+
+    MatchArg(const MatchVal *val) : inst(MATCH_INST_VAL), val(val)
+    {
+        ;
+    }
+    MatchArg(const MatchVar *var) : inst(MATCH_INST_VAR), var(var)
+    {
+        ;
+    }
+    MatchArg() : inst(MATCH_INST_EMPTY), val(nullptr)
+    {
+        ;
+    }
+};
+
+/*
+ * A match test.
  */
 struct MatchTest
 {
-    const MatchSet   set;
-    const int        i;
-    const MatchKind  match;
-    const int        j;
-    const MatchField field;
-    const MatchCmp   cmp;
-    const char *     basename;
-    Plugin * const   plugin;
-    union
-    {
-        void *data;
-        std::regex *regex;
-        Index<MatchValue> *values;
-        std::set<e9tool::Register> *regs;
-    };
+    const MatchArg lhs;                     // LHS
+    const MatchCmp cmp;                     // Comparator
+    const MatchArg rhs;                     // RHS
 
-    MatchTest(MatchSet set, int i, MatchKind match, int j, MatchField field,
-            MatchCmp cmp, Plugin *plugin, const char *basename) :
-        set(set), i(i), match(match), field(field), j(j), cmp(cmp),
-        basename(basename), plugin(plugin)
+    MatchTest(MatchCmp cmp, const MatchArg arg) :
+        cmp(cmp), lhs(arg)
     {
-        data = nullptr;
+        ;
+    }
+    MatchTest(const MatchArg larg, MatchCmp cmp, const MatchArg rarg) :
+        cmp(cmp), lhs(larg), rhs(rarg)
+    {
+        ;
     }
 };
 
@@ -379,9 +466,10 @@ struct Action
 /*
  * Prototypes.
  */
-extern bool matchEval(const MatchExpr *expr, const e9tool::ELF *elf,
+extern MatchExpr *parseMatch(const e9tool::ELF &elf, const char *str);
+extern const Patch *parsePatch(const e9tool::ELF &elf, const char *str);
+extern bool matchEval(const MatchExpr *expr, const e9tool::ELF &elf,
     const std::vector<e9tool::Instr> &Is, size_t idx,
-    const e9tool::InstrInfo *I, const char *basename = nullptr,
-    const Record **record = nullptr);
+    const e9tool::InstrInfo *I);
 
 #endif

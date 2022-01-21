@@ -12,31 +12,32 @@ to be used directly.
 ---
 ## Contents
 
-* [1. Matching Language](#s1)
-    - [1.1 Attributes](#s11)
-    - [1.2 Definedness](#s12)
-    - [1.3 Control-flow](#s13)
-    - [1.4 Instruction Specifiers](#s14)
-    - [1.5 Examples](#s15)
-    - [1.6 Exclusions](#s16)
-* [2. Patch Language](#s2)
-    - [2.1 Builtin Trampolines](#s21)
-    - [2.2 Call Trampolines](#s22)
-        * [2.2.1 Call Trampoline Arguments](#s221)
-            - [2.2.1.1 Pass-by-pointer](#s2211)
-            - [2.2.1.2 Polymorphic Arguments](#s2212)
-            - [2.2.1.3 Explicit Memory Operand Arguments](#s2213)
-            - [2.2.1.4 Undefined Arguments](#s2214)
-        * [2.2.2 Call Trampoline ABI](#s222)
-        * [2.2.3 Conditional Call Trampoline](#s223)
-        * [2.2.4 Call Trampoline Standard Library](#s224)
-        * [2.2.5 Call Trampoline Initialization and Finalization](#s225)
-        * [2.2.6 Call Trampoline Dynamic Loading](#s226)
-    - [2.3 Plugin Trampolines](#s23)
-    - [2.4 Composing Trampolines](#s24)
+* [1. Matching Language](#matching)
+    - [1.1 Attributes](#attributes)
+    - [1.2 Definedness](#definedness)
+    - [1.3 Control-flow](#control-flow)
+    - [1.4 Instruction Specifiers](#specifiers)
+    - [1.5 Comma-Separated Values](#csv)
+    - [1.6 Examples](#match-examples)
+    - [1.7 Exclusions](#exclusions)
+* [2. Patch Language](#patching)
+    - [2.1 Builtin Trampolines](#builtins)
+    - [2.2 Call Trampolines](#calls)
+        * [2.2.1 Call Trampoline Arguments](#call-args)
+           - [2.2.1.1 Pass-by-pointer](#pass-by-pointer)
+            - [2.2.1.2 Polymorphic Arguments](#polymorphism)
+            - [2.2.1.3 Explicit Memory Operand Arguments](#memop-args)
+            - [2.2.1.4 Undefined Arguments](#undefined-args)
+        * [2.2.2 Call Trampoline ABI](#call-abi)
+        * [2.2.3 Conditional Call Trampoline](#conditional-calls)
+        * [2.2.4 Call Trampoline Standard Library](#standard-library)
+        * [2.2.5 Call Trampoline Initialization and Finalization](#init-fini)
+        * [2.2.6 Call Trampoline Dynamic Loading](#dynamic-loading)
+    - [2.3 Plugin Trampolines](#plugins)
+    - [2.4 Composing Trampolines](#composition)
 
 ---
-## <a id="s1">1. Matching Language</a>
+## <a id="matching">1. Matching Language</a>
 
 The *matching language* specifies what instructions should be patched by
 the corresponding *patch* (see below).
@@ -61,63 +62,79 @@ Each `TEST` queries some specific property/attribute of the underlying
 instruction, defined using the following grammar:
 
 <pre>
-    TEST ::=   <b>defined</b> <b>(</b> ATTRIBUTE <b>)</b>
-             | VALUES <b>in</b> ATTRIBUTE
-             | ATTRIBUTE [ CMP VALUES ]
+    TEST ::=   <b>defined</b> <b>(</b> EXPR <b>)</b>
+             | EXPR [ CMP EXPR ]
 
-    ATTRIBUTE ::= [ SPECIFIER <b>.</b> ] EXPR
+    EXPR ::=   VALUE 
+             | [ SPECIFIER <b>.</b> ] ATTRIBUTE
 
-    VALUES ::=   REGULAR-EXPRESSION
-               | VALUE [ <b>,</b> VALUE ] *
-               | BASENAME <b>[</b> INTEGER <b>]</b>
-
-    CMP ::=   <b>=</b> | <b>==</b> | <b>!=</b> | <b>&gt;</b> | <b>&gt;=</b> | <b>&lt;</b> | <b>&lt;=</b>
+    CMP ::=   <b>=</b> | <b>==</b> | <b>!=</b> | <b>&gt;</b> | <b>&gt;=</b> | <b>&lt;</b> | <b>&lt;=</b> | <b>in</b>
 </pre>
 
-A `TEST` tests some underlying instruction `ATTRIBUTE` using an
-integer, string or set comparison operator `CMP`.
+A `TEST` tests some underlying instruction `EXPR` expressions using a
+comparison operator `CMP`.
 The following comparison operators are supported:
 
 <table border="1">
-<tr><th>Comparison</th><th>Type</th><th>Description</th></tr>
-<tr><td><b><tt>=</tt> or <tt>==</tt></b></td><td><tt>Integer</tt> or <tt>String</tt></td>
+<tr><th>Comparison</th><th>Description</th></tr>
+<tr><td><b><tt>=</tt> or <tt>==</tt></b></td>
     <td>Equality</td></tr>
-<tr><td><b><tt>!=</tt></b></td><td><tt>Integer</tt> or <tt>String</tt></td>
+<tr><td><b><tt>!=</tt></b></td>
     <td>Disequality</td></tr>
-<tr><td><b><tt>&gt;</tt></b></td><td><tt>Integer</tt></td>
+<tr><td><b><tt>&gt;</tt></b></td>
     <td>Greater-than</td></tr>
-<tr><td><b><tt>&gt;=</tt></b></td><td><tt>Integer</tt></td>
+<tr><td><b><tt>&gt;=</tt></b></td>
     <td>Greater-than-or-equal-to</td></tr>
-<tr><td><b><tt>&lt;</tt></b></td><td><tt>Integer</tt></td>
+<tr><td><b><tt>&lt;</tt></b></td>
     <td>Less-than</td></tr>
-<tr><td><b><tt>&lt;=</tt></b></td><td><tt>Integer</tt></td>
+<tr><td><b><tt>&lt;=</tt></b></td>
     <td>Less-than-or-equal-to</td></tr>
-<tr><td><b><tt>in</tt></b></td><td><tt>Set</tt></td>
-    <td>Set membership</td></tr>
+<tr><td><b><tt>in</tt></b></td>
+    <td>Set membership or subset</td></tr>
 </table>
 
 If the comparison operator and value are omitted, then the test is
-equivalent to (`ATTRIBUTE != 0`).
+equivalent to (`EXPR != 0`).
 
-A `VALUE` can be either:
+A `VALUE` can be one of:
 
 * An *integer constant*, e.g., `123`, `0x123`, etc.
 * A *string constant*, e.g., `"abc"`, etc.
-* An *enumeration value* such as register names (`rax`, `eax`, etc.), operand types
-  (`imm`, `reg`, `mem`), etc.
+* An *enumeration value*, including:
+  - register names (`rax`, `eax`, etc.)
+  - operand types (`imm`, `reg`, `mem`)
+  - access types (`-`, `r`, `w`, `rw`)
+* A *memory operand* (see below).
 * A *symbolic address* of the form `NAME`, where `NAME` is any section
   or symbol name from the input ELF file.
   A symbolic address has type `Integer`.
+* A *set* of `VALUE`s, e.g., `{rax,rbx,rcx}`.
+* A *regular expression* delimited by slashes (`/`), e.g., `/xor.*/`,
+  `/mov.+\(%rax.*/`, etc.
 
-For string attributes, the value can be a regular expression.
-This means that the corresponding attribute value must either
-match (for `==`) or not match (for `!=`) the regular expression,
-depending on the comparison operator.
+String values can be matched (or not matched) against regular expressions
+using the equality `==` (or disequality `!=`) comparison operators.
+For example, the test (`"mov (%rax,%rbx,8),%rcx" == /mov.+\(%rax.*/`)
+will evaluate to *true*.
+
+Memory operands can be represented using the following syntax:
+<pre>
+    ( <b>mem8</b> | <b>mem16</b> | <b>mem32</b> | <b>mem64</b> ) <b>&lt;</b> MEMOP <b>&gt;</b>
+</pre>
+Here, the <tt>mem8</tt>...<tt>mem64</tt> token specifies the size of
+the memory operand, and <tt>MEMOP</tt> is the memory operand itself
+specified in AT&amp;T syntax.
+For example, the following explicit memory operands access stack memory:
+
+        mem32<(%rax)>
+        mem64<0x100(%rsp)>
+        mem64<0x200(%rsp,%rax,8)>
+        ...
 
 ---
-### <a id="s11">1.1 Attributes</a>
+### <a id="attributes">1.1 Attributes</a>
 
-The following attribute `EXPR`s (with corresponding types) are supported:
+The following `ATTRIBUTE`s (with corresponding types) are supported:
 
 <table border="1">
 <tr><th>Attribute</th><th>Type</th><th>Description</th></tr>
@@ -282,6 +299,8 @@ The following attribute `EXPR`s (with corresponding types) are supported:
     <td>The number of instructions in the current function</td></tr>
 <tr><td><b><tt>F.name</tt></b></td><td><tt>String</tt></td>
     <td>The name of the function (if available)</td></tr>
+<tr><td><b><tt>NAME[i]<tt></b></td><td><tt>Integer | String</tt></td>
+    <td>The corresponding value from the <tt>NAME.csv</tt> file</td></tr>
 <tr><td><b><tt>plugin(NAME).match()</tt></b></td><td><tt>Integer</tt></td>
     <td>Value from <tt>NAME.so</tt> plugin</td></tr>
 </table>
@@ -305,14 +324,15 @@ An `Operand` can be one of three values:
 
 * An immediate value represented by an `Integer`
 * A register represented by a `Register`
-* A memory operand (not representable)
+* A memory operand represented by a `MemOp`
 
-Thus the `Operand` type is the union of the `Integer` and `Register` types:
+Thus the `Operand` type is the union of the `Integer`, `Register`, and
+`MemOp` types:
 
-        Operand = Integer | Register
+        Operand = Integer | Register | MemOp
 
 ---
-### <a id="s12">1.2 Definedness</a>
+### <a id="definedness">1.2 Definedness</a>
 
 Not all attributes are defined for all instructions.
 For example, if the instruction has 3 operands, then only `op[0]`, `op[1]`,
@@ -333,7 +353,7 @@ The special `defined(ATTRIBUTE)` test can be used to determine if
 an attribute is defined or not.
 
 ---
-### <a id="s13">1.3 Control-flow</a>
+### <a id="control-flow">1.3 Control-flow</a>
 
 The `BB.*` attributes represent properties over the current *basic-block*
 which contains the instruction being matched.
@@ -367,7 +387,7 @@ The `F.name` attribute is the name of the current function if known
 the result is *undefined*.
 
 ---
-### <a id="s14">1.4 Instruction Specifiers</a>
+### <a id="specifiers">1.4 Instruction Specifiers</a>
 
 The attribute expression may be annotated by an explicit instruction
 `SPECIFIER` of the following form:
@@ -404,26 +424,51 @@ the current instruction.
 For example, the following matches all conditional jump instructions that are
 immediately preceded by a comparison in the same basic block:
 
-        condjump and BB[-1].mnemonic == cmp
+        condjump and BB[-1].mnemonic == "cmp"
 
 ---
-### <a id="s15">1.5 Examples</a>
+### <a id="csv">1.5 Comma-Separated Values</a>
+
+It is possible to match against user-defined data stored in one or more
+*comma-separated values* (CSV) files using the `NAME[i]` attribute.
+This makes it possible to match against data generated by other binary
+analysis tools, e.g., control-flow information, etc.
+
+Here, the `NAME[i]` attribute will parse the `NAME.csv` file and resolve to the
+following value:
+
+* The *row* is selected by the address of the matching instruction, which is
+  matched against the *first* column stored in the `NAME.csv` file.
+* The *column* is selected by the index *i*.
+
+If neither the row nor column exist the result is *undefined*.
+
+For example, suppose the `file.csv` file contains the following contents:
+
+        0x400100,1,"Monday",0xaaa
+        0x400105,2,"Tuesday",0xbbb
+        0x40010a,3,"Wednesday",0xccc
+
+When matching the instruction at address `0x400105`, we have that
+(`file[0] == 0x400105`), (`file[1] == 2`), (`file[2] == "Tuesday"`), etc.
+As seen by this example, CSV files can be used to store both integer and
+string values.
+
+---
+### <a id="match-examples">1.6 Examples</a>
 
 * (`true`):
   match every instruction.
 * (`false`):
   do not match any instruction.
-* (`asm == jmp.*%r.*`):
+* (`asm == /jmp.*%r.*/`):
   match all instructions whose assembly representation matches
   the regular expression `jmp.*%r.*`
   (will match jump instructions that access a register).
-* (`mnemonic == jmp`):
+* (`mnemonic == "jmp"`):
   match all instructions whose mnemonic is `jmp`.
 * (`addr == 0x4234a7`):
   match the instruction at the virtual address `0x4234a7`.
-* (`addr == 0x4234a7,0x44bd6e,0x4514b4`):
-  match the instructions at the virtual addresses
-  `0x4234a7`, `0x44bd6e`, and `0x4514b4`.
 * (`addr >= 0x4234a7 and addr <= 0x4514b4`):
   match all instructions in the virtual address range
   `0x4234a7..0x4514b4`
@@ -447,6 +492,8 @@ immediately preceded by a comparison in the same basic block:
 * (`mem[0].base == nil`):
   match all instructions with a memory operand that does not use a base
   register.
+* (`op[0] == op[1]`):
+  match all instructions where the first two operands are the same.
 * (`rflags in reads`):
   match all instructions that read the flags register.
 * (`rflags in writes`):
@@ -457,9 +504,13 @@ immediately preceded by a comparison in the same basic block:
   match all instructions that have at least one memory operand.
 * (`call and target == &malloc`):
   match all direct calls to `malloc()`.
+* (`{rax, rdx} in writes`):
+  match all instructions what write to registers `%rax` and `%rdx`.
+* (`op[0] == mem64<0x200(%rsp,%rax,8)>`):
+  match all instructions with the corresponding memory operand.
 
 ---
-### <a id="s16">1.6 Exclusions</a>
+### <a id="exclusions">1.7 Exclusions</a>
 
 *Exclusions* are an additional method for controlling which instructions are
 patched.
@@ -499,7 +550,7 @@ and E9Tool assumes that `UB` points to a valid instruction from which
 disassembly can resume.
 
 ---
-## <a id="s2">2. Patch Language</a>
+## <a id="patching">2. Patch Language</a>
 
 The *patch language* specifies how to patch matching instructions
 from the input binary.
@@ -532,7 +583,7 @@ The trampoline can be either a *builtin* trampoline, a *call* trampoline,
 or a trampoline defined by a *plugin*.
 
 ---
-### <a id="s21">2.1 Builtin Trampolines</a>
+### <a id="builtins">2.1 Builtin Trampolines</a>
 
 The builtin trampolines include:
 
@@ -564,7 +615,7 @@ Here:
   This can be used for testing and debugging.
 
 ---
-### <a id="s22">2.2 Call Trampolines</a>
+### <a id="calls">2.2 Call Trampolines</a>
 
 A *call* trampoline calls a user-defined function that can be implemented
 in a high-level programming language such as C or C++.
@@ -623,7 +674,7 @@ Finally, the `counter` binary can be used as a call trampoline.
 For example, to generate a `SIGTRAP` after the 10000th `xor`
 instruction:
 
-        ./e9tool -M 'mnemonic==xor' -P 'entry()@counter' ...
+        ./e9tool -M 'mnemonic=="xor"' -P 'entry()@counter' ...
 
 Call trampolines are primarily designed for ease-of-use and
 **not** for speed.
@@ -631,7 +682,7 @@ For applications where speed is essential, it is recommended
 to design a custom trampoline using a plugin.
 
 ---
-#### <a id="s221">2.2.1 Call Trampoline Arguments</a>
+#### <a id="call-args">2.2.1 Call Trampoline Arguments</a>
 
 Call trampolines also support passing arguments to the called function.
 The syntax uses the `C`-style round brackets.
@@ -924,7 +975,7 @@ Notes:
   native layout is a relatively slow operation.
 * For technical reasons, the `%rip` register is considered constant and cannot
   be modified.
-  To implement jumps, use [conditional call trampolines](#s223) instead.
+  To implement jumps, use [conditional call trampolines](#conditional-calls) instead.
 * The `state` argument is a pointer to a structure containing all
   general-purpose registers, the flag register (`%rflags`), the stack register
   (`%rsp`) and the instruction pointer register (`%rip`).
@@ -936,7 +987,7 @@ Notes:
   This corresponds to the value used by the matching.
 
 ---
-##### <a id="s2211">2.2.1.1 Pass-by-pointer Arguments</a>
+##### <a id="pass-by-pointer">2.2.1.1 Pass-by-pointer Arguments</a>
 
 Some arguments can be passed by pointer.
 This allows the corresponding value to be modified (provided the
@@ -982,7 +1033,7 @@ may result in a crash for instructions such as (`nop`) and (`lea`) that
 do not access the operand.
 
 ---
-##### <a id="s2212">2.2.1.2 Polymorphic Arguments</a>
+##### <a id="polymorphism">2.2.1.2 Polymorphic Arguments</a>
 
 Some arguments can have different types, depending on the instruction.
 For example, with:
@@ -1016,27 +1067,16 @@ matches the argument types, or generate an error if no appropriate
 match can be found.
 
 ---
-##### <a id="s2213">2.2.1.3 Explicit Memory Operand Arguments</a>
+##### <a id="memop-args">2.2.1.3 Explicit Memory Operand Arguments</a>
 
 It is possible to pass explicit memory operands as arguments.
 This is useful for reading/writing to known memory locations, such as
 stack memory.
-The syntax is:
-<pre>
-    ( <b>mem8</b> | <b>mem16</b> | <b>mem32</b> | <b>mem64</b> ) <b>&lt;</b> MEMOP <b>&gt;</b>
-</pre>
-Here, the <tt>mem8</tt>...<tt>mem64</tt> token specifies the size of
-the memory operand, and <tt>MEMOP</tt> is the memory operand itself
-specified in AT&amp;T syntax.
-For example, the following explicit memory operands access stack memory:
-
-        mem64<(%rsp)>
-        mem64<0x100(%rsp)>
-        mem64<0x200(%rsp,%rax,8)>
-        ...
+The syntax is the same as the matching language, e.g.,
+`mem32<(%rax)>`, `mem64<0x200(%rsp,%rax,8)>`, etc.
 
 ---
-##### <a id="s2214">2.2.1.4 Undefined Arguments</a>
+##### <a id="undefined-args">2.2.1.4 Undefined Arguments</a>
 
 Some arguments may be undefined, e.g., `op[3]` for a 2-operand instruction.
 In this case, the `NULL` pointer will be passed and the type will
@@ -1046,7 +1086,7 @@ This can also be used for function overloading:
         void func(std::nullptr_t x) { ... }
 
 ---
-#### <a id="s222">2.2.2 Call Trampoline ABI</a>
+#### <a id="call-abi">2.2.2 Call Trampoline ABI</a>
 
 Call trampolines support two *Application Binary Interfaces* (ABIs).
 
@@ -1088,7 +1128,7 @@ the function will usually need to be implemented directly in assembly.
 As such, the `naked` ABI is not recommended unless you know what you are doing.
 
 ---
-#### <a id="s223">2.2.3 Conditional Call Trampolines</a>
+#### <a id="conditional-calls">2.2.3 Conditional Call Trampolines</a>
 
 *Conditional* call trampolines examine the return value of the called
 function, and change the control flow accordingly.
@@ -1103,7 +1143,7 @@ The first form allows for the conditional execution of the remainder
 of the trampoline, possibly including the matching instruction itself.
 For example, consider:
 
-        $ e9tool -M 'mnemonic==syscall' -P 'if filter(...)@example break' ...
+        $ e9tool -M 'mnemonic=="syscall"' -P 'if filter(...)@example break' ...
 
 The patch is placed in the default `before` position, i.e., will be executed
 as instrumentation *before* the matching instruction.
@@ -1118,7 +1158,7 @@ The (`if func(...) goto`) syntax can be thought of as shorthand for:
 The `goto` is only executed if the return value of the `func` is non-`NULL`.
 
 ---
-#### <a id="s224">2.2.4 Call Trampoline Standard Library</a>
+#### <a id="standard-library">2.2.4 Call Trampoline Standard Library</a>
 
 The main limitation of call trampolines is that the patch code
 cannot use standard libraries directly, including `glibc`.
@@ -1140,7 +1180,7 @@ Unlike `glibc` the parallel libc is designed to be compatible with the clean
 ABI and handle problems, such as deadlocks, more gracefully.
 
 ---
-#### <a id="s225">2.2.5 Call Trampoline Initialization and Finalization</a>
+#### <a id="init-fini">2.2.5 Call Trampoline Initialization and Finalization</a>
 
 It is possible to define an initialization function in the
 instrumentation code.
@@ -1184,7 +1224,7 @@ abnormally, such as a signal (`SIGSEGV`) or if the program calls "fast" exit
 (`_exit()`).
 
 ---
-#### <a id="s226">2.2.6 Call Trampoline Dynamic Loading</a>
+#### <a id="dynamic-loading">2.2.6 Call Trampoline Dynamic Loading</a>
 
 The parallel libc also provides an optional implementation of the
 standard dynamic linker functions `dlopen()`, `dlsym()`, and `dlclose()`.
@@ -1239,7 +1279,7 @@ Be aware that the dynamic loading API has several caveats:
 * The `dlcall()` function is relatively slow, so ought to be used sparingly.
 
 ---
-### <a id="s23">2.3 Plugin Trampolines</a>
+### <a id="plugins">2.3 Plugin Trampolines</a>
 
 By design, call trampolines are very simple to use, but this also comes at
 the cost of efficiency.
@@ -1260,7 +1300,7 @@ For more information, please see the
 [E9Patch Programmer's Guide](https://github.com/GJDuck/e9patch/blob/master/doc/e9patch-programming-guide.md).
 
 ---
-### <a id="s24">2.4 Composing Trampolines</a>
+### <a id="composition">2.4 Composing Trampolines</a>
 
 Depending on the `--match`/`-M` and `--patch`/`-P` options, more than
 one patch may match a given instruction.
@@ -1308,7 +1348,7 @@ Notes:
 
 For example, consider the command:
 
-        e9tool -M 'asm=xor.*' -P 'after trap' -P 'replace f(...)@bin' -P print -P 'before if g(...)@bin goto' ...
+        e9tool -M 'asm=/xor.*/' -P 'after trap' -P 'replace f(...)@bin' -P print -P 'before if g(...)@bin goto' ...
 
 Then the following "meta" trampoline will be executed in place of each `xor`
 instruction:

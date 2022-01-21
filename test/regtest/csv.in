@@ -1,1 +1,1 @@
-./test -M 'addr == data[1]' -P 'entry(data[0],data[2],data[3],instr,size,asm)@inst'
+./test -M 'addr == data[0]' -P 'entry(data[1],data[2],data[4],instr,size,asm)@inst'

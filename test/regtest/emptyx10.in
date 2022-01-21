@@ -1,1 +1,1 @@
-./test.pie -M 'asm=.*r1[1-5].*' -P empty -P empty -P empty -P empty -P empty -P print -P 'after empty' -P 'after empty' -P 'after empty' -P 'after empty' -P 'after empty'
+./test.pie -M 'asm=/.*r1[1-5].*/' -P empty -P empty -P empty -P empty -P empty -P print -P 'after empty' -P 'after empty' -P 'after empty' -P 'after empty' -P 'after empty'

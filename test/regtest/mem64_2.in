@@ -1,1 +1,1 @@
-./test -M 'mnemonic=pop && op[0]=r14' -P 'after entry(addr,%r14,mem64<-8(%rsp)>,instr,size,asm)@inst'
+./test -M 'mnemonic="pop" && op[0]=r14' -P 'after entry(addr,%r14,mem64<-8(%rsp)>,instr,size,asm)@inst'

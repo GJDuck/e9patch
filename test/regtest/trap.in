@@ -1,1 +1,1 @@
-./test -M 'asm=cmp.*' -P trap
+./test -M 'asm=/cmp.*/' -P trap
