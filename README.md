@@ -132,7 +132,7 @@ E9Patch is usable via the E9Tool frontend.
 For example, to add instruction printing instrumentation to all `xor`
 instructions in `xterm`, we can use the following command:
 
-        $ ./e9tool -M 'asm=xor.*' -P print xterm
+        $ ./e9tool -M 'asm=/xor.*/' -P print xterm
 
 This will write out a modified `xterm` into the file `a.out`.
 
@@ -155,42 +155,42 @@ For a full list of supported options and modes, see:
 
 Patch all jump instructions with "empty" instrumentation:
 
-        $ ./e9tool -M 'asm=j.*' -P empty xterm
+        $ ./e9tool -M 'asm=/j.*/' -P empty xterm
         $ ./a.out
 
 Print all jump instructions with "print" instrumentation:
 
-        $ ./e9tool -M 'asm=j.*' -P print xterm
+        $ ./e9tool -M 'asm=/j.*/' -P print xterm
         $ ./a.out
 
 Same as above, but use "Intel" syntax:
 
-        $ ./e9tool -M 'asm=j.*' -P print xterm --syntax=intel
+        $ ./e9tool -M 'asm=/j.*/' -P print xterm --syntax=intel
         $ ./a.out
 
 Patch all jump instructions with a call to an empty function:
 
         $ ./e9compile.sh examples/nop.c
-        $ ./e9tool -M 'asm=j.*' -P 'entry()@nop' xterm
+        $ ./e9tool -M 'asm=/j.*/' -P 'entry()@nop' xterm
         $ ./a.out
 
 Patch all jump instructions with instruction count instrumentation:
 
         $ ./e9compile.sh examples/counter.c
-        $ ./e9tool -M 'asm=j.*' -P 'entry()@counter' xterm
+        $ ./e9tool -M 'asm=/j.*/' -P 'entry()@counter' xterm
         $ FREQ=10000 ./a.out
 
 Patch all jump instructions with pretty print instrumentation:
 
         $ ./e9compile.sh examples/print.c
-        $ ./e9tool -M 'asm=j.*' -P 'entry(addr,instr,size,asm)@print' xterm
+        $ ./e9tool -M 'asm=/j.*/' -P 'entry(addr,instr,size,asm)@print' xterm
         $ ./a.out
 
 Patch all jump instructions with "delay" instrumentation to slow the
 program down:
 
         $ ./e9compile.sh examples/delay.c
-        $ ./e9tool -M 'asm=j.*' -P 'entry()@delay' xterm
+        $ ./e9tool -M 'asm=/j.*/' -P 'entry()@delay' xterm
         $ DELAY=100000 ./a.out
 
 Patch all jump instructions in Google Chrome with empty instrumentation:
@@ -198,7 +198,7 @@ Patch all jump instructions in Google Chrome with empty instrumentation:
         $ mkdir -p chrome
         $ for FILE in /opt/google/chrome/*; do ln -sf $FILE chrome/; done
         $ rm chrome/chrome
-        $ ./e9tool -M 'asm=j.*' -P empty /opt/google/chrome/chrome -c 4 --exclude=.text..ChromeMain -o chrome/chrome
+        $ ./e9tool -M 'asm=/j.*/' -P empty /opt/google/chrome/chrome -c 4 -o chrome/chrome
         $ cd chrome
         $ ./chrome
 
@@ -209,7 +209,7 @@ instrumentation:
         $ mkdir -p chrome
         $ for FILE in /opt/google/chrome/*; do ln -sf $FILE chrome/; done
         $ rm chrome/chrome
-        $ ./e9tool -M 'asm=j.*' -P 'entry()@counter' /opt/google/chrome/chrome -c 4 --exclude=.text..ChromeMain -o chrome/chrome
+        $ ./e9tool -M 'asm=/j.*/' -P 'entry()@counter' /opt/google/chrome/chrome -c 4 -o chrome/chrome
         $ cd chrome
         $ FREQ=10000000 ./chrome
 
