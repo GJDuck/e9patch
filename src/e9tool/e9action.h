@@ -34,6 +34,7 @@
 struct Plugin
 {
     const char *filename;
+    std::vector<char *> argv;
     void *handle;
     void *context;
     intptr_t result;

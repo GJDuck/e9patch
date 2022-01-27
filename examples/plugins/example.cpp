@@ -30,7 +30,7 @@
  *
  * To compile:
  *          $ g++ -std=c++11 -fPIC -shared -o example.so -O2 \
- *              examples/plugins/example.cpp -I . -I capstone/include/
+ *              examples/plugins/example.cpp -I src/e9tool/
  * 
  * To use:
  *          $ ./e9tool -M 'plugin(example).match()' \
@@ -43,12 +43,18 @@
 #include <string>
 
 #include <sys/mman.h>
+#include <getopt.h>
 
 #include "e9plugin.h"
 
 using namespace e9tool;
 
-#define COUNTERS         0x789a0000        // Arbitrary
+#define COUNTERS        0x789a0000        // Arbitrary
+
+#define OPTION_ADDRESS  1
+#define OPTION_LIMIT    2
+
+static intptr_t address = COUNTERS;
 
 /*
  * Initialize the counters and the trampoline.
@@ -59,20 +65,48 @@ extern void *e9_plugin_init_v1(const Context *cxt)
     // be used to emit additional E9Patch messages, such as address space
     // reservations and trampoline templates.
 
+    static const struct option long_options[] =
+    {
+        {"address", required_argument, nullptr, OPTION_ADDRESS},
+        {"limit",   required_argument, nullptr, OPTION_LIMIT},
+        {nullptr,   no_argument      , nullptr, 0}
+    };
+    char * const *argv = cxt->argv->data();
+    int argc = (int)cxt->argv->size();
+    ssize_t limit = UINT16_MAX;
+    optind = 1;
+    while (true)
+    {
+        int idx;
+        int opt = getopt_long_only(argc, argv, "a:l:", long_options, &idx);
+        if (opt < 0)
+            break;
+        switch (opt)
+        {
+            case OPTION_ADDRESS: case 'a':
+                address = (intptr_t)strtoull(optarg, nullptr, 0);
+                break;
+            case OPTION_LIMIT: case 'l':
+                limit = (ssize_t)strtoull(optarg, nullptr, 0);
+                break;
+            default:
+                fprintf(stderr, "usage:\n\n");
+                fprintf(stderr, "\t-a ADDR, --address ADDR\n");
+                fprintf(stderr, "\t\tPut the counters at ADDR.\n");
+                fprintf(stderr, "\t-l NUM, --limit NUM\n");
+                fprintf(stderr, "\t\tUse NUM as the limit.\n\n");
+                exit(EXIT_FAILURE);
+        }
+    }
+
     /* 
      * This example uses 3 counters (one for calls/jumps/returns).
-     * We allocate and initialize the counters to UINT16_MAX (or the value
-     * of the LIMIT environment variable) and place the counters at the
-     * virtual address COUNTERS.  For this, we use a "reserve" E9Patch API
-     * message.
+     * We allocate and initialize the counters.  For this, we use a
+     * "reserve" E9Patch API message.
      */
-    ssize_t limit = UINT16_MAX;
-    const char *limit_str = getenv("LIMIT");
-    if (limit_str != nullptr)
-        limit = (ssize_t)atoll(limit_str);
     const ssize_t counters[3] = {limit, limit, limit};
     sendReserveMessage(cxt->out,
-        (intptr_t)COUNTERS,             // Memory virtual address
+        address,                        // Memory virtual address
         (const uint8_t *)counters,      // Memory contents
         sizeof(counters),               // Memory size
         (PROT_READ | PROT_WRITE));      // Memory protections
@@ -210,7 +244,7 @@ extern void e9_plugin_patch_v1(const Context *cxt, Phase phase)
             // The trampoline metadata instantiates the $counter macro with
             // the counter address corresponding to the instruction type:
             intptr_t counter = e9_plugin_match_v1(cxt);
-            counter = COUNTERS + (counter - 1) * sizeof(size_t);
+            counter = address + (counter - 1) * sizeof(size_t);
             fprintf(cxt->out, "\"$counter\":{\"rel32\":\"0x%lx\"},", counter);
             return;
         }

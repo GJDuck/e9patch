@@ -55,10 +55,10 @@ extern "C"
     struct Context
     {
         FILE *out;                              // The output stream
+        const std::vector<char *> *argv;        // Plugin command-line args
         void *context;                          // The user context
         const e9tool::ELF * const elf;          // Input ELF file
-        const e9tool::Instr * const Is;         // All disasm instructions
-        ssize_t size;                           // Size of Is
+        const std::vector<e9tool::Instr> *Is;   // All disasm instructions
         ssize_t idx;                            // Current instruction idx
         const e9tool::InstrInfo * const I;      // Current instruction info
         intptr_t id;                            // Current patch ID

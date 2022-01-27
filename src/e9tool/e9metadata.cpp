@@ -1914,6 +1914,7 @@ void sendMetadata(FILE *out, const ELF *elf, const Action *action, size_t idx,
         case PATCH_PLUGIN:
         {
             const Plugin *plugin = patch->plugin;
+            cxt->argv    = &plugin->argv;
             cxt->context = plugin->context;
             plugin->patchFunc(cxt, PHASE_METADATA);
             return;

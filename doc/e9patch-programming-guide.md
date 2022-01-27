@@ -581,11 +581,13 @@ The `Context` structure contains several fields, including:
 * `out`: is the JSON-RPC output stream that is sent to the E9Patch
    backend.
    The plugin can directly emit messages to this stream.
+* `argv`: is a vector of all command-line options passed in using
+   E9Tool's `--plugin` option.
 * `context`: is the plugin-defined context, which is the return value of
    the `e9_plugin_init_v1()` function.
 * `elf`: is the input ELF file.
-* `Is`: is an array of all disassembled instructions, sorted by address.
-* `size`: is the number of elements in `Is`.
+* `Is`: is a vector containing all disassembled instructions, sorted by
+   address.
 * `idx`: is the index (into `Is`) of the instruction being matched/patched.
 * `I`: is detailed information about the instruction being matched/patched.
 * `id`: is the current patch ID.

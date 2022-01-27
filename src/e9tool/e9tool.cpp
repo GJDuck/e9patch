@@ -51,6 +51,7 @@
  */
 static std::string option_format("binary");
 static std::string option_output("");
+static std::vector<std::pair<const char *, char *>> option_plugin;
 
 #include "e9action.h"
 #include "e9csv.h"
@@ -201,6 +202,19 @@ Plugin *openPlugin(const char *basename)
             "object does not export any plugin API functions",
             plugin->filename);
 
+    plugin->argv.push_back(strDup(basename));
+    for (auto &entry: option_plugin)
+    {
+        if (entry.first == nullptr)
+            continue;
+        if (strcmp(entry.first, basename) != 0)
+            continue;
+        if (entry.second != nullptr)
+            plugin->argv.push_back(entry.second);
+        delete entry.first;
+        entry.first = entry.second = nullptr;
+    }
+    plugin->argv.shrink_to_fit();
     plugins.insert({plugin->filename, plugin});
     return plugin;
 }
@@ -208,15 +222,15 @@ Plugin *openPlugin(const char *basename)
 /*
  * Notify all plugins of a new instruction.
  */
-static void notifyPlugins(FILE *out, const ELF *elf, const Instr *Is,
-    size_t size, Event event)
+static void notifyPlugins(FILE *out, const ELF *elf,
+    const std::vector<Instr> &Is, Event event)
 {
     for (auto i: plugins)
     {
         Plugin *plugin = i.second;
         if (plugin->eventFunc == nullptr)
             continue;
-        Context cxt = {out, plugin->context, elf, Is, (ssize_t)size, -1,
+        Context cxt = {out, &plugin->argv, plugin->context, elf, &Is, -1,
             nullptr, -1};
         plugin->eventFunc(&cxt, event);
     }
@@ -225,15 +239,15 @@ static void notifyPlugins(FILE *out, const ELF *elf, const Instr *Is,
 /*
  * Get the match value for all plugins.
  */
-static void matchPlugins(FILE *out, const ELF *elf, const Instr *Is,
-    size_t size, size_t idx, const InstrInfo *I)
+static void matchPlugins(FILE *out, const ELF *elf,
+    const std::vector<Instr> &Is, size_t idx, const InstrInfo *I)
 {
     for (auto i: plugins)
     {
         Plugin *plugin = i.second;
         if (plugin->matchFunc == nullptr)
             continue;
-        Context cxt = {out, plugin->context, elf, Is, (ssize_t)size,
+        Context cxt = {out, &plugin->argv, plugin->context, elf, &Is,
             (ssize_t)idx, I, -1};
         plugin->result = plugin->matchFunc(&cxt);
     }
@@ -249,7 +263,8 @@ static void initPlugins(FILE *out, const ELF *elf)
         Plugin *plugin = i.second;
         if (plugin->initFunc == nullptr)
             continue;
-        Context cxt = {out, nullptr, elf, nullptr, -1, -1, nullptr, -1};
+        Context cxt = {out, &plugin->argv, nullptr, elf, nullptr, -1,
+            nullptr, -1};
         plugin->context = plugin->initFunc(&cxt);
     }
 }
@@ -264,8 +279,8 @@ static void finiPlugins(FILE *out, const ELF *elf)
         Plugin *plugin = i.second;
         if (plugin->finiFunc == nullptr)
             continue;
-        Context cxt = {out, plugin->context, elf, nullptr, -1, -1, nullptr,
-            -1};
+        Context cxt = {out, &plugin->argv, plugin->context, elf, nullptr,
+            -1, nullptr, -1};
         plugin->finiFunc(&cxt);
     }
 }
@@ -576,6 +591,7 @@ static bool sendTrampoline(FILE *out, const Action *action, size_t idx,
         plugin = patch->plugin;
         if (plugin->patchFunc != nullptr)
         {
+            cxt->argv    = &plugin->argv;
             cxt->context = plugin->context;
             plugin->patchFunc(cxt, PHASE_CODE);
         }
@@ -666,6 +682,7 @@ enum Option
     OPTION_NO_WARNINGS,
     OPTION_PATCH,
     OPTION_PLT,
+    OPTION_PLUGIN,
     OPTION_OPTION,
     OPTION_OUTPUT,
     OPTION_SEED,
@@ -738,6 +755,7 @@ int main_2(int argc, char **argv)
         {"no-warnings",   no_arg,  nullptr, OPTION_NO_WARNINGS},
         {"patch",         req_arg, nullptr, OPTION_PATCH},
         {"plt",           no_arg,  nullptr, OPTION_PLT},
+        {"plugin",        req_arg, nullptr, OPTION_PLUGIN},
         {"option",        req_arg, nullptr, OPTION_OPTION},
         {"output",        req_arg, nullptr, OPTION_OUTPUT},
         {"seed",          req_arg, nullptr, OPTION_SEED},
@@ -850,6 +868,19 @@ int main_2(int argc, char **argv)
             case OPTION_PLT:
                 option_plt = true;
                 break;
+            case OPTION_PLUGIN:
+            {
+                size_t i;
+                for (i = 0; optarg[i] != '\0' && optarg[i] != ':'; i++)
+                    ;
+                if (optarg[i] != ':')
+                    error("bad value \"%s\" for `--plugin'; "
+                        "expected a plugin:option pair", optarg);
+                char *key = strDup(optarg, i);
+                char *val = strDup(optarg+i+1);
+                option_plugin.push_back({key, val});
+                break;
+            }
             case OPTION_OUTPUT:
             case 'o':
                 option_output = optarg;
@@ -975,6 +1006,13 @@ int main_2(int argc, char **argv)
         actions.push_back(action);
     }
     option_actions.clear();
+    for (auto &entry: option_plugin)
+    {
+        if (entry.first != nullptr)
+            error("failed to find plugin \"%s\" for `--plugin=%s:%s'",
+                entry.first, entry.first, entry.second);
+    }
+    option_plugin.clear();
 
     /*
      * Parse exclusions.
@@ -1348,7 +1386,7 @@ int main_2(int argc, char **argv)
                 section_addr, section_addr + (code - start));
     }
     Is.shrink_to_fit();
-    notifyPlugins(out, &elf, Is.data(), Is.size(), EVENT_DISASSEMBLY_COMPLETE);
+    notifyPlugins(out, &elf, Is, EVENT_DISASSEMBLY_COMPLETE);
     size_t count = Is.size();
 
     // Step (1a): CFG Analysis (if necessary).
@@ -1367,7 +1405,7 @@ int main_2(int argc, char **argv)
         matching.clear();
         InstrInfo I;
         getInstrInfo(&elf, &Is[i], &I);
-        matchPlugins(out, &elf, Is.data(), Is.size(), i, &I);
+        matchPlugins(out, &elf, Is, i, &I);
         match(actions, elf, Is, i, &I, matching);
         bool matched = (matching.size() > 0);
         if (matched)
@@ -1388,15 +1426,14 @@ int main_2(int argc, char **argv)
                  (I.category & CATEGORY_CALL) != 0))
             Is[i].jump = true;
     }
-    notifyPlugins(out, &elf, Is.data(), Is.size(), EVENT_MATCHING_COMPLETE);
+    notifyPlugins(out, &elf, Is, EVENT_MATCHING_COMPLETE);
 
     // Step (3): Send all composite trampolines:
     size_t tid = 0;
     std::map<const Matching *, size_t, MatchingCmp> tmps;
     std::vector<Metadata> metadata;
     std::vector<std::vector<Metadata>> metadatas;
-    Context cxt = {out, nullptr, &elf, Is.data(), (ssize_t)count, -1, nullptr,
-        -1};
+    Context cxt = {out, nullptr, nullptr, &elf, &Is, -1, nullptr, -1};
     for (const auto *M: Ms.matchings)
     {
         sendMessageHeader(out, "trampoline");
@@ -1503,8 +1540,7 @@ int main_2(int argc, char **argv)
 
         // Send the "patch" message.
         id++;
-        Context cxt = {out, nullptr, &elf, Is.data(), (ssize_t)count, i, &I,
-            id};
+        Context cxt = {out, nullptr, nullptr, &elf, &Is, i, &I, id};
         const Matching *M = Ms.matchings[Is[i].matching];
         size_t tid = tmps[M];
 
@@ -1550,7 +1586,7 @@ int main_2(int argc, char **argv)
         sendSeparator(out, /*last=*/true);
         sendMessageFooter(out, /*sync=*/true);
     }
-    notifyPlugins(out, &elf, Is.data(), Is.size(), EVENT_PATCHING_COMPLETE);
+    notifyPlugins(out, &elf, Is, EVENT_PATCHING_COMPLETE);
     Is.clear();
 
     /*
