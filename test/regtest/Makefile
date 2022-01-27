@@ -6,6 +6,9 @@ all:
         -Wl,--section-start=.text=0xa000000 -Wl,--section-start=.bss=0xc000000 \
         -Wl,-z -Wl,max-page-size=4096 -DPIE=1 \
 		-Wl,--export-dynamic
+	gcc -x assembler-with-cpp -o bugs bugs.s -no-pie -nostdlib \
+        -Wl,--section-start=.text=0xa000000 -Wl,--section-start=.bss=0xc000000 \
+        -Wl,-z -Wl,max-page-size=4096 -DPIE=0
 	gcc -x assembler-with-cpp -o test.libc test_libc.s -pie -Wl,--export-dynamic
 	gcc -x assembler-with-cpp -shared -o libtest.so libtest.s 
 	../../e9compile.sh inst.c -I ../../examples/ -D NO_GLIBC

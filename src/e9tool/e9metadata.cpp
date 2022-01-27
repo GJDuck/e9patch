@@ -553,6 +553,14 @@ static void sendUndoTemporaryMovReg(FILE *out, Register reg, int scratch)
 }
 
 /*
+ * Given some sratch space, return the corresponding register.
+ */
+static Register getScratchRegister(int slot)
+{
+    return (slot < 0 || slot > RMAX_IDX? REGISTER_INVALID: getReg(slot));
+}
+
+/*
  * Send instructions that ensure the given register is saved.
  */
 static bool sendSaveRegToStack(FILE *out, CallInfo &info, Register reg)
@@ -737,14 +745,16 @@ static bool sendLoadFromMemOpToR64(FILE *out, const InstrInfo *I,
     int slot = 0, scratch_1 = INT32_MAX, scratch_2 = INT32_MAX;
     if (!asis)
     {
-        Register exclude[4] = {getReg(regno)};
+        Register exclude[5] = {getReg(regno)};
         int j = 1;
         if (base_reg != REGISTER_NONE)
             exclude[j++] = getCanonicalReg(base_reg);
         exclude[j++] = getCanonicalReg(index_reg);
-        exclude[j++] = REGISTER_INVALID;
+        exclude[j] = REGISTER_INVALID;
         scratch_1 = sendTemporaryRestoreReg(out, info, base_reg, exclude,
             &slot);
+        exclude[j++] = getScratchRegister(scratch_1);
+        exclude[j] = REGISTER_INVALID;
         if (index_reg != base_reg)
             scratch_2 = sendTemporaryRestoreReg(out, info, index_reg, exclude,
                 &slot);

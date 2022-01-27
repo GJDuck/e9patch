@@ -1,0 +1,1 @@
+./bugs -M 'addr == 0xa000205' -P 'entry(static addr, op[0].base, &op[0], instr, size, asm)@inst'
