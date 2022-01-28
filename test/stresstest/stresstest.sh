@@ -22,21 +22,21 @@ mkdir -p tmp
 # Setup the example.so plugin
 g++ -std=c++11 -fPIC -shared -o example.so -O2 \
     ../../examples/plugins/example.cpp -I ../../src/e9tool/ 
-export LIMIT=99999999999
 
 runtest()
 {
     MATCH=$1
     PATCH=$2
+    EXTRA=$3
 
     # Step (1): duplicate the tools
-    if ! ../../e9tool ../../e9tool "--match=$MATCH" "--patch=$PATCH" \
+    if ! ../../e9tool ../../e9tool "--match=$MATCH" "--patch=$PATCH" $EXTRA \
             -o tmp/e9tool.patched  -c 6 -s >/dev/null 2>&1
     then
        echo -e "${RED}FAILED${OFF}: e9tool  ${YELLOW}-M $MATCH -P $PATCH${OFF} [step (1)]"
        continue
     fi
-    if ! ../../e9tool ../../e9patch "--match=$MATCH" "--patch=$PATCH" \
+    if ! ../../e9tool ../../e9patch "--match=$MATCH" "--patch=$PATCH" $EXTRA \
             -o tmp/e9patch.patched -c 6 -s >/dev/null 2>&1
     then
         echo -e "${RED}FAILED${OFF}: e9patch ${YELLOW}-M $MATCH -P $PATCH${OFF} [step (1)]"
@@ -45,14 +45,14 @@ runtest()
  
     # Step (2): duplicate the tools with the duplicated tools
     if ! tmp/e9tool.patched --backend "$PWD/tmp/e9patch.patched" \
-            ../../e9tool  "--match=$MATCH" "--patch=$PATCH" \
+            ../../e9tool  "--match=$MATCH" "--patch=$PATCH" $EXTRA \
             -o tmp/e9tool.2.patched -c 6 -s >/dev/null 2>&1
     then
         echo -e "${RED}FAILED${OFF}: e9tool  ${YELLOW}-M $MATCH -P $PATCH${OFF} [step (2)]"
         continue;
     fi
     if !  tmp/e9tool.patched --backend "$PWD/tmp/e9patch.patched" \
-            ../../e9patch "--match=$MATCH" "--patch=$PATCH" \
+            ../../e9patch "--match=$MATCH" "--patch=$PATCH" $EXTRA \
             -o tmp/e9patch.2.patched -c 6 -s >/dev/null 2>&1
     then
         echo -e "${RED}FAILED${OFF}: e9patch ${YELLOW}-M $MATCH -P $PATCH${OFF} [step (2)]"
@@ -81,6 +81,6 @@ runtest true 'entry(&rsp,&rax,&rsi,&rdi,&r8,&r15,static addr,0x1234)@nop'
 runtest true 'entry(BB,F,BB.size,F.size,BB.offset,F.offset,BB.len,F.name)@nop'
 runtest true 'entry(&op[0],&src[0],&dst[0],&op[1],&src[1],&dst[1],&dst[7],&src[7])@nop'
 runtest true 'entry(reg[0],&reg[0],imm[0],&imm[0],&mem[0],reg[1],&reg[1],imm[1])@nop'
-runtest 'plugin(example).match()' 'plugin(example).patch()'
+runtest 'plugin(example).match()' 'plugin(example).patch()' '--plugin=example:-limit=99999999999'
 runtest true print
 
