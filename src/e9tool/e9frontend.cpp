@@ -653,7 +653,7 @@ static void parseGOT(const uint8_t *data, const Elf64_Shdr *shdr_got,
     const Elf64_Rela *rela_tab =
         (const Elf64_Rela *)(data + shdr_rela_got->sh_offset);
     size_t rela_num = shdr_rela_got->sh_size / sizeof(Elf64_Rela);
-    for (size_t i = 1; i < rela_num; i++)
+    for (size_t i = 0; i < rela_num; i++)
     {
         const Elf64_Rela *rela = rela_tab + i;
         if (rela->r_offset < shdr_got->sh_addr ||
@@ -698,7 +698,7 @@ static void parsePLT(const uint8_t *data, const Elf64_Shdr *shdr_plt,
     const Elf64_Rela *rela_tab =
         (const Elf64_Rela *)(data + shdr_rela_plt->sh_offset);
     size_t rela_num = shdr_rela_plt->sh_size / sizeof(Elf64_Rela);
-    for (size_t i = 1; i < rela_num; i++)
+    for (size_t i = 0; i < rela_num; i++)
     {
         const Elf64_Rela *rela = rela_tab + i;
         auto k = entries.find(rela->r_offset);
