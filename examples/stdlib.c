@@ -1902,7 +1902,7 @@ static int memcmp(const void *s1, const void *s2, size_t n)
     const int8_t *a1 = (int8_t *)s1, *a2 = (int8_t *)s2;
     for (size_t i = 0; i < n; i++)
     {
-        int cmp = (int)a2[i] - (int)a1[i];
+        int cmp = (int)a1[i] - (int)a2[i];
         if (cmp != 0)
             return cmp;
     }
@@ -1913,7 +1913,7 @@ static int strncmp(const char *s1, const char *s2, size_t n)
 {
     for (; n > 0; n--)
     {
-        int cmp = (int)*s2 - (int)*s1;
+        int cmp = (int)*s1 - (int)*s2;
         if (cmp != 0)
             return cmp;
         if (*s1 == '\0')
