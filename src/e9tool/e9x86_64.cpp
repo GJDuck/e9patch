@@ -175,6 +175,10 @@ void e9tool::getInstrInfo(const ELF *elf, const Instr *I, InstrInfo *info,
             (D->raw.imm[0].offset != 0? D->raw.imm[0].size / 8: -1);
         info->encoding.offset.rex    =
             (D->attributes & ZYDIS_ATTRIB_HAS_REX? D->raw.rex.offset: -1);
+        info->encoding.offset.vex    =
+            (D->attributes & ZYDIS_ATTRIB_HAS_VEX? D->raw.vex.offset: -1);
+        info->encoding.offset.evex   =
+            (D->attributes & ZYDIS_ATTRIB_HAS_EVEX? D->raw.evex.offset: -1);
         info->encoding.offset.opcode = D->raw.prefix_count;
         info->encoding.offset.modrm  =
             (D->attributes & ZYDIS_ATTRIB_HAS_MODRM? D->raw.modrm.offset: -1);

@@ -2111,6 +2111,8 @@ struct InstrInfo
         struct
         {
             int8_t  rex;            // Instruction rex offset, or -1
+            int8_t  vex;            // Instruction vex offset, or -1
+            int8_t  evex;           // Instruction evex offset, or -1
             uint8_t opcode;         // Instruction opcode offset
             int8_t  modrm;          // Instruction ModR/M offset, or -1
             int8_t  sib;            // Instruction SIB offset, or -1
@@ -2149,6 +2151,14 @@ struct InstrInfo
     {
         return (encoding.offset.rex >= 0);
     }
+    bool hasVEX() const
+    {
+        return (encoding.offset.vex >= 0);
+    }
+    bool hasEVEX() const
+    {
+        return (encoding.offset.evex >= 0);
+    }
     bool hasMODRM() const
     {
         return (encoding.offset.modrm >= 0);
@@ -2168,6 +2178,16 @@ struct InstrInfo
     uint8_t getREX() const
     {
         return (hasREX()? data[encoding.offset.rex]: 0);
+    }
+    uint32_t getVEX() const
+    {
+        return (hasVEX()? (data[encoding.offset.vex] == 0xC5?
+                *(uint16_t *)(data + encoding.offset.vex):
+                (*(uint32_t *)(data + encoding.offset.vex)) & 0xFFFFFF): 0);
+    }
+    uint32_t getEVEX() const
+    {
+        return (hasEVEX()? *(uint32_t *)(data + encoding.offset.evex): 0);
     }
     uint8_t getMODRM() const
     {
