@@ -690,3 +690,12 @@ void log(const void *addr, intptr_t val)
     free(log);
 }
 
+void print_ptr(const void *ptr, const char *_asm)
+{
+    fprintf(stderr, "%s: &mem[0] = %p\n", _asm, ptr);
+}
+void print_ptr(std::nullptr_t ptr, const char *_asm)
+{
+    fprintf(stderr, "%s: &mem[0] = <undefined>\n", _asm);
+}
+

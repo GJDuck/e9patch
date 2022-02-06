@@ -68,6 +68,14 @@ bug_scratch:
     xor %esi, %esi
     mov (%rdi,%rsi,8), %rax
 
+bug_vsib:
+    mov %rsp, %r8
+    and $-32, %r8
+    vpxor %xmm0,%xmm0,%xmm0
+    vpxor %ymm0,%ymm1,%ymm1
+    mov $-1,%rax
+    vpgatherqd %xmm0,(%r8,%ymm1,1),%xmm2
+
 # Additional bugs can be added here:
 
 .Lprint:

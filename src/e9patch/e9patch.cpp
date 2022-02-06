@@ -785,7 +785,7 @@ int realMain(int argc, char **argv)
             "\t(1) raising the limit, e.g.:\n"
             "\t    sudo sysctl -w vm.max_map_count=%zu\n"
             "\t(2) rewriting the binary with a larger mapping size\n"
-            "\t    (see the `--size' option).",
+            "\t    (see the `--compression' option for E9Tool).",
                 stat_num_virtual_mappings,
                 ((ssize_t)stat_num_virtual_mappings >= MAX_MAPPINGS?
                     "exceeds": "may exceed"),

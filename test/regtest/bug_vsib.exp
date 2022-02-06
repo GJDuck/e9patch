@@ -1,0 +1,2 @@
+vpgatherqdl %xmm0, (%r8,%ymm1,1), %xmm2: &mem[0] = <undefined>
+PASSED

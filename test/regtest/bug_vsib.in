@@ -1,0 +1,1 @@
+./bugs -M 'avx2 && addr == 0xa00021f' -P 'print_ptr(&mem[0],asm)@patch'

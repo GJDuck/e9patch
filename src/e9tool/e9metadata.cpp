@@ -614,6 +614,13 @@ static bool sendLoadFromMemOpToR64(FILE *out, const InstrInfo *I,
     uint8_t size_prefix = 0x00;
     switch (base_reg)
     {
+        case REGISTER_RAX: case REGISTER_RCX: case REGISTER_RDX:
+        case REGISTER_RBX: case REGISTER_RSP: case REGISTER_RBP:
+        case REGISTER_RSI: case REGISTER_RDI: case REGISTER_R8:
+        case REGISTER_R9: case REGISTER_R10: case REGISTER_R11:
+        case REGISTER_R12: case REGISTER_R13: case REGISTER_R14:
+        case REGISTER_R15: case REGISTER_RIP: case REGISTER_NONE:
+            break;
         case REGISTER_EAX: case REGISTER_ECX: case REGISTER_EDX:
         case REGISTER_EBX: case REGISTER_ESP: case REGISTER_EBP:
         case REGISTER_ESI: case REGISTER_EDI: case REGISTER_R8D:
@@ -622,10 +629,22 @@ static bool sendLoadFromMemOpToR64(FILE *out, const InstrInfo *I,
         case REGISTER_R15D: case REGISTER_EIP:
             size_prefix = 0x67; break;
         default:
-            break;
+            warning(CONTEXT_FORMAT "failed to load converted memory operand "
+                "into register %s; memory operand base register %s is not "
+                "supported", CONTEXT(I), getRegName(getReg(regno)),
+                getRegName(base_reg));
+            sendSExtFromI32ToR64(out, 0, regno);
+            return false;
     }
     switch (index_reg)
     {
+        case REGISTER_RAX: case REGISTER_RCX: case REGISTER_RDX:
+        case REGISTER_RBX: case REGISTER_RSP: case REGISTER_RBP:
+        case REGISTER_RSI: case REGISTER_RDI: case REGISTER_R8:
+        case REGISTER_R9: case REGISTER_R10: case REGISTER_R11:
+        case REGISTER_R12: case REGISTER_R13: case REGISTER_R14:
+        case REGISTER_R15: case REGISTER_NONE:
+            break;
         case REGISTER_EAX: case REGISTER_ECX: case REGISTER_EDX:
         case REGISTER_EBX: case REGISTER_ESP: case REGISTER_EBP:
         case REGISTER_ESI: case REGISTER_EDI: case REGISTER_R8D:
@@ -634,7 +653,13 @@ static bool sendLoadFromMemOpToR64(FILE *out, const InstrInfo *I,
         case REGISTER_R15D:
             size_prefix = 0x67; break;
         default:
-            break;
+            // This can be triggered by VSIB for scatter/gather
+            warning(CONTEXT_FORMAT "failed to load converted memory operand "
+                "into register %s; memory operand index register %s is not "
+                "supported", CONTEXT(I), getRegName(getReg(regno)),
+                getRegName(index_reg));
+            sendSExtFromI32ToR64(out, 0, regno);
+            return false;
     }
 
     const uint8_t B[] =
