@@ -17,6 +17,8 @@
 #ifndef __E9PARSER_H
 #define __E9PARSER_H
 
+#include <string>
+
 #include "e9tool.h"
 
 /*

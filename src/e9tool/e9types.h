@@ -17,6 +17,8 @@
 #ifndef __E9TYPES_H
 #define __E9TYPES_H
 
+#include <string>
+
 #include <cassert>
 #include <cstdint>
 

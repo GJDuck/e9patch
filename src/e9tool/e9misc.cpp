@@ -335,7 +335,7 @@ void usage(FILE *stream, const char *progname)
 /*
  * "Infallible" new/delete.
  */
-void *operator new(std::size_t size) throw(std::bad_alloc)
+void *operator new(std::size_t size)
 {
     void *ptr = malloc(size);
     if (ptr == nullptr)
@@ -343,15 +343,15 @@ void *operator new(std::size_t size) throw(std::bad_alloc)
             strerror(ENOMEM));
     return ptr;
 }
-void operator delete(void *ptr) throw()
+void operator delete(void *ptr)
 {
     free(ptr);
 }
-void *operator new[](std::size_t size) throw(std::bad_alloc)
+void *operator new[](std::size_t size)
 {   
     return operator new(size);
 }
-void operator delete[](void *ptr) throw()
+void operator delete[](void *ptr)
 {
     operator delete(ptr);
 }

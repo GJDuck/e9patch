@@ -22,6 +22,7 @@
 #include <cassert>
 #include <cstdarg>
 #include <cstdint>
+#include <cstdio>
 #include <cstring>
 
 #include <elf.h>
