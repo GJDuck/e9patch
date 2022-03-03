@@ -332,27 +332,3 @@ void usage(FILE *stream, const char *progname)
         "\n", progname);
 }
 
-/*
- * "Infallible" new/delete.
- */
-void *operator new(std::size_t size)
-{
-    void *ptr = malloc(size);
-    if (ptr == nullptr)
-        error("failed to allocate memory of size %zu: %s", size,
-            strerror(ENOMEM));
-    return ptr;
-}
-void operator delete(void *ptr)
-{
-    free(ptr);
-}
-void *operator new[](std::size_t size)
-{   
-    return operator new(size);
-}
-void operator delete[](void *ptr)
-{
-    operator delete(ptr);
-}
-
