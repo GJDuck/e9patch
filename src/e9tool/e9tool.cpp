@@ -644,7 +644,7 @@ static void checkCompatible(const ELF &elf, const ELF &target)
     {
         case BINARY_TYPE_PE_EXE: case BINARY_TYPE_PE_DLL:
             if (config != nullptr)
-                error("binary \"%s\" is incompatible with Windows/PE "
+                warning("binary \"%s\" is incompatible with Windows/PE "
                     "instrumentation; the \"stdlib.c\" library supports "
                     "Linux/ELF only", target.filename);
             return;
@@ -653,7 +653,7 @@ static void checkCompatible(const ELF &elf, const ELF &target)
                 return;
             if ((config->st_value & CONFIG_ERRNO) == 0 ||
                     (config->st_value & CONFIG_MUTEX) == 0)
-                error("binary \"%s\" is incompatible with statically linked "
+                warning("binary \"%s\" is incompatible with statically linked "
                     "Linux/ELF executable instrumentation; please recompile "
                     "with the `-DNO_GLIBC=1' option",
                     target.filename);
@@ -737,6 +737,7 @@ int main_2(int argc, char **argv)
     /*
      * Parse options.
      */
+    (void)atexit(flushWarnings);
     const int req_arg = required_argument, /*opt_arg = optional_argument,*/
               no_arg  = no_argument;
     static const struct option long_options[] =
@@ -1643,6 +1644,7 @@ int main_2(int argc, char **argv)
             "\t(3) manually refine the exlusions (see -E) to resolve the "
                 "problem.",
             filename, exs.c_str());
+    flushWarnings();
 
     return 0;
 }

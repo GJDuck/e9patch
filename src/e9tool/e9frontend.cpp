@@ -52,11 +52,30 @@
 
 using namespace e9tool;
 
+static std::vector<const char *> warnings;
+
+/*
+ * Flush all warning messages.
+ */
+void flushWarnings(void)
+{
+    for (const char *wrn: warnings)
+    {
+        fprintf(stderr, "%swarning%s: %s\n",
+            (option_is_tty? "\33[33m": ""),
+            (option_is_tty? "\33[0m" : ""), wrn);
+        delete[] wrn;
+    }
+    warnings.clear();
+}
+
 /*
  * Report an error and exit.
  */
 void NO_RETURN e9tool::error(const char *msg, ...)
 {
+    flushWarnings();
+
     fprintf(stderr, "%serror%s  : ",
         (option_is_tty? "\33[31m": ""),
         (option_is_tty? "\33[0m" : ""));
@@ -78,16 +97,14 @@ void e9tool::warning(const char *msg, ...)
     if (option_no_warnings)
         return;
 
-    fprintf(stderr, "%swarning%s: ",
-        (option_is_tty? "\33[33m": ""),
-        (option_is_tty? "\33[0m" : ""));
-
+    char buf[BUFSIZ];
     va_list ap;
     va_start(ap, msg);
-    vfprintf(stderr, msg, ap);
+    ssize_t r = vsnprintf(buf, sizeof(buf)-1, msg, ap);
     va_end(ap);
-
-    putc('\n', stderr);
+    if (r < 0 || r >= (ssize_t)sizeof(buf)-1)
+        return;     // Drop
+    warnings.push_back(strDup(buf));
 }
 
 /*

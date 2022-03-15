@@ -39,6 +39,7 @@ extern bool isLibraryFilename(const char *filename);
 extern const char *findBinary(const char *filename, bool exe = true,
     bool dot = false);
 extern void usage(FILE *stream, const char *progname);
+extern void flushWarnings(void);
 
 /*
  * Options.
