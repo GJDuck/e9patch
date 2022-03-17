@@ -222,6 +222,8 @@ instrumentation:
 
 Some other projects that use E9Patch include:
 
+* [RedFat](https://github.com/GJDuck/RedFat): A binary hardening system based
+  on [low-fat pointers](https://github.com/GJDuck/LowFat).
 * [E9AFL](https://github.com/GJDuck/e9afl): Automatically insert
   [AFL](https://github.com/google/AFL) instrumentation into binaries.
 * [E9Syscall](https://github.com/GJDuck/e9syscall): System call
@@ -240,7 +242,7 @@ To find out more, please see the following documentation:
 
 ## Bugs
 
-E9Patch should be considered alpha-quality software.
+E9Patch should be considered beta-quality software.
 Bugs can be reported here:
 
 * [https://github.com/GJDuck/e9patch/issues](https://github.com/GJDuck/e9patch/issues)
