@@ -140,7 +140,9 @@ bool parseElf(Binary *B)
 
     Elf64_Phdr *phdrs = (Elf64_Phdr *)(data + ehdr->e_phoff);
     Elf64_Phdr *phdr_note = nullptr, *phdr_gnu_relro = nullptr,
-        *phdr_gnu_stack = nullptr, *phdr_dynamic = nullptr;
+        *phdr_gnu_stack = nullptr, *phdr_dynamic = nullptr,
+        *phdr_max = nullptr;
+    intptr_t vmax = INTPTR_MIN;
     for (unsigned i = 0; i < ehdr->e_phnum; i++)
     {
         Elf64_Phdr *phdr = phdrs + i;
@@ -153,6 +155,10 @@ bool parseElf(Binary *B)
                 if (vend - vstart > 0 && !reserve(B, vstart, vend))
                     error("failed to reserve address space range %p..%p",
                         vstart, vend);
+                if (vend < vmax)
+                    break;
+                vmax = vend;
+                phdr_max = phdr;
                 break;
             }
             case PT_DYNAMIC:
@@ -173,6 +179,13 @@ bool parseElf(Binary *B)
             phdr_dynamic->p_offset + phdr_dynamic->p_memsz > size)
         error("failed to parse ELF file \"%s\": invalid dynamic section",
             filename);
+    const struct e9_config_s *config = (phdr_max == nullptr? nullptr:
+        (const struct e9_config_s *)(data + phdr_max->p_offset));
+    if (phdr_max != nullptr &&
+            phdr_max->p_memsz >= sizeof(struct e9_config_s) &&
+            strcmp(config->magic, "E9PATCH") == 0)
+        error("failed to parse ELF file \"%s\": E9Patch has already "
+            "been applied", filename);
     info.ehdr           = ehdr;
     info.phdr_note      = phdr_note;
     info.phdr_gnu_relro = phdr_gnu_relro;
