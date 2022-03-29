@@ -6,7 +6,7 @@ E9Tool is a frontend for E9Patch.
 Basically, E9Tool translates high-level patching commands
 (i.e., *what* instructions to patch, and *how* to patch them)
 into low-level commands for E9Patch.
-E9Patch is very low-level tool and not designed
+E9Patch is a very low-level tool and is not designed
 to be used directly.
 
 ---
@@ -532,7 +532,7 @@ The general syntax for `RANGE` is:
 </pre>
 For example:
 
-* `0x12345...0x45689`: exclude a specific address range
+* `0x12345..0x45689`: exclude a specific address range
 * `.text..ChromeMain`: exclude the `.text` section up to the symbol `ChromeMain`
 * `.plt .. .text`: exclude a range of sections
 * `.plt.start .. .text.end`: equivalent to the above
@@ -1353,7 +1353,7 @@ For example, consider the command:
 Then the following "meta" trampoline will be executed in place of each `xor`
 instruction:
 
-        print; if g(...) goto; f(...)@bin; trap; break;
+        print; if g(...)@bin goto; f(...)@bin; trap; break;
 
 The `print` trampoline is implicitly in the *before* position, so is executed
 first.
