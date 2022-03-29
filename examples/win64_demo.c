@@ -5,7 +5,7 @@
  *
  *    ./e9compile.sh examples/win64_demo.c -mabi=ms
  *    ./e9tool \
- *          -M 'asm=/xor.*/' \
+ *          -M 'asm=/xor.*./' \
  *          -P 'entry(config,addr,instr,size,asm)@win64_demo' \
  *          prog.exe
  *
