@@ -5,7 +5,7 @@
  * |  __/\__, | || (_) | (_) | |
  *  \___|  /_/ \__\___/ \___/|_|
  *                              
- * Copyright (C) 2021 National University of Singapore
+ * Copyright (C) 2022 National University of Singapore
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -1419,17 +1419,15 @@ static void sendBytesData(FILE *out, const uint8_t *bytes, size_t len)
  * Send instructions to load an argument into a register.
  */
 static Type sendLoadArgumentMetadata(FILE *out, CallInfo &info,
-    const ELF *elf, const Action *action, size_t idx, const Argument &arg,
+    const ELF *elf, const char *name, PatchPos pos,
     const std::vector<Instr> &Is, size_t i, const InstrInfo *I, intptr_t id,
-    int argno, int regno)
+    const Argument &arg, int argno, int regno)
 {
     if (regno < 0)
         error("failed to load argument; call instrumentation exceeds the "
             "maximum number of arguments (%d)", argno);
     sendSaveRegToStack(out, info, getReg(regno));
 
-    const Patch *patch = action->patch[idx];
-    const char *name = patch->name+1;
     bool _static = arg._static;
     Type t = TYPE_INT64;
     switch (arg.kind)
@@ -1478,7 +1476,7 @@ static Type sendLoadArgumentMetadata(FILE *out, CallInfo &info,
             sendLoadValueMetadata(out, id, regno);
             break;
         case ARGUMENT_NEXT:
-            switch (patch->pos)
+            switch (pos)
             {
                 case POS_AFTER:
                     // If we reach here after the instruction, it means the
@@ -1561,7 +1559,7 @@ static Type sendLoadArgumentMetadata(FILE *out, CallInfo &info,
             switch ((Register)arg.value)
             {
                 case REGISTER_RIP:
-                    switch (patch->pos)
+                    switch (pos)
                     {
                         case POS_AFTER: case POS_REPLACE:
                             sendLeaFromPCRelToR64(out,
@@ -1749,7 +1747,7 @@ static Type sendLoadArgumentMetadata(FILE *out, CallInfo &info,
                     op->type == OPTYPE_MEM)
             {
                 // Filter dangerous memory operand pass-by-value arguments:
-                if (patch->pos == POS_AFTER)
+                if (pos == POS_AFTER)
                 {
                     warning(CONTEXT_FORMAT "failed to load memory "
                         "operand contents into register %s; operand may "
@@ -1933,6 +1931,162 @@ static void sendArgumentDataMetadata(FILE *out, const char *name,
 }
 
 /*
+ * Send the "print" trampoline metadata.
+ */
+void e9tool::sendPrintMetadata(FILE *out, const InstrInfo *I)
+{
+    const char *name = "print";
+    sendDefinitionHeader(out, name, "DATA");
+    fprintf(out, "\".Lasm@print\",");
+    sendAsmStrData(out, I, /*newline=*/true);
+    sendDefinitionFooter(out);
+
+    sendDefinitionHeader(out, name, "ASM_LEN");
+    intptr_t len = strlen(I->string.instr) + 1;
+    sendIntegerData(out, 32, len);
+    sendDefinitionFooter(out);
+}
+
+/*
+ * Send a "call" trampoline metadata.
+ */
+void e9tool::sendCallMetadata(FILE *out, const char *name, const ELF *elf,
+    const ELF *patch, const char *symbol, const std::vector<Argument> &args,
+    CallABI abi, CallJump jmp, PatchPos pos, intptr_t id,
+    const std::vector<Instr> &Is, size_t i, const InstrInfo *I)
+{
+    // Load arguments.
+    bool state = false;
+    for (const auto &arg: args)
+    {
+        if (arg.kind == ARGUMENT_STATE)
+        {
+            state = true;
+            break;
+        }
+    }
+    bool sysv = true;
+    switch (elf->type)
+    {
+        case BINARY_TYPE_PE_EXE: case BINARY_TYPE_PE_DLL:
+            sysv = false;
+            break;
+        default:
+            break;
+    }
+
+    name++;
+    sendDefinitionHeader(out, name, "ARGS");
+    int argno = 0;
+    bool before = (pos == POS_BEFORE);
+    bool pic = (getELFType(patch) != BINARY_TYPE_ELF_EXE);
+    CallInfo info(sysv, (abi == ABI_CLEAN), state, (jmp != JUMP_NONE),
+        args.size(), before, pic);
+    TypeSig sig = TYPESIG_EMPTY;
+    for (const auto &arg: args)
+    {
+        int regno = getArgRegIdx(sysv, argno);
+        Type t = sendLoadArgumentMetadata(out, info, elf, name, pos, Is, i, I,
+            id, arg, argno, regno);
+        sig = setType(sig, t, argno);
+        argno++;
+    }
+    argno = 0;
+    int32_t rsp_args_offset = 0;
+    for (int argno = (int)args.size()-1; argno >= 0; argno--)
+    {
+        // Send stack arguments:
+        int regno = getArgRegIdx(sysv, argno);
+        switch (regno)
+        {
+            case R10_IDX: case R11_IDX:
+                sendPush(out, info.rsp_offset, before, getReg(regno));
+                rsp_args_offset += sizeof(int64_t);
+                break;
+        }
+    }
+    for (int regno = 0; abi == ABI_NAKED && regno < RMAX_IDX; regno++)
+    {
+        Register reg = getReg(regno);
+        if (!info.isCallerSave(reg) && info.isClobbered(reg))
+        {
+            // Restore clobbered callee-save register:
+            int32_t reg_offset = rsp_args_offset;
+            reg_offset += info.getOffset(reg);
+            sendMovFromStackToR64(out, reg_offset, regno);
+            info.restore(reg);
+        }
+    }
+    sendDefinitionFooter(out);
+
+    // Find & call the function.
+    sendDefinitionHeader(out, name, "FUNC");
+    intptr_t addr = lookupSymbol(patch, symbol, sig);
+    if (addr < 0 || addr > INT32_MAX)
+    {
+        lookupSymbolWarnings(patch, I, symbol, sig);
+        std::string str;
+        getSymbolString(symbol, sig, str);
+        error(CONTEXT_FORMAT "failed to find a symbol matching \"%s\" "
+            "in binary \"%s\"", CONTEXT(I), str.c_str(), patch->filename);
+    }
+    fprintf(out, "{\"rel32\":%d}", (int32_t)addr);
+    sendDefinitionFooter(out);
+    info.call(jmp != JUMP_NONE);
+
+    // Restore state.
+    sendDefinitionHeader(out, name, "RSTOR");
+    if (rsp_args_offset != 0)
+    {
+        // lea rsp_args_offset(%rsp),%rsp
+        fprintf(out, "%u,%u,%u,%u,{\"int32\":%d},",
+            0x48, 0x8d, 0xa4, 0x24, rsp_args_offset);
+    }
+    bool pop_rsp = state;
+    Register reg;
+    while ((reg = info.pop()) != REGISTER_INVALID)
+    {
+        switch (reg)
+        {
+            case REGISTER_RSP:
+                pop_rsp = true;
+                continue;           // %rsp is popped last.
+            default:
+                break;
+        }
+        bool preserve_rax = info.isUsed(REGISTER_RAX);
+        Register rscratch = (preserve_rax? info.getScratch():
+            REGISTER_INVALID);
+        if (sendPop(out, preserve_rax, reg, rscratch))
+            info.clobber(rscratch);
+    }
+    sendDefinitionFooter(out);
+
+    // Restore %rsp.
+    sendDefinitionHeader(out, name, "RSTOR_RSP");
+    if (pop_rsp)
+        sendPop(out, false, REGISTER_RSP);
+    else
+    {
+        // lea 0x4000(%rsp),%rsp
+        fprintf(out, "%u,%u,%u,%u,{\"int32\":%d},",
+            0x48, 0x8d, 0xa4, 0x24, 0x4000);
+    }
+    sendDefinitionFooter(out);
+
+    // Place data (if necessary).
+    sendDefinitionHeader(out, name, "DATA");
+    argno = 0;
+    for (const auto &arg: args)
+    {
+        int regno = getArgRegIdx(sysv, argno);
+        sendArgumentDataMetadata(out, name, elf, arg, i, I, regno);
+        argno++;
+    }
+    sendDefinitionFooter(out);
+}
+
+/*
  * Build metadata.
  */
 void sendMetadata(FILE *out, const ELF *elf, const Action *action, size_t idx,
@@ -1942,7 +2096,6 @@ void sendMetadata(FILE *out, const ELF *elf, const Action *action, size_t idx,
     if (action == nullptr)
         return;
     const Patch *patch = action->patch[idx];
-    const char *name = patch->name+1;
 
     switch (patch->kind)
     {
@@ -1958,153 +2111,12 @@ void sendMetadata(FILE *out, const ELF *elf, const Action *action, size_t idx,
         case PATCH_EXIT: case PATCH_EMPTY: case PATCH_TRAP: case PATCH_BREAK:
             return;
         case PATCH_PRINT:
-        {
-            sendDefinitionHeader(out, name, "DATA");
-            fprintf(out, "\".Lasm@print\",");
-            sendAsmStrData(out, I, /*newline=*/true);
-            sendDefinitionFooter(out);
-
-            sendDefinitionHeader(out, name, "ASM_LEN");
-            intptr_t len = strlen(I->string.instr) + 1;
-            sendIntegerData(out, 32, len);
-            sendDefinitionFooter(out);
+            sendPrintMetadata(out, I);
             return;
-        }
         case PATCH_CALL:
-        {
-            // Load arguments.
-            bool state = false;
-            for (const auto &arg: patch->args)
-            {
-                if (arg.kind == ARGUMENT_STATE)
-                {
-                    state = true;
-                    break;
-                }
-            }
-            bool sysv = true;
-            switch (elf->type)
-            {
-                case BINARY_TYPE_PE_EXE: case BINARY_TYPE_PE_DLL:
-                    sysv = false;
-                    break;
-                default:
-                    break;
-            }
-
-            sendDefinitionHeader(out, name, "ARGS");
-            int argno = 0;
-            bool before = (patch->pos == POS_BEFORE);
-            bool pic = (getELFType(elf) != BINARY_TYPE_ELF_EXE);
-            CallInfo info(sysv, (patch->abi == ABI_CLEAN), state,
-                (patch->jmp != JUMP_NONE), patch->args.size(),
-                before, pic);
-            TypeSig sig = TYPESIG_EMPTY;
-            for (const auto &arg: patch->args)
-            {
-                int regno = getArgRegIdx(sysv, argno);
-                Type t = sendLoadArgumentMetadata(out, info, elf, action, idx,
-                    arg, Is, i, I, id, argno, regno);
-                sig = setType(sig, t, argno);
-                argno++;
-            }
-            argno = 0;
-            int32_t rsp_args_offset = 0;
-            for (int argno = (int)patch->args.size()-1; argno >= 0; argno--)
-            {
-                // Send stack arguments:
-                int regno = getArgRegIdx(sysv, argno);
-                switch (regno)
-                {
-                    case R10_IDX: case R11_IDX:
-                        sendPush(out, info.rsp_offset, before, getReg(regno));
-                        rsp_args_offset += sizeof(int64_t);
-                        break;
-                }
-            }
-            for (int regno = 0; patch->abi == ABI_NAKED &&
-                    regno < RMAX_IDX; regno++)
-            {
-                Register reg = getReg(regno);
-                if (!info.isCallerSave(reg) && info.isClobbered(reg))
-                {
-                    // Restore clobbered callee-save register:
-                    int32_t reg_offset = rsp_args_offset;
-                    reg_offset += info.getOffset(reg);
-                    sendMovFromStackToR64(out, reg_offset, regno);
-                    info.restore(reg);
-                }
-            }
-            sendDefinitionFooter(out);
-
-            // Find & call the function.
-            sendDefinitionHeader(out, name, "FUNC");
-            intptr_t addr = lookupSymbol(patch->elf, patch->symbol, sig);
-            if (addr < 0 || addr > INT32_MAX)
-            {
-                lookupSymbolWarnings(patch->elf, I, patch->symbol, sig);
-                std::string str;
-                getSymbolString(patch->symbol, sig, str);
-                error(CONTEXT_FORMAT "failed to find a symbol matching \"%s\" "
-                    "in binary \"%s\"", CONTEXT(I), str.c_str(),
-                    patch->elf->filename);
-            }
-            fprintf(out, "{\"rel32\":%d}", (int32_t)addr);
-            sendDefinitionFooter(out);
-            info.call(patch->jmp != JUMP_NONE);
-
-            // Restore state.
-            sendDefinitionHeader(out, name, "RSTOR");
-            if (rsp_args_offset != 0)
-            {
-                // lea rsp_args_offset(%rsp),%rsp
-                fprintf(out, "%u,%u,%u,%u,{\"int32\":%d},",
-                    0x48, 0x8d, 0xa4, 0x24, rsp_args_offset);
-            }
-            bool pop_rsp = state;
-            Register reg;
-            while ((reg = info.pop()) != REGISTER_INVALID)
-            {
-                switch (reg)
-                {
-                    case REGISTER_RSP:
-                        pop_rsp = true;
-                        continue;           // %rsp is popped last.
-                    default:
-                        break;
-                }
-                bool preserve_rax = info.isUsed(REGISTER_RAX);
-                Register rscratch = (preserve_rax? info.getScratch():
-                    REGISTER_INVALID);
-                if (sendPop(out, preserve_rax, reg, rscratch))
-                    info.clobber(rscratch);
-            }
-            sendDefinitionFooter(out);
-
-            // Restore %rsp.
-            sendDefinitionHeader(out, name, "RSTOR_RSP");
-            if (pop_rsp)
-                sendPop(out, false, REGISTER_RSP);
-            else
-            {
-                // lea 0x4000(%rsp),%rsp
-                fprintf(out, "%u,%u,%u,%u,{\"int32\":%d},",
-                    0x48, 0x8d, 0xa4, 0x24, 0x4000);
-            }
-            sendDefinitionFooter(out);
-
-            // Place data (if necessary).
-            sendDefinitionHeader(out, name, "DATA");
-            argno = 0;
-            for (const auto &arg: patch->args)
-            {
-                int regno = getArgRegIdx(sysv, argno);
-                sendArgumentDataMetadata(out, name, elf, arg, i, I, regno);
-                argno++;
-            }
-            sendDefinitionFooter(out);
+            sendCallMetadata(out, patch->name, elf, patch->elf, patch->symbol,
+                patch->args, patch->abi, patch->jmp, patch->pos, id, Is, i, I);
             return;
-        }
         default:
             return;
     }

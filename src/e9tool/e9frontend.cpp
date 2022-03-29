@@ -1484,7 +1484,7 @@ void e9tool::sendELFFileMessage(FILE *out, const ELF *ptr, bool absolute)
  * Send a call ELF trampoline.
  */
 unsigned e9tool::sendCallTrampolineMessage(FILE *out, const char *name,
-    const std::vector<Argument> &args, BinaryType type, CallABI abi,
+    const ELF *elf, const std::vector<Argument> &args, CallABI abi,
     CallJump jmp, PatchPos pos)
 {
     bool state = false;
@@ -1497,7 +1497,7 @@ unsigned e9tool::sendCallTrampolineMessage(FILE *out, const char *name,
         }
     }
     bool sysv = true;
-    switch (type)
+    switch (elf->type)
     {
         case BINARY_TYPE_PE_EXE: case BINARY_TYPE_PE_DLL:
             sysv = false;
@@ -1602,6 +1602,10 @@ unsigned e9tool::sendCallTrampolineMessage(FILE *out, const char *name,
             // therefore use thread-local address %fs:0x40 (same as stdlib.c
             // errno).  However, this assumes the binary has set %fs to be the
             // TLS base address (any binary using glibc should do this).
+            if (elf->type == BINARY_TYPE_ELF_EXE && !elf->dynlink)
+                warning("the statically linked executable \"%s\" is likely "
+                    "incompatible with `if (...) goto' instrumentation; "
+                    "the rewritten binary may crash", elf->filename);
 
             // mov %rax/rcx, %fs:0x40
             // pop %rax/rcx

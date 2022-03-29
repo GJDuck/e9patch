@@ -1265,9 +1265,8 @@ int main_2(int argc, char **argv)
                     auto j = have_call.find(patch->name);
                     if (j == have_call.end())
                     {
-                        sendCallTrampolineMessage(out, patch->name,
-                            patch->args, elf.type, patch->abi, patch->jmp,
-                            patch->pos);
+                        sendCallTrampolineMessage(out, patch->name, &elf,
+                            patch->args, patch->abi, patch->jmp, patch->pos);
                         have_call.insert(patch->name);
                     }
                     break;

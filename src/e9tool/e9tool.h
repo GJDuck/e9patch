@@ -1,6 +1,6 @@
 /*
  * e9tool.h
- * Copyright (C) 2021 National University of Singapore
+ * Copyright (C) 2022 National University of Singapore
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -2390,7 +2390,7 @@ extern unsigned sendPrintTrampolineMessage(FILE *out, BinaryType type);
 extern unsigned sendExitTrampolineMessage(FILE *out, BinaryType type,
     int status);
 extern unsigned sendCallTrampolineMessage(FILE *out, const char *name,
-    const std::vector<Argument> &args, BinaryType type, CallABI abi,
+    const ELF *elf, const std::vector<Argument> &args, CallABI abi,
     CallJump jmp, PatchPos pos);
 extern unsigned sendTrampolineMessage(FILE *out, const char *name,
     const char *template_);
@@ -2398,6 +2398,11 @@ extern unsigned sendInstructionMessage(FILE *out, intptr_t addr, size_t size,
     off_t offset);
 extern unsigned sendEmitMessage(FILE *out, const char *filename,
     const char *format);
+extern void sendPrintMetadata(FILE *out, const InstrInfo *info);
+extern void sendCallMetadata(FILE *out, const char *name, const ELF *elf,
+    const ELF *patch, const char *symbol, const std::vector<Argument> &args,
+    CallABI abi, CallJump jmp, PatchPos pos, intptr_t id,
+    const std::vector<Instr> &Is, size_t idx, const InstrInfo *info);
 
 /*
  * ELF functions.
