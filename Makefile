@@ -60,8 +60,8 @@ loader_elf:
 	xxd -i e9loader_elf.bin > src/e9patch/e9loader_elf.c
 
 loader_pe:
-	$(CXX) -std=c++11 -Wall -fno-stack-protector -Wno-unused-function -fPIC \
-        -mabi=ms -fshort-wchar \
+	$(CXX) -std=c++11 -Wall -fno-stack-protector -fno-zero-initialized-in-bss \
+        -Wno-unused-function -fPIC -mabi=ms -fshort-wchar \
         -Os -c src/e9patch/e9loader_pe.cpp
 	$(CXX) -pie -nostdlib -o e9loader_pe.bin e9loader_pe.o -T e9loader.ld
 	xxd -i e9loader_pe.bin > src/e9patch/e9loader_pe.c
