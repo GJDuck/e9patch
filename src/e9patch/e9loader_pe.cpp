@@ -1,6 +1,6 @@
 /*
  * e9loader_pe.cpp
- * Copyright (C) 2021 National University of Singapore
+ * Copyright (C) 2022 National University of Singapore
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to
@@ -357,10 +357,6 @@ static NO_INLINE const void *e9get(const uint8_t *dll, const char *target)
  * which means these must be preserved.  This is handled by the e9safe_call()
  * wrapper.
  */
-extern "C"
-{
-    static intptr_t e9safe_call(const void *f, ...);
-}
 asm (
     ".globl e9safe_call\n"
     ".type e9safe_call, @function\n"
@@ -427,6 +423,13 @@ asm (
 
     "retq\n"
 );
+static inline e9_safe_call_t e9get_safe_call(void)
+{
+    register void *fn asm ("rax");
+    asm ("lea e9safe_call(%%rip),%0" : "=r"(fn));
+    return (e9_safe_call_t)fn;
+}
+#define e9safe_call     (e9get_safe_call())
 
 /*
  * System/library call wrappers.
@@ -614,7 +617,7 @@ void *e9loader(PEB *peb, const struct e9_config_s *config)
     PRTL_USER_PROCESS_PARAMETERS params = peb->ProcessParameters;
     struct e9_config_pe_s *config_pe = (struct e9_config_pe_s *)(config + 1);
 
-    config_pe->safe_call        = (e9_safe_call_t)&e9safe_call; 
+    config_pe->safe_call        = (e9_safe_call_t)e9safe_call;
     config_pe->get_proc_address =
         (e9_get_proc_address_t)&e9get_proc_address_wrapper;
     config_pe->nt_read_file     = &e9nt_read_file_wapper;
