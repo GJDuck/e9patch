@@ -20,7 +20,7 @@
 000000000a000216:ffffffffffffffe9:ffffffffffffe9e9: f3 48 0f 2c c1          cvttss2si %xmm1, %rax
 000000000a000223:ffffffffffffffe9:ffffffffffffe9e9: 48 8b 84 24 00 ff ff ff movq -0x100(%rsp), %rax
 000000000a000234:ffffffffffffffe9:ffffffffffffe9e9: 48 8b 84 f4 00 ff ff ff movq -0x100(%rsp,%rsi,8), %rax
-000000000a000243:ffffffffffffffe9:ffffffffffffe9e9: 2e 48 8b 84 f4 00 ff ff movq %cs:-0x100(%rsp,%rsi,8), %rax
+000000000a000243:ffffffffffffffe9:ffffffffffffe9e9: 2e 48 8b 84 f4 00 ff ff movq -0x100(%rsp,%rsi,8), %rax
                                                     ff 
 000000000a00025c:ffffffffffffffe9:ffffffffffffe9e9: 8b 0c 25 00 00 00 0a    movl 0xa000000, %ecx
 000000000a000268:ffffffffffffffe9:ffffffffffffe9e9: 48 8b 8c f0 00 00 00 0a movq 0xa000000(%rax,%rsi,8), %rcx

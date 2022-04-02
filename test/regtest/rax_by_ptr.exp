@@ -13,7 +13,7 @@ movq -0x100(%rsp), %rax # %rax = 0x0000000000000085
 test %rax, %rax # %rax = 0x0000000000000000
 movq -0x100(%rsp,%rsi,8), %rax # %rax = 0x0000000000000000
 test %rax, %rax # %rax = 0x0000000000000000
-movq %cs:-0x100(%rsp,%rsi,8), %rax # %rax = 0x0000000000000000
+movq -0x100(%rsp,%rsi,8), %rax # %rax = 0x0000000000000000
 cmp %rax, %rcx # %rax = 0x0000000000000000
 movq 0xa000000(%rax,%rsi,8), %rcx # %rax = 0x0000000000000000
 PASSED

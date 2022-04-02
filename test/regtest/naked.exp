@@ -66,8 +66,8 @@ xor %esi, %esi
 movq -0x100(%rsp,%rsi,8), %rax
 test %rax, %rax
 jz 0xa000243
-movq %cs:-0x100(%rsp,%rsi,8), %rax
-movq %ds:-0x100(%rsp,%rsi,8), %rcx
+movq -0x100(%rsp,%rsi,8), %rax
+movq %gs:-0x100(%rsp,%rsi,8), %rcx
 cmp %rax, %rcx
 jz 0xa00025c
 movl 0xa000000, %ecx

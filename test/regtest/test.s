@@ -1,4 +1,4 @@
-# Copyright (C) 2021 National University of Singapore
+# Copyright (C) 2022 National University of Singapore
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -20,42 +20,44 @@
 .type  _start, @function
 _start:
     # These setup some predicable state & are not to be instrumented:
-    #
+ 
     # Note: the first 2 words are read by the program, so do not change.
     #
     lea .Lstack+32768(%rip),%rsp
     xor %eax,%eax           # for %rflags
     mov $0x0b0b0b0b,%eax
     mov $0x1c1c1c1c,%edx
-    mov $0x2d2d2d2d,%ecx
-    mov $0x3e3e3e3e,%ebx
-    mov $0x4f4f4f4f,%ebp
-    mov $0x50505050,%esi
-    mov $0x61616161,%edi
-    mov $0x72727272,%r8d
-    mov $0x83838383,%r9d
-    mov $0x94949494,%r10d
-    mov $0xa5a5a5a5,%r11d
-    mov $0xb6b6b6b6,%r12d
-    mov $0xc7c7c7c7,%r13d
-    mov $0xd8d8d8d8,%r14d
-    mov $0xe9e9e9e9,%r15d
 
-    push %rax
-    push %rdi
-    push %rsi 
-    push %rcx
-    push %r11
+    # Can change:
     mov $158,%eax           # SYS_arch_prctl
     mov $0x1002,%edi        # ARCH_SET_FS
     lea .Lstack(%rip),%rsi
     syscall
-    pop %r11
-    pop %rcx
-    pop %rsi
-    pop %rdi
-    pop %rax
+    mov $158,%eax           # SYS_arch_prctl
+    mov $0x1001,%edi        # ARCH_SET_GS
+    xor %esi,%esi           # 0x0
+    syscall
 
+    lea regs(%rip),%rax
+    mov 0x4(%rax),%edx
+    mov 0x8(%rax),%ecx
+    mov 0xc(%rax),%ebx
+    mov 0x10(%rax),%ebp
+    mov 0x14(%rax),%esi
+    mov 0x18(%rax),%edi
+    mov 0x1c(%rax),%r8d
+    mov 0x20(%rax),%r9d
+    mov 0x24(%rax),%r10d
+    mov 0x28(%rax),%r11d
+    mov 0x2c(%rax),%r12d
+    mov 0x30(%rax),%r13d
+    mov 0x34(%rax),%r14d
+    mov 0x38(%rax),%r15d
+    mov (%rax),%eax
+
+    .byte 0x0f, 0x1f, 0x84, 0x00, 0x00, 0x00, 0x00, 0x00    # NOP
+    .byte 0x0f, 0x1f, 0x40, 0x00                            # NOP
+ 
     .byte 0xe9, 0x80, 0x00, 0x00, 0x00  # jmp entry
 
     # The instrumented code starts here:
@@ -198,7 +200,7 @@ data_END:
     ud2
 .Lpass_y:
     mov %cs:-0x100(%rsp,%rsi,8),%rax
-    mov %ds:-0x100(%rsp,%rsi,8),%rcx
+    mov %gs:-0x100(%rsp,%rsi,8),%rcx
     cmp %rax,%rcx
     je .Lpass_z
     ud2
@@ -263,6 +265,23 @@ data2:
     .byte 0x99, 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff, 0x00
 .Lstring:
     .ascii "PASSED\n"
+
+regs:
+.long 0x0b0b0b0b
+.long 0x1c1c1c1c
+.long 0x2d2d2d2d
+.long 0x3e3e3e3e
+.long 0x4f4f4f4f
+.long 0x50505050
+.long 0x61616161
+.long 0x72727272
+.long 0x83838383
+.long 0x94949494
+.long 0xa5a5a5a5
+.long 0xb6b6b6b6
+.long 0xc7c7c7c7
+.long 0xd8d8d8d8
+.long 0xe9e9e9e9
 
 .section .bss
 .align 16

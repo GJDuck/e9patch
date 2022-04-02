@@ -24,7 +24,7 @@ pxor %xmm0, %xmm0
 sqrtss %xmm0, %xmm1
 comiss %xmm0, %xmm1
 xor %esi, %esi
-movq %ds:-0x100(%rsp,%rsi,8), %rcx
+movq %gs:-0x100(%rsp,%rsi,8), %rcx
 inc %esi
 cmp %rcx, %rdx
 cmp %rcx, %rdx

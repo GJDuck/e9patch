@@ -50,8 +50,8 @@ test %rax, %rax
 xor %esi, %esi
 movq -0x100(%rsp,%rsi,8), %rax
 test %rax, %rax
-movq %cs:-0x100(%rsp,%rsi,8), %rax
-movq %ds:-0x100(%rsp,%rsi,8), %rcx
+movq -0x100(%rsp,%rsi,8), %rax
+movq %gs:-0x100(%rsp,%rsi,8), %rcx
 cmp %rax, %rcx
 movl 0xa000000, %ecx
 jecxz 0xa0002ae

@@ -66,8 +66,8 @@ xor %esi, %esi:
 movq -0x100(%rsp,%rsi,8), %rax: rax 
 test %rax, %rax: rax 
 jz 0xa000243: 
-movq %cs:-0x100(%rsp,%rsi,8), %rax: rax 
-movq %ds:-0x100(%rsp,%rsi,8), %rcx: rcx 
+movq -0x100(%rsp,%rsi,8), %rax: rax 
+movq %gs:-0x100(%rsp,%rsi,8), %rcx: rcx 
 cmp %rax, %rcx: rax rcx 
 jz 0xa00025c: 
 lea -0x263(%rip), %rax: rax 

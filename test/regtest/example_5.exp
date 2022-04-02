@@ -36,9 +36,9 @@
 0000004cffffffb3:00000000c7c7c7c7:00000000b6b6b6b6: 31 f6                   xor %esi, %esi
 0000004cffffffb3:00000000c7c7c7c7:00000000b6b6b6b6: 48 8b 84 f4 00 ff ff ff movq -0x100(%rsp,%rsi,8), %rax
 0000004cffffffb3:00000000c7c7c7c7:00000000b6b6b6b6: 48 85 c0                test %rax, %rax
-0000004cffffffb3:00000000c7c7c7c7:00000000b6b6b6b6: 2e 48 8b 84 f4 00 ff ff movq %cs:-0x100(%rsp,%rsi,8), %rax
+0000004cffffffb3:00000000c7c7c7c7:00000000b6b6b6b6: 2e 48 8b 84 f4 00 ff ff movq -0x100(%rsp,%rsi,8), %rax
                                                     ff 
-0000004cffffffb3:00000000c7c7c7c7:00000000b6b6b6b6: 3e 48 8b 8c f4 00 ff ff movq %ds:-0x100(%rsp,%rsi,8), %rcx
+0000004cffffffb3:00000000c7c7c7c7:00000000b6b6b6b6: 65 48 8b 8c f4 00 ff ff movq %gs:-0x100(%rsp,%rsi,8), %rcx
                                                     ff 
 0000004cffffffb3:00000000c7c7c7c7:00000000b6b6b6b6: 48 39 c1                cmp %rax, %rcx
 0000004cffffffb3:00000000c7c7c7c7:00000000b6b6b6b6: 8b 0c 25 00 00 00 0a    movl 0xa000000, %ecx

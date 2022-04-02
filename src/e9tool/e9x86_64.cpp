@@ -49,11 +49,11 @@ static ZydisFormatter formatter;
 void initDisassembler(void)
 {
     ZyanStatus result = ZydisDecoderInit(&decoder, ZYDIS_MACHINE_MODE_LONG_64,
-        ZYDIS_ADDRESS_WIDTH_64);
+        ZYDIS_STACK_WIDTH_64);
     if (!ZYAN_SUCCESS(result))
         error("failed to initialize disassembler decoder");
     result = ZydisDecoderInit(&decoder_minimal, ZYDIS_MACHINE_MODE_LONG_64,
-        ZYDIS_ADDRESS_WIDTH_64);
+        ZYDIS_STACK_WIDTH_64);
     if (!ZYAN_SUCCESS(result))
         error("failed to initialize disassembler decoder");
     (void)ZydisDecoderEnableMode(&decoder_minimal, ZYDIS_DECODER_MODE_MINIMAL,
@@ -92,8 +92,8 @@ bool decode(const uint8_t **code, size_t *size, off_t *offset,
 
     ZydisDecodedInstruction D_0;
     ZydisDecodedInstruction *D = &D_0;
-    ZyanStatus result = ZydisDecoderDecodeBuffer(&decoder_minimal, *code,
-        *size, D);
+    ZyanStatus result = ZydisDecoderDecodeInstruction(&decoder_minimal,
+        nullptr, *code, *size, D);
     
     I->address = (size_t)*address;
     I->offset  = (size_t)*offset;
@@ -149,9 +149,11 @@ void e9tool::getInstrInfo(const ELF *elf, const Instr *I, InstrInfo *info,
     ZydisDecodedInstruction D_0;
     ZydisDecodedInstruction *D = (ZydisDecodedInstruction *)raw;
     D = (D == nullptr? &D_0: D);
+    ZydisDecodedOperand operands[ZYDIS_MAX_OPERAND_COUNT];
 
-    ZyanStatus result = ZydisDecoderDecodeBuffer(&decoder,
-        elf->data + I->offset, I->size, D);
+    ZyanStatus result = ZydisDecoderDecodeFull(&decoder,
+        elf->data + I->offset, I->size, D, operands, ZYDIS_MAX_OPERAND_COUNT,
+        0);
     if (!ZYAN_SUCCESS(result) || I->size != D->length ||
             D->operand_count > sizeof(info->op) / sizeof(info->op[0]))
         error("failed to decompress instruction at address 0x%lx; decode "
@@ -190,27 +192,36 @@ void e9tool::getInstrInfo(const ELF *elf, const Instr *I, InstrInfo *info,
             (D->raw.imm[0].offset != 0? D->raw.imm[0].offset: -1);
 
         info->flags.read = 0x0;
-        if (D->cpu_flags_read & (1 << ZYDIS_CPUFLAG_CF))
-            info->flags.read |= FLAG_CF;
-        if (D->cpu_flags_read & (1 << ZYDIS_CPUFLAG_PF))
-            info->flags.read |= FLAG_PF;
-        if (D->cpu_flags_read & (1 << ZYDIS_CPUFLAG_AF))
-            info->flags.read |= FLAG_AF;
-        if (D->cpu_flags_read & (1 << ZYDIS_CPUFLAG_ZF))
-            info->flags.read |= FLAG_ZF;
-        if (D->cpu_flags_read & (1 << ZYDIS_CPUFLAG_SF))
-            info->flags.read |= FLAG_SF;
         info->flags.write = 0x0;
-        if (D->cpu_flags_written & (1 << ZYDIS_CPUFLAG_CF))
-            info->flags.write |= FLAG_CF;
-        if (D->cpu_flags_written & (1 << ZYDIS_CPUFLAG_PF))
-            info->flags.write |= FLAG_PF;
-        if (D->cpu_flags_written & (1 << ZYDIS_CPUFLAG_AF))
-            info->flags.write |= FLAG_AF;
-        if (D->cpu_flags_written & (1 << ZYDIS_CPUFLAG_ZF))
-            info->flags.write |= FLAG_ZF;
-        if (D->cpu_flags_written & (1 << ZYDIS_CPUFLAG_SF))
-            info->flags.write |= FLAG_SF;
+        if (D->attributes & ZYDIS_ATTRIB_CPUFLAG_ACCESS)
+        {
+            uint32_t cpu_flags_read = D->cpu_flags->tested;
+            if (cpu_flags_read & ZYDIS_CPUFLAG_CF)
+                info->flags.read |= FLAG_CF;
+            if (cpu_flags_read & ZYDIS_CPUFLAG_PF)
+                info->flags.read |= FLAG_PF;
+            if (cpu_flags_read & ZYDIS_CPUFLAG_AF)
+                info->flags.read |= FLAG_AF;
+            if (cpu_flags_read & ZYDIS_CPUFLAG_ZF)
+                info->flags.read |= FLAG_ZF;
+            if (cpu_flags_read & ZYDIS_CPUFLAG_SF)
+                info->flags.read |= FLAG_SF;
+            uint32_t cpu_flags_written =
+                D->cpu_flags->modified |
+                D->cpu_flags->set_0 |
+                D->cpu_flags->set_1 |
+                D->cpu_flags->undefined;
+            if (cpu_flags_written & ZYDIS_CPUFLAG_CF)
+                info->flags.write |= FLAG_CF;
+            if (cpu_flags_written & ZYDIS_CPUFLAG_PF)
+                info->flags.write |= FLAG_PF;
+            if (cpu_flags_written & ZYDIS_CPUFLAG_AF)
+                info->flags.write |= FLAG_AF;
+            if (cpu_flags_written & ZYDIS_CPUFLAG_ZF)
+                info->flags.write |= FLAG_ZF;
+            if (cpu_flags_written & ZYDIS_CPUFLAG_SF)
+                info->flags.write |= FLAG_SF;
+        }
 
         unsigned j = 0, k = 0, l = 0, m = 0, n = 0;
         Register seg = REGISTER_NONE;
@@ -230,22 +241,21 @@ void e9tool::getInstrInfo(const ELF *elf, const Instr *I, InstrInfo *info,
         {
             unsigned i = (option_intel_syntax? i0: D->operand_count - i0 - 1);
             bool read =
-                ((D->operands[i].actions & ZYDIS_OPERAND_ACTION_READ) != 0);
+                ((operands[i].actions & ZYDIS_OPERAND_ACTION_READ) != 0);
             bool write =
-                ((D->operands[i].actions & ZYDIS_OPERAND_ACTION_WRITE) != 0);
+                ((operands[i].actions & ZYDIS_OPERAND_ACTION_WRITE) != 0);
             bool condread =
-                ((D->operands[i].actions & ZYDIS_OPERAND_ACTION_CONDREAD) != 0);
+                ((operands[i].actions & ZYDIS_OPERAND_ACTION_CONDREAD) != 0);
             bool condwrite =
-                 ((D->operands[i].actions & ZYDIS_OPERAND_ACTION_CONDWRITE)
-                    != 0);
+                 ((operands[i].actions & ZYDIS_OPERAND_ACTION_CONDWRITE) != 0);
             if (D->mnemonic == ZYDIS_MNEMONIC_NOP)
                 condread = read = condwrite = write = false;
 
-            switch (D->operands[i].type)
+            switch (operands[i].type)
             {
                 case ZYDIS_OPERAND_TYPE_REGISTER:
                 {
-                    Register r = convert(D->operands[i].reg.value);
+                    Register r = convert(operands[i].reg.value);
                     if (read && r != REGISTER_INVALID)
                         info->regs.read[k++] = r;
                     if (write && r != REGISTER_INVALID)
@@ -260,10 +270,10 @@ void e9tool::getInstrInfo(const ELF *elf, const Instr *I, InstrInfo *info,
                 {
                     if (seg != REGISTER_NONE)
                         info->regs.read[k++] = seg;
-                    Register r = convert(D->operands[i].mem.base);
+                    Register r = convert(operands[i].mem.base);
                     if (r != REGISTER_NONE)
                         info->regs.read[k++] = r;
-                    r = convert(D->operands[i].mem.index);
+                    r = convert(operands[i].mem.index);
                     if (r != REGISTER_NONE)
                         info->regs.read[k++] = r;
                     break;
@@ -271,7 +281,7 @@ void e9tool::getInstrInfo(const ELF *elf, const Instr *I, InstrInfo *info,
                 default:
                     break;
             }
-            switch (D->operands[i].visibility)
+            switch (operands[i].visibility)
             {
                 case ZYDIS_OPERAND_VISIBILITY_EXPLICIT:
                 case ZYDIS_OPERAND_VISIBILITY_IMPLICIT:
@@ -279,27 +289,26 @@ void e9tool::getInstrInfo(const ELF *elf, const Instr *I, InstrInfo *info,
                 default:
                     continue;
             }
-            switch (D->operands[i].type)
+            switch (operands[i].type)
             {
                 case ZYDIS_OPERAND_TYPE_IMMEDIATE:
                     info->op[j].type = OPTYPE_IMM;
-                    info->op[j].imm  = (int64_t)D->operands[i].imm.value.s;
-                    if (D->operands[i].imm.is_relative)
+                    info->op[j].imm  = (int64_t)operands[i].imm.value.s;
+                    if (operands[i].imm.is_relative)
                         info->relative = true;
                     break;
                 case ZYDIS_OPERAND_TYPE_REGISTER:
                     info->op[j].type = OPTYPE_REG;
-                    info->op[j].reg  = convert(D->operands[i].reg.value);
+                    info->op[j].reg  = convert(operands[i].reg.value);
                     break;
                 case ZYDIS_OPERAND_TYPE_MEMORY:
                     info->op[j].type      = OPTYPE_MEM;
                     info->op[j].mem.seg   = seg;
-                    info->op[j].mem.disp  =
-                        (int32_t)D->operands[i].mem.disp.value;
-                    info->op[j].mem.base  = convert(D->operands[i].mem.base);
-                    info->op[j].mem.index = convert(D->operands[i].mem.index);
-                    info->op[j].mem.scale = D->operands[i].mem.scale;
-                    if (D->operands[i].mem.base == ZYDIS_REGISTER_RIP)
+                    info->op[j].mem.disp  = (int32_t)operands[i].mem.disp.value;
+                    info->op[j].mem.base  = convert(operands[i].mem.base);
+                    info->op[j].mem.index = convert(operands[i].mem.index);
+                    info->op[j].mem.scale = operands[i].mem.scale;
+                    if (operands[i].mem.base == ZYDIS_REGISTER_RIP)
                         info->relative = true;
                     break;
                 default:
@@ -308,7 +317,7 @@ void e9tool::getInstrInfo(const ELF *elf, const Instr *I, InstrInfo *info,
             info->op[j].access =
                 (read || condread? ACCESS_READ: 0) |
                 (write || condwrite? ACCESS_WRITE: 0);
-            info->op[j].size = D->operands[i].size / 8;
+            info->op[j].size = operands[i].size / 8;
             j++;
         }
         assert(k < (sizeof(info->regs.read) / sizeof(info->regs.read[0])) - 1);
@@ -325,19 +334,19 @@ void e9tool::getInstrInfo(const ELF *elf, const Instr *I, InstrInfo *info,
         info->op[j].type        = OPTYPE_INVALID;
         info->count.op          = j;
         info->string.section    = elf->strs + shdr->sh_name;
-        result = ZydisFormatterFormatInstruction(&formatter, D,
-            info->string.instr, sizeof(info->string.instr)-1, I->address);
+        result = ZydisFormatterFormatInstruction(&formatter, D, operands,
+            D->operand_count_visible, info->string.instr,
+            sizeof(info->string.instr)-1, I->address);
         if (!ZYAN_SUCCESS(result))
             error("failed to decompress instruction at address 0x%lx; "
                 "formatting failed", I->address);
         if (!option_intel_syntax &&
             (D->mnemonic == ZYDIS_MNEMONIC_JMP ||
              D->mnemonic == ZYDIS_MNEMONIC_CALL) &&
-            (D->operands[0].type == ZYDIS_OPERAND_TYPE_REGISTER ||
-             D->operands[0].type == ZYDIS_OPERAND_TYPE_MEMORY))
+            (operands[0].type == ZYDIS_OPERAND_TYPE_REGISTER ||
+             operands[0].type == ZYDIS_OPERAND_TYPE_MEMORY))
         {
-            // ZyDis does not format the '*'?
-            // This can lead to ambiguity, so we add it ourselves.
+            // ZyDis does not format the '*', fix it here:
             char *s = info->string.instr;
             for (; *s != ' '; s++)
                 ;

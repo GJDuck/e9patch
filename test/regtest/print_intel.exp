@@ -66,8 +66,8 @@ xor esi, esi
 mov rax, qword ptr [rsp+rsi*8-0x100]
 test rax, rax
 jz 0xa000243
-mov rax, qword ptr cs:[rsp+rsi*8-0x100]
-mov rcx, qword ptr ds:[rsp+rsi*8-0x100]
+mov rax, qword ptr [rsp+rsi*8-0x100]
+mov rcx, qword ptr gs:[rsp+rsi*8-0x100]
 cmp rcx, rax
 jz 0xa00025c
 mov ecx, dword ptr [0xa000000]

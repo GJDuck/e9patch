@@ -39,8 +39,8 @@ done
 TARGET=`readlink zydis`
 if [ ! -d zydis ]
 then
-    ZYDIS_VERSION=6a17c48576e1b016ce098c4bdbd001a1403b6a0a
-    ZYCORE_VERSION=4f3746faa1d19a14857ea7d1495c2ab006103698
+    ZYDIS_VERSION=3f5a3ad8e16658c62d7033e9373232d19480d3cc
+    ZYCORE_VERSION=5c341bf141fe9274c9037c542274ead19fb645d8
 
     echo -e "${GREEN}$0${OFF}: downloading zydis-$ZYDIS_VERSION.zip..."
     wget -O zydis-$ZYDIS_VERSION.zip https://github.com/zyantific/zydis/archive/$ZYDIS_VERSION.zip

@@ -17,9 +17,9 @@
 0000000000000000:ffffffffffff889b:ffffffffffff888a: 48 85 c0                test %rax, %rax
 0000000000000000:ffffffffffff889b:ffffffffffff888a: 48 8b 84 f4 00 ff ff ff movq -0x100(%rsp,%rsi,8), %rax
 0000000000000000:ffffffffffff889b:ffffffffffff888a: 48 85 c0                test %rax, %rax
-0000000000000000:ffffffffffff889b:ffffffffffff888a: 2e 48 8b 84 f4 00 ff ff movq %cs:-0x100(%rsp,%rsi,8), %rax
+0000000000000000:ffffffffffff889b:ffffffffffff888a: 2e 48 8b 84 f4 00 ff ff movq -0x100(%rsp,%rsi,8), %rax
                                                     ff 
-0000000000000000:ffffffffffff889b:ffffffffffff888a: 3e 48 8b 8c f4 00 ff ff movq %ds:-0x100(%rsp,%rsi,8), %rcx
+0000000000000000:ffffffffffff889b:ffffffffffff888a: 65 48 8b 8c f4 00 ff ff movq %gs:-0x100(%rsp,%rsi,8), %rcx
                                                     ff 
 0000000000000000:ffffffffffff889b:0000000000000000: 48 39 c1                cmp %rax, %rcx
 0000000000000000:ffffffffffff889b:00000000f9258d48: 48 8b 8c f0 00 00 00 0a movq 0xa000000(%rax,%rsi,8), %rcx

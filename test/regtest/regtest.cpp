@@ -62,11 +62,14 @@ static bool runTest(const struct dirent *test, const std::string &options)
     log += ".log";
     std::string cmd(basename);
     cmd += ".cmd";
+    std::string diff(basename);
+    diff += ".diff";
 
     // Step (0): reset
     unlink(out.c_str());
     unlink(exe.c_str());
     unlink(log.c_str());
+    unlink(diff.c_str());
 
     // Step (1): generate the EXE
     std::string command("../../e9tool ");
@@ -154,11 +157,19 @@ static bool runTest(const struct dirent *test, const std::string &options)
         if (c != d)
         {
             fclose(OUT); fclose(EXP);
-            printf("%s%s%s: %sFAILED%s (miscompare, see the diff between %s and "
-                    "%s)\n",
+            command.clear();
+            command += "diff ";
+            command += out;
+            command += ' ';
+            command += exp;
+            command += " >";
+            command += diff;
+            printf("\t%s\n", command.c_str());
+            (void)system(command.c_str());
+            printf("%s%s%s: %sFAILED%s (miscompare, see %s.diff)\n",
                 (option_tty? YELLOW: ""), basename.c_str(),
                 (option_tty? WHITE: ""), (option_tty? RED: ""),
-                (option_tty? WHITE: ""), out.c_str(), exp.c_str());
+                (option_tty? WHITE: ""), diff.c_str());
             return false;
         }
         if (c == EOF)

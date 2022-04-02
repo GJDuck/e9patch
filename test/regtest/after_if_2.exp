@@ -19,8 +19,8 @@ pxor %xmm0, %xmm0
 cmp $0x85, %rax
 movq -0x100(%rsp), %rax
 movq -0x100(%rsp,%rsi,8), %rax
-movq %cs:-0x100(%rsp,%rsi,8), %rax
-movq %ds:-0x100(%rsp,%rsi,8), %rcx
+movq -0x100(%rsp,%rsi,8), %rax
+movq %gs:-0x100(%rsp,%rsi,8), %rcx
 cmp %rax, %rcx
 lea -0x263(%rip), %rax
 cmp %rcx, %rdx
