@@ -8,18 +8,39 @@ binaries, we recommend you read the documentation for E9Tool instead.
 
 There are three main ways to integrate E9Patch into your project:
 
-* [1. E9Tool Call Trampolines](#e9tool-call)
-  [simple, high-level, rigid, **recommended method**]
-* [2. E9Patch JSON-RPC Interface](#json-rpc-interface)
-  [advanced, low-level, flexible]
-* [3. E9Tool Plugin API](#e9tool-plugin)
-  [advanced, low-level, flexible]
+1. [E9Tool Call Trampolines](#e9tool-call)
+   [simple, high-level, rigid, **recommended method**]
+2. [E9Patch JSON-RPC Interface](#json-rpc-interface)
+   [advanced, low-level, flexible]
+3. [E9Tool Plugin API](#e9tool-plugin)
+   [advanced, low-level, flexible]
 
 If performance is not an issue,
 then we recommend using [E9Tool call instrumentation](#e9tool-call).
 For serious/optimized applications, we recommend using
 an [E9Tool plugin](#e9tool-plugin) or
 the [E9Patch JSON-RPC interface](#json-rpc-interface).
+
+---
+## Contents
+
+* [1. E9Tool Call Trampolines](#e9tool-call)
+* [2. E9Patch JSON-RPC Interface](#json-rpc-interface)
+    - [2.1 Binary Message](#binary-message)
+    - [2.2 Trampoline Message](#trampoline-message)
+    - [2.3 Reserve Message](#reserve-message)
+    - [2.4 Instruction Message](#instruction-message)
+    - [2.5 Patch Message](#patch-message)
+    - [2.6 Options Message](#options-message)
+    - [2.7 Emit Message](#emit-message)
+* [3. E9Tool Plugin API](#e9tool-plugin)
+    - [3.1 `e9_plugin_init_v1()`](#init-func)
+    - [3.2 `e9_plugin_event_v1()`](#event-func)
+    - [3.3 `e9_plugin_match_v1()`](#match-func)
+    - [3.4 `e9_plugin_code_v1()`](#code-func)
+    - [3.5 `e9_plugin_data_v1()`](#data-func)
+    - [3.6 `e9_plugin_patch_v1()`](#patch-func)
+    - [3.7 `e9_plugin_fini_v1()`](#fini-func)
 
 ---
 ## <a id="e9tool-call">1. E9Tool Call Trampolines</a>
@@ -67,14 +88,15 @@ For example, to instrument all jump instructions in the `xterm` binary
 with a call to the `entry()` function, we can use the following
 command-line syntax:
 
-        ./e9tool -M 'asm=j.*' -P 'entry()@counter' xterm
+        ./e9tool -M 'asm=/j.*/' -P 'entry()@counter' xterm
 
 The syntax is as follows:
 
 * `-M`: Selects the E9Tool "match" command-line option.
    This specifies which instructions should be instrumented.
-* `asm=j.*`: Specifies that we want to patch/instrument all instructions
-  whose assembly syntax matches the regular expression `j.*`.
+* `asm=/j.*/`: Specifies that we want to patch/instrument all instructions
+  whose assembly syntax matches the regular expression `j.*`
+  (delimited by slash `/` characters).
   For the `x86_64`, only jump instructions begin with `j`, so this
   syntax selects all jump instructions, e.g.
   `jmp`, `jnz`, `jg`, etc.
@@ -127,13 +149,13 @@ Specifically, the frontend must specify:
 
 The main JSON-RPC messages are:
 
-* [2.1 Binary Message](#binary-message)
-* [2.2 Trampoline Message](#trampoline-message)
-* [2.3 Reserve Message](#reserve-message)
-* [2.4 Instruction Message](#instruction-message)
-* [2.5 Patch Message](#patch-message)
-* [2.6 Options Message](#options-message)
-* [2.7 Emit Message](#emit-message)
+* [Binary Message](#binary-message)
+* [Trampoline Message](#trampoline-message)
+* [Reserve Message](#reserve-message)
+* [Instruction Message](#instruction-message)
+* [Patch Message](#patch-message)
+* [Options Message](#options-message)
+* [Emit Message](#emit-message)
 
 The E9Patch JSON-RPC parser does not yet support the full JSON syntax, but
 implements a reasonable subset.
@@ -547,42 +569,45 @@ The `"emit"` message instructs E9Patch to emit the patched binary file.
 ---
 ## <a id="e9tool-plugin">3. E9Tool Plugin API</a>
 
-E9Tool is the default frontend for E9Patch.  Although it is possible to
-create new frontends for E9Patch, for some applications this can be quite
-complicated and require a lot of boilerplate code.  To help address this,
-we added a plugin mechanism for E9Tool, as documented below.
+E9Tool is the default frontend for E9Patch.
+Although it is possible to create new frontends for E9Patch, 
+this can be quite complicated and require a lot of code.
+An alternative is the *plugin* mechanism for E9Tool, as documented below.
 
-A plugin is a shared object that exports specific functions, as outlined
-below.  These functions will be invoked by E9Tool at different stages of
-the patching process.  Mundane tasks, such as disassembly, will be handled
-by the E9Tool frontend.
+An E9Tool plugin is a shared object that exports specific functions.
+These functions will be invoked by E9Tool at different stages of the patching
+process.
+Some tasks, such as disassembly, will be automatically handled by the E9Tool
+frontend.
 
-The E9Tool plugin API is very simple and consists of the following functions:
+The E9Tool plugin API is simple and consists of the following functions:
 
 1. `e9_plugin_init_v1(const Context *cxt)`:
     Called once before the binary is disassembled.
-2. `e9_plugin_match_v1(const Context *cxt)`:
-    Called once for each match location.
-3. `e9_plugin_patch_v1(const Context *cxt, Phase phase)`:
-    Called for each patch location (see the `Phase` enum).
-4. `e9_plugin_fini_v1(const Context *cxt)`:
-    Called once after all instructions have been patched.
-5. `e9_plugin_event_v1(const Context *cxt, void *arg)`:
+2. `e9_plugin_event_v1(const Context *cxt, Event event)`:
     Called once for each event (see the `Event` enum).
+3. `e9_plugin_match_v1(const Context *cxt)`:
+    Called once for each match location.
+4. `e9_plugin_code_v1(const Context *cxt)`:
+    Called once per trampoline template (code).
+5. `e9_plugin_data_v1(const Context *cxt)`:
+    Called once per trampoline template (data).
+6. `e9_plugin_patch_v1(const Context *cxt)`:
+    Called for each patch location.
+7. `e9_plugin_fini_v1(const Context *cxt)`:
+    Called once after all instructions have been patched.
 
 Note that each function is optional, and the plugin can choose not to
-define it.  However, The plugin must define at least one of these functions
-to be considered valid.
+define it.
+However, the plugin must define at least one function to be considered valid.
 
-Each function takes at least one argument, namely the "context" of type
-`Context` defined in `e9plugin.h`.
+Each function takes a `cxt` argument of type `Context` defined in `e9plugin.h`.
 The `Context` structure contains several fields, including:
 
-* `out`: is the JSON-RPC output stream that is sent to the E9Patch
-   backend.
+* `out`: is the JSON-RPC output stream that is sent to the E9Patch backend.
    The plugin can directly emit messages to this stream.
-* `argv`: is a vector of all command-line options passed in using
-   E9Tool's `--plugin` option.
+* `argv`: is a vector of all command-line options passed in using E9Tool's
+   `--plugin` option.
 * `context`: is the plugin-defined context, which is the return value of
    the `e9_plugin_init_v1()` function.
 * `elf`: is the input ELF file.
@@ -592,81 +617,28 @@ The `Context` structure contains several fields, including:
 * `I`: is detailed information about the instruction being matched/patched.
 * `id`: is the current patch ID.
 
-Notes:
+Note that:
 
-* Not all `Context` fields will be defined for each operation.
+* Not all `Context` fields are defined for each operation.
   For example, the `Is` field will be undefined before the input binary has
   been disassembled.
   Undefined fields will have the value `NULL`/`-1`, depending on the type.
 * The `I` structure (if defined) is *temporary*, and will be immediately
   destroyed once the plugin function returns.
-  Plugins must ***not*** store references to this object.
-* The `Is` array (if defined) is persistent, and the plugin may safely store
+  *Plugins must not store references to this object*.
+* The `Is` array (if defined) is *persistent*, and the plugin may safely store
   references to this object until `e9_plugin_fini_v1()` returns.
-
-Some API functions take an additional enumeration value:
-
-* `e9_plugin_event_v1()` takes an `Event` enum value which indicates
-  one of the following:
-  - `EVENT_DISASSEMBLY_COMPLETE`: Disassembly completed.
-  - `EVENT_MATCHING_COMPLETE`: Matching completed.
-  - `EVENT_PATCHING_COMPLETE`: Patching completed.
-* `e9_plugin_patch_v1()` take a `Phase` enum value that represents what
-  part of the patch should be emitted:
-  - `PHASE_CODE`: Emit the executable code in trampoline template format.
-  - `PHASE_DATA`: Emit any data referenced by the code in trampoline template
-    format.
-  - `PHASE_METADATA`: Emit instruction-specific metadata as comma-separated
-    `key:value` pairs, where `key` is a macro name, and `value` is a value
-    specified in trampoline template format.
-
-Some API function return a value, including:
-
-* `e9_plugin_init_v1()` returns an optional `context` that will be
-   passed to all other API calls through the `cxt->context` field.
-* `e9_plugin_match_v1()` returns an integer value of the plugin's
-   choosing.  This integer value can be matched using by the `--match`/`-M`
-   E9Tool command-line options, else the value will be ignored.
 
 The API is designed to be highly flexible.  Basically, the plugin API
 functions are expected to send JSON-RPC messages (or parts of messages)
 directly to the E9Patch backend by writing to the `out` output stream.
 See the [E9Patch JSON-RPC interface](#json-rpc-interface) for more
 information.
+Also see the `e9tool.h` header file for useful functions that can be used by
+plugins.
 
-For typical usage,
-the `e9_plugin_init_v1()` function will do the following tasks
-(as required):
-
-1. Initialize the plugin (if necessary)
-2. Setup trampolines
-3. Reserve parts of the virtual address space
-4. Load ELF binaries into the virtual address space
-5. Create and return the context (if necessary)
-
-The `e9_plugin_match_v1()` function will do the following:
-
-1. Return a value to be used in a matching.
-
-The `e9_plugin_patch_v1()` function will do the following:
-
-1. Send the code, data and metadata for each patch operation.
-
-The `e9_plugin_fini_v1()` function will do any cleanup if necessary.
-
-Note that the `e9_plugin_patch_v1()` sends *parts* of a JSON-RPC "patch"
-message, and not a whole message.
-This design is necessary to make trampolines composable with each other.
-
-See the `e9frontend.h` file for useful functions that can assist with these
-tasks.  Otherwise, there are no limitations on what these functions can do,
-just provided the E9Patch backend can parse the JSON-RPC messages sent by
-the plugin.  This makes the plugin API very powerful.
-
----
-### 3.1 Using Plugins
-
-Plugins can be used by E9Tool and the `--patch`/`-P` option.
+Plugins are invoked using the E9Tool `--match`/`-M` or `--patch`/`-P`
+options.
 For example:
 
         g++ -std=c++11 -fPIC -shared -o myPlugin.so myPlugin.cpp -I src/e9tool/
@@ -675,16 +647,118 @@ For example:
 The syntax is as follows:
 
 * `-M`: Selects the E9Tool "match" command-line option.
+  This tells E9Tool which instructions should be patched.
 * `-P`: Selects the E9Tool "patch" command-line option.
-  This tells E9Tool what patching/instrumentation to do.
+  This tells E9Tool how each matching instruction should be patched.
 * `plugin(myPlugin).match() > 0x333`: Specifies that we should only rewrite
-  instructions for which the `e9_plugin_match_v1()`
+  instructions for which the `e9_plugin_match_v1()` (see below)
   function returns a value greater than `0x333`.
 * `plugin(myPlugin).patch()`: Specifies that instrument the program using the
-  `e9_plugin_patch_v1()` function.
-
-For this example to work, the `myPlugin.so` plugin must export both the
-`e9_plugin_match_v1()` and `e9_plugin_patch_v1()` functions.
+  `e9_plugin_code_v1()`/`e9_plugin_patch_v1()` functions (see below).
 
 For an example plugin, see `examples/plugin/example.cpp`.
+
+---
+### <a id="init-func">3.1 `e9_plugin_init_v1()`</a>
+
+The `e9_plugin_init_v1()` function is called once when the plugin is first
+loaded, and before the input binary is disassembled.
+Typically, the `e9_plugin_init_v1()` function is used to complete the
+following tasks, as required:
+
+1. Initialize the plugin (if necessary)
+2. Setup one (or more) trampoline templates
+   (e.g., using `e9tool::sendTrapTrampolineMessage()`)
+3. Reserve parts of the virtual address space
+   (e.g., using `e9tool::sendReserveMessage()`)
+4. Load ELF binaries into the virtual address space
+   (e.g., using `e9tool::sendELFFileMessage()`)
+5. Etc.
+
+The `e9_plugin_init_v1()` function returns an optional `context` (of type
+`void *`) that will be passed to all other API calls through the
+`cxt->context` field.
+If not needed, the `e9_plugin_init_v1()` function can simply return `NULL`.
+
+---
+### <a id="event-func">3.2 `e9_plugin_event_v1()`</a>
+
+The `e9_plugin_event_v1()` function is called on certain events, as indicated
+by the `Event` enum.
+The `Event` enum has the following values:
+
+* `EVENT_DISASSEMBLY_COMPLETE`: Disassembly completed.
+* `EVENT_MATCHING_COMPLETE`: Matching completed.
+* `EVENT_PATCHING_COMPLETE`: Patching completed.
+
+---
+### <a id="match-func">3.3 `e9_plugin_match_v1()`</a>
+
+The `e9_plugin_match_v1()` function is called whenever the plugin is
+invoked during matching using the `plugin(NAME).match()` syntax.
+Here, `cxt->I` will indicate the instruction being matched, and the
+`e9_plugin_match_v1()` should return an integer value (of type `intptr_t`)
+that will be used in evaluation of the matching expression.
+
+---
+### <a id="code-func">3.4 `e9_plugin_code_v1()`</a>
+
+The `e9_plugin_code_v1()` function specifies code (in the template
+specification language) that will be invoked when a matching instruction is
+patched using the `plugin(NAME).patch()` syntax.
+
+The code emitted by the `e9_plugin_code_v1()` function must be
+instruction independent (i.e., `cxt->I` will be `NULL`).
+If instruction-dependent code is necessary, then emit a macro name
+(e.g., `"$myCode"`) and instantiate the macro using `e9_plugin_patch_v1()`
+function (see below).
+
+The `e9_plugin_code_v1()` function may be invoked more than once to support
+trampoline composition.
+
+---
+### <a id="data-func">3.5 `e9_plugin_data_v1()`</a>
+
+The `e9_plugin_data_v1()` function is similar to `e9_plugin_code_v1()`,
+except it is used to specify data (e.g., the assembly string, etc.) rather
+than executable code.
+This function can be omitted if no data is necessary.
+Any data that is emitted here can be referenced by the trampoline code 
+using *labels*.
+
+As with `e9_plugin_code_v1()`, the `e9_plugin_data_v1()` function is
+instruction independent.
+If instruction-dependent data is necessary, then emit a macro name
+(e.g., `"$myData"`) and instantiate the macro using `e9_plugin_patch_v1()`
+function (see below).
+
+As with `e9_plugin_code_v1()`, the `e9_plugin_code_v1()` function may be
+invoked more than once.
+
+---
+### <a id="patch-func">3.6 `e9_plugin_patch_v1()`</a>
+
+The `e9_plugin_patch_v1()` function is called once per matching instruction
+(stored in `cxt->I`), and can be used to instantiate macros with
+instruction-specific code or data.
+Each macro is instantiated by writing `key:value` pairs to `cxt->out`,
+where `key` is a macro name and `value` is a value specified in trampoline
+template format.
+
+For example, if the `e9_plugin_code_v1()` and `e9_plugin_data_v1()` functions
+emitted the `"$myCode"` and `"$myData"` macro names respectively, then these
+can be instantiated by emitting the following to `cxt->out`:
+
+        "$myCode":CODE, "$myData":DATA
+
+Here, `CODE` and `DATA` are the instruction-specific code and data
+(in trampoline template format) respectively.
+The `e9_plugin_patch_v1()` function can also be used to instantiate macros
+defined by trampoline template messages.
+
+---
+### <a id="fini-func">3.7 `e9_plugin_fini_v1()`</a>
+
+The `e9_plugin_fini_v1()` function is called once after the patching process
+is complete, and can be used for any cleanup if necessary.
 

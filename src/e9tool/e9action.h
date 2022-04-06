@@ -41,6 +41,8 @@ struct Plugin
     PluginInit initFunc;
     PluginEvent eventFunc;
     PluginMatch matchFunc;
+    PluginCode codeFunc;
+    PluginData dataFunc;
     PluginPatch patchFunc;
     PluginFini finiFunc;
 };

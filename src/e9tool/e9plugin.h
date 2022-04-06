@@ -40,16 +40,6 @@ extern "C"
     };
 
     /*
-     * Patching phases.
-     */
-    enum Phase
-    {
-        PHASE_CODE,
-        PHASE_DATA,
-        PHASE_METADATA
-    };
-
-    /*
      * Context
      */
     struct Context
@@ -67,13 +57,17 @@ extern "C"
     typedef void *(*PluginInit)(const Context *cxt);
     typedef void (*PluginEvent)(const Context *cxt, Event event);
     typedef intptr_t (*PluginMatch)(const Context *cxt);
-    typedef void (*PluginPatch)(const Context *cxt, Phase phase);
+    typedef void (*PluginCode)(const Context *cxt);
+    typedef void (*PluginData)(const Context *cxt);
+    typedef void (*PluginPatch)(const Context *cxt);
     typedef void (*PluginFini)(const Context *cxt);
 
     extern void *e9_plugin_init_v1(const Context *cxt);
     extern void e9_plugin_event_v1(const Context *cxt, Event event);
     extern intptr_t e9_plugin_match_v1(const Context *cxt);
-    extern void e9_plugin_patch_v1(const Context *cxt, Phase phase);
+    extern void e9_plugin_code_v1(const Context *cxt);
+    extern void e9_plugin_data_v1(const Context *cxt);
+    extern void e9_plugin_patch_v1(const Context *cxt);
     extern void e9_plugin_fini_v1(const Context *cxt);
 }
 

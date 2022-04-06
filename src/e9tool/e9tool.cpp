@@ -192,12 +192,13 @@ Plugin *openPlugin(const char *basename)
     plugin->initFunc  = (PluginInit)dlsym(handle, "e9_plugin_init_v1");
     plugin->eventFunc = (PluginEvent)dlsym(handle, "e9_plugin_event_v1");
     plugin->matchFunc = (PluginMatch)dlsym(handle, "e9_plugin_match_v1");
+    plugin->codeFunc  = (PluginCode)dlsym(handle, "e9_plugin_code_v1");
+    plugin->dataFunc  = (PluginData)dlsym(handle, "e9_plugin_data_v1");
     plugin->patchFunc = (PluginPatch)dlsym(handle, "e9_plugin_patch_v1");
     plugin->finiFunc  = (PluginFini)dlsym(handle, "e9_plugin_fini_v1");
-    if (plugin->initFunc == nullptr &&
-            plugin->eventFunc == nullptr &&
-            plugin->patchFunc == nullptr &&
-            plugin->finiFunc == nullptr)
+    if (plugin->initFunc == nullptr && plugin->eventFunc == nullptr &&
+            plugin->codeFunc == nullptr && plugin->dataFunc == nullptr &&
+            plugin->patchFunc == nullptr && plugin->finiFunc == nullptr)
         error("failed to load plugin \"%s\"; the shared "
             "object does not export any plugin API functions",
             plugin->filename);
@@ -589,11 +590,11 @@ static bool sendTrampoline(FILE *out, const Action *action, size_t idx,
     if (patch->kind == PATCH_PLUGIN)
     {
         plugin = patch->plugin;
-        if (plugin->patchFunc != nullptr)
+        if (plugin->codeFunc != nullptr)
         {
             cxt->argv    = &plugin->argv;
             cxt->context = plugin->context;
-            plugin->patchFunc(cxt, PHASE_CODE);
+            plugin->codeFunc(cxt);
         }
     }
     else
@@ -1490,8 +1491,11 @@ int main_2(int argc, char **argv)
             if (patch->kind == PATCH_PLUGIN)
             {
                 const Plugin *plugin = patch->plugin;
-                cxt.context = plugin->context;
-                plugin->patchFunc(&cxt, PHASE_DATA);
+                if (plugin->dataFunc != nullptr)
+                {
+                    cxt.context = plugin->context;
+                    plugin->dataFunc(&cxt);
+                }
             }
             else
                 fprintf(out, "\"$DATA@%s\",", patch->name+1);

@@ -204,52 +204,48 @@ extern intptr_t e9_plugin_match_v1(const Context *cxt)
 }
 
 /*
+ * Emit the patch template code.
+ */
+extern void e9_plugin_code_v1(const Context *cxt)
+{
+    // The e9_plugin_code_v1() function is invoked once by E9tool.
+    // The function specifies the "code" part of the trampoline template that
+    // will be executed for each matching instruction.
+
+    // In this example, the code simply invokes the $limit template
+    // (defined above):
+    fputs("\"$limit\",", cxt->out);
+}
+
+/*
+ * Emit the patch template data.
+ */
+extern void e9_plugin_data_v1(const Context *cxt)
+{
+    // The e9_plugin_code_v1() function is invoked once by E9tool.
+    // The function specifies the "data" part of the trampoline template that
+    // will be attached to each matching instruction.
+
+    // In this example, there is no data so this function does nothing.
+    // The function could also be removed from the plugin.
+}
+
+/*
  * Patch the selected instructions.
  */
-extern void e9_plugin_patch_v1(const Context *cxt, Phase phase)
+extern void e9_plugin_patch_v1(const Context *cxt)
 {
-    // The e9_plugin_patch_v1() function is invoked by E9Tool in order to
-    // build "patch" messages for E9Patch.  This function is invoked in three
-    // main phases: CODE, DATA and METADATA, as described below.
-    //
-    // Patching phases:
-    //
-    //  - CODE    : Called once per trampoline template.
-    //              Specifies the "code" part of the trampoline template that
-    //              will be executed for each matching instruction.
-    //
-    //  - DATA    : Called once per trampoline template.
-    //              Specifies the "data" part of the trampoline template that
-    //              can be referenced/used by the code part.  The data must be
-    //              read-only.  The data part is optional.
-    //
-    //  - METADATA: Called once per patched instruction.
-    //              Specifies the "metadata" which instantiates any macros
-    //              in the trampoline template (both code or data).  Data
-    //              that is instruction-specific should be specified as
-    //              metadata.  The metadata is optional.
+    // The e9_plugin_patch_v1() function is invoked by E9Tool once per
+    // matching instruciton.  The function specifies the "metadata" which
+    // instantiates any macros in the trampoline template (both code or data).
+    // The metadata is specified in as comma-seperated "$key":VALUE pairs,
+    // where $key is a macro name and VALUE is a value in the template
+    // template format.
 
-    switch (phase)
-    {
-        case PHASE_CODE:
-            // The trampoline code simply invokes the $limit template
-            // (defined above):
-            fputs("\"$limit\",", cxt->out);
-            return;
-        case PHASE_DATA:
-            // There is no trampoline data:
-            return;
-        case PHASE_METADATA:
-        {
-            // The trampoline metadata instantiates the $counter macro with
-            // the counter address corresponding to the instruction type:
-            intptr_t counter = e9_plugin_match_v1(cxt);
-            counter = address + (counter - 1) * sizeof(size_t);
-            fprintf(cxt->out, "\"$counter\":{\"rel32\":\"0x%lx\"},", counter);
-            return;
-        }
-        default:
-            return;
-    }
+    // In this example, the metadata instantiates the $counter macro with
+    // the counter address corresponding to the instruction type:
+    intptr_t counter = e9_plugin_match_v1(cxt);
+    counter = address + (counter - 1) * sizeof(size_t);
+    fprintf(cxt->out, "\"$counter\":{\"rel32\":\"0x%lx\"},", counter);
 }
 
