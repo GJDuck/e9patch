@@ -928,12 +928,12 @@ const Patch *parsePatch(const ELF &elf, const char *str)
                         break;
                     case TOKEN_STRING:
                         name = strDup(parser.s);
-                        arg = (parser.peekToken() == '['? ARGUMENT_USER:
+                        arg = (parser.peekToken() == '['? ARGUMENT_CSV:
                             ARGUMENT_STRING);
                         break;
                     case TOKEN_NAME:
                         name = strDup(parser.s);
-                        arg = (parser.peekToken() == '['? ARGUMENT_USER:
+                        arg = (parser.peekToken() == '['? ARGUMENT_CSV:
                             ARGUMENT_SYMBOL);
                         break;
                     default:
@@ -1006,7 +1006,7 @@ const Patch *parsePatch(const ELF &elf, const char *str)
                         if ((Register)value == REGISTER_RIP)
                             goto not_a_ptr;
                         break;
-                    case ARGUMENT_USER:
+                    case ARGUMENT_CSV:
                         value = parseIndex(parser, INTPTR_MIN, INTPTR_MAX);
                         // Fallthrough:
                     default:

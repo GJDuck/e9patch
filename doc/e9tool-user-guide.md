@@ -965,6 +965,8 @@ The following arguments are supported:
     function</td></tr>
 <tr><td><b><tt>F.name</tt></b></td><td><tt>const char &#42;</tt></td>
     <td>The matching instruction's function name</td></tr>
+<tr><td><b><tt>NAME[i]<tt></b></td><td><tt>int64_t/const char &#42;</tt></td>
+    <td>The corresponding value from the <tt>NAME.csv</tt> file</td></tr>
 </table>
 
 Notes:
@@ -985,6 +987,8 @@ Notes:
 * The `static` version of some arguments gives the address relative to the ELF
   base, given by the formula: *runtime address = ELF address + ELF base*.
   This corresponds to the value used by the matching.
+* The `NAME[i]` argment will either be an integer or a string, depending on
+  corresponding value type from the `NAME.csv` file.
 
 ---
 ##### <a id="pass-by-pointer">2.2.1.1 Pass-by-pointer Arguments</a>

@@ -1,6 +1,6 @@
 /*
  * e9json.cpp
- * Copyright (C) 2020 National University of Singapore
+ * Copyright (C) 2022 National University of Singapore
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -288,6 +288,11 @@ static char peekToken(Parser &parser)
                     parse_error(parser, "failed to read JSON string, maximum "
                         "length (%u) was exceeded", STRING_MAX);
                 c = parser.getc();
+                if (c == '\"')
+                {
+                    parser.s[len++] = '\0';
+                    break;
+                }
                 switch (c)
                 {
                     case EOF:
@@ -297,9 +302,6 @@ bad_string_eof:
                         parse_error(parser, "failed to read JSON string, "
                             "reached end-of-file before string terminator "
                             "(`\"')");
-                    case '\"':
-                        parser.s[len++] = '\0';
-                        break;
                     case '\\':
                         c = parser.getc();
                         switch (c)
@@ -325,6 +327,15 @@ bad_string_eof:
                             case 'f':
                                 parser.s[len++] = '\f';
                                 break;
+                            case '/':
+                                parser.s[len++] = '/';
+                                break;
+                            case '\\':
+                                parser.s[len++] = '\\';
+                                break;
+                            case '\"':
+                                parser.s[len++] = '\"';
+                                break;
                             default:
                                 parser.s[len++] = c;
                                 break;
@@ -334,8 +345,6 @@ bad_string_eof:
                         parser.s[len++] = c;
                         break;
                 }
-                if (c == '\"')
-                    break;
             }
             return (parser.peek = TOKEN_STRING);
         }

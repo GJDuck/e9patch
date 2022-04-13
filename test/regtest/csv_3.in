@@ -1,0 +1,1 @@
+./test -M 'defined(data[0])' -P 'write(data[3])@patch' -P 'write("\n")@patch'

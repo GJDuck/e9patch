@@ -1432,22 +1432,36 @@ static Type sendLoadArgumentMetadata(FILE *out, CallInfo &info,
     Type t = TYPE_INT64;
     switch (arg.kind)
     {
-        case ARGUMENT_USER:
+        case ARGUMENT_CSV:
         {
             MatchVal val = getCSVValue(I->address, arg.name, arg.value);
-            if (val.type != MATCH_TYPE_INTEGER)
+            switch (val.type)
             {
-                warning(CONTEXT_FORMAT "failed to load CSV file value %s[%ld] "
-                    "into register %s; entry for address 0x%lx %s",
-                    CONTEXT(I), arg.name, arg.value, getRegName(getReg(regno)),
-                    I->address,
-                    (val.type == MATCH_TYPE_UNDEFINED? "is missing":
-                                                       "is not an integer"));
-                sendSExtFromI32ToR64(out, 0, regno);
-                t = TYPE_NULL_PTR;
-                break;
+                case MATCH_TYPE_INTEGER:
+                    sendLoadValueMetadata(out, val.i, regno);
+                    break;
+                case MATCH_TYPE_STRING:
+                {
+                    std::string offset("{\"rel32\":\".Lstr");
+                    offset += std::to_string(regno);
+                    offset += '@';
+                    offset += name;
+                    offset += "\"}";
+                    sendLeaFromPCRelToR64(out, offset.c_str(), regno);
+                    t = TYPE_CONST_CHAR_PTR;
+                    break;
+                }
+                default:
+                    warning(CONTEXT_FORMAT "failed to load CSV file value "
+                        "%s[%ld] into register %s; entry for address 0x%lx %s",
+                        CONTEXT(I), arg.name, arg.value,
+                        getRegName(getReg(regno)), I->address,
+                        (val.type == MATCH_TYPE_UNDEFINED? "is missing":
+                                                           "is not supported"));
+                    sendSExtFromI32ToR64(out, 0, regno);
+                    t = TYPE_NULL_PTR;
+                    break;
             }
-            sendLoadValueMetadata(out, val.i, regno);
             break;
         }
         case ARGUMENT_INTEGER:
@@ -1879,6 +1893,17 @@ static void sendArgumentDataMetadata(FILE *out, const char *name,
 {
     switch (arg.kind)
     {
+        case ARGUMENT_CSV:
+        {
+            MatchVal val = getCSVValue(I->address, arg.name, arg.value);
+            if (val.type == MATCH_TYPE_STRING)
+            {
+                fprintf(out, "\".Lstr%d@%s\",{\"string\":", regno, name);
+                sendString(out, val.str);
+                fputs("},", out);
+            }
+            break;
+        }
         case ARGUMENT_STRING:
             fprintf(out, "\".Lstr%d@%s\",{\"string\":", regno, name);
             sendString(out, arg.name);

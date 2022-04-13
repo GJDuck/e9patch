@@ -2265,7 +2265,7 @@ struct MemOp
 enum ArgumentKind
 {
     ARGUMENT_INVALID,               // Invalid argument
-    ARGUMENT_USER,                  // User-defined argument
+    ARGUMENT_CSV,                   // CSV file data argument
     ARGUMENT_INTEGER,               // Constant integer argument
     ARGUMENT_STRING,                // Constant string argument
     ARGUMENT_ID,                    // Patch ID
@@ -2313,7 +2313,7 @@ struct Argument
     intptr_t value;                 // Argument value.
     MemOp memop;                    // Argument memop value.
     const char *name;               // Argument name
-                                    // (ARGUMENT_USER/STRING/SYMBOL).
+                                    // (ARGUMENT_CSV/STRING/SYMBOL).
 };
 
 /*
