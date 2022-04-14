@@ -704,12 +704,21 @@ static void parsePLT(const uint8_t *data, const Elf64_Shdr *shdr_plt,
     std::map<intptr_t, intptr_t> entries;
     for (size_t i = 0; i < plt_size; i += plt_entry_sz)
     {
+        // Parse PLT entry:
         const uint8_t *plt_entry = plt_data + i;
-        if (plt_entry[0] != 0xFF || plt_entry[1] != 0x25)   // jmpq *
-            continue;
-        intptr_t offset = *(const uint32_t *)(plt_entry + 2);
-        intptr_t addr   = plt_addr + i + /*sizeof(jmpq)=*/6 + offset;
-        entries.insert({addr, plt_addr + i});
+        size_t j = 0;
+        if (plt_entry[j] == 0xF3 && plt_entry[j+1] == 0x0F &&
+                plt_entry[j+2] == 0x1E && plt_entry[j+3] == 0xFA)
+            j += 4;     // skip endbr64
+        if (plt_entry[j] == 0xF2)
+            j++;        // skip bnd prefix
+        if (plt_entry[j] == 0xFF && plt_entry[j+1] == 0x25)
+        {
+            // jmp *offset(%rip)
+            intptr_t offset = *(const uint32_t *)(plt_entry + j + 2);
+            intptr_t addr   = plt_addr + i + j + /*sizeof(jmpq)=*/6 + offset;
+            entries.insert({addr, plt_addr + i});
+        }
     }
     
     const Elf64_Rela *rela_tab =
@@ -982,6 +991,18 @@ ELF *e9tool::parseELF(const char *filename, intptr_t base)
         const Elf64_Shdr *shdr_rela_plt = j->second;
         parsePLT(data, shdr_plt, shdr_rela_plt, dynsym_tab, dynsym_num,
             dynstr_tab, /*entry_size=*/8, plt);
+    }
+    i = sections.find(".plt.sec");
+    j = sections.find(".rela.plt");
+    if (dynsym_tab != nullptr && dynstr_tab != nullptr &&
+        i != sections.end() && j != sections.end() &&
+        i->second->sh_type == SHT_PROGBITS &&
+        j->second->sh_type == SHT_RELA)
+    {
+        const Elf64_Shdr *shdr_plt      = i->second;
+        const Elf64_Shdr *shdr_rela_plt = j->second;
+        parsePLT(data, shdr_plt, shdr_rela_plt, dynsym_tab, dynsym_num,
+            dynstr_tab, /*entry_size=*/16, plt);
     }
 
     BinaryType type = BINARY_TYPE_ELF_EXE;
