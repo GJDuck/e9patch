@@ -894,6 +894,8 @@ const Patch *parsePatch(const ELF &elf, const char *str)
                         break;
                     case TOKEN_NEXT:
                         arg = ARGUMENT_NEXT; break;
+                    case TOKEN_NULL:
+                        arg = ARGUMENT_NULL; break;
                     case TOKEN_OFFSET:
                         arg = ARGUMENT_OFFSET; break;
                     case TOKEN_OP:

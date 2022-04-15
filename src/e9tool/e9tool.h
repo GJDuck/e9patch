@@ -2286,6 +2286,7 @@ enum ArgumentKind
     ARGUMENT_STATE,                 // The complete GPR state
     ARGUMENT_SYMBOL,                // Symbol value argument
     ARGUMENT_CONFIG,                // Pointer to the e9_config_s struct
+    ARGUMENT_NULL,                  // NULL pointer argument
 
     ARGUMENT_BB,                    // Basic block
     ARGUMENT_F,                     // Function

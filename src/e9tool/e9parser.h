@@ -88,6 +88,7 @@ enum Token
     TOKEN_NIL,
     TOKEN_NONE,
     TOKEN_NOT,
+    TOKEN_NULL,
     TOKEN_OFFSET,
     TOKEN_OP,
     TOKEN_OR,

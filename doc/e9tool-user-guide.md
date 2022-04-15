@@ -713,6 +713,8 @@ The following arguments are supported:
     <td>The runtime address of the named section/symbol/PLT/GOT entry</td></tr>
 <tr><td><b><tt>static &amp;</tt></b><i>Name</i></td><td><tt>const void &#42;</tt></td>
     <td>The ELF address of the named section/symbol/PLT/GOT entry</td></tr>
+<tr><td><b><tt>NULL</tt></b></td><td><tt>std::nullptr_t</tt></td>
+    <td>The <tt>NULL</tt> pointer</td></tr>
 <tr><td><b><tt>asm</tt></b></td><td><tt>const char &#42;</tt></td>
     <td>Assembly representation of the matching instruction</td></tr>
 <tr><td><b><tt>asm.size</tt></b></td><td><tt>size_t</tt></td>

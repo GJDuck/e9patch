@@ -70,6 +70,7 @@ static const TokenInfo tokens[] =
     {"BB",              TOKEN_BB,               0},
     {"F",               TOKEN_F,                0},
     {"I",               TOKEN_I,                0},
+    {"NULL",            TOKEN_NULL,             0},
     {"[",               (Token)'[',             0},
     {"]",               (Token)']',             0},
     {"_",               TOKEN_NIL,              0x0},

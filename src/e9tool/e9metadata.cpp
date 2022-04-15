@@ -1478,6 +1478,10 @@ static Type sendLoadArgumentMetadata(FILE *out, CallInfo &info,
             t = TYPE_CONST_CHAR_PTR;
             break;
         }
+        case ARGUMENT_NULL:
+            sendSExtFromI32ToR64(out, 0, regno);
+            t = TYPE_NULL_PTR;
+            break;
         case ARGUMENT_OFFSET:
             sendLoadValueMetadata(out, I->offset, regno);
             break;
