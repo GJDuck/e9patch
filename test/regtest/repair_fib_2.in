@@ -1,0 +1,1 @@
+./test_c -M 'call && target == &fib' -P 'replace repair_fib(%rdi,&rax,op[7])@patch'

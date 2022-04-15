@@ -1,0 +1,1 @@
+./test_c -M 'F.entry && F.name == "fib"' -P 'if repair_fib(%rdi,&rax,&rsp)@patch goto'

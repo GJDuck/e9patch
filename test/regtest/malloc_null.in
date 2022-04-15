@@ -1,0 +1,1 @@
+./test_c -M 'call && target == &malloc' -P 'replace zero_rax(&rax)@patch'

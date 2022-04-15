@@ -1,0 +1,1 @@
+./test_c -M 'call && target in {&puts,&fputs,&printf,&fprintf}' -P 'replace empty'

@@ -699,3 +699,32 @@ void print_ptr(std::nullptr_t ptr, const char *_asm)
     fprintf(stderr, "%s: &mem[0] = <undefined>\n", _asm);
 }
 
+const void *repair_fib(uint64_t n, intptr_t *rax, intptr_t *rsp)
+{
+    uint64_t a = 0, b = 1;
+    for (size_t i = 2; i <= n; i++)
+    {
+        uint64_t c = a + b;
+        a = b;
+        b = c;
+    }
+    *rax = (n == 0? 0: b);
+    if (rsp == nullptr)
+        return nullptr;
+    intptr_t RSP = *rsp;
+    intptr_t retaddr = *(intptr_t *)RSP;
+    RSP += sizeof(void *);
+    *rsp = RSP;
+    return (const void *)retaddr;
+}
+
+void zero_rax(uint64_t *rax)
+{
+    *rax = 0x0;
+}
+
+void ABORT(void)
+{
+    abort();
+}
+

@@ -1,0 +1,1 @@
+./test_c -M 'call && target == F' -P 'ABORT()@patch'
