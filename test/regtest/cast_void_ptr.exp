@@ -1,0 +1,8 @@
+x = (void *)0x8877665544332211; // cmp %rax, %rbx
+x = (void *)0x33; // cmp $0x33, %ebx
+x = (void *)0x8877665544332211; // cmp %r8, %rcx
+x = (void *)0x85; // cmp $0x85, %rax
+x = (void *)0x0; // cmp %rax, %rcx
+x = (void *)0x1cba0b0b0b0bb8c0; // cmp %rcx, %rdx
+x = (void *)0x1cba0b0b0b0bb8c0; // cmp %rcx, %rdx
+PASSED

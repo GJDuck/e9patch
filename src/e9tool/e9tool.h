@@ -2004,6 +2004,28 @@ enum Register : uint8_t
 };
 
 /*
+ * Types.
+ */
+typedef uint8_t Type;
+
+#define TYPE_NONE                   0x00
+#define TYPE_CHAR                   0x01
+#define TYPE_INT8                   0x02
+#define TYPE_INT16                  0x03
+#define TYPE_INT32                  0x04
+#define TYPE_INT64                  0x05
+#define TYPE_VOID                   0x06
+#define TYPE_NULL_PTR               0x07
+#define TYPE_PTR                    0x10
+#define TYPE_PTR_PTR                0x20
+#define TYPE_CONST                  0x40
+
+#define TYPE_VOID_PTR               (TYPE_VOID | TYPE_PTR)
+#define TYPE_CONST_VOID_PTR         (TYPE_CONST | TYPE_VOID | TYPE_PTR)
+#define TYPE_CONST_CHAR_PTR         (TYPE_CONST | TYPE_CHAR | TYPE_PTR)
+#define TYPE_CONST_INT8_PTR         (TYPE_CONST | TYPE_INT8 | TYPE_PTR)
+
+/*
  * Instruction categories.
  */
 #define CATEGORY_RETURN         0x0001
@@ -2230,7 +2252,7 @@ struct InstrInfo
 /*
  * Argument fields.
  */
-enum FieldKind
+enum FieldKind : uint8_t
 {
     FIELD_NONE,                     // No field.
     FIELD_DISPL,                    // Displacement.
@@ -2262,7 +2284,7 @@ struct MemOp
 /*
  * Argument kinds.
  */
-enum ArgumentKind
+enum ArgumentKind : uint8_t
 {
     ARGUMENT_INVALID,               // Invalid argument
     ARGUMENT_CSV,                   // CSV file data argument
@@ -2311,6 +2333,7 @@ struct Argument
     bool ptr;                       // Argument is passed by pointer?
     bool _static;                   // Argument is static?
     bool duplicate;                 // Argument is a duplicate?
+    Type cast;                      // Argument type cast.
     intptr_t value;                 // Argument value.
     MemOp memop;                    // Argument memop value.
     const char *name;               // Argument name

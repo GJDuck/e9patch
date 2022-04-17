@@ -1,1 +1,1 @@
--O1 ./test.pie -M true -P 'entry(static addr,id,r13d,instr,len,asm)@inst'
+-O1 ./test.pie -M true -P 'entry((static)addr,id,r13d,instr,len,asm)@inst'

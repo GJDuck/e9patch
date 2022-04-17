@@ -59,7 +59,7 @@
 extern e9tool::Register getReg(int regno);
 extern int getRegIdx(e9tool::Register reg);
 extern int getArgRegIdx(bool sysv, int argno);
-extern Type getRegType(e9tool::Register reg);
+extern e9tool::Type getRegType(e9tool::Register reg);
 extern int32_t getRegSize(e9tool::Register reg);
 extern e9tool::Register getCanonicalReg(e9tool::Register reg);
 extern bool isHighReg(e9tool::Register reg);

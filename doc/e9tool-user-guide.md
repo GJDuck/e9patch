@@ -25,9 +25,10 @@ to be used directly.
     - [2.2 Call Trampolines](#calls)
         * [2.2.1 Call Trampoline Arguments](#call-args)
            - [2.2.1.1 Pass-by-pointer](#pass-by-pointer)
-            - [2.2.1.2 Polymorphic Arguments](#polymorphism)
-            - [2.2.1.3 Explicit Memory Operand Arguments](#memop-args)
-            - [2.2.1.4 Undefined Arguments](#undefined-args)
+           - [2.2.1.2 Polymorphic Arguments](#polymorphism)
+           - [2.2.1.3 Type Casts and Modifiers](#casts)
+           - [2.2.1.4 Explicit Memory Operand Arguments](#memop-args)
+           - [2.2.1.5 Undefined Arguments](#undefined-args)
         * [2.2.2 Call Trampoline ABI](#call-abi)
         * [2.2.3 Conditional Call Trampoline](#conditional-calls)
         * [2.2.4 Call Trampoline Standard Library](#standard-library)
@@ -711,7 +712,7 @@ The following arguments are supported:
     <td>A string constant</td></tr>
 <tr><td><b><tt>&amp;</tt></b><i>Name</i></td><td><tt>const void &#42;</tt></td>
     <td>The runtime address of the named section/symbol/PLT/GOT entry</td></tr>
-<tr><td><b><tt>static &amp;</tt></b><i>Name</i></td><td><tt>const void &#42;</tt></td>
+<tr><td><b><tt>(static)&amp;</tt></b><i>Name</i></td><td><tt>const void &#42;</tt></td>
     <td>The ELF address of the named section/symbol/PLT/GOT entry</td></tr>
 <tr><td><b><tt>NULL</tt></b></td><td><tt>std::nullptr_t</tt></td>
     <td>The <tt>NULL</tt> pointer</td></tr>
@@ -727,7 +728,7 @@ The following arguments are supported:
     <td>A pointer to the E9Patch configuration (see <tt>e9loader.h</tt>)</td></tr>
 <tr><td><b><tt>addr</tt></b></td><td><tt>const void &#42;</tt></td>
     <td>The runtime address of the matching instruction</td></tr>
-<tr><td><b><tt>static addr</tt></b></td><td><tt>const void &#42;</tt></td>
+<tr><td><b><tt>(static)addr</tt></b></td><td><tt>const void &#42;</tt></td>
     <td>The ELF address of the matching instruction</td></tr>
 <tr><td><b><tt>id</tt></b></td><td><tt>intptr_t</tt></td>
     <td>A unique identifier (one per patch)</td></tr>
@@ -735,13 +736,13 @@ The following arguments are supported:
     <td>The machine-code bytes of the matching instruction</td></tr>
 <tr><td><b><tt>next</tt></b></td><td><tt>const void &#42;</tt></td>
     <td>The runtime address of the next executed instruction</td></tr>
-<tr><td><b><tt>static next</tt></b></td><td><tt>const void &#42;</tt></td>
+<tr><td><b><tt>(static)next</tt></b></td><td><tt>const void &#42;</tt></td>
     <td>The ELF address of the next executed instruction</td></tr>
 <tr><td><b><tt>offset</tt></b></td><td><tt>off_t</tt></td>
     <td>The ELF file offset of the matching instruction</td></tr>
 <tr><td><b><tt>target</tt></b></td><td><tt>const void &#42;</tt></td>
     <td>The runtime address of the jump/call/return target, else <tt>NULL</tt></td></tr>
-<tr><td><b><tt>static target</tt></b></td><td><tt>const void &#42;</tt></td>
+<tr><td><b><tt>(static)target</tt></b></td><td><tt>const void &#42;</tt></td>
     <td>The ELF address of the jump/call/return target, else <tt>NULL</tt></td></tr>
 <tr><td><b><tt>trampoline</tt></b></td><td><tt>const void &#42;</tt></td>
     <td>The runtime address of the trampoline</td></tr>
@@ -941,7 +942,7 @@ The following arguments are supported:
     <td>An explicit 64-bit <tt>MEMOP</tt> (passed-by-pointer)</td></tr>
 <tr><td><b><tt>BB</tt></b></td><td><tt>const void &#42;</tt></td>
     <td>The address of the matching instruction's basic block</td></tr>
-<tr><td><b><tt>static BB</tt></b></td><td><tt>const void &#42;</tt></td>
+<tr><td><b><tt>(static)BB</tt></b></td><td><tt>const void &#42;</tt></td>
     <td>The ELF address of the matching instruction's basic block</td></tr>
 <tr><td><b><tt>BB.addr</tt></b></td><td><tt>const void &#42;</tt></td>
     <td>Alias for <tt>BB</tt></td></tr>
@@ -954,7 +955,7 @@ The following arguments are supported:
     block</td></tr>
 <tr><td><b><tt>F</tt></b></td><td><tt>const void &#42;</tt></td>
      <td>The address of the matching instruction's function</td></tr> 
-<tr><td><b><tt>static F</tt></b></td><td><tt>const void &#42;</tt></td>
+<tr><td><b><tt>(static)F</tt></b></td><td><tt>const void &#42;</tt></td>
      <td>The ELF address of the matching instruction's function</td></tr> 
 <tr><td><b><tt>F.addr</tt></b></td><td><tt>const void &#42;</tt></td>
      <td>Alias for <tt>F</tt></td></tr> 
@@ -986,9 +987,6 @@ Notes:
   See the `examples/state.c` example for the structure layout.
   Except for `%rip`, the values in the structure can be modified, in which
   case the corresponding register will be updated accordingly.
-* The `static` version of some arguments gives the address relative to the ELF
-  base, given by the formula: *runtime address = ELF address + ELF base*.
-  This corresponds to the value used by the matching.
 * The `NAME[i]` argment will either be an integer or a string, depending on
   corresponding value type from the `NAME.csv` file.
 
@@ -1073,7 +1071,48 @@ matches the argument types, or generate an error if no appropriate
 match can be found.
 
 ---
-##### <a id="memop-args">2.2.1.3 Explicit Memory Operand Arguments</a>
+##### <a id="casts">2.2.1.3 Type Casts and Modifiers</a>
+
+Arguments can also be cast to different types using a C-style syntax:
+
+<pre>
+    <b>(</b>TYPE<b>)</b>ARG
+</pre>
+
+Here, `TYPE` is defined as follows:
+
+<pre>
+    TYPE ::= [ <b>static</b> ] ( INT-TYPE | PTR-TYPE )
+    INT-TYPE ::= <b>int8_t</b> | <b>int16_t</b> | <b>int32_t</b> | <b>int64_t</b>
+    PTR-TYPE ::= [ <b>const</b> ] ( INT-TYPE | <b>char</b> | <b>void</b> ) <b>&#42;</b>
+</pre>
+
+Here, the `const`/`int8_t`/`int16_t`/`int32_t`/`int64_t`/`char`/`void`
+keywords have the usual `C`/`C++` meanings, for example:
+
+* `(int8_t)`: cast to 8-bit integer.
+* `(void *)`: cast to void pointer.
+* `(const char *)`: cast to constant string pointer.
+
+Type casts can affect overloading resolution.
+
+In addition to types, a special `static` modifier is also supported.
+The `static` modifier affects how address arguments
+(`addr`, `target`, `next`, etc.) are interpreted.
+By default, these address arguments will represent the *dynamic*
+(a.k.a., *runtime*) address, defined by the formula:
+
+        address = ELF-address + runtime-base
+
+The `static` modifier changes the interpretation to the ELF file address
+only:
+
+        (static)address = ELF-address
+
+The static address also corresponds to the value used by instruction matching.
+
+---
+##### <a id="memop-args">2.2.1.4 Explicit Memory Operand Arguments</a>
 
 It is possible to pass explicit memory operands as arguments.
 This is useful for reading/writing to known memory locations, such as
@@ -1082,7 +1121,7 @@ The syntax is the same as the matching language, e.g.,
 `mem32<(%rax)>`, `mem64<0x200(%rsp,%rax,8)>`, etc.
 
 ---
-##### <a id="undefined-args">2.2.1.4 Undefined Arguments</a>
+##### <a id="undefined-args">2.2.1.5 Undefined Arguments</a>
 
 Some arguments may be undefined, e.g., `op[3]` for a 2-operand instruction.
 In this case, the `NULL` pointer will be passed and the type will

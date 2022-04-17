@@ -827,10 +827,67 @@ const Patch *parsePatch(const ELF &elf, const char *str)
                 t = parser.getToken();
                 if (t == ')' && args.size() == 0)
                     break;
-                bool ptr = false, neg = false, _static = false;
+                Type cast = TYPE_NONE;
+                bool _static = false;
+                if (t == '(')
+                {
+                    // Parse cast/modifiers
+                    if (parser.peekToken() == TOKEN_STATIC)
+                    {
+                        parser.getToken();
+                        _static = true;
+                    }
+                    bool ptr = false;
+                    switch (parser.peekToken())
+                    {
+                        case ')':
+                            if (_static)
+                                break;
+                            parser.unexpectedToken();
+                        case TOKEN_CONST:
+                            parser.getToken();
+                            cast |= TYPE_CONST;
+                            ptr = true;
+                            // Fallthrough:
+                        default:
+                            switch (parser.getToken())
+                            {
+                                case TOKEN_INT8_T:
+                                    cast |= TYPE_INT8; break;
+                                case TOKEN_INT16_T:
+                                    cast |= TYPE_INT16; break;
+                                case TOKEN_INT32_T:
+                                    cast |= TYPE_INT32; break;
+                                case TOKEN_INT64_T:
+                                    cast |= TYPE_INT64; break;
+                                case TOKEN_VOID:
+                                    ptr = true;
+                                    cast |= TYPE_VOID; break;
+                                case TOKEN_CHAR:
+                                    ptr = true;
+                                    cast |= TYPE_CHAR; break;
+                                default:
+                                    parser.unexpectedToken();
+                            }
+                            if (parser.peekToken() == '*')
+                            {
+                                parser.getToken();
+                                cast |= TYPE_PTR;
+                            }
+                            if (ptr && (cast & TYPE_PTR) == 0x0)
+                                parser.unexpectedToken();
+                            break;
+                    }
+                    parser.expectToken(')');
+                    t = parser.getToken();
+                }
+                bool ptr = false, neg = false;
                 switch (t)
                 {
                     case TOKEN_STATIC:
+                        warning("the `static arg' syntax has been deprecated; "
+                            "please use the C-style cast `(static)arg' "
+                            "instead");
                         _static = true;
                         t = parser.getToken();
                         if (t != '&')
@@ -1018,22 +1075,21 @@ const Patch *parsePatch(const ELF &elf, const char *str)
                                 "pass argument `%s' by pointer",
                                 parser.getName(arg_token));
                 }
-                if (_static)
+                switch (arg)
                 {
-                    switch (arg)
-                    {
-                        case ARGUMENT_ADDR: case ARGUMENT_NEXT:
-                        case ARGUMENT_SYMBOL: case ARGUMENT_TARGET:
+                    case ARGUMENT_ADDR: case ARGUMENT_NEXT:
+                    case ARGUMENT_SYMBOL: case ARGUMENT_TARGET:
+                        break;
+                    case ARGUMENT_BB: case ARGUMENT_F:
+                        if (field == FIELD_ADDR)
                             break;
-                        case ARGUMENT_BB: case ARGUMENT_F:
-                            if (field == FIELD_ADDR)
-                                break;
-                            // Fallthrough:
-                        default:
-                            error("failed to parse call trampoline; cannot "
-                                "use `static' with `%s' argument",
+                        // Fallthrough:
+                    default:
+                        if (_static)
+                            warning("static cast ignored for `%s' argument",
                                 parser.getName(arg_token));
-                    }
+                        _static = false;
+                        break;
                 }
                 bool duplicate = false;
                 for (const auto &prevArg: args)
@@ -1044,8 +1100,8 @@ const Patch *parsePatch(const ELF &elf, const char *str)
                         break;
                     }
                 }
-                args.push_back({arg, field, ptr, _static, duplicate, value,
-                    memop, name});
+                args.push_back({arg, field, ptr, _static, duplicate, cast,
+                    value, memop, name});
                 t = parser.getToken();
                 if (t == ')')
                     break;

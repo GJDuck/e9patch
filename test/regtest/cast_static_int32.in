@@ -1,0 +1,1 @@
+./test.pie -M 'asm=/cmp.*/' -P 'cast((static int32_t)addr,asm)@patch'

@@ -1,1 +1,1 @@
-./test -M 'reg[0] == rax and reg[1] == rbx' -P 'entry(static addr,rax,rbx,instr,size,asm)@inst'
+./test -M 'reg[0] == rax and reg[1] == rbx' -P 'entry((static)addr,rax,rbx,instr,size,asm)@inst'

@@ -52,6 +52,7 @@ static const TokenInfo tokens[] =
     {"&&",              TOKEN_AND,              0},
     {"(",               (Token)'(',             0},
     {")",               (Token)')',             0},
+    {"*",               (Token)'*',             0},
     {"+",               (Token)'+',             0},
     {",",               (Token)',',             0},
     {"-",               (Token)'-',             0},
@@ -98,10 +99,12 @@ static const TokenInfo tokens[] =
     {"bx",              TOKEN_REGISTER,         REGISTER_BX},
     {"call",            TOKEN_CALL,             0},
     {"ch",              TOKEN_REGISTER,         REGISTER_CH},
+    {"char",            TOKEN_CHAR,             0},
     {"cl",              TOKEN_REGISTER,         REGISTER_CL},
     {"clean",           TOKEN_CLEAN,            0},
     {"condjump",        TOKEN_CONDJUMP,         0},
     {"config",          TOKEN_CONFIG,           0},
+    {"const",           TOKEN_CONST,            0},
     {"cs",              TOKEN_REGISTER,         REGISTER_CS},
     {"cx",              TOKEN_REGISTER,         REGISTER_CX},
     {"defined",         TOKEN_DEFINED,          0},
@@ -137,6 +140,10 @@ static const TokenInfo tokens[] =
     {"in",              TOKEN_IN,               0},
     {"index",           TOKEN_INDEX,            0},
     {"instr",           TOKEN_INSTR,            0},
+    {"int16_t",         TOKEN_INT16_T,          0},
+    {"int32_t",         TOKEN_INT32_T,          0},
+    {"int64_t",         TOKEN_INT64_T,          0},
+    {"int8_t",          TOKEN_INT8_T,           0},
     {"jump",            TOKEN_JUMP,             0},
     {"len",             TOKEN_LENGTH,           0},
     {"length",          TOKEN_LENGTH,           0},
@@ -232,6 +239,7 @@ static const TokenInfo tokens[] =
     {"trap",            TOKEN_TRAP,             0},
     {"true",            TOKEN_TRUE,             true},
     {"type",            TOKEN_TYPE,             0},
+    {"void",            TOKEN_VOID,             0},
     {"w",               TOKEN_WRITE,            ACCESS_WRITE},
     {"write",           TOKEN_WRITE,            ACCESS_WRITE},
     {"writes",          TOKEN_WRITES,           0},
@@ -444,6 +452,7 @@ int Parser::getToken()
             return TOKEN_EOF;
         case '[': case ']': case '@': case ',': case '(': case ')':
         case '&': case '.': case ':': case '+': case '{': case '}':
+        case '*':
             s[0] = c; s[1] = '\0';
             pos++;
             if ((c == '&' || c == '.') && buf[pos] == c)

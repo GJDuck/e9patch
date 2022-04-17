@@ -1,0 +1,8 @@
+x = 0x11; // cmp %rax, %rbx
+x = 0x33; // cmp $0x33, %ebx
+x = 0x11; // cmp %r8, %rcx
+x = 0x85; // cmp $0x85, %rax
+x = 0x00; // cmp %rax, %rcx
+x = 0xC0; // cmp %rcx, %rdx
+x = 0xC0; // cmp %rcx, %rdx
+PASSED

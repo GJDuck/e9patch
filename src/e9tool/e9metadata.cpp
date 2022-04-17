@@ -1884,6 +1884,7 @@ static Type sendLoadArgumentMetadata(FILE *out, CallInfo &info,
     }
     info.clobber(getReg(regno));
     info.use(getReg(regno));
+    t = (arg.cast != TYPE_NONE? arg.cast: t);
 
     return t;
 }

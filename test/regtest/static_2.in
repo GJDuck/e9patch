@@ -1,1 +1,1 @@
-./test.pie -M 'jump and target == &data_END' -P 'entry(static &data_END, static target, static next,instr,size,asm)@inst'
+./test.pie -M 'jump and target == &data_END' -P 'entry((static)&data_END,(static)target,(static)next,instr,size,asm)@inst'

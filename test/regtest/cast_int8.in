@@ -1,0 +1,1 @@
+./test -M 'asm=/cmp.*/' -P 'cast((int8_t)op[0],asm)@patch'

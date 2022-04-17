@@ -728,3 +728,72 @@ void ABORT(void)
     abort();
 }
 
+void cast(int8_t x, const char *_asm)
+{
+    fprintf(stderr, "x = 0x%.2X; // %s\n", (uint8_t)x, _asm);
+}
+void cast(int16_t x, const char *_asm)
+{
+    fprintf(stderr, "x = 0x%.4X; // %s\n", (uint16_t)x, _asm);
+}
+void cast(int32_t x, const char *_asm)
+{
+    fprintf(stderr, "x = 0x%.8X; // %s\n", x, _asm);
+}
+void cast(int64_t x, const char *_asm)
+{
+    fprintf(stderr, "x = 0x%.16lX; // %s\n", x, _asm);
+}
+void cast(int8_t *x, const char *_asm)
+{
+    fprintf(stderr, "x = (int8_t *)%p; // %s\n", x, _asm);
+}
+void cast(int16_t *x, const char *_asm)
+{
+    fprintf(stderr, "x = (int16_t *)%p; // %s\n", x, _asm);
+}
+void cast(int32_t *x, const char *_asm)
+{
+    fprintf(stderr, "x = (int32_t *)%p; // %s\n", x, _asm);
+}
+void cast(int64_t *x, const char *_asm)
+{
+    fprintf(stderr, "x = (int64 *)%p; // %s\n", x, _asm);
+}
+void cast(void *x, const char *_asm)
+{
+    fprintf(stderr, "x = (void *)%p; // %s\n", x, _asm);
+}
+void cast(char *x, const char *_asm)
+{
+    fprintf(stderr, "x = (char *)%p; // %s\n", x, _asm);
+}
+void cast(const int8_t *x, const char *_asm)
+{
+    fprintf(stderr, "x = (const int8_t *)%p; // %s\n", x, _asm);
+}
+void cast(const int16_t *x, const char *_asm)
+{
+    fprintf(stderr, "x = (const int16_t *)%p; // %s\n", x, _asm);
+}
+void cast(const int32_t *x, const char *_asm)
+{
+    fprintf(stderr, "x = (const int32_t *)%p; // %s\n", x, _asm);
+}
+void cast(const int64_t *x, const char *_asm)
+{
+    fprintf(stderr, "x = (const int64 *)%p; // %s\n", x, _asm);
+}
+void cast(const void *x, const char *_asm)
+{
+    fprintf(stderr, "x = (const void *)%p; // %s\n", x, _asm);
+}
+void cast(const char *x, const char *_asm)
+{
+    fprintf(stderr, "x = (const char *)%p; // %s\n", x, _asm);
+}
+void cast(std::nullptr_t x, const char *_asm)
+{
+    fprintf(stderr, "x = nullptr; // %s\n", _asm);
+}
+
