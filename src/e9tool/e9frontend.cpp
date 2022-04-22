@@ -1102,6 +1102,22 @@ typedef struct _IMAGE_SECTION_HEADER
     uint16_t NumberOfLinenumbers;
     uint32_t Characteristics;
 } IMAGE_SECTION_HEADER, *PIMAGE_SECTION_HEADER;
+typedef struct _IMAGE_SYMBOL {
+    union {
+        uint8_t    ShortName[8];
+        struct {
+            uint32_t   Short;
+            uint32_t   Long;
+        } Name;
+        uint32_t   LongName[2];
+    } N;
+    uint32_t   Value;
+    uint16_t   SectionNumber;
+    uint16_t    Type;
+    uint8_t    StorageClass;
+    uint8_t    NumberOfAuxSymbols;
+}__attribute__((packed)) IMAGE_SYMBOL;
+typedef IMAGE_SYMBOL *PIMAGE_SYMBOL;
 #define IMAGE_SCN_MEM_EXECUTE   0x20000000
 #define IMAGE_SCN_MEM_READ      0x40000000
 #define IMAGE_SCN_MEM_WRITE     0x80000000
@@ -1235,6 +1251,33 @@ ELF *e9tool::parsePE(const char *filename)
     elf->sec_cache.swap(secs);
     elf->str_cache.swap(strs);
 
+    PIMAGE_SYMBOL sym = (PIMAGE_SYMBOL)(data + file_hdr->PointerToSymbolTable);
+    if (file_hdr->NumberOfSymbols)
+    {
+        PLTInfo plt;
+        char *st_name = (char *)(sym + file_hdr->NumberOfSymbols);
+        while ((char *)sym != st_name)
+        {
+            char *sym_name;
+            if (sym->N.Name.Short!=0)
+            {
+                sym_name = (char *)malloc(0x8);
+                memcpy(sym_name, (char *)sym->N.ShortName, 8);
+            }
+            else
+                sym_name = (char *)(st_name + sym->N.Name.Long);
+            if (sym->Type == 0x20)
+            {
+                const char *name = (const char *)sym_name;
+                const IMAGE_SECTION_HEADER *section = shdrs + sym->SectionNumber - 1;
+                intptr_t addr = (intptr_t)(section->VirtualAddress + sym->Value);
+                plt.insert({name, addr});
+            }
+            sym = sym + sym->NumberOfAuxSymbols + 1;
+        }
+        elf->plt.swap(plt);
+    }
+    
     return elf;
 }
 
