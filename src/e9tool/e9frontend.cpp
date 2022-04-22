@@ -1181,7 +1181,8 @@ ELF *e9tool::parsePE(const char *filename)
     {
         const IMAGE_SECTION_HEADER *shdr = shdrs + i;
         off_t offset  = (off_t)shdr->PointerToRawData;
-        intptr_t addr = (intptr_t)shdr->VirtualAddress;
+        intptr_t addr = (intptr_t)shdr->VirtualAddress +
+            (intptr_t)opt_hdr->ImageBase;
         size_t size   = (size_t)shdr->VirtualSize;
         Elf64_Shdr elf_shdr;
 
