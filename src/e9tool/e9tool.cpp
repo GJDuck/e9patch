@@ -557,7 +557,8 @@ static size_t exclude(const std::vector<Exclude> &excludes, intptr_t addr)
 /*
  * Send an instruction message (if necessary).
  */
-static bool sendInstructionMessage(FILE *out, Instr &I, intptr_t addr)
+static bool sendInstructionMessage(FILE *out, Instr &I, intptr_t addr,
+    intptr_t base)
 {
     if (std::abs((intptr_t)I.address - addr) >
             INT8_MAX + /*sizeof(short jmp)=*/2 + /*max instruction size=*/15)
@@ -565,7 +566,7 @@ static bool sendInstructionMessage(FILE *out, Instr &I, intptr_t addr)
     if (I.emitted)
         return true;
     I.emitted = true;
-    sendInstructionMessage(out, I.address, I.size, I.offset);
+    sendInstructionMessage(out, I.address - base, I.size, I.offset);
     return true;
 }
 
@@ -1524,7 +1525,7 @@ int main_2(int argc, char **argv)
                 {
                     // Always emits jump/calls for -Opeephole
                     Is[i].emitted = true;
-                    sendInstructionMessage(out, Is[i].address,
+                    sendInstructionMessage(out, Is[i].address - elf.base,
                         Is[i].size, Is[i].offset);
                 }
                 break;
@@ -1537,10 +1538,10 @@ int main_2(int argc, char **argv)
         getInstrInfo(&elf, &Is[i], &I);
         bool done = false;
         for (ssize_t j = i; !done && j >= 0; j--)
-            done = !sendInstructionMessage(out, Is[j], Is[i].address);
+            done = !sendInstructionMessage(out, Is[j], Is[i].address, elf.base);
         done = false;
         for (size_t j = i + 1; !done && j < count; j++)
-            done = !sendInstructionMessage(out, Is[j], Is[i].address);
+            done = !sendInstructionMessage(out, Is[j], Is[i].address, elf.base);
 
         // Send the "patch" message.
         id++;
