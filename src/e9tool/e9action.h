@@ -248,6 +248,7 @@ enum MatchField
     MATCH_FIELD_BASE,
     MATCH_FIELD_INDEX,
     MATCH_FIELD_SCALE,
+    MATCH_FIELD_ADDR,
 };
 
 /*

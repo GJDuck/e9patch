@@ -1,0 +1,7 @@
+movq 0x5e(%rip), %rax
+movq 0x28(%rip), %r8
+movq 0x19a(%rip), %rcx
+lea 0x14(%rip), %r10
+lea 0x2(%rip), %rdx
+lea 0x54(%rip), %rsi
+PASSED

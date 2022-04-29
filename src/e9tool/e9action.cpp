@@ -296,6 +296,8 @@ static const MatchArg parseMatchArg(Parser &parser, bool val = false)
                 error("failed to parse regular expression \"%s\"", parser.s);
             }
         case '&':
+            if (parser.peekToken() == TOKEN_MEM)
+                break;
             parser.expectToken2(TOKEN_STRING, TOKEN_NAME);
             return MatchArg(new MatchVal(parseSymbol(parser, parser.s)));
         case TOKEN_NIL:
@@ -388,6 +390,7 @@ static const MatchArg parseMatchArg(Parser &parser, bool val = false)
     }
     MatchKind match = MATCH_INVALID;
     const char *basename = nullptr;
+    bool ptr = false;
     switch (t)
     {
         case TOKEN_ASM:
@@ -508,6 +511,11 @@ static const MatchArg parseMatchArg(Parser &parser, bool val = false)
             match = MATCH_WRITES; break;
         case TOKEN_REGS:
             match = MATCH_REGS; break;
+        case '&':
+            ptr = true;
+            parser.expectToken(TOKEN_MEM);
+            match = MATCH_MEM;
+            break;
         default:
             parser.unexpectedToken();
     }
@@ -589,6 +597,12 @@ static const MatchArg parseMatchArg(Parser &parser, bool val = false)
 
         default:
             break;
+    }
+    if (ptr)
+    {
+        if (match != MATCH_MEM || j < 0 || field != MATCH_FIELD_NONE)
+            parser.unexpectedToken();
+        field = MATCH_FIELD_ADDR;
     }
     return MatchArg(new MatchVar(set, i, match, j, field, basename, plugin));
 }
@@ -1622,6 +1636,13 @@ static MatchVal makeMatchValue(const MatchVar *var, const ELF *elf,
                         if (op->type != OPTYPE_MEM)
                             goto undefined;
                         result.i = (intptr_t)op->mem.scale;
+                        return result;
+                    case MATCH_FIELD_ADDR:
+                        if (op->type != OPTYPE_MEM ||
+                                op->mem.base != REGISTER_RIP)
+                            goto undefined;
+                        result.i = (intptr_t)op->mem.disp +
+                            (intptr_t)I->address + (intptr_t)I->size;
                         return result;
                     default:
                         goto undefined;

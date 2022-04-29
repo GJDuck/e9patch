@@ -1,0 +1,1 @@
+./test -M 'defined(&mem[0])' -P print
