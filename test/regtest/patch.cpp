@@ -583,6 +583,10 @@ void print(const char *_asm)
 {
     fprintf(stderr, "%s\n", _asm);
 }
+void print(const char *_asm, const void *ptr)
+{
+    fprintf(stderr, "%s: %p\n", _asm, ptr);
+}
 
 void write(const char *str)
 {

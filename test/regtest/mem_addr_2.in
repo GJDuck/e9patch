@@ -1,0 +1,1 @@
+./test -M '&mem[0] >= 0xa000100 && &mem[0] <= 0xa000300 && &mem[0] != 0xa000192' -P '"print"(asm,&mem[0])@patch'

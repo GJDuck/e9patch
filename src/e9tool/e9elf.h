@@ -103,6 +103,7 @@ namespace e9tool
 
         mutable Symbols symbols;        // Symbol cache.
         std::list<Elf64_Shdr> sec_cache;// Extra allocated sections (PE).
+        std::list<Elf64_Sym> sym_cache; // Extra allocated symbols (PE).
         std::string str_cache;          // Extra allocated strings (PE).
     };
 };

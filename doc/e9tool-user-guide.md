@@ -201,6 +201,9 @@ The following `ATTRIBUTE`s (with corresponding types) are supported:
     <td>The <i>i</i><sup>th</sup> register operand</td></tr>
 <tr><td><b><tt>mem[i]</tt></b></td><td><tt>Operand</tt></td>
     <td>The <i>i</i><sup>th</sup> memory operand</td></tr>
+<tr><td><b><tt>&amp;mem[i]</tt></b></td><td><tt>Integer</tt></td>
+    <td>The <i>i</i><sup>th</sup> memory operand address, if statically
+    known</td></tr>
 <tr><td><b><tt>op[i].type</tt></b></td><td><tt>{imm,reg,mem}</tt></td>
     <td>The <i>i</i><sup>th</sup> operand type</td></tr>
 <tr><td><b><tt>src[i].type</tt></b></td><td><tt>{imm,reg,mem}</tt></td>
