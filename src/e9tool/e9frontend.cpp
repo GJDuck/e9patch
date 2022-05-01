@@ -5,7 +5,7 @@
  * |  __/\__, | || (_) | (_) | |
  *  \___|  /_/ \__\___/ \___/|_|
  *  
- * Copyright (C) 2021 National University of Singapore
+ * Copyright (C) 2022 National University of Singapore
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -64,7 +64,7 @@ void flushWarnings(void)
         fprintf(stderr, "%swarning%s: %s\n",
             (option_is_tty? "\33[33m": ""),
             (option_is_tty? "\33[0m" : ""), wrn);
-        delete[] wrn;
+        free((void *)wrn);
     }
     warnings.clear();
 }
@@ -1033,9 +1033,6 @@ ELF *e9tool::parseELF(const char *filename, intptr_t base)
     return elf;
 }
 
-/*
- * Parse a PE file into an ELF structure.
- */
 typedef struct _IMAGE_FILE_HEADER
 {
       uint16_t Machine;
@@ -1052,6 +1049,8 @@ typedef struct _IMAGE_DATA_DIRECTORY
       uint32_t VirtualAddress;
       uint32_t Size;
 } IMAGE_DATA_DIRECTORY, *PIMAGE_DATA_DIRECTORY;
+#define IMAGE_DIRECTORY_ENTRY_IAT 12
+// #define IMAGE_DIRECTORY_ENTRY_DELAY_IMPORT 13
 typedef struct _IMAGE_OPTIONAL_HEADER64
 {
     uint16_t Magic;
@@ -1102,28 +1101,56 @@ typedef struct _IMAGE_SECTION_HEADER
     uint16_t NumberOfLinenumbers;
     uint32_t Characteristics;
 } IMAGE_SECTION_HEADER, *PIMAGE_SECTION_HEADER;
-typedef struct _IMAGE_SYMBOL {
-    union {
-        uint8_t    ShortName[8];
-        struct {
-            uint32_t   Short;
-            uint32_t   Long;
+typedef struct _IMAGE_SYMBOL
+{
+    union
+    {
+        char ShortName[8];
+        struct
+        {
+            uint32_t Short;
+            uint32_t Long;
         } Name;
-        uint32_t   LongName[2];
+        uint32_t LongName[2];
     } N;
-    uint32_t   Value;
-    uint16_t   SectionNumber;
-    uint16_t    Type;
-    uint8_t    StorageClass;
-    uint8_t    NumberOfAuxSymbols;
-}__attribute__((packed)) IMAGE_SYMBOL;
-typedef IMAGE_SYMBOL *PIMAGE_SYMBOL;
+    uint32_t Value;
+    uint16_t SectionNumber;
+    uint16_t Type;
+    uint8_t StorageClass;
+    uint8_t NumberOfAuxSymbols;
+} __attribute__((packed)) IMAGE_SYMBOL, *PIMAGE_SYMBOL;
 #define IMAGE_SCN_MEM_EXECUTE   0x20000000
 #define IMAGE_SCN_MEM_READ      0x40000000
 #define IMAGE_SCN_MEM_WRITE     0x80000000
 #define IMAGE_SCN_MEM_SHARED    0x10000000
 #define IMAGE_SCN_CNT_CODE      0x00000020
 #define IMAGE_FILE_DLL          0x2000
+
+/*
+ * Find PE data.
+ */
+static const uint8_t *findPEData(const uint8_t *data,
+    const IMAGE_FILE_HEADER *file_hdr, const IMAGE_SECTION_HEADER *shdr,
+    uint32_t addr, uint32_t size)
+{
+    if (addr == 0x0)
+        return nullptr;
+    for (uint16_t i = 0; i < file_hdr->NumberOfSections; i++)
+    {
+        if (addr >= shdr[i].VirtualAddress &&
+            addr + size <= shdr[i].VirtualAddress + shdr[i].VirtualSize)
+        {
+            uint32_t offset = shdr[i].PointerToRawData +
+                (addr - shdr[i].VirtualAddress);
+            return data + offset;
+        }
+    }
+    return nullptr;
+}
+
+/*
+ * Parse a PE file into an ELF structure.
+ */
 ELF *e9tool::parsePE(const char *filename)
 {
     int fd = open(filename, O_RDONLY, 0);
@@ -1185,6 +1212,9 @@ ELF *e9tool::parsePE(const char *filename)
     const IMAGE_SECTION_HEADER *shdrs =
         (PIMAGE_SECTION_HEADER)&opt_hdr->DataDirectory[
             opt_hdr->NumberOfRvaAndSizes];
+    const PIMAGE_SYMBOL syms =
+        (PIMAGE_SYMBOL)(data + file_hdr->PointerToSymbolTable);
+    const char *strtab = (const char *)(syms + file_hdr->NumberOfSymbols);
 
     /*
      * Find all sections.
@@ -1192,7 +1222,7 @@ ELF *e9tool::parsePE(const char *filename)
     SectionInfo sections;
     std::map<off_t, const Elf64_Shdr *> exes;
     std::string strs;
-    std::list<Elf64_Shdr> secs;
+    std::list<Elf64_Shdr> sec_cache;
     for (uint16_t i = 0; i < file_hdr->NumberOfSections; i++)
     {
         const IMAGE_SECTION_HEADER *shdr = shdrs + i;
@@ -1224,60 +1254,104 @@ ELF *e9tool::parsePE(const char *filename)
         strs += shdr->Name;
         strs += '\0';
 
-        secs.push_back(elf_shdr);
-        const Elf64_Shdr *elf_shdr_ptr = &secs.back();
+        sec_cache.push_back(elf_shdr);
+        const Elf64_Shdr *elf_shdr_ptr = &sec_cache.back();
         sections.insert({name, elf_shdr_ptr});
         if ((shdr->Characteristics & IMAGE_SCN_MEM_EXECUTE) != 0 &&
                 (shdr->Characteristics & IMAGE_SCN_CNT_CODE) != 0)
             exes.insert({offset, elf_shdr_ptr});
     }
 
+    /*
+     * Read the symbols (if present).
+     */
+    std::list<Elf64_Sym> sym_cache;
+    for (uint32_t i = 0; i < file_hdr->NumberOfSymbols; i++)
+    {
+        const IMAGE_SYMBOL *sym = syms + i;
+        if (sym->SectionNumber == 0 ||
+                sym->SectionNumber > file_hdr->NumberOfSections)
+        {
+            i += sym->NumberOfAuxSymbols;
+            continue;
+        }
+        unsigned char type = (sym->Type == 0x20? STT_FUNC: STT_OBJECT);
+        const IMAGE_SECTION_HEADER *shdr = shdrs + sym->SectionNumber-1;
+        intptr_t addr = (intptr_t)(shdr->VirtualAddress + sym->Value);
+        
+        Elf64_Sym elf_sym;
+        elf_sym.st_name  = strs.size();
+        elf_sym.st_info  = ELF32_ST_INFO(STB_LOCAL, type);
+        elf_sym.st_other = STV_DEFAULT;
+        elf_sym.st_shndx = (Elf64_Section)(sym->SectionNumber-1);
+        elf_sym.st_value = (Elf64_Addr)addr;
+        elf_sym.st_size  = 0;
+        sym_cache.push_back(elf_sym);
+
+        if (sym->N.Name.Short != 0)
+            strs.append(sym->N.ShortName, sizeof(sym->N.ShortName));
+        else
+        {
+            const char *name = (char *)(strtab + sym->N.Name.Long);
+            strs += name;
+        }
+        strs += '\0';
+        i += sym->NumberOfAuxSymbols;
+    }
+
+    /*
+     * Read the IAT.
+     */
+    intptr_t iat_rva = (intptr_t)
+        opt_hdr->DataDirectory[IMAGE_DIRECTORY_ENTRY_IAT].VirtualAddress;
+    uint32_t iat_size =
+        opt_hdr->DataDirectory[IMAGE_DIRECTORY_ENTRY_IAT].Size;
+    const uint64_t *iat = (const uint64_t *)
+        findPEData(data, file_hdr, shdrs, iat_rva, iat_size);
+    uint32_t iat_len = iat_size / sizeof(uint64_t);
+    GOTInfo got;
+    for (uint32_t i = 0; iat != nullptr && i < iat_len; i++)
+    {
+        uint64_t entry = iat[i];
+        if ((entry >> 63) != 0)
+            continue;
+        const char *name = (const char *)
+            findPEData(data, file_hdr, shdrs, (uint32_t)entry, 0);
+        if (name == nullptr)
+            continue;
+        name += 2;
+        intptr_t addr = iat_rva + i * sizeof(uint64_t);
+        got.insert({name, addr});
+    }
+
+    SymbolInfo symbols;
+    for (const auto &sym: sym_cache)
+    {
+        const char *name = strs.data() + sym.st_name;
+        symbols.insert({name, &sym});
+    }
     ELF *elf = new ELF;
-    elf->filename       = strDup(filename);
-    elf->data           = data;
-    elf->size           = size;
-    elf->base           = (intptr_t)opt_hdr->ImageBase;
-    elf->end            = elf->base + (intptr_t)opt_hdr->SizeOfImage;;
-    elf->strs           = strs.data();
-    elf->phdrs          = nullptr;
-    elf->phnum          = 0;
-    elf->type           = type;
-    elf->reloc          = false;
-    elf->dynlink        = false;
+    elf->filename = strDup(filename);
+    elf->data     = data;
+    elf->size     = size;
+    elf->base     = (intptr_t)opt_hdr->ImageBase;
+    elf->end      = elf->base + (intptr_t)opt_hdr->SizeOfImage;;
+    elf->strs     = strs.data();
+    elf->phdrs    = nullptr;
+    elf->phnum    = 0;
+    elf->type     = type;
+    elf->reloc    = false;
+    elf->dynlink  = false;
     elf->sections.swap(sections);
+    elf->syms.swap(symbols);
+    elf->got.swap(got);
     elf->exes.reserve(exes.size());
     for (const auto &entry: exes)
         elf->exes.push_back(entry.second);
-    elf->sec_cache.swap(secs);
+    elf->sec_cache.swap(sec_cache);
+    elf->sym_cache.swap(sym_cache);
     elf->str_cache.swap(strs);
 
-    PIMAGE_SYMBOL sym = (PIMAGE_SYMBOL)(data + file_hdr->PointerToSymbolTable);
-    if (file_hdr->NumberOfSymbols)
-    {
-        PLTInfo plt;
-        char *st_name = (char *)(sym + file_hdr->NumberOfSymbols);
-        while ((char *)sym != st_name)
-        {
-            char *sym_name;
-            if (sym->N.Name.Short!=0)
-            {
-                sym_name = (char *)malloc(0x8);
-                memcpy(sym_name, (char *)sym->N.ShortName, 8);
-            }
-            else
-                sym_name = (char *)(st_name + sym->N.Name.Long);
-            if (sym->Type == 0x20)
-            {
-                const char *name = (const char *)sym_name;
-                const IMAGE_SECTION_HEADER *section = shdrs + sym->SectionNumber - 1;
-                intptr_t addr = (intptr_t)(section->VirtualAddress + sym->Value);
-                plt.insert({name, addr});
-            }
-            sym = sym + sym->NumberOfAuxSymbols + 1;
-        }
-        elf->plt.swap(plt);
-    }
-    
     return elf;
 }
 
@@ -1424,7 +1498,13 @@ intptr_t e9tool::getELFObject(const ELF *elf, const char *name)
     if (val != INTPTR_MIN)
         return elf->base + val;
 
-    // CASE #4: undefined symbol
+    // case #4: GOT entry
+    val = getELFGOTEntry(elf, name);
+    fprintf(stderr, "LOOKUP %s = %zd\n", name, val);
+    if (val != INTPTR_MIN)
+        return elf->base + val;
+
+    // CASE #5: undefined symbol
     if (sym != nullptr)
         return -1;
 
