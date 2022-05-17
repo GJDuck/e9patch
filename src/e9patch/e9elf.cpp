@@ -1,6 +1,6 @@
 /*
  * e9elf.cpp
- * Copyright (C) 2021 National University of Singapore
+ * Copyright (C) 2022 National University of Singapore
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -39,6 +39,24 @@
 
 static const
 #include "e9loader_elf.c"
+
+#ifndef PT_GNU_PROPERTY
+#define PT_GNU_PROPERTY                     0x6474e553
+#define NT_GNU_PROPERTY_TYPE_0              5
+#define GNU_PROPERTY_X86_FEATURE_1_AND      0xc0000002
+#define GNU_PROPERTY_X86_FEATURE_1_IBT      0x1
+#define GNU_PROPERTY_X86_FEATURE_1_SHSTK    0x2
+#endif
+
+/*
+ * GNU_PROPERTY handling.
+ */
+struct property_s
+{
+    uint32_t type;
+    uint32_t datasz;
+    uint8_t data[];
+};
 
 /*
  * Patch refactoring for the dynamic loader.
@@ -141,7 +159,7 @@ bool parseElf(Binary *B)
     Elf64_Phdr *phdrs = (Elf64_Phdr *)(data + ehdr->e_phoff);
     Elf64_Phdr *phdr_note = nullptr, *phdr_gnu_relro = nullptr,
         *phdr_gnu_stack = nullptr, *phdr_dynamic = nullptr,
-        *phdr_max = nullptr;
+        *phdr_max = nullptr, *phdr_gnu_property = nullptr;
     intptr_t vmax = INTPTR_MIN;
     for (unsigned i = 0; i < ehdr->e_phnum; i++)
     {
@@ -173,6 +191,54 @@ bool parseElf(Binary *B)
             case PT_GNU_STACK:
                 phdr_gnu_stack = phdr;
                 break;
+            case PT_GNU_PROPERTY:
+                phdr_gnu_property = phdr;
+                break;
+        }
+    }
+    uint32_t *features = nullptr;
+    if (phdr_gnu_property != nullptr &&
+            phdr_gnu_property->p_align == sizeof(void *))
+    {
+        // Search for Intel CET properties
+        const uint8_t *notes =
+            (const uint8_t *)(data + phdr_gnu_property->p_offset);
+        size_t size = (size_t)phdr_gnu_property->p_memsz;
+        for (size_t i = 0; i + sizeof(Elf64_Nhdr) < size; )
+        {
+            const Elf64_Nhdr *note = (const Elf64_Nhdr *)(notes + i);
+            if (note->n_namesz == 4 &&
+                    note->n_type == NT_GNU_PROPERTY_TYPE_0 &&
+                    memcmp(note+1, "GNU", 4) == 0)
+            {
+                if (note->n_descsz < sizeof(struct property_s) ||
+                        note->n_descsz % sizeof(struct property_s) != 0)
+                    break;
+                const uint8_t *ptr = (const uint8_t *)(note+1) + 4;
+                const uint8_t *end = ptr + note->n_descsz;
+                uint32_t last = 0;
+                do
+                {
+                    const struct property_s *property =
+                        (const struct property_s *)ptr;
+                    if (property->type < last)
+                        break;
+                    if (ptr + property->datasz >
+                            end - sizeof(struct property_s))
+                        break;
+                    last = property->type;
+                    if (property->type == GNU_PROPERTY_X86_FEATURE_1_AND)
+                    {
+                        features = (uint32_t *)property->data;
+                        break;
+                    }
+                    ptr += property->datasz;
+                    ptr += (property->datasz % sizeof(void *) != 0?
+                        sizeof(void *): 0);
+                }
+                while (end - ptr >= (ssize_t)sizeof(struct property_s));
+                break;
+            }
         }
     }
     if (phdr_dynamic != nullptr &&
@@ -191,6 +257,7 @@ bool parseElf(Binary *B)
     info.phdr_gnu_relro = phdr_gnu_relro;
     info.phdr_gnu_stack = phdr_gnu_stack;
     info.phdr_dynamic   = phdr_dynamic;
+    info.features       = features;
     B->config = option_loader_base;
 
     return pic;
@@ -307,6 +374,16 @@ size_t emitElf(Binary *B, const MappingSet &mappings, size_t mapping_size)
 {
     uint8_t *data = B->patched.bytes;
     size_t size = B->patched.size;
+
+    // Step (0): Disable incompatible ELF features:
+    ElfInfo &info = B->elf;
+    if (info.features != nullptr)
+    {
+        if ((*info.features & GNU_PROPERTY_X86_FEATURE_1_IBT) != 0)
+            *info.features &= ~GNU_PROPERTY_X86_FEATURE_1_IBT;
+        if ((*info.features & GNU_PROPERTY_X86_FEATURE_1_SHSTK) != 0)
+            *info.features &= ~GNU_PROPERTY_X86_FEATURE_1_SHSTK;
+    }
 
     // Step (1): Round-up to nearest page boundary (zero-fill)
     stat_input_file_size = size;
