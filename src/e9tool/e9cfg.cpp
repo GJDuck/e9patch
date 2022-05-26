@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2021 National University of Singapore
+ * Copyright (C) 2022 National University of Singapore
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -35,6 +35,9 @@
 
 #include "e9elf.h"
 #include "e9tool.h"
+
+#define TARGET_ENTRY 0x08
+#define TARGET_ENDBR 0x10
 
 using namespace e9tool;
 
@@ -101,6 +104,23 @@ ssize_t e9tool::findInstr(const Instr *Is, size_t size, intptr_t address)
 }
 
 /*
+ * Find the target corresponding to the address.
+ */
+ssize_t findTarget(const ELF *elf, const Instr *Is, size_t size,
+    intptr_t address)
+{
+    ssize_t i = findInstr(Is, size, address);
+    if (i < 0 || !elf->cet.ibt)
+        return i;
+    const Instr *I = Is + i;
+    InstrInfo info0, *info = &info0;
+    getInstrInfo(elf, I, info);
+    if (info->mnemonic != MNEMONIC_ENDBR64)
+        return -1;      // With Intel CET; cannot be a target
+    return i;
+}
+
+/*
  * Code analysis pass: find all probable code targets.
  */
 static void CFGCodeAnalysis(const ELF *elf, bool pic, const Instr *Is,
@@ -137,7 +157,7 @@ static void CFGCodeAnalysis(const ELF *elf, bool pic, const Instr *Is,
                 //
                 // [HEURISTIC] The target is assumed to be a function.
                 target = (intptr_t)I->op[0].imm;
-                if (findInstr(Is, size, target) >= 0)
+                if (findTarget(elf, Is, size, target) >= 0)
                 {
                     DEBUG(targets, target, "Load  : %p", (void *)target);
                     addTarget(target, TARGET_INDIRECT | TARGET_FUNCTION,
@@ -153,7 +173,7 @@ static void CFGCodeAnalysis(const ELF *elf, bool pic, const Instr *Is,
                 // [HEURISTIC] Similar to the "mov" case but for PIC.
                 target = (intptr_t)I->address + (intptr_t)I->size +
                     (intptr_t)I->op[0].mem.disp;
-                if (findInstr(Is, size, target) >= 0)
+                if (findTarget(elf, Is, size, target) >= 0)
                 {
                     DEBUG(targets, target, "Load  : %p", (void *)target);
                     addTarget(target, TARGET_INDIRECT | TARGET_FUNCTION,
@@ -198,6 +218,17 @@ static void CFGCodeAnalysis(const ELF *elf, bool pic, const Instr *Is,
                 DEBUG(targets, next, "NotTkn: %p", (void *)next);
                 addTarget(next, TARGET_DIRECT, targets);
                 break;
+            case MNEMONIC_ENDBR64:
+                if (elf->cet.ibt)
+                {
+                    // For Intel CET, we assume an endbr64 is a target.
+                    // This is technically a [HEURISTIC] since the binary
+                    // may choose to use superfluous endbr64 instructions.
+                    DEBUG(targets, next, "EndBr : %p", (void *)I->address);
+                    addTarget(I->address, TARGET_INDIRECT | TARGET_ENDBR,
+                        targets);
+                }
+                continue;
             default:
                 continue;
         }
@@ -261,7 +292,7 @@ static void CFGSectionAnalysis(const ELF *elf, bool pic, const char *name,
             if (tables.find(table) != tables.end())
                 call = false;
             intptr_t target = *p;
-            if (target != 0 && findInstr(Is, size, target) >= 0)
+            if (target != 0 && findTarget(elf, Is, size, target) >= 0)
             {
                 // "Probably" a jump target.
                 DEBUG(targets, target, "%s: %p%s", (call? "Data  ": "JmpTbl"),
@@ -296,7 +327,7 @@ static void CFGSectionAnalysis(const ELF *elf, bool pic, const char *name,
                 {
                     intptr_t offset = (intptr_t)*q;
                     intptr_t target = table + offset;
-                    if (findInstr(Is, size, target) < 0)
+                    if (findTarget(elf, Is, size, target) < 0)
                         break;
                     DEBUG(targets, target, "JmpTbl: %p%+zd = %p",
                         (void *)table, offset, (void *)target);
@@ -319,7 +350,7 @@ static void CFGSectionAnalysis(const ELF *elf, bool pic, const char *name,
                     continue;
                 
                 intptr_t target = *p;
-                if (findInstr(Is, size, target) < 0)
+                if (findTarget(elf, Is, size, target) < 0)
                     continue;
                 DEBUG(targets, target, "Reloc : %p (F)", (void *)target);
                 addTarget(target, TARGET_INDIRECT | TARGET_FUNCTION, targets);
@@ -389,13 +420,13 @@ void e9tool::buildTargets(const ELF *elf, const Instr *Is, size_t size,
     {
         intptr_t target = entry.first;
         TargetKind kind = entry.second;
-
+        
         // Find the corresponding instruction:
         ssize_t i = findInstr(Is, size, target);
         if (i < 0)
             continue;
 
-        // Skip any NOPs
+        // Skip any NOPs (BB entry sled)
         InstrInfo I0, *I = &I0;
         for (; i < (ssize_t)size; i++)
         {
@@ -403,7 +434,7 @@ void e9tool::buildTargets(const ELF *elf, const Instr *Is, size_t size,
             bool stop = false;
             switch (I->mnemonic)
             {
-                case MNEMONIC_NOP:
+                case MNEMONIC_NOP: case MNEMONIC_ENDBR64:
                     break;
                 default:
                     stop = true;
@@ -421,6 +452,18 @@ void e9tool::buildTargets(const ELF *elf, const Instr *Is, size_t size,
         // Add target:
         addTarget((intptr_t)Is[i].address, kind, new_targets);
     }
+
+    // Pass #4: Normalize the target kinds.
+    for (auto &entry: targets)
+    {
+        TargetKind &kind = entry.second;
+        if ((kind & TARGET_ENTRY) != 0)
+            kind |= ((kind & TARGET_DIRECT) == 0? TARGET_INDIRECT: 0);
+        if (elf->cet.ibt && (kind & TARGET_ENDBR) == 0)
+            kind &= ~TARGET_INDIRECT;
+        kind &= TARGET_DIRECT | TARGET_INDIRECT | TARGET_FUNCTION;
+    }
+
     targets.swap(new_targets);
 }
 

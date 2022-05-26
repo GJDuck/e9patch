@@ -1297,8 +1297,9 @@ int main_2(int argc, char **argv)
         const char *section   = elf.strs + shdr->sh_name;
         if (!option_plt &&
                 (strcmp(section, ".plt") == 0 ||
-                 strcmp(section, ".plt.got") == 0))
-            continue;   // Exclude .plt/,plt.got by default
+                 strcmp(section, ".plt.got") == 0 ||
+                 strcmp(section, ".plt.sec") == 0))
+            continue;   // Exclude .plt.* by default
         size_t section_size   = (size_t)shdr->sh_size;
         off_t section_offset  = (off_t)shdr->sh_offset;
         intptr_t section_addr = (intptr_t)shdr->sh_addr;

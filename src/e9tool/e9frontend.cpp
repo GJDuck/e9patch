@@ -901,16 +901,24 @@ ELF *e9tool::parseELF(const char *filename, intptr_t base)
     size_t phnum = (size_t)ehdr->e_phnum;
     intptr_t end = INTPTR_MIN;
     bool dynlink = false;
+    const Elf64_Phdr *phdr_gnu_property = nullptr;
     for (size_t i = 0; i < phnum; i++)
     {
         const Elf64_Phdr *phdr = phdrs + i;
         intptr_t phdr_base = (intptr_t)phdr->p_vaddr;
         intptr_t phdr_end  = phdr_base + phdr->p_memsz;
         end = std::max(end, phdr_end);
-        if (!exe && phdr->p_type == PT_INTERP && !isLibraryFilename(filename))
-            exe = true;
-        if (phdr->p_type == PT_INTERP)
-            dynlink = true;
+        switch (phdr->p_type)
+        {
+            case PT_INTERP:
+                if (!exe && !isLibraryFilename(filename))
+                    exe = true;
+                dynlink = true;
+                break;
+            case PT_GNU_PROPERTY:
+                phdr_gnu_property = phdr;
+                break;
+        }
     }
     end += base;
 
@@ -1005,6 +1013,59 @@ ELF *e9tool::parseELF(const char *filename, intptr_t base)
             dynstr_tab, /*entry_size=*/16, plt);
     }
 
+    /*
+     * Check for Intel CET support.
+     */
+    bool ibt = false, shstk = false;
+    if (phdr_gnu_property != nullptr &&
+            phdr_gnu_property->p_align == sizeof(void *))
+    {
+        // Search for Intel CET properties
+        const uint8_t *notes =
+            (const uint8_t *)(data + phdr_gnu_property->p_offset);
+        size_t size = (size_t)phdr_gnu_property->p_memsz;
+        for (size_t i = 0; i + sizeof(Elf64_Nhdr) < size; )
+        {
+            const Elf64_Nhdr *note = (const Elf64_Nhdr *)(notes + i);
+            if (note->n_namesz == 4 &&
+                    note->n_type == NT_GNU_PROPERTY_TYPE_0 &&
+                    memcmp(note+1, "GNU", 4) == 0)
+            {
+                if (note->n_descsz < sizeof(struct property_s) ||
+                        note->n_descsz % sizeof(struct property_s) != 0)
+                    break;
+                const uint8_t *ptr = (const uint8_t *)(note+1) + 4;
+                const uint8_t *end = ptr + note->n_descsz;
+                uint32_t last = 0;
+                do
+                {
+                    const struct property_s *property =
+                        (const struct property_s *)ptr;
+                    if (property->type < last)
+                        break;
+                    if (ptr + property->datasz >
+                            end - sizeof(struct property_s))
+                        break;
+                    last = property->type;
+                    if (property->type == GNU_PROPERTY_X86_FEATURE_1_AND)
+                    {
+                        const uint32_t *features = (uint32_t *)property->data;
+                        if (*features & GNU_PROPERTY_X86_FEATURE_1_IBT)
+                            ibt = true;
+                        if (*features & GNU_PROPERTY_X86_FEATURE_1_SHSTK)
+                            shstk = true;
+                        break;
+                    }
+                    ptr += property->datasz;
+                    ptr += (property->datasz % sizeof(void *) != 0?
+                        sizeof(void *): 0);
+                }
+                while (end - ptr >= (ssize_t)sizeof(struct property_s));
+                break;
+            }
+        }
+    }
+
     BinaryType type = BINARY_TYPE_ELF_EXE;
     type = (pic && exe?  BINARY_TYPE_ELF_PIE: type);
     type = (pic && !exe? BINARY_TYPE_ELF_DSO: type);
@@ -1022,6 +1083,8 @@ ELF *e9tool::parseELF(const char *filename, intptr_t base)
     elf->type           = type;
     elf->reloc          = reloc;
     elf->dynlink        = dynlink;
+    elf->cet.ibt        = ibt;
+    elf->cet.shstk      = shstk;
     elf->sections.swap(sections);
     elf->dynsyms.swap(dynsyms);
     elf->syms.swap(syms);

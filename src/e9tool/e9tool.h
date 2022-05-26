@@ -2344,10 +2344,9 @@ struct Argument
  * CFG information.
  */
 typedef uint8_t TargetKind;
-#define TARGET_ENTRY    0x1
-#define TARGET_DIRECT   0x2
-#define TARGET_INDIRECT 0x4
-#define TARGET_FUNCTION 0x8
+#define TARGET_DIRECT   0x01        // Direct call/jump
+#define TARGET_INDIRECT 0x02        // Indirect call/jump
+#define TARGET_FUNCTION 0x04        // Target is called
 typedef std::map<intptr_t, TargetKind> Targets;
 
 struct BB

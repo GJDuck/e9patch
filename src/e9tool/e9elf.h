@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2021 National University of Singapore
+ * Copyright (C) 2022 National University of Singapore
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -28,6 +28,24 @@
 
 #include "e9tool.h"
 #include "e9types.h"
+
+#ifndef PT_GNU_PROPERTY
+#define PT_GNU_PROPERTY                     0x6474e553
+#define NT_GNU_PROPERTY_TYPE_0              5
+#define GNU_PROPERTY_X86_FEATURE_1_AND      0xc0000002
+#define GNU_PROPERTY_X86_FEATURE_1_IBT      0x1
+#define GNU_PROPERTY_X86_FEATURE_1_SHSTK    0x2
+#endif
+
+/*
+ * GNU_PROPERTY handling.
+ */
+struct property_s
+{
+    uint32_t type;
+    uint32_t datasz;
+    uint8_t data[];
+};
 
 /*
  * Symbol.
@@ -96,6 +114,11 @@ namespace e9tool
         BinaryType type;                // Binary type.
         bool reloc;                     // Needs relocation?
         bool dynlink;                   // Dynamically linked?
+        struct
+        {
+            bool ibt;                   // Intel CET: Indirect Branch Tracking
+            bool shstk;                 // Intel CET: Shadow Stack
+        } cet;
 
         Targets targets;                // Jump/Call targets [optional]
         BBs bbs;                        // Basic blocks [optional]
