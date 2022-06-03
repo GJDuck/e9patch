@@ -1,6 +1,6 @@
 /*
  * e9pe.cpp
- * Copyright (C) 2021 National University of Singapore
+ * Copyright (C) 2022 National University of Singapore
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -34,21 +34,21 @@ static const
 
 struct _IMAGE_FILE_HEADER
 {
-      uint16_t Machine;
-      uint16_t NumberOfSections;
-      uint32_t TimeDateStamp;
-      uint32_t PointerToSymbolTable;
-      uint32_t NumberOfSymbols;
-      uint16_t SizeOfOptionalHeader;
-      uint16_t Characteristics;
+    uint16_t Machine;
+    uint16_t NumberOfSections;
+    uint32_t TimeDateStamp;
+    uint32_t PointerToSymbolTable;
+    uint32_t NumberOfSymbols;
+    uint16_t SizeOfOptionalHeader;
+    uint16_t Characteristics;
 };
 
 #define IMAGE_FILE_MACHINE_AMD64 0x8664
 
 typedef struct _IMAGE_DATA_DIRECTORY
 {
-      uint32_t VirtualAddress;
-      uint32_t Size;
+    uint32_t VirtualAddress;
+    uint32_t Size;
 } IMAGE_DATA_DIRECTORY, *PIMAGE_DATA_DIRECTORY;
 
 struct _IMAGE_OPTIONAL_HEADER64
@@ -221,6 +221,12 @@ void parsePE(Binary *B)
     if (shdr_size_1 - shdr_size < 2 * sizeof(IMAGE_SECTION_HEADER))
         error("failed to parse PE file \"%s\"; not-yet-implemented section "
             "headers, no free space", filename);
+    for (uint32_t i = 0; i < file_hdr->NumberOfSections; i++)
+    {
+        if (strncmp(shdr[i].Name, ".e9load", sizeof(shdr[i].Name)) == 0)
+            error("failed to parse PE file \"%s\"; E9Patch has already "
+                "been applied", filename);
+    }
 
     // Reserve the address space occupied by the image itself:
     intptr_t lb = (intptr_t)image_base;
