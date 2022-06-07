@@ -204,6 +204,18 @@ The following `ATTRIBUTE`s (with corresponding types) are supported:
 <tr><td><b><tt>&amp;mem[i]</tt></b></td><td><tt>Integer</tt></td>
     <td>The <i>i</i><sup>th</sup> memory operand address, if statically
     known</td></tr>
+<tr><td><b><tt>op[i].size</tt></b></td><td><tt>Integer</tt></td>
+    <td>The <i>i</i><sup>th</sup> operand size</td></tr>
+<tr><td><b><tt>src[i].size</tt></b></td><td><tt>Integer</tt></td>
+    <td>The <i>i</i><sup>th</sup> source operand size</td></tr>
+<tr><td><b><tt>dst[i].size</tt></b></td><td><tt>Integer</tt></td>
+    <td>The <i>i</i><sup>th</sup> destination operand size</td></tr>
+<tr><td><b><tt>imm[i].size</tt></b></td><td><tt>Integer</tt></td>
+    <td>The <i>i</i><sup>th</sup> immediate operand size</td></tr>
+<tr><td><b><tt>reg[i].size</tt></b></td><td><tt>Integer</tt></td>
+    <td>The <i>i</i><sup>th</sup> register operand size</td></tr>
+<tr><td><b><tt>mem[i].size</tt></b></td><td><tt>Integer</tt></td>
+    <td>The <i>i</i><sup>th</sup> memory operand size</td></tr>
 <tr><td><b><tt>op[i].type</tt></b></td><td><tt>{imm,reg,mem}</tt></td>
     <td>The <i>i</i><sup>th</sup> operand type</td></tr>
 <tr><td><b><tt>src[i].type</tt></b></td><td><tt>{imm,reg,mem}</tt></td>

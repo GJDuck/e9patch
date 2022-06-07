@@ -1,0 +1,1 @@
+./test -M 'mnemonic != /nop.*/ && mem[0].size == 4' -P print

@@ -1,0 +1,15 @@
+movq 0x5e(%rip), %rax
+movq 0x28(%rip), %r8
+movq 0x19a(%rip), %rcx
+lea 0x14(%rip), %r10
+jmpq *0x777f(%rsp,%rcx,1)
+lea 0x2(%rip), %rdx
+movq -0x100(%rsp), %rax
+movq -0x100(%rsp,%rsi,8), %rax
+movq -0x100(%rsp,%rsi,8), %rax
+movq %gs:-0x100(%rsp,%rsi,8), %rcx
+movq 0xa000000(%rax,%rsi,8), %rcx
+movq 0xa000000(,%rsi,8), %rdx
+movq 0xa000008, %rdx
+lea 0x54(%rip), %rsi
+PASSED

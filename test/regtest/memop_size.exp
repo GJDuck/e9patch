@@ -1,0 +1,2 @@
+movl 0xa000000, %ecx
+PASSED
