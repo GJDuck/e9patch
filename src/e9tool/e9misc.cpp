@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2021 National University of Singapore
+ * Copyright (C) 2022 National University of Singapore
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -329,6 +329,9 @@ void usage(FILE *stream, const char *progname)
         "\t--trap=ADDR, --trap-all\n"
         "\t\tInsert a trap (int3) instruction at the corresponding\n"
         "\t\ttrampoline entry.  This can be used for debugging with gdb.\n"
+        "\n"
+        "\t--version\n"
+        "\t\tPrint the version and exit.\n"
         "\n", progname);
 }
 

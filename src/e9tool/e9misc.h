@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2021 National University of Singapore
+ * Copyright (C) 2022 National University of Singapore
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -25,6 +25,9 @@
 #ifndef PAGE_SIZE
 #define PAGE_SIZE   4096
 #endif
+
+#define STRING(s)               STRING_2(s)
+#define STRING_2(s)             #s
 
 #define CONTEXT_FORMAT      "%lx: %s%s%s: "
 #define CONTEXT(I)          (I)->address,                           \

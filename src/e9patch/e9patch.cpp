@@ -1,6 +1,6 @@
 /*
  * e9patch.cpp
- * Copyright (C) 2021 National University of Singapore
+ * Copyright (C) 2022 National University of Singapore
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -365,6 +365,9 @@ static void usage(FILE *stream, const char *progname)
         "\t\tEnable [disable] the insertion of a trap (int3) at the program\n"
         "\t\tloader entry-point.\n"
         "\t\tDefault: false (disabled)\n"
+        "\n"
+        "\t--version\n"
+        "\t\tPrint the version and exit.\n"
         "\n",
         progname, PAGE_SIZE, PAGE_SIZE);
 }
@@ -405,6 +408,7 @@ enum Option
     OPTION_TRAP,
     OPTION_TRAP_ALL,
     OPTION_TRAP_ENTRY,
+    OPTION_VERSION,
 };
 
 /*
@@ -450,6 +454,7 @@ void parseOptions(char * const argv[], bool api)
         {"trap",               req_arg, nullptr, OPTION_TRAP},
         {"trap-all",           opt_arg, nullptr, OPTION_TRAP_ALL},
         {"trap-entry",         opt_arg, nullptr, OPTION_TRAP_ENTRY},
+        {"version",            no_arg,  nullptr, OPTION_VERSION},
         {nullptr,              no_arg,  nullptr, 0}
     };
 
@@ -637,6 +642,9 @@ void parseOptions(char * const argv[], bool api)
                     option_mem_rebase = parseIntOptArg("--mem-rebase", optarg,
                         0x100000000ll, 0xffff00000000ll, /*hex=*/true);
                 break;
+            case OPTION_VERSION:
+                puts("E9Patch " STRING(VERSION));
+                exit(EXIT_SUCCESS);
             default:
                 error("failed to parse command-line options; try `--help' "
                     "for more information");

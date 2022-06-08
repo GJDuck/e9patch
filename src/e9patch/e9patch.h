@@ -1,6 +1,6 @@
 /*
  * e9patch.h
- * Copyright (C) 2021 National University of Singapore
+ * Copyright (C) 2022 National University of Singapore
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -37,6 +37,9 @@
 #define NO_INLINE               __attribute__((__noinline__))
 
 #define PAGE_SIZE               ((size_t)4096)
+
+#define STRING(s)               STRING_2(s)
+#define STRING_2(s)             #s
 
 /*
  * States of each virtual memory byte.

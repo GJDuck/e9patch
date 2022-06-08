@@ -5,7 +5,7 @@
  * |  __/\__, | || (_) | (_) | |
  *  \___|  /_/ \__\___/ \___/|_|
  *                              
- * Copyright (C) 2021 National University of Singapore
+ * Copyright (C) 2022 National University of Singapore
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -693,6 +693,7 @@ enum Option
     OPTION_SYNTAX,
     OPTION_TRAP,
     OPTION_TRAP_ALL,
+    OPTION_VERSION,
 };
 
 /*
@@ -767,6 +768,7 @@ int main_2(int argc, char **argv)
         {"syntax",        req_arg, nullptr, OPTION_SYNTAX},
         {"trap",          req_arg, nullptr, OPTION_TRAP},
         {"trap-all",      no_arg,  nullptr, OPTION_TRAP_ALL},
+        {"version",       no_arg,  nullptr, OPTION_VERSION},
         {nullptr,         no_arg,  nullptr, 0}
     }; 
     option_is_tty = isatty(STDERR_FILENO);
@@ -941,6 +943,9 @@ int main_2(int argc, char **argv)
             case OPTION_TRAP_ALL:
                 option_trap_all = true;
                 break;
+            case OPTION_VERSION:
+                puts("E9Tool " STRING(VERSION));
+                return EXIT_SUCCESS;
             default:
                 error("failed to parse command-line options; try `--help' "
                     "for more information");
