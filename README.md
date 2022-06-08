@@ -193,30 +193,9 @@ program down:
         $ ./e9tool -M 'asm=/j.*/' -P 'entry()@delay' xterm
         $ DELAY=100000 ./a.out
 
-Patch all jump instructions in Google Chrome with empty instrumentation:
-
-        $ mkdir -p chrome
-        $ for FILE in /opt/google/chrome/*; do ln -sf $FILE chrome/; done
-        $ rm chrome/chrome
-        $ ./e9tool -M 'asm=/j.*/' -P empty /opt/google/chrome/chrome -c 4 -o chrome/chrome
-        $ cd chrome
-        $ ./chrome
-
-Patch all jump instructions in Google Chrome with instruction count
-instrumentation:
-
-        $ ./e9compile.sh examples/counter.c
-        $ mkdir -p chrome
-        $ for FILE in /opt/google/chrome/*; do ln -sf $FILE chrome/; done
-        $ rm chrome/chrome
-        $ ./e9tool -M 'asm=/j.*/' -P 'entry()@counter' /opt/google/chrome/chrome -c 4 -o chrome/chrome
-        $ cd chrome
-        $ FREQ=10000000 ./chrome
-
 *Notes*:
 
 * Tested for `XTerm(322)`
-* Tested for Google Chrome version `80.0.3987.132 (Official Build) (64-bit)`.
 
 ## Projects
 
