@@ -358,20 +358,22 @@ static const MatchArg parseMatchArg(Parser &parser, bool val = false)
     switch (t)
     {
         case TOKEN_BB:
-            option_targets = option_bbs = true;
             if (parser.peekToken() != '[')
                 break;
+            option_targets = option_bbs = true;
             spec = true;
             set = MATCH_BBs;
             break;
         case TOKEN_F:
-            option_targets = option_fs = true;
             if (parser.peekToken() != '[')
                 break;
+            option_targets = option_fs = true;
             spec = true;
             set = MATCH_Fs;
             break;
         case TOKEN_I:
+            if (parser.peekToken() != '[')
+                break;
             spec = true;
             set = MATCH_Is;
             break;
@@ -452,6 +454,7 @@ static const MatchArg parseMatchArg(Parser &parser, bool val = false)
             match = MATCH_CSV;
             break;
         case TOKEN_BB:
+            option_targets = option_bbs = true;
             if (parser.peekToken() == '.')
             {
                 parser.getToken();
@@ -479,6 +482,7 @@ static const MatchArg parseMatchArg(Parser &parser, bool val = false)
                 match = MATCH_BB_ADDR;
             break;
         case TOKEN_F:
+            option_targets = option_fs = true;
             if (parser.peekToken() == '.')
             {
                 parser.getToken();
