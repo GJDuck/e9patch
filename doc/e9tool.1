@@ -16,7 +16,7 @@ Where
 .SH DESCRIPTION
 .PP
 E9Tool is the default frontend for the E9Patch static rewriting system for
-x86_64 Linux ELF or Windows PE binaries.
+(stripped) x86_64 Linux ELF or Windows PE binaries.
 E9Tool is designed to be more high-level and user friendly.
 .PP
 E9Tool implements the following basic work flow:
@@ -33,8 +33,9 @@ The output binary will be written to \fIa.out\fR by default, or a
 filename specified by the \fB-o\fR option (see below).
 .PP
 For the \fBMATCH\fR and \fBPATCH\fR specification languages, as well as other
-advanced E9Tool usage, please see the \fIe9tool-user-guide.md\fR document.
-
+advanced E9Tool usage, please see the following document:
+.IP
+\fI/usr/share/doc/e9tool/e9tool-user-guide.md\fR
 .SH OPTIONS
 .IP "\fB\-\-backend\fR PROG" 4
 Use PROG as the backend.
@@ -140,6 +141,6 @@ trampoline entry.  This can be used for debugging with gdb.
 .IP "\fB\-\-version\fR" 4
 Print the version and exit.
 .SH "SEE ALSO"
-\fIe9patch\fR(1)
+\fIe9patch\fR(1), \fIe9afl\fR(1), \fIredfat\fR(1)
 .SH AUTHOR
 \fBe9patch\fR is written by Gregory J. Duck <gregory@comp.nus.edu.sg>.
