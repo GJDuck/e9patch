@@ -1,0 +1,145 @@
+.TH E9TOOL "1" "June 2022" "E9Tool" "E9Tool"
+.SH NAME
+E9Tool \- a powerful static binary rewriting tool
+.SH SYNOPSIS
+e9tool [\fBOPTIONS\fR] -M \fBMATCH\fR -P \fBPATCH\fR \fIbinary\fR
+.PP
+Where
+.IP 
+- \fBOPTIONS\fR are E9Tool options (see below)
+.br
+- \fBMATCH\fR specifies \fIwhich\fR instructions should be patched
+.br
+- \fBPATCH\fR specifies \fIhow\fR matching instructions should be patched
+.br
+- \fIbinary\fR is the binary name/path.
+.SH DESCRIPTION
+.PP
+E9Tool is the default frontend for the E9Patch static rewriting system for
+x86_64 Linux ELF or Windows PE binaries.
+E9Tool is designed to be more high-level and user friendly.
+.PP
+E9Tool implements the following basic work flow:
+.IP
+1. Disassemble the input \fIbinary\fR
+.br
+2. Find all instructions matching \fBMATCH\fR
+.br
+3. Generate low-level E9Patch commands for \fBPATCH\fR
+.br
+4. Invoke E9Patch with the commands to rewrite the \fIbinary\fR
+.PP
+The output binary will be written to \fIa.out\fR by default, or a
+filename specified by the \fB-o\fR option (see below).
+.PP
+For the \fBMATCH\fR and \fBPATCH\fR specification languages, as well as other
+advanced E9Tool usage, please see the \fIe9tool-user-guide.md\fR document.
+
+.SH OPTIONS
+.IP "\fB\-\-backend\fR PROG" 4
+Use PROG as the backend.
+The default is "e9patch".
+.IP "\fB\-\-compression\fR N, \fB\-c\fR N" 4
+Set the compression level to be N, where N is a number within
+the range 0..9.  The default is 9 for maximum compression.
+Higher compression makes the output binary smaller, but also
+increases the number of mappings (mmap() calls) required.
+.IP "\fB\-\-Dsync\fR N" 4
+If the disassembler desyncs (e.g., data in the code section),
+then automatically exclude N surrounding instructions.
+The default is 64.
+.IP "\fB\-\-Dthreshold\fR N" 4
+Treat suspicious instructions as data.
+Lower numbers means less tolerance.
+The default is 2.
+.IP "\fB\-\-debug\fR" 4
+Enable debug output.
+.IP "\fB\-\-exclude\fR RANGE, \fB\-E\fR RANGE" 4
+Exclude the address RANGE from disassembly and rewriting.
+Here, RANGE has the format `LB .. UB', where LB/UB are
+integer addresses, section names or symbols.  The address
+range [LB..UB) will be excluded, and UB must point to the
+first instruction where disassembly should resume.
+.IP "\fB\-\-executable\fR" 4
+Treat the input file as an executable, even if it appears to
+be a shared library.  See the `\-\-shared' option for more
+information.
+.IP "\fB\-\-format\fR FORMAT" 4
+Set the output format to FORMAT which is one of {binary,
+json, patch, patch.gz, patch,bz2, patch.xz}.  Here:
+.IP
+\- "binary" is a modified ELF executable file;
+.br
+\- "json" is the raw JSON RPC stream for the e9patch
+backend; or
+.br
+\- "patch" "patch.gz" "patch.bz2" and "patch.xz"
+are (compressed) binary diffs in xxd format.
+.IP
+The default format is "binary".
+.IP "\fB\-\-help\fR, \fB\-h\fR" 4
+Print the help message and exit.
+.IP "\fB\-\-no\-warnings\fR" 4
+Do not print warning messages.
+.IP "\fB\-\-plt\fR" 4
+Enable the disassembly/rewriting of the .plt.* sections which
+are excluded by default.
+.IP "\fB\-\-plugin\fR=NAME:OPTION"
+Pass OPTION to the plugin with NAME.
+Here NAME must identify a
+plugin used by a matching or patching operation.
+.IP "\fB\-O0\fR, \fB\-O1\fR, \fB\-O2\fR, \fB\-O3\fR, \fB\-Os\fR"
+Set the optimization level.
+Here:
+.IP
+\fB\-O0\fR disables all optimization
+.br
+\fB\-O1\fR conservatively optimizes for performance
+.br
+\fB\-O2\fR optimizes for performance
+.br
+\fB\-O3\fR aggressively optimizes for performance
+.br
+\fB\-Os\fR optimizes for space
+.IP
+The default is \fB\-O2\fR.
+.IP "\fB\-\-option\fR OPTION" 4
+Pass OPTION to the e9patch backend.
+.IP "\fB\-\-output\fR FILE, \fB\-o\fR FILE" 4
+Specifies the path to the output file.
+The default filename is
+one of {"a.out", "a.so", "a.exe", "a.dll"}, depending on
+the input binary type.
+.IP "\fB\-\-seed\fR=\fI\,SEED\/\fR" 4
+Set SEED as the random number seed.
+.IP "\fB\-\-shared\fR" 4
+Treat the input file as a shared library, even if it appears to
+be an executable.  By default, the input file will only be
+treated as a shared library if (1) it is a dynamic executable
+(ET_DYN) and (2) has a filename of the form:
+.IP
+[PATH/]lib*.so[.VERSION]
+.IP "\fB\-\-static\-loader\fR, \fB\-s\fR" 4
+Replace patched pages statically.
+By default, patched pages
+are loaded during program initialization as this is more
+reliable for large/complex binaries.  However, this may bloat
+the size of the output patched binary.
+.IP "\fB\-\-syntax\fR SYNTAX" 4
+Selects the assembly syntax to be SYNTAX.
+Possible values are:
+.IP
+"ATT": X86_64 ATT asm syntax
+.br
+"intel": X86_64 Intel asm syntax
+.IP
+The default syntax is "ATT".
+.IP "\fB\-\-trap\fR=\fI\,ADDR\/\fR, \fB\-\-trap\-all\fR" 4
+Insert a trap (int3) instruction at the corresponding
+trampoline entry.  This can be used for debugging with gdb.
+.IP "\fB\-\-version\fR" 4
+Print the version and exit.
+.SH "SEE ALSO"
+\fIe9patch\fR(1)
+.SH AUTHOR
+\fBe9patch\fR is written by Gregory J. Duck <gregory@comp.nus.edu.sg>.
