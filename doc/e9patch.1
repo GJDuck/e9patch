@@ -1,0 +1,183 @@
+.TH E9PATCH "1" "June 2022" "E9Patch" "E9Patch"
+.SH NAME
+E9Patch \- a powerful static binary rewriting tool
+.SH SYNOPSIS
+e9patch [\fBOPTIONS\fR]
+.PP
+See below for the full list of options.
+.SH DESCRIPTION
+E9Patch is a powerful static rewriting for x86_64 Linux ELF and Windows PE
+binaries.
+E9Patch is primarily designed for robustness, and can scale to very large
+binaries including web browsers.
+.PP
+E9Patch is a low-level tool that is not designed to be used directly.
+Instead, E9Patch should be invoked using a suitable \fIfrontend\fR, such as
+E9Tool.
+Please see the E9Tool manpage for more information.
+.SH OUTPUT
+.PP
+E9Patch will output information about the patching progress in three main
+phases.
+The first phase tracks instruction patching success or failure:
+.IP
+\fB\[char46]\fR = Instruction was patched successfully
+.br
+\fBX\fR = Instruction could not be patched
+.PP
+The second phase tracks physical memory compression:
+.IP
+\fB+\fR = Service the virtual mapping with a new physical mapping
+.br
+\fBM\fR = Merge the virtual mapping into an existing physical mapping
+.PP
+The final phase prints the physical memory utilization:
+.IP
+\fB[hex]\fR = Each physical mapping utilization, higher = better
+.PP
+
+.SH OPTIONS
+.IP "\fB\-Oepilogue\fR=\fI\,N\/\fR" 4
+Append a epilogue of up to N instructions to the end of each
+trampoline.  This may enhance \fB\-Opeephole\fR.
+.br
+Default: \fB0\fR (disabled)
+.IP "\fB\-Oepilogue\-size\fR=\fI\,N\/\fR" 4
+Additionally limits \fB\-Oepilogue\fR to N instruction bytes.
+.br
+Default: \fB64\fR
+.IP "\fB\-Oorder\fR[=\fI\,false\/\fR]" 4
+Enables [disables] the ordering of trampolines with respect
+to the original instruction ordering (as much as is possible).
+This may enhance \fB\-Opeephole\fR.
+.br
+Default: \fBfalse\fR (disabled)
+.IP "\fB\-Opeephole\fR[=\fI\,false\/\fR]" 4
+Enables [disables] jump peephole optimization.
+.br
+Default: \fBtrue\fR (enabled)
+.IP "\fB\-Oprologue\fR=\fI\,N\/\fR" 4
+Prepend a prologue of up to N instructions to the start of each
+trampoline.  This may enhance \fB\-Opeephole\fR.  Requires \fB\-\-batch\fR.
+.br
+Default: \fB0\fR (disabled)
+.IP "\fB\-Oprologue\-size\fR=\fI\,N\/\fR" 4
+Additionally limits \fB\-Oprologue\fR to N instruction bytes.
+.br
+Default: \fB64\fR
+.IP "\fB\-Oscratch\-stack\fR[=\fI\,false\/\fR]" 4
+Allow the stack to be used as scratch space.
+This allows faster code to be emitted, but may break transparency.
+.br
+Default: \fBfalse\fR (disabled)
+.IP "\fB\-\-batch\fR[=\fI\,false\/\fR]" 4
+Rewrite the binary in one batch rather than incrementally.
+.br
+Default: \fBfalse\fR (disabled)
+.IP "\fB\-\-debug\fR[=\fI\,false\/\fR]" 4
+Enable [disable] debug log messages.
+.br
+Default: \fBfalse\fR (disabled)
+.IP "\fB\-\-help\fR, \fB\-h\fR" 4
+Print the help message and exit.
+.IP "\fB\-\-input\fR FILE, \fB\-i\fR FILE" 4
+Read input from FILE instead of stdin.
+.IP "\fB\-\-output\fR FILE, \fB\-o\fR FILE" 4
+Write output to FILE instead of stdout.
+.IP "\fB\-\-loader\-base\fR=\fI\,ADDR\/\fR" 4
+Set ADDR to be the base address of the program loader.
+Only relevant for ELF binaries.
+.br
+Default: 0x20e9e9000
+.IP "\fB\-\-loader\-phdr\fR=\fI\,PHDR\/\fR" 4
+Overwrite the corresponding PHDR to load the loader.
+Valid values are "note", "relro", and "stack" for PT_NOTE, PT_RELRO
+and PT_GNU_STACK respectively, or "any" to select any of the
+above values.  Note that selecting any value other than "note"
+may relax the memory permissions in the patched binary.
+Only relevant for ELF binaries.
+.br
+Default: note
+.IP "\fB\-\-loader\-static\fR[=\fI\,false\/\fR]" 4
+Enable [disable] the static loading of patched pages.
+By default, patched pages are loaded dynamically during program
+initialization (this is more reliable for complex binaries).
+However, this can also bloat patched binary size.
+Only relevant for ELF binaries.
+.br
+Default: \fBfalse\fR (disabled)
+.IP "\fB\-\-log\fR=\fI\,[false]\/\fR" 4
+Enable [disable] log output.
+.br
+Default: \fBtrue\fR (enabled)
+.IP "\fB\-\-mem\-granularity\fR=\fI\,SIZE\/\fR" 4
+Set SIZE to be the granularity used for the physical page
+grouping memory optimization.  Higher values result in
+higher CPU+memory usage during rewriting, but also smaller
+output binary files (i.e., better compression).  Here, SIZE
+must be one of {128,4096}.
+.br
+Default: \fB128\fR
+.IP "\fB\-\-mem\-lb\fR=\fI\,LB\/\fR" 4
+Set LB to be the minimum allowable trampoline address.
+.IP "\fB\-\-mem\-ub\fR=\fI\,UB\/\fR" 4
+Set UB to be the maximum allowable trampoline address.
+.IP "\fB\-\-mem\-mapping\-size\fR=\fI\,SIZE\/\fR" 4
+Set the mapping size to SIZE which must be a power\-of\-two
+multiple of the page size (4096).  Larger values result in
+less virtual mappings being used, but larger output binary
+files (i.e., worse compression).
+.br
+Default: \fB4096\fR
+.IP "\fB\-\-mem\-multi\-page\fR[=\fI\,false\/\fR]" 4
+Enable [disable] trampolines that cross page boundaries.
+.br
+Default: \fBtrue\fR (enabled)
+.IP "\fB\-\-mem\-rebase\fR[=\fI\,ADDR\/\fR]" 4
+Rebase the binary to the absolute address ADDR.
+Only relevant for Windows PE binaries.
+The special values "auto"
+or "random" will cause a suitable base address to be chosen
+automatically/randomly.  The special value "none" leaves the
+original base intact.
+.br
+Default: \fBnone\fR (disabled)
+.IP "\fB\-\-tactic\-B1\fR[=\fI\,false\/\fR]" 4
+.PD 0
+.IP "\fB\-\-tactic\-B2\fR[=\fI\,false\/\fR]" 4
+.PD 0
+.IP "\fB\-\-tactic\-T1\fR[=\fI\,false\/\fR]" 4
+.PD 0
+.IP "\fB\-\-tactic\-T2\fR[=\fI\,false\/\fR]" 4
+.PD 0
+.IP "\fB\-\-tactic\-T3\fR[=\fI\,false\/\fR]" 4
+.PD
+Enables [disables] the corresponding tactic (B1/B2/T1/T2/T3).
+.br
+Default: \fBtrue\fR (enabled)
+.IP
+\fB\-\-tactic\-backward\-T3\fR[=\fI\,false\/\fR]
+Enable [disables] backward jumps for tactic T3.
+Default: \fBtrue\fR (enabled)
+.TP
+\fB\-\-trap\fR=\fI\,ADDR\/\fR
+Insert a trap (int3) instruction at the trampoline entry for
+the instruction at address ADDR.  This can be used to debug
+the trampoline using GDB.
+.TP
+\fB\-\-trap\-all\fR[=\fI\,false\/\fR]
+Enable [disable] the insertion of a trap (int3) instruction at
+all trampoline entries.
+Default: \fBfalse\fR (disabled)
+.TP
+\fB\-\-trap\-entry\fR[=\fI\,false\/\fR]
+Enable [disable] the insertion of a trap (int3) at the program
+loader entry\-point.
+Default: \fBfalse\fR (disabled)
+.TP
+\fB\-\-version\fR
+Print the version and exit.
+.SH "SEE ALSO"
+\fIe9tool\fR(1)
+.SH AUTHOR
+\fBe9patch\fR is written by Gregory J. Duck <gregory@comp.nus.edu.sg>.
