@@ -1,13 +1,9 @@
 # E9Tool User's Guide
 
-**NOTE**: This guide is a work-in-progress and still incomplete.
-
-E9Tool is a frontend for E9Patch.
-Basically, E9Tool translates high-level patching commands
+E9Tool is the default frontend for E9Patch.
+E9Tool translates high-level patching commands
 (i.e., *what* instructions to patch, and *how* to patch them)
 into low-level commands for E9Patch.
-E9Patch is a very low-level tool and is not designed
-to be used directly.
 
 ---
 ## Contents
@@ -999,7 +995,7 @@ Notes:
 * The `state` argument is a pointer to a structure containing all
   general-purpose registers, the flag register (`%rflags`), the stack register
   (`%rsp`) and the instruction pointer register (`%rip`).
-  See the `examples/state.c` example for the structure layout.
+  See the `state.c` example for the structure layout.
   Except for `%rip`, the values in the structure can be modified, in which
   case the corresponding register will be updated accordingly.
 * The `NAME[i]` argment will either be an integer or a string, depending on
@@ -1226,7 +1222,7 @@ This is because the instrumentation binary is directly injected
 into the rewritten binary rather than dynamically/statically linked.
 
 A parallel implementation of common libc functions is provided by the
-`examples/stdlib.c` file.
+`stdlib.c` file.
 To use, simply include this file into the instrumentation code:
 
         #include "stdlib.c"

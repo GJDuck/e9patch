@@ -49,17 +49,43 @@ mkdir -p control
 
 cd data/
 mkdir -p "./usr/bin/"
-cp "../../e9patch" "./usr/bin/"
-cp "../../e9tool"  "./usr/bin/"
+cp "../../e9patch"      "./usr/bin/"
+cp "../../e9tool"       "./usr/bin/"
+cp "../../e9compile.sh" "./usr/bin/e9compile"
 mkdir -p "./usr/share/doc/e9patch/"
-cp "../../doc/e9patch-programming-guide.md" "./usr/share/doc/e9patch/"
+cat "../../doc/e9patch-programming-guide.md" | \
+    sed 's/https:\/\/github.com\/GJDuck\/e9patch\/blob\/master\/doc\/e9tool-user-guide.md/file:\/\/\/usr\/share\/doc\/e9tool\/e9tool-user-guide.html/g' | \
+    sed 's/https:\/\/github.com\/GJDuck\/e9patch\/tree\/master\/examples/file:\/\/\/usr\/share\/e9tool\/examples/g' | \
+    markdown > "./usr/share/doc/e9patch/e9patch-programming-guide.html"
 cp "../../LICENSE" "./usr/share/doc/e9patch/"
 mkdir -p "./usr/share/doc/e9tool/"
-cp "../../doc/e9tool-user-guide.md" "./usr/share/doc/e9tool/"
+cat "../../doc/e9tool-user-guide.md" | \
+    sed 's/https:\/\/github.com\/GJDuck\/e9patch\/blob\/master\/doc\/e9patch-programming-guide.md/file:\/\/\/usr\/share\/doc\/e9patch\/e9patch-programming-guide.html/g' | \
+    markdown > "./usr/share/doc/e9tool/e9tool-user-guide.html"
 cp "../../LICENSE" "./usr/share/doc/e9tool/"
+mkdir -p "./usr/share/e9tool/include/"
+cp "../../src/e9tool/e9tool.h" "./usr/share/e9tool/include/"
+cp "../../src/e9tool/e9plugin.h" "./usr/share/e9tool/include/"
+mkdir -p "./usr/share/e9tool/examples/"
+cp "../../examples/args.c" "./usr/share/e9tool/examples/"
+cp "../../examples/counter.c" "./usr/share/e9tool/examples/"
+cp "../../examples/delay.c" "./usr/share/e9tool/examples/"
+cp "../../examples/hello.c" "./usr/share/e9tool/examples/"
+cp "../../examples/limit.c" "./usr/share/e9tool/examples/"
+cp "../../examples/nop.c" "./usr/share/e9tool/examples/"
+cp "../../examples/print.c" "./usr/share/e9tool/examples/"
+cp "../../examples/state.c" "./usr/share/e9tool/examples/"
+cp "../../examples/trap.c" "./usr/share/e9tool/examples/"
+cp "../../examples/win64_demo.c" "./usr/share/e9tool/examples/"
+mkdir -p "./usr/share/e9tool/examples/plugins/"
+cp "../../examples/plugins/example.cpp" "./usr/share/e9tool/examples/plugins/"
+mkdir -p "./usr/share/e9compile/include/"
+cp "../../examples/stdlib.c" "./usr/share/e9compile/include/"
+cp "../../examples/rbtree.c" "./usr/share/e9compile/include/"
 mkdir -p "./usr/share/man/man1/"
-gzip --stdout ../../doc/e9patch.1 > ./usr/share/man/man1/e9patch.1.gz
-gzip --stdout ../../doc/e9tool.1  > ./usr/share/man/man1/e9tool.1.gz
+gzip --stdout ../../doc/e9patch.1   > ./usr/share/man/man1/e9patch.1.gz
+gzip --stdout ../../doc/e9tool.1    > ./usr/share/man/man1/e9tool.1.gz
+gzip --stdout ../../doc/e9compile.1 > ./usr/share/man/man1/e9compile.1.gz
 tar cz --owner root --group root -f ../data.tar.gz .
 md5sum `find ../data/ -type f -printf "%P "` > ../control/md5sums
 
@@ -87,7 +113,6 @@ echo "2.0" > debian-binary
 PACKAGE="${NAME}_${VERSION}_amd64.deb"
 fakeroot ar cr "../${PACKAGE}" debian-binary control.tar.gz \
     data.tar.gz
-rm -rf debian-binary control.tar.gz data.tar.gz data/ control/
 
 echo -e "${GREEN}$0${OFF}: Successfully built ${YELLOW}${PACKAGE}${OFF}..."
 

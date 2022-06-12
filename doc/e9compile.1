@@ -1,0 +1,18 @@
+.TH E9COMPILE "1" "June 2022" "E9Compile" "E9Compile"
+.SH NAME
+E9Compile \- E9Tool instrumentation compiler
+.SH SYNOPSIS
+e9compile (\fIfile.c\fR | \fIfile.cpp\fR | \fIfile.s\fR)
+.SH DESCRIPTION
+E9Compile is a simple gcc wrapper that can be used to compile E9Tool call
+instrumentation implemented in C/C++.
+E9Compile ensures that the generated binary code is compatible with E9Tool
+call trampolines.
+.PP
+For more information, please refer to the following document:
+.IP
+\fI/usr/share/doc/e9tool/e9tool-user-guide.html\fR
+.SH "SEE ALSO"
+\fIe9patch\fR(1), \fIe9tool\fR(1)
+.SH AUTHOR
+\fBe9compile\fR is written by Gregory J. Duck <gregory@comp.nus.edu.sg>.

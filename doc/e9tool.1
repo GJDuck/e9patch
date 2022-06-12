@@ -5,7 +5,7 @@ E9Tool \- a powerful static binary rewriting tool
 e9tool [\fBOPTIONS\fR] -M \fBMATCH\fR -P \fBPATCH\fR \fIbinary\fR
 .PP
 Where
-.IP 
+.IP "" 4
 - \fBOPTIONS\fR are E9Tool options (see below)
 .br
 - \fBMATCH\fR specifies \fIwhich\fR instructions should be patched
@@ -20,7 +20,7 @@ E9Tool is the default frontend for the E9Patch static rewriting system for
 E9Tool is designed to be more high-level and user friendly.
 .PP
 E9Tool implements the following basic work flow:
-.IP
+.IP "" 4
 1. Disassemble the input \fIbinary\fR
 .br
 2. Find all instructions matching \fBMATCH\fR
@@ -33,9 +33,74 @@ The output binary will be written to \fIa.out\fR by default, or a
 filename specified by the \fB-o\fR option (see below).
 .PP
 For the \fBMATCH\fR and \fBPATCH\fR specification languages, as well as other
-advanced E9Tool usage, please see the following document:
-.IP
-\fI/usr/share/doc/e9tool/e9tool-user-guide.md\fR
+advanced E9Tool usage, please refer to the following document:
+.IP "" 4
+\fI/usr/share/doc/e9tool/e9tool-user-guide.html\fR
+.SH EXAMPLE USAGE
+For this example, we will rewrite the \fIxterm\fR binary with
+instrumentation that prints information to the terminal.
+The instrumentation is implemented in the \fIprint.c\fR file available here:
+.IP "" 4
+/usr/share/e9tool/examples/print.c
+.PP
+Here, the \fIprint.c\fR file exports the following function:
+.nf
+.sp
+    #include \fB"stdlib.c"\fR
+    void \fIentry\fR(const void *\fIaddr\fR,
+               const uint8_t *\fIinstr\fR,
+               size_t \fIsize\fR,
+               const char *\fIasm\fR)
+    {
+        ...
+    }
+.fi
+.PP
+Here:
+.IP "" 4
+- \fB"stdlib.c"\fR is the standard library (for printf, etc.)
+.br
+- \fIaddr\fR is the instruction address
+.br
+- \fIinstr\fR is the instruction bytes
+.br
+- \fIsize\fR is the size of the instruction
+.br
+- \fIasm\fR is the disassembly string of the instruction
+.PP
+Next, the instrumentation is compiled using the \fBe9compile\fR
+script:
+.IP "" 4
+$ e9compile /usr/share/e9tool/examples/print.c
+.PP
+This generate a small binary named \fIprint\fR.
+Next, we use \fBe9tool\fR to instrument the \fIxterm\fR program as follows:
+.IP "" 4
+$ e9tool -M 'asm=/xor.*/' -P 'entry(addr,instr,size,asm)@print' \fIxterm\fR
+.PP
+Here:
+.IP "" 4
+- the "\fB-M ...\fR" option matches all "xor" instructions
+.br
+- the "\fB-P ...\fR" option patches all matching xor instructions.
+.PP
+The patch will instrument all matching xor instructions will a call to
+\fIentry()\fR from \fIprint\fR.
+For each matching instruction, E9Tool will also pass the
+corresponding values for each parameter of \fIentry()\fR.
+.PP
+The rewritten (instrumented) binary will be written to \fIa.out\fR,
+and can be executed as follows:
+.IP "" 4
+$ ./\fIa.out\fR
+.PP
+The rewritten binary will run the same as the original,
+but will also print information for each xor instruction that is executed.
+.PP
+This is a basic example, and E9Tool supports several options and use cases.
+For more information, please refer to the following document:
+.IP "" 4
+\fI/usr/share/doc/e9tool/e9tool-user-guide.html\fR
 .SH OPTIONS
 .IP "\fB\-\-backend\fR PROG" 4
 Use PROG as the backend.
@@ -141,6 +206,6 @@ trampoline entry.  This can be used for debugging with gdb.
 .IP "\fB\-\-version\fR" 4
 Print the version and exit.
 .SH "SEE ALSO"
-\fIe9patch\fR(1), \fIe9afl\fR(1), \fIredfat\fR(1)
+\fIe9patch\fR(1), \fIe9compile\fR(1), \fIe9afl\fR(1), \fIredfat\fR(1)
 .SH AUTHOR
 \fBe9patch\fR is written by Gregory J. Duck <gregory@comp.nus.edu.sg>.

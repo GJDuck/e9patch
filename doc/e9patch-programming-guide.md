@@ -4,7 +4,10 @@ E9Patch is a low-level static binary rewriting tool for x86-64 Linux ELF
 executables and shared objects.
 This document is intended for tool/frontend developers.
 If you are a user and merely wish to use E9Patch to rewrite
-binaries, we recommend you read the documentation for E9Tool instead.
+binaries, we recommend you read the
+[E9Tool User
+Guide](https://github.com/GJDuck/e9patch/blob/master/doc/e9tool-user-guide.md)
+instead.
 
 There are three main ways to integrate E9Patch into your project:
 
@@ -117,7 +120,7 @@ After 100000 jumps, the program will terminate with `SIGTRAP`.
 Call trampolines support many features, such as function arguments,
 selectable ABIs, and conditional control-flow redirection.
 More information about *call trampolines* can be found in the
-[E9Tool User's Guide](https://github.com/GJDuck/e9patch/blob/master/doc/e9tool-user-guide.md).
+[E9Tool User Guide](https://github.com/GJDuck/e9patch/blob/master/doc/e9tool-user-guide.md).
 
 Additional examples of *call trampolines* are also
 [available here](https://github.com/GJDuck/e9patch/tree/master/examples).
