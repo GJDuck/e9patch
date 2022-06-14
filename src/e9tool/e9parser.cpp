@@ -163,7 +163,6 @@ static const TokenInfo tokens[] =
     {"offset",          TOKEN_OFFSET,           0},
     {"op",              TOKEN_OP,               0},
     {"or",              TOKEN_OR,               0},
-    {"passthru",        TOKEN_PASSTHRU,         0},
     {"patch",           TOKEN_PATCH,            0},
     {"plugin",          TOKEN_PLUGIN,           0},
     {"print",           TOKEN_PRINT,            0},

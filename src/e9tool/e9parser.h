@@ -98,7 +98,6 @@ enum Token
     TOKEN_OFFSET,
     TOKEN_OP,
     TOKEN_OR,
-    TOKEN_PASSTHRU,
     TOKEN_PATCH,
     TOKEN_PLUGIN,
     TOKEN_PRINT,

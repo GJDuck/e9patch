@@ -287,31 +287,6 @@ static void finiPlugins(FILE *out, const ELF *elf)
 }
 
 /*
- * Deprecated feature error.
- */
-NO_RETURN void deprecatedPatch(const char *what)
-{
-    error(
-        "the \"%s\" syntax has been deprecated!\n"
-        "\n"
-        "Please use the following syntax instead:%s\n"
-        "\t--action PATCH            ---> --patch PATCH\n"
-        "\t-A PATCH                  ---> -P PATCH\n"
-        "\tpassthru                  ---> empty\n"
-        "\tcall f(...)@bin           ---> f(...)@bin\n"
-        "\tcall[after] f(...)@bin    ---> after f(...)@bin\n"
-        "\tcall[replace] f(...)@bin  ---> replace f(...)@bin\n"
-        "\tcall[naked] f(...)@bin    ---> f<naked>(...)@bin\n"
-        "\tcall[cond] f(...)#bin     ---> if f(...)@bin break\n"
-        "\tcall[condjump] f(...)@bin ---> if f(...)@bin goto%s\n"
-        "\n"
-        "Note that the behaviour of matching/patching option combinations has "
-            "also\n"
-        "changed.  See the e9tool-user-guide.md for more information.\n",
-        what, (option_is_tty? "\33[33m": ""), (option_is_tty? "\33[0m": ""));
-}
-
-/*
  * Parse an exclusion.
  */
 static Exclude parseExcludeBound(Parser &parser, const char *str,
@@ -670,7 +645,6 @@ static void checkCompatible(const ELF &elf, const ELF &target)
  */
 enum Option
 {
-    OPTION_ACTION,
     OPTION_BACKEND,
     OPTION_COMPRESSION,
     OPTION_DSYNC,
@@ -745,7 +719,6 @@ int main_2(int argc, char **argv)
               no_arg  = no_argument;
     static const struct option long_options[] =
     {
-        {"action",        req_arg, nullptr, OPTION_ACTION},
         {"backend",       req_arg, nullptr, OPTION_BACKEND},
         {"compression",   req_arg, nullptr, OPTION_COMPRESSION},
         {"Dsync",         req_arg, nullptr, OPTION_DSYNC},
@@ -795,9 +768,6 @@ int main_2(int argc, char **argv)
             break;
         switch (opt)
         {
-            case OPTION_ACTION:
-            case 'A':
-                deprecatedPatch("--action/-A");
             case OPTION_BACKEND:
                 option_backend = optarg;
                 break;

@@ -37,24 +37,7 @@
 
 using namespace e9tool;
 
-NO_RETURN void deprecatedPatch(const char *what);
 Plugin *openPlugin(const char *basename);
-
-/*
- * Deprecated feature error.
- */
-static NO_RETURN void deprecatedMatch(const char *what)
-{
-    error("the \"%s\" syntax has been deprecated!\n"
-        "\n"
-        "Please use the following (example) syntax instead:%s\n"
-        "\tasm=j.*                ---> asm=/j.*/\n"
-        "\taddr=0x123,0x456,0x789 ---> addr in {0x123,0x456,0x789}%s\n"
-        "\n"
-        "Note that the behaviour of CSV file matching has also changed.\n"
-        "Please see the e9tool-user-guide.md for more information.\n",
-        what, (option_is_tty? "\33[33m": ""), (option_is_tty? "\33[0m": ""));
-}
 
 /*
  * Parse and index.
@@ -591,11 +574,6 @@ static const MatchArg parseMatchArg(Parser &parser, bool val = false)
             break;
 
         case MATCH_CSV:
-            if (parser.peekToken() == '.')
-            {
-                // This is "probably" an attempt to use the old regex syntax
-                deprecatedMatch("regular expression");
-            }
             j = (unsigned)parseIndex(parser, 0, UINT16_MAX);
             break;
 
@@ -706,8 +684,6 @@ static MatchExpr *parseMatchExpr(Parser &parser, MatchOp op)
                 arg = parseMatchExpr(parser, MATCH_OP_AND);
                 expr = new MatchExpr(MATCH_OP_OR, expr, arg);
                 break;
-            case ',':
-                deprecatedMatch("comma syntax");
             default:
                 return expr;
         }
@@ -775,14 +751,10 @@ const Patch *parsePatch(const ELF &elf, const char *str)
     {
         case TOKEN_BREAK:
             kind = PATCH_BREAK; break;
-        case TOKEN_CALL:
-            deprecatedPatch("call ...");
         case TOKEN_EMPTY:
             kind = PATCH_EMPTY; break;
         case TOKEN_EXIT:
             kind = PATCH_EXIT; break;
-        case TOKEN_PASSTHRU:
-            deprecatedPatch("passthru");
         case TOKEN_PRINT:
             kind = PATCH_PRINT; break;
         case TOKEN_PLUGIN:
@@ -900,21 +872,10 @@ const Patch *parsePatch(const ELF &elf, const char *str)
                     t = parser.getToken();
                 }
                 bool ptr = false, neg = false;
-                switch (t)
+                if (t == '&')
                 {
-                    case TOKEN_STATIC:
-                        warning("the `static arg' syntax has been deprecated; "
-                            "please use the C-style cast `(static)arg' "
-                            "instead");
-                        _static = true;
-                        t = parser.getToken();
-                        if (t != '&')
-                            break;
-                        // Fallthrough
-                    case '&':
-                        ptr = true;
-                        t = parser.getToken();
-                        break;
+                    ptr = true;
+                    t = parser.getToken();
                 }
                 ArgumentKind arg = ARGUMENT_INVALID;
                 FieldKind field  = FIELD_NONE;
