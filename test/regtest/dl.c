@@ -1,10 +1,14 @@
 #define LIBDL
 #include "stdlib.c"
 
+static void clobber_xmm0(uint64_t x)
+{
+    asm volatile ("movq %0,%%xmm0": : "r"(x));
+}
+
 static void *handle       = NULL;
 static void *fprintf_func = NULL;
 static void *stderr_ptr   = NULL;
-static void *func         = NULL;
 
 void libc_fprintf(intptr_t x)
 {
@@ -13,15 +17,14 @@ void libc_fprintf(intptr_t x)
         1, 2, 3, 4, 5, 6, 7, 8, 9, 10);
 }
 
-void test_func(void)
+void test_dlcall_1(void)
 {
-    dlcall(func);
+    dlcall(clobber_xmm0, 0x3FD5555555555555ull);
 }
 
-void test_func_2(void)
+void test_dlcall_2(void)
 {
-    void (*f)(void) = func;
-    f();        // Direct call clobbers state
+    clobber_xmm0(/*0.3333...~=*/0x3FD5555555555555ull);
 }
 
 void init(int argc, char **argv, char **envp, const void *dynamic)
@@ -57,21 +60,5 @@ void init(int argc, char **argv, char **envp, const void *dynamic)
     }
     stderr_ptr = *stderr_ptrptr;
     fprintf(stderr, "found stderr...\n");
-
-    handle = dlopen("/proc/self/exe", RTLD_LAZY);
-    if (handle == NULL)
-    {
-        fprintf(stderr, "dlopen(\"/proc/self/exe\") failed\n");
-        abort();
-    }
-
-    // Get func()
-    func = dlsym(handle, "func");
-    if (func == NULL)
-    {
-        fprintf(stderr, "dlym(\"func\") failed\n");
-        abort();
-    }
-    fprintf(stderr, "found func...\n");
 }
 

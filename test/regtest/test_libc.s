@@ -53,20 +53,11 @@ data_END:
 data2:
     ud2
 
-.globl func
-.type func, @function
-func:
-    movsd .Le(%rip), %xmm0
-    retq
-
 .section .rodata
 .align 16
 .Lpi:
     .long   4028335726
     .long   1074340345
-.Le:
-    .long   2511009680
-    .long   1074118409
 .Lformat:
     .string "xmm0 = %g\n"
 
