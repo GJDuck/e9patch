@@ -1,7 +1,7 @@
 FCF_NONE := $(shell \
     if gcc -fcf-protection=none --version 2>&1 | grep -q 'unrecognized'; \
         then true; \
-        else echo --fcf-protection=none; fi)
+        else echo -fcf-protection=none; fi)
 
 all:
 	gcc -x assembler-with-cpp -o test test.s -no-pie -nostdlib \
