@@ -1445,7 +1445,7 @@ ELF *e9tool::parseBinary(const char *filename, intptr_t base)
 /*
  * Free an ELF file object.
  */
-void freeELF(ELF *elf)
+void e9tool::freeELF(ELF *elf)
 {
     free((void *)elf->filename);
     munmap((void *)elf->data, elf->size);
