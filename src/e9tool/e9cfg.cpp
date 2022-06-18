@@ -294,19 +294,16 @@ static void CFGSectionAnalysis(const ELF *elf, bool pic, const char *name,
         {
             // Scan the data for PIC-style jump tables.
             auto bounds = getBounds<int32_t>(sh_data, sh_data + sh_size);
-            for (const int32_t *p = bounds.first; p < bounds.second; )
+            for (const int32_t *p = bounds.first; p < bounds.second; p++)
             {
                 intptr_t table = (intptr_t)shdr->sh_addr +
                     ((intptr_t)p - (intptr_t)sh_data);
                 auto i = tables.find(table);
                 if (i == tables.end())
-                {
-                    p++;
                     continue;
-                }
 
                 // This is "probably" a PIC-style jump table.
-                for (const int32_t *q = p++; q < bounds.second; q++, p = q)
+                for (const int32_t *q = p; q < bounds.second; q++)
                 {
                     intptr_t offset = (intptr_t)*q;
                     intptr_t target = table + offset;
