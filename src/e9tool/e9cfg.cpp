@@ -104,23 +104,6 @@ ssize_t e9tool::findInstr(const Instr *Is, size_t size, intptr_t address)
 }
 
 /*
- * Find the target corresponding to the address.
- */
-ssize_t findTarget(const ELF *elf, const Instr *Is, size_t size,
-    intptr_t address)
-{
-    ssize_t i = findInstr(Is, size, address);
-    if (i < 0 || !elf->cet.ibt)
-        return i;
-    const Instr *I = Is + i;
-    InstrInfo info0, *info = &info0;
-    getInstrInfo(elf, I, info);
-    if (info->mnemonic != MNEMONIC_ENDBR64)
-        return -1;      // With Intel CET; cannot be a target
-    return i;
-}
-
-/*
  * Code analysis pass: find all probable code targets.
  */
 static void CFGCodeAnalysis(const ELF *elf, bool pic, const Instr *Is,
@@ -157,7 +140,7 @@ static void CFGCodeAnalysis(const ELF *elf, bool pic, const Instr *Is,
                 //
                 // [HEURISTIC] The target is assumed to be a function.
                 target = (intptr_t)I->op[0].imm;
-                if (findTarget(elf, Is, size, target) >= 0)
+                if (findInstr(Is, size, target) >= 0)
                 {
                     DEBUG(targets, target, "Load  : %p", (void *)target);
                     addTarget(target, TARGET_INDIRECT | TARGET_FUNCTION,
@@ -173,7 +156,7 @@ static void CFGCodeAnalysis(const ELF *elf, bool pic, const Instr *Is,
                 // [HEURISTIC] Similar to the "mov" case but for PIC.
                 target = (intptr_t)I->address + (intptr_t)I->size +
                     (intptr_t)I->op[0].mem.disp;
-                if (findTarget(elf, Is, size, target) >= 0)
+                if (findInstr(Is, size, target) >= 0)
                 {
                     DEBUG(targets, target, "Load  : %p", (void *)target);
                     addTarget(target, TARGET_INDIRECT | TARGET_FUNCTION,
@@ -292,7 +275,7 @@ static void CFGSectionAnalysis(const ELF *elf, bool pic, const char *name,
             if (tables.find(table) != tables.end())
                 call = false;
             intptr_t target = *p;
-            if (target != 0 && findTarget(elf, Is, size, target) >= 0)
+            if (target != 0 && findInstr(Is, size, target) >= 0)
             {
                 // "Probably" a jump target.
                 DEBUG(targets, target, "%s: %p%s", (call? "Data  ": "JmpTbl"),
@@ -327,7 +310,7 @@ static void CFGSectionAnalysis(const ELF *elf, bool pic, const char *name,
                 {
                     intptr_t offset = (intptr_t)*q;
                     intptr_t target = table + offset;
-                    if (findTarget(elf, Is, size, target) < 0)
+                    if (findInstr(Is, size, target) < 0)
                         break;
                     DEBUG(targets, target, "JmpTbl: %p%+zd = %p",
                         (void *)table, offset, (void *)target);
@@ -350,7 +333,7 @@ static void CFGSectionAnalysis(const ELF *elf, bool pic, const char *name,
                     continue;
                 
                 intptr_t target = *p;
-                if (findTarget(elf, Is, size, target) < 0)
+                if (findInstr(Is, size, target) < 0)
                     continue;
                 DEBUG(targets, target, "Reloc : %p (F)", (void *)target);
                 addTarget(target, TARGET_INDIRECT | TARGET_FUNCTION, targets);
