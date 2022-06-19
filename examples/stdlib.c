@@ -706,6 +706,12 @@ static int execve(const char *filename, char *const argv[],
 
 static void exit(int status)
 {
+    fflush(stdin);
+    fclose(stdin);
+    fflush(stdout);
+    fclose(stdout);
+    fflush(stderr);
+    fclose(stderr);
     (void)syscall(SYS_exit, status);
     __builtin_unreachable();
 }
