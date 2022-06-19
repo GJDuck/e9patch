@@ -77,7 +77,7 @@ runtest()
 runtest true empty
 runtest true 'entry<naked>()@nop'
 runtest true 'entry(asm,instr,rflags,rdi,rip,addr,target,next)@nop'
-runtest true 'entry(&rsp,&rax,&rsi,&rdi,&r8,&r15,static addr,0x1234)@nop'
+runtest true 'entry(&rsp,&rax,&rsi,&rdi,&r8,&r15,(static)addr,0x1234)@nop'
 runtest true 'entry(BB,F,BB.size,F.size,BB.offset,F.offset,BB.len,F.name)@nop'
 runtest true 'entry(&op[0],&src[0],&dst[0],&op[1],&src[1],&dst[1],&dst[7],&src[7])@nop'
 runtest true 'entry(reg[0],&reg[0],imm[0],&imm[0],&mem[0],reg[1],&reg[1],imm[1])@nop'
