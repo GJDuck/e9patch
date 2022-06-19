@@ -661,11 +661,26 @@ unsigned e9tool::sendExitTrampolineMessage(FILE *out, BinaryType type,
 }
 
 /*
+ * Parse a name.
+ */
+static const char *parseName(const char *strtab, size_t strlen, size_t idx)
+{
+    if (idx >= strlen)
+        return nullptr;
+    const char *name = strtab + idx;
+    size_t max = strlen - idx;
+    if (name[0] == '\0' || strnlen(name, max) == max)
+        return nullptr;
+    return name;
+}
+
+/*
  * Parse the Global Offset Table (GOT).
  */
 static void parseGOT(const uint8_t *data, const Elf64_Shdr *shdr_got,
     const Elf64_Shdr *shdr_rela_got, const Elf64_Sym *dynsym_tab,
-    size_t dynsym_num, const char *dynstr_tab, GOTInfo &got)
+    size_t dynsym_num, const char *dynstr_tab, size_t dynstr_len,
+    GOTInfo &got)
 {
     const Elf64_Rela *rela_tab =
         (const Elf64_Rela *)(data + shdr_rela_got->sh_offset);
@@ -680,10 +695,8 @@ static void parseGOT(const uint8_t *data, const Elf64_Shdr *shdr_got,
         if (idx >= dynsym_num)
             continue;
         const Elf64_Sym *sym = dynsym_tab + idx;
-        const char *name = dynstr_tab + sym->st_name;
-        if (name[0] == '\0')
-            continue;
-        if (sym->st_shndx != SHN_UNDEF)
+        const char *name = parseName(dynstr_tab, dynstr_len, sym->st_name);
+        if (name == nullptr || sym->st_shndx != SHN_UNDEF)
             continue;
         got.insert({name, rela->r_offset});
     }
@@ -694,8 +707,8 @@ static void parseGOT(const uint8_t *data, const Elf64_Shdr *shdr_got,
  */
 static void parsePLT(const uint8_t *data, const Elf64_Shdr *shdr_plt,
     const Elf64_Shdr *shdr_rela_plt, const Elf64_Sym *dynsym_tab,
-    size_t dynsym_num, const char *dynstr_tab, size_t plt_entry_sz,
-    PLTInfo &plt)
+    size_t dynsym_num, const char *dynstr_tab, size_t dynstr_len,
+    size_t plt_entry_sz, PLTInfo &plt)
 {
     intptr_t plt_addr = (intptr_t)shdr_plt->sh_addr;
     size_t   plt_size = (size_t)shdr_plt->sh_size;
@@ -734,10 +747,8 @@ static void parsePLT(const uint8_t *data, const Elf64_Shdr *shdr_plt,
         if (idx >= dynsym_num)
             continue;
         const Elf64_Sym *sym = dynsym_tab + idx;
-        const char *name = dynstr_tab + sym->st_name;
-        if (name[0] == '\0')
-            continue;
-        if (sym->st_shndx != SHN_UNDEF ||
+        const char *name = parseName(dynstr_tab, dynstr_len, sym->st_name);
+        if (name == nullptr || sym->st_shndx != SHN_UNDEF ||
                 ELF64_ST_TYPE(sym->st_info) != STT_FUNC)
             continue;
         plt.insert({name, k->second});
@@ -758,10 +769,8 @@ static void parseSymbols(const uint8_t *data, const Elf64_Shdr *shdr_syms,
     for (size_t i = 0; i < sym_num; i++)
     {
         const Elf64_Sym *sym = sym_tab + i;
-        if (sym->st_name >= str_len)
-            continue;
-        const char *name = str_tab + sym->st_name;
-        if (name[0] == '\0')
+        const char *name = parseName(str_tab, str_len, sym->st_name);
+        if (name == nullptr)
             continue;
         syms.insert({name, sym});
     }
@@ -930,6 +939,7 @@ ELF *e9tool::parseELF(const char *filename, intptr_t base)
     auto j = sections.find(".dynstr");
     const Elf64_Sym *dynsym_tab = nullptr;
     const char *dynstr_tab = nullptr;
+    size_t dynstr_len = 0;
     size_t dynsym_num = 0;
     if (i != sections.end() && j != sections.end() &&
             i->second->sh_type == SHT_DYNSYM &&
@@ -937,8 +947,19 @@ ELF *e9tool::parseELF(const char *filename, intptr_t base)
     {
         const Elf64_Shdr *shdr_dynsym = i->second;
         const Elf64_Shdr *shdr_dynstr = j->second;
+        if (shdr_dynsym->sh_offset + shdr_dynsym->sh_size > size)
+        {
+            error("failed to parse ELF file \"%s\"; invalid \".dynsym\" "
+                "section", filename);
+        }
+        if (shdr_dynstr->sh_offset + shdr_dynstr->sh_size > size)
+        {
+            error("failed to parse ELF file \"%s\"; invalid \".dynstr\" "
+                "section", filename);
+        }
         dynsym_tab = (const Elf64_Sym *)(data + shdr_dynsym->sh_offset);
         dynstr_tab = (const char *)(data + shdr_dynstr->sh_offset);
+        dynstr_len = (size_t)shdr_dynstr->sh_size;
         dynsym_num = shdr_dynsym->sh_size / sizeof(Elf64_Sym);
         parseSymbols(data, shdr_dynsym, shdr_dynstr, dynsyms);
     }
@@ -969,7 +990,7 @@ ELF *e9tool::parseELF(const char *filename, intptr_t base)
         const Elf64_Shdr *shdr_got      = i->second;
         const Elf64_Shdr *shdr_rela_got = j->second;
         parseGOT(data, shdr_got, shdr_rela_got, dynsym_tab, dynsym_num,
-            dynstr_tab, got);
+            dynstr_tab, dynstr_len, got);
     }
 
     /*
@@ -986,7 +1007,7 @@ ELF *e9tool::parseELF(const char *filename, intptr_t base)
         const Elf64_Shdr *shdr_plt      = i->second;
         const Elf64_Shdr *shdr_rela_plt = j->second;
         parsePLT(data, shdr_plt, shdr_rela_plt, dynsym_tab, dynsym_num,
-            dynstr_tab, /*entry_size=*/16, plt);
+            dynstr_tab, dynstr_len, /*entry_size=*/16, plt);
     }
     i = sections.find(".plt.got");
     j = sections.find(".rela.dyn");
@@ -998,7 +1019,7 @@ ELF *e9tool::parseELF(const char *filename, intptr_t base)
         const Elf64_Shdr *shdr_plt      = i->second;
         const Elf64_Shdr *shdr_rela_plt = j->second;
         parsePLT(data, shdr_plt, shdr_rela_plt, dynsym_tab, dynsym_num,
-            dynstr_tab, /*entry_size=*/8, plt);
+            dynstr_tab, dynstr_len, /*entry_size=*/8, plt);
     }
     i = sections.find(".plt.sec");
     j = sections.find(".rela.plt");
@@ -1010,7 +1031,7 @@ ELF *e9tool::parseELF(const char *filename, intptr_t base)
         const Elf64_Shdr *shdr_plt      = i->second;
         const Elf64_Shdr *shdr_rela_plt = j->second;
         parsePLT(data, shdr_plt, shdr_rela_plt, dynsym_tab, dynsym_num,
-            dynstr_tab, /*entry_size=*/16, plt);
+            dynstr_tab, dynstr_len, /*entry_size=*/16, plt);
     }
 
     /*
