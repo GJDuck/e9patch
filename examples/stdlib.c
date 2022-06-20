@@ -704,18 +704,6 @@ static int execve(const char *filename, char *const argv[],
     return (int)syscall(SYS_execve, filename, argv, envp);
 }
 
-static void exit(int status)
-{
-    fflush(stdin);
-    fclose(stdin);
-    fflush(stdout);
-    fclose(stdout);
-    fflush(stderr);
-    fclose(stderr);
-    (void)syscall(SYS_exit, status);
-    __builtin_unreachable();
-}
-
 static pid_t waitpid(pid_t pid, int *status, int options)
 {
     return (pid_t)syscall(SYS_wait4, pid, status, options, NULL);
@@ -3772,6 +3760,18 @@ static char *getenv(const char *name)
             return def+i+1;
     }
     return NULL;
+}
+
+static __attribute__((__noreturn__)) void exit(int status)
+{
+    fflush(stdin);
+    fclose(stdin);
+    fflush(stdout);
+    fclose(stdout);
+    fflush(stderr);
+    fclose(stderr);
+    (void)syscall(SYS_exit, status);
+    __builtin_unreachable();
 }
 
 static __attribute__((__noreturn__)) void abort(void)
