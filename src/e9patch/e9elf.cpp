@@ -164,10 +164,12 @@ bool parseElf(Binary *B)
     for (unsigned i = 0; i < ehdr->e_phnum; i++)
     {
         Elf64_Phdr *phdr = phdrs + i;
+        bool check = false;
         switch (phdr->p_type)
         {
             case PT_LOAD:
             {
+                check = true;
                 intptr_t vstart = (intptr_t)phdr->p_vaddr;
                 intptr_t vend   = vstart + phdr->p_memsz;
                 if (vend - vstart > 0 && !reserve(B, vstart, vend))
@@ -180,6 +182,7 @@ bool parseElf(Binary *B)
                 break;
             }
             case PT_DYNAMIC:
+                check = true;
                 phdr_dynamic = phdr;
                 break;
             case PT_NOTE:
@@ -192,9 +195,15 @@ bool parseElf(Binary *B)
                 phdr_gnu_stack = phdr;
                 break;
             case PT_GNU_PROPERTY:
+                check = true;
                 phdr_gnu_property = phdr;
                 break;
         }
+        if (check &&
+                (phdr->p_offset > size ||
+                 phdr->p_offset + phdr->p_memsz > size))
+            error("failed to parse ELF file \"%s\"; invalid segment",
+                filename);
     }
     uint32_t *features = nullptr;
     if (phdr_gnu_property != nullptr &&
@@ -248,6 +257,7 @@ bool parseElf(Binary *B)
     const struct e9_config_s *config = (phdr_max == nullptr? nullptr:
         (const struct e9_config_s *)(data + phdr_max->p_offset));
     if (phdr_max != nullptr &&
+            phdr_max->p_offset + phdr_max->p_memsz < size &&
             phdr_max->p_memsz >= sizeof(struct e9_config_s) &&
             strcmp(config->magic, "E9PATCH") == 0)
         error("failed to parse ELF file \"%s\": E9Patch has already "

@@ -1042,6 +1042,10 @@ ELF *e9tool::parseELF(const char *filename, intptr_t base)
             phdr_gnu_property->p_align == sizeof(void *))
     {
         // Search for Intel CET properties
+        if (phdr_gnu_property->p_offset > size ||
+                phdr_gnu_property->p_offset + phdr_gnu_property->p_memsz > size)
+            error("failed to parse ELF file \"%s\"; invalid GNU properties "
+                "segment", filename);
         const uint8_t *notes =
             (const uint8_t *)(data + phdr_gnu_property->p_offset);
         size_t size = (size_t)phdr_gnu_property->p_memsz;
