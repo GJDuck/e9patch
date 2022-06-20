@@ -861,7 +861,7 @@ asm (
     "movabs $(realMain-main)-0x14159265, %rax\n"
     "leaq main+0x6b1db77(%rip), %rbp\n"
     "leaq 0xd63b6ee(%rbp, %rax), %rax\n"
-    "jmpq *%rax\n"
+    "ds jmpq *%rax\n"
 
     /*
      * Test #3: Dynamically calculated jump target:
@@ -878,7 +878,7 @@ asm (
     "lea 4(%r10,%rax),%rax\n"
     "cmp $255,%rax\n"
     "jle .Lskip\n"
-    "jmp *%rax\n"
+    "ds jmp *%rax\n"
     ".Lskip:\n"
 );
 
