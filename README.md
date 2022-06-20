@@ -15,8 +15,11 @@ E9Patch is:
   See the [E9Tool User's Guide](https://github.com/GJDuck/e9patch/blob/master/doc/e9tool-user-guide.md) and the [E9Patch Programmer's Guide](https://github.com/GJDuck/e9patch/blob/master/doc/e9patch-programming-guide.md)
   for more information.
 
-**NEW (9th Sep 2021)**: Experimental support for Windows PE binaries has been
-                        added.
+## Download
+
+Pre-built E9Patch binaries can be downloaded here:
+
+* [https://github.com/GJDuck/e9patch/releases](https://github.com/GJDuck/e9patch/releases)
 
 ## Background
 
