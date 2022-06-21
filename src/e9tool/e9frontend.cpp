@@ -1043,12 +1043,12 @@ ELF *e9tool::parseELF(const char *filename, intptr_t base)
     {
         // Search for Intel CET properties
         if (phdr_gnu_property->p_offset > size ||
-                phdr_gnu_property->p_offset + phdr_gnu_property->p_memsz > size)
+            phdr_gnu_property->p_offset + phdr_gnu_property->p_filesz > size)
             error("failed to parse ELF file \"%s\"; invalid GNU properties "
                 "segment", filename);
         const uint8_t *notes =
             (const uint8_t *)(data + phdr_gnu_property->p_offset);
-        size_t size = (size_t)phdr_gnu_property->p_memsz;
+        size_t size = (size_t)phdr_gnu_property->p_filesz;
         for (size_t i = 0; i + sizeof(Elf64_Nhdr) < size; )
         {
             const Elf64_Nhdr *note = (const Elf64_Nhdr *)(notes + i);
@@ -1658,8 +1658,8 @@ void e9tool::sendELFFileMessage(FILE *out, const ELF *ptr, bool absolute)
         const Elf64_Phdr *phdr = phdrs + i;
         if (phdr->p_type != PT_LOAD)
             continue;
-        intptr_t phdr_base  = (intptr_t)phdr->p_vaddr + elf.base;
-        intptr_t phdr_end   = phdr_base + phdr->p_memsz;
+        intptr_t phdr_base = (intptr_t)phdr->p_vaddr + elf.base;
+        intptr_t phdr_end  = phdr_base + phdr->p_memsz;
         char prot[4] = "---";
         prot[0] = ((phdr->p_flags & PF_R) != 0? 'r': '-');
         prot[1] = ((phdr->p_flags & PF_W) != 0? 'w': '-');

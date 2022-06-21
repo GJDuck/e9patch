@@ -179,6 +179,7 @@ bool parseElf(Binary *B)
                     break;
                 vmax = vend;
                 phdr_max = phdr;
+                check = (phdr->p_filesz > 0);
                 break;
             }
             case PT_DYNAMIC:
@@ -201,7 +202,7 @@ bool parseElf(Binary *B)
         }
         if (check &&
                 (phdr->p_offset > size ||
-                 phdr->p_offset + phdr->p_memsz > size))
+                 phdr->p_offset + phdr->p_filesz > size))
             error("failed to parse ELF file \"%s\"; invalid segment",
                 filename);
     }
@@ -212,7 +213,7 @@ bool parseElf(Binary *B)
         // Search for Intel CET properties
         const uint8_t *notes =
             (const uint8_t *)(data + phdr_gnu_property->p_offset);
-        size_t size = (size_t)phdr_gnu_property->p_memsz;
+        size_t size = (size_t)phdr_gnu_property->p_filesz;
         for (size_t i = 0; i + sizeof(Elf64_Nhdr) < size; )
         {
             const Elf64_Nhdr *note = (const Elf64_Nhdr *)(notes + i);
@@ -250,15 +251,11 @@ bool parseElf(Binary *B)
             }
         }
     }
-    if (phdr_dynamic != nullptr &&
-            phdr_dynamic->p_offset + phdr_dynamic->p_memsz > size)
-        error("failed to parse ELF file \"%s\": invalid dynamic section",
-            filename);
     const struct e9_config_s *config = (phdr_max == nullptr? nullptr:
         (const struct e9_config_s *)(data + phdr_max->p_offset));
     if (phdr_max != nullptr &&
-            phdr_max->p_offset + phdr_max->p_memsz < size &&
-            phdr_max->p_memsz >= sizeof(struct e9_config_s) &&
+            phdr_max->p_offset + phdr_max->p_filesz < size &&
+            phdr_max->p_filesz >= sizeof(struct e9_config_s) &&
             strcmp(config->magic, "E9PATCH") == 0)
         error("failed to parse ELF file \"%s\": E9Patch has already "
             "been applied", filename);
