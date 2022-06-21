@@ -133,6 +133,9 @@ typedef struct _IMAGE_BASE_RELOCATION
 #define ALIGN(x, y)             \
     ((x) % (y) == 0? (x): (x) + (y) - ((x) % (y)))
 
+#define IS_POW_2(x)             \
+    (((x) & ((x)-1)) == 0)
+
 /*
  * Simple string hash function.
  */
@@ -199,10 +202,14 @@ void parsePE(Binary *B)
     if (opt_hdr->Magic != PE64_MAGIC)
         error("failed to parse PE file \"%s\"; invalid magic number (0x%x), "
             "expected PE64 (0x%x)", filename, opt_hdr->Magic, PE64_MAGIC);
+    uint32_t section_align = opt_hdr->SectionAlignment;
+    if (section_align == 0 || !IS_POW_2(section_align))
+        error("failed to parse PE file \"%s\"; invalid section alignment (%u), "
+            "expected a power-of-two", filename, section_align);
     uint32_t file_align = opt_hdr->FileAlignment;
-    if (file_align < 512)
+    if (file_align < 512 || !IS_POW_2(file_align))
         error("failed to parse PE file \"%s\"; invalid file alignment (%u), "
-            "expected (>=512)", filename, file_align);
+            "expected (>=512, power-of-two)", filename, file_align);
     uint64_t image_base = opt_hdr->ImageBase;
     if (image_base % WINDOWS_VIRTUAL_ALLOC_SIZE != 0)
         error("failed to parse PE file \"%s\"; invalid image base (0x%lx), "
