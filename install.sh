@@ -51,7 +51,10 @@ cd data/
 mkdir -p "./usr/bin/"
 cp "../../e9patch"      "./usr/bin/"
 cp "../../e9tool"       "./usr/bin/"
-cp "../../e9compile.sh" "./usr/bin/e9compile"
+cat "../../e9compile.sh" | \
+    sed 's/-I examples/-I \/usr\/share\/e9compile\/include/g' > \
+    "./usr/bin/e9compile"
+chmod a+x "./usr/bin/e9compile"
 mkdir -p "./usr/share/doc/e9patch/"
 cat "../../doc/e9patch-programming-guide.md" | \
     sed 's/https:\/\/github.com\/GJDuck\/e9patch\/blob\/master\/doc\/e9tool-user-guide.md/file:\/\/\/usr\/share\/doc\/e9tool\/e9tool-user-guide.html/g' | \
@@ -82,6 +85,7 @@ cp "../../examples/plugins/example.cpp" "./usr/share/e9tool/examples/plugins/"
 mkdir -p "./usr/share/e9compile/include/"
 cp "../../examples/stdlib.c" "./usr/share/e9compile/include/"
 cp "../../examples/rbtree.c" "./usr/share/e9compile/include/"
+cp "../../src/e9patch/e9loader.h" "./usr/share/e9compile/include/"
 mkdir -p "./usr/share/man/man1/"
 gzip --stdout ../../doc/e9patch.1   > ./usr/share/man/man1/e9patch.1.gz
 gzip --stdout ../../doc/e9tool.1    > ./usr/share/man/man1/e9tool.1.gz

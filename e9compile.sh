@@ -65,7 +65,7 @@ CFLAGS="-fno-stack-protector \
     -fpie -O2 -Wno-unused-function \
     -mno-mmx -mno-sse -mno-avx -mno-avx2 -mno-avx512f -msoft-float \
     -fno-tree-vectorize -fomit-frame-pointer \
-    -I /usr/share/e9compile/include/"
+    -I examples/"
 COMPILE="$CC $CFLAGS -c -Wall $@ \"$DIRNAME/$BASENAME.$EXTENSION\""
 
 echo "$COMPILE" | xargs

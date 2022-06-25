@@ -87,151 +87,6 @@
  * underlying files meaning that they must be used with care.
  */
 
-/*
- * Note: We need to redefine libc functions from "extern" to "static".
- *       There does not seem to be an elegant way of doing this, so we
- *       rename the functions in the #include'd files.
- *       Even this method can fail, e.g., if the header #undef's it.
- */
-#define __errno_location    __hide____errno_location
-#define read                __hide__read
-#define write               __hide__write
-#define open                __hide__open
-#define close               __hide__close
-#define stat                __hide__stat
-#define fstat               __hide__fstat
-#define lstat               __hide__lstat
-#define poll                __hide__poll
-#define lseek               __hide__lseek
-#define mmap                __hide__mmap
-#define mprotect            __hide__mprotect
-#define msync               __hide__msync
-#define munmap              __hide__munmap
-#define sigaction(a, b, c)  __hide__sigaction(a, b, c)
-#define ioctl               __hide__ioctl
-#define pipe                __hide__pipe
-#define select              __hide__select
-#define mremap              __hide__mremap
-#define madvise             __hide__madvise
-#define shmget              __hide__shmget
-#define shmat               __hide__shmat
-#define shmctl              __hide__shmctl
-#define dup                 __hide__dup
-#define dup2                __hide__dup2
-#define getpid              __hide__getpid
-#define fork                __hide__fork
-#define execve              __hide__execve
-#define exit                __hide__exit
-#define waitpid             __hide__waitpid
-#define kill                __hide__kill
-#define fcntl               __hide__fcntl
-#define flock               __hide__flock
-#define fsync               __hide__fsync
-#define truncate            __hide__truncate
-#define ftruncate           __hide__ftruncate
-#define getcwd              __hide__getcwd
-#define chdir               __hide__chdir
-#define rename              __hide__rename
-#define mkdir               __hide__mkdir
-#define rmdir               __hide__rmdir
-#define link                __hide__link
-#define unlink              __hide__unlink
-#define readlink            __hide__readlink
-#define gettimeofday        __hide__gettimeofday
-#define getrlimit           __hide__getrlimit
-#define getrusage           __hide__getrusage
-#define getuid              __hide__getuid
-#define geteuid             __hide__geteuid
-#define pipe2               __hide__pipe2
-#define dup3                __hide__dup3
-#define isatty              __hide__isatty
-
-#define malloc              __hide__malloc
-#define calloc              __hide__calloc
-#define realloc             __hide__realloc
-#define free                __hide__free
-#define getenv              __hide__getenv
-#define strtol              __hide__strtol
-#define strtoll             __hide__strtoll
-#define strtoul             __hide__strtoul
-#define strtoull            __hide__strtoull
-#define atoi                __hide__atoi
-#define atol                __hide__atol
-#define atoll               __hide__atoll
-#define abort               __hide__abort
-#define abs                 __hide__abs
-#define labs                __hide__labs
-#define environ             __hide__environ
-
-#define FILE                __hide__FILE
-#define fopen               __hide__fopen
-#define fdopen              __hide__fdopen
-#define freopen             __hide__freopen
-#define clearerr            __hide__clearerr
-#define ferror              __hide__ferror
-#define feof                __hide__feof
-#define fileno              __hide__fileno
-#define setvbuf             __hide__setvbuf
-#define fflush              __hide__fflush
-#define fclose              __hide__fclose
-#define fputc               __hide__fputc
-#define fputs               __hide__fputs
-#define putc                __hide__putc
-#define putchar             __hide__putchar
-#define puts                __hide__puts
-#define fwrite              __hide__fwrite
-#define fgetc               __hide__fgetc
-#define fgets               __hide__fgets
-#define getc                __hide__getc
-#define getchar             __hide__getchar
-#define ungetc              __hide__ungetc
-#define fread               __hide__fread
-#define fseek               __hide__fseek
-#define ftell               __hide__ftell
-#define clearerr_unlocked   __hide__clearerr_unlocked
-#define feof_unlocked       __hide__feof_unlocked
-#define ferror_unlocked     __hide__ferror_unlocked
-#define fileno_unlocked     __hide__fileno_unlocked
-#define fflush_unlocked     __hide__fflush_unlocked
-#define fputc_unlocked      __hide__fputc_unlocked
-#define fputs_unlocked      __hide__fputs_unlocked
-#define putc_unlocked       __hide__putc_unlocked
-#define putchar_unlocked    __hide__putchar_unlocked
-#define puts_unlocked       __hide__puts_unlocked
-#define fwrite_unlocked     __hide__fwrite_unlocked
-#define fgetc_unlocked      __hide__fgetc_unlocked
-#define fgets_unlocked      __hide__fgets_unlocked
-#define getc_unlocked       __hide__getc_unlocked
-#define getchar_unlocked    __hide__getchar_unlocked
-#define fread_unlocked      __hide__fread_unlocked
-#define vsnprintf           __hide__vsnprintf
-#define snprintf            __hide__snprintf
-#define vfprintf            __hide__vfprintf
-#define fprintf             __hide__fprintf
-#define printf              __hide__printf
-
-#define isalnum             __hide__isalnum
-#define isalpha             __hide__isalpha
-#define isdigit             __hide__isdigit
-#define islower             __hide__islower
-#define isprint             __hide__isprint
-#define isspace             __hide__isspace
-#define isxdigit            __hide__isxdigit
-#define toupper             __hide__toupper
-#define tolower             __hide__tolower
-
-#define memcmp              __hide__memcmp
-#define memcpy              __hide__memcpy
-#define memset              __hide__memset
-#define strlen              __hide__strlen
-#define strnlen             __hide__strnlen
-#define strcmp              __hide__strcmp
-#define strncmp             __hide__strncmp
-#define strcat              __hide__strcat
-#define strncat             __hide__strncat
-#define strcpy              __hide__strcpy
-#define strncpy             __hide__strncpy
-#define strerror            __hide__strerror
 
 #include <ctype.h>
 #include <limits.h>
@@ -261,6 +116,38 @@
 #include <fcntl.h>
 #include <termios.h>
 #include <unistd.h>
+
+#ifdef __cplusplus
+extern "C"
+{
+#endif
+
+/****************************************************************************/
+/* CONFIG                                                                   */
+/****************************************************************************/
+
+/*
+ * If NO_GLIBC is defined, enable a configuration that works if glibc is NOT
+ * used by the main program.
+ */
+#ifdef NO_GLIBC
+#define ERRNO_REG       1
+#define MUTEX_SAFE      1
+#endif
+
+/****************************************************************************/
+/* NAMES                                                                    */
+/****************************************************************************/
+
+/*
+ * We wish to:
+ *  - Redefine standard library functions from `extern' to `static'
+ *  - Redefine some standard library structures (e.g., FILE).
+ *  - Use standard header files to avoid redefining a lot of stuff.
+ *
+ * To do so, we #undef all identifiers we redefine (in case they are macros),
+ * and redefine them with an `e9_' prefix.
+ */
 
 #undef __errno_location
 #undef read
@@ -402,23 +289,147 @@
 #undef strncpy
 #undef strerror
 
-#ifdef __cplusplus
-extern "C"
-{
-#endif
+/***/
 
-/****************************************************************************/
-/* CONFIG                                                                   */
-/****************************************************************************/
+#define __errno_location    e9___errno_location
+#define read                e9_read
+#define write               e9_write
+#define open                e9_open
+#define close               e9_close
+#define stat                e9_stat
+#define fstat               e9_fstat
+#define lstat               e9_lstat
+#define poll                e9_poll
+#define lseek               e9_lseek
+#define mmap                e9_mmap
+#define mprotect            e9_mprotect
+#define msync               e9_msync
+#define munmap              e9_munmap
+#define sigaction(a, b, c)  e9_sigaction(a, b, c)
+#define ioctl               e9_ioctl
+#define pipe                e9_pipe
+#define select              e9_select
+#define mremap              e9_mremap
+#define madvise             e9_madvise
+#define shmget              e9_shmget
+#define shmat               e9_shmat
+#define shmctl              e9_shmctl
+#define dup                 e9_dup
+#define dup2                e9_dup2
+#define getpid              e9_getpid
+#define fork                e9_fork
+#define execve              e9_execve
+#define exit                e9_exit
+#define waitpid             e9_waitpid
+#define kill                e9_kill
+#define fcntl               e9_fcntl
+#define flock               e9_flock
+#define fsync               e9_fsync
+#define truncate            e9_truncate
+#define ftruncate           e9_ftruncate
+#define getcwd              e9_getcwd
+#define chdir               e9_chdir
+#define rename              e9_rename
+#define mkdir               e9_mkdir
+#define rmdir               e9_rmdir
+#define link                e9_link
+#define unlink              e9_unlink
+#define readlink            e9_readlink
+#define gettimeofday        e9_gettimeofday
+#define getrlimit           e9_getrlimit
+#define getrusage           e9_getrusage
+#define getuid              e9_getuid
+#define geteuid             e9_geteuid
+#define pipe2               e9_pipe2
+#define dup3                e9_dup3
+#define isatty              e9_isatty
 
-/*
- * If NO_GLIBC is defined, enable a configuration that works if glibc is NOT
- * used by the main program.
- */
-#ifdef NO_GLIBC
-#define ERRNO_REG       1
-#define MUTEX_SAFE      1
-#endif
+#define malloc              e9_malloc
+#define calloc              e9_calloc
+#define realloc             e9_realloc
+#define free                e9_free
+#define getenv              e9_getenv
+#define strtol              e9_strtol
+#define strtoll             e9_strtoll
+#define strtoul             e9_strtoul
+#define strtoull            e9_strtoull
+#define atoi                e9_atoi
+#define atol                e9_atol
+#define atoll               e9_atoll
+#define abort               e9_abort
+#define abs                 e9_abs
+#define labs                e9_labs
+#define environ             e9_environ
+
+#define FILE                e9_FILE
+#define fopen               e9_fopen
+#define fdopen              e9_fdopen
+#define freopen             e9_freopen
+#define clearerr            e9_clearerr
+#define ferror              e9_ferror
+#define feof                e9_feof
+#define fileno              e9_fileno
+#define setvbuf             e9_setvbuf
+#define fflush              e9_fflush
+#define fclose              e9_fclose
+#define fputc               e9_fputc
+#define fputs               e9_fputs
+#define putc                e9_putc
+#define putchar             e9_putchar
+#define puts                e9_puts
+#define fwrite              e9_fwrite
+#define fgetc               e9_fgetc
+#define fgets               e9_fgets
+#define getc                e9_getc
+#define getchar             e9_getchar
+#define ungetc              e9_ungetc
+#define fread               e9_fread
+#define fseek               e9_fseek
+#define ftell               e9_ftell
+#define clearerr_unlocked   e9_clearerr_unlocked
+#define feof_unlocked       e9_feof_unlocked
+#define ferror_unlocked     e9_ferror_unlocked
+#define fileno_unlocked     e9_fileno_unlocked
+#define fflush_unlocked     e9_fflush_unlocked
+#define fputc_unlocked      e9_fputc_unlocked
+#define fputs_unlocked      e9_fputs_unlocked
+#define putc_unlocked       e9_putc_unlocked
+#define putchar_unlocked    e9_putchar_unlocked
+#define puts_unlocked       e9_puts_unlocked
+#define fwrite_unlocked     e9_fwrite_unlocked
+#define fgetc_unlocked      e9_fgetc_unlocked
+#define fgets_unlocked      e9_fgets_unlocked
+#define getc_unlocked       e9_getc_unlocked
+#define getchar_unlocked    e9_getchar_unlocked
+#define fread_unlocked      e9_fread_unlocked
+#define vsnprintf           e9_vsnprintf
+#define snprintf            e9_snprintf
+#define vfprintf            e9_vfprintf
+#define fprintf             e9_fprintf
+#define printf              e9_printf
+
+#define isalnum             e9_isalnum
+#define isalpha             e9_isalpha
+#define isdigit             e9_isdigit
+#define islower             e9_islower
+#define isprint             e9_isprint
+#define isspace             e9_isspace
+#define isxdigit            e9_isxdigit
+#define toupper             e9_toupper
+#define tolower             e9_tolower
+
+#define memcmp              e9_memcmp
+#define memcpy              e9_memcpy
+#define memset              e9_memset
+#define strlen              e9_strlen
+#define strnlen             e9_strnlen
+#define strcmp              e9_strcmp
+#define strncmp             e9_strncmp
+#define strcat              e9_strcat
+#define strncat             e9_strncat
+#define strcpy              e9_strcpy
+#define strncpy             e9_strncpy
+#define strerror            e9_strerror
 
 /****************************************************************************/
 /* DEBUG                                                                    */
