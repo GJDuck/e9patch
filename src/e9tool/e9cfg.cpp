@@ -129,7 +129,7 @@ static void CFGCodeAnalysis(const ELF *elf, bool pic, const Instr *Is,
         bool call = false;
         switch (I->mnemonic)
         {
-            case MNEMONIC_MOV:
+            case MNEMONIC_MOV: case MNEMONIC_PUSH:
                 if (pic || I->op[0].type != OPTYPE_IMM)
                     continue;
 
