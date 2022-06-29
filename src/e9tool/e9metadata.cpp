@@ -2054,6 +2054,13 @@ void e9tool::sendCallMetadata(FILE *out, const char *name, const ELF *elf,
     intptr_t addr = lookupSymbol(patch, symbol, sig);
     if (addr < 0 || addr > INT32_MAX)
     {
+        // Also try e9_... version of the symbol:
+        std::string e9symbol("e9_");
+        e9symbol += symbol;
+        addr = lookupSymbol(patch, e9symbol.c_str(), sig);
+    }
+    if (addr < 0 || addr > INT32_MAX)
+    {
         lookupSymbolWarnings(patch, I, symbol, sig);
         std::string str;
         getSymbolString(symbol, sig, str);

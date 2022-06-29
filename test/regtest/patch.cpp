@@ -801,3 +801,21 @@ void cast(std::nullptr_t x, const char *_asm)
     fprintf(stderr, "x = nullptr; // %s\n", _asm);
 }
 
+void test_memset(intptr_t *ptr)
+{
+    memset(ptr, 0xe9, sizeof(*ptr));
+    fprintf(stderr, "*ptr = %.16lx\n", *ptr);
+    fprintf(stderr, "%s\n", (*ptr == (intptr_t)0xe9e9e9e9e9e9e9e9?
+        "PASSED": "FAILED"));
+    exit(0);
+}
+void test_memcpy(intptr_t *ptr)
+{
+    intptr_t val = -1;
+    memcpy(&val, ptr, sizeof(val));
+    fprintf(stderr, "*ptr = %.16lx\n", *ptr);
+    fprintf(stderr, "val  = %.16lx\n", val);
+    fprintf(stderr, "%s\n", (val == *ptr? "PASSED": "FAILED"));
+    exit(0);
+}
+

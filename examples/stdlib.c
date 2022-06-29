@@ -1879,18 +1879,19 @@ static int tolower(int c)
 
 static void *memset(void *s, int c, size_t n)
 {
-    int8_t *s1 = (int8_t *)s;
-    for (size_t i = 0; i < n; i++)
-        s1[i] = (int8_t)c;
+    register void *t  asm("rdi") = s;
+    register int d    asm("eax") = c;
+    register size_t m asm("rcx") = n;
+    asm ("rep stosb": : "r"(t), "r"(d), "r"(m));
     return s;
 }
 
 static void *memcpy(void *dst, const void *src, size_t n)
 {
-    int8_t *dst1 = (int8_t *)dst;
-    const int8_t *src1 = (const int8_t *)src;
-    for (size_t i = 0; i < n; i++)
-        dst1[i] = src1[i];
+    register const void *s asm("rsi") = src;
+    register void *d       asm("rdi") = dst;
+    register size_t m      asm("rcx") = n;
+    asm ("rep movsb": : "r"(s), "r"(d), "r"(m));
     return dst;
 }
 
