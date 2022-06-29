@@ -3466,16 +3466,17 @@ static int printf_unlocked(const char *format, ...)
  *
  */
 
-#define dlopen      __hide__dlopen
-#define dlsym       __hide__dlsym
-#define dlvsym      __hide__dlvsym
-#define dlclose     __hide__dlclose
 #include <elf.h>
 #include <link.h>
+
 #undef  dlopen
 #undef  dlsym
 #undef  dlvsym
 #undef  dlclose
+#define dlopen      e9_dlopen
+#define dlsym       e9_dlsym
+#define dlvsym      e9_dlvsym
+#define dlclose     e9_dlclose
 
 typedef intptr_t (*dlopen_t)(const char *, int);
 typedef intptr_t (*dlclose_t)(void *);
@@ -3587,12 +3588,20 @@ static int dlinit(const void *dynamic_0)
             continue;
         const Elf64_Sym *dlopen_sym = dl_gnu_hash_lookup(hshtab, symtab,
             strtab, "__libc_dlopen_mode");
+        if (dlopen_sym == NULL)
+            dlopen_sym = dl_gnu_hash_lookup(hshtab, symtab, strtab, "dlopen");
         const Elf64_Sym *dlsym_sym = dl_gnu_hash_lookup(hshtab, symtab,
             strtab, "__libc_dlsym");
+        if (dlsym_sym == NULL)
+            dlsym_sym = dl_gnu_hash_lookup(hshtab, symtab, strtab, "dlsym");
         const Elf64_Sym *dlvsym_sym = dl_gnu_hash_lookup(hshtab, symtab,
             strtab, "__libc_dlvsym");
+        if (dlvsym_sym == NULL)
+            dlvsym_sym = dl_gnu_hash_lookup(hshtab, symtab, strtab, "dlvsym");
         const Elf64_Sym *dlclose_sym = dl_gnu_hash_lookup(hshtab, symtab,
             strtab, "__libc_dlclose");
+        if (dlclose_sym == NULL)
+            dlclose_sym = dl_gnu_hash_lookup(hshtab, symtab, strtab, "dlclose");
         const Elf64_Sym *dlerrno_sym = dl_gnu_hash_lookup(hshtab, symtab,
             strtab, "__errno_location");
         if (dlopen_sym != NULL && dlsym_sym != NULL && dlclose_sym != NULL &&
