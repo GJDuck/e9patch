@@ -62,6 +62,7 @@ enum ParamName
     PARAM_PROTECTION,
     PARAM_TEMPLATE,
     PARAM_TRAMPOLINE,
+    PARAM_VERSION,
 };
 
 /*

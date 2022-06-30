@@ -181,7 +181,7 @@ static void queuePatch(Binary *B, Instr *I, const Trampoline *T)
  */
 static Binary *parseBinary(const Message &msg)
 {
-    const char *filename = nullptr;
+    const char *filename = nullptr, *version = nullptr;
     Mode mode = MODE_ELF_EXE;
     bool have_mode = false, dup = false;
     for (unsigned i = 0; i < msg.num_params; i++)
@@ -197,6 +197,10 @@ static Binary *parseBinary(const Message &msg)
                 mode = (Mode)msg.params[i].value.integer;
                 have_mode = true;
                 break;
+            case PARAM_VERSION:
+                dup = dup || (version != nullptr);
+                version = msg.params[i].value.string;
+                break;
             default:
                 break;
         }
@@ -204,6 +208,13 @@ static Binary *parseBinary(const Message &msg)
     if (filename == nullptr)
         error("failed to parse \"binary\" message (id=%u); missing "
             "\"filename\" parameter", msg.id);
+    if (version == nullptr)
+        error("failed to parse \"binary\" message (id=%u); missing "
+            "\"version\" parameter", msg.id);
+    if (strcmp(version, STRING(VERSION)) != 0)
+        error("failed to parse \"binary\" message (id=%u); invalid "
+            "version \"%s\"; expected \"%s\"", msg.id, version,
+            STRING(VERSION));
     if (dup)
         error("failed to parse \"binary\" message (id=%u); duplicate "
             "parameters detected", msg.id);

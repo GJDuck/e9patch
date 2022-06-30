@@ -505,6 +505,7 @@ static bool validateParam(Method method, ParamName paramName)
             {
                 case PARAM_FILENAME:
                 case PARAM_MODE:
+                case PARAM_VERSION:
                     return true;
                 default:
                     return false;
@@ -1113,6 +1114,10 @@ static void parseParams(Parser &parser, Message &msg)
                 else if (strcmp(parser.s, "template") == 0)
                     name = PARAM_TEMPLATE;
                 break;
+            case 'v':
+                if (strcmp(parser.s, "version") == 0)
+                    name = PARAM_VERSION;
+                break;
         }
         expectToken(parser, ':');
         if (!validateParam(msg.method, name))
@@ -1144,6 +1149,7 @@ static void parseParams(Parser &parser, Message &msg)
                     break;
                 case PARAM_FILENAME:
                 case PARAM_NAME:
+                case PARAM_VERSION:
                     expectToken(parser, TOKEN_STRING);
                     value.string = dupString(parser.s);
                     break;

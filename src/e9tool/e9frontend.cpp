@@ -278,6 +278,9 @@ unsigned e9tool::sendBinaryMessage(FILE *out, const char *mode,
     const char *filename)
 {
     sendMessageHeader(out, "binary");
+    sendParamHeader(out, "version");
+    sendString(out, STRING(VERSION));
+    sendSeparator(out);
     sendParamHeader(out, "filename");
     sendString(out, filename);
     sendSeparator(out);
