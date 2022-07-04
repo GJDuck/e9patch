@@ -76,6 +76,25 @@ bug_vsib:
     mov $-1,%rax
     vpgatherqd %xmm0,(%r8,%ymm1,1),%xmm2
 
+bug_call_rsp_0x0:
+    lea bug_call_rsp_0x1(%rip),%rax
+    push %rax
+    callq *(%rsp)
+
+bug_call_rsp_0x1:
+    lea bug_call_rsp_0x2(%rip),%rax
+    push %rax
+    lea -120(%rsp),%rsp
+    callq *120(%rsp)
+
+bug_call_rsp_0x2:
+    lea -128(%rsp),%rsp
+    lea .Lbug_call_rsp_end(%rip),%rax
+    push %rax
+    lea 136(%rsp),%rsp
+    callq *-136(%rsp)
+.Lbug_call_rsp_end:
+
 # Additional bugs can be added here:
 
 .Lprint:

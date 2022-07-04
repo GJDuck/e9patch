@@ -1,0 +1,1 @@
+./bugs -M 'call && mem[0].base == %rsp && mem[0].disp == 0x0' -P print

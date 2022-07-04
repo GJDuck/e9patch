@@ -320,9 +320,17 @@ no_modification_necessary:
             {
                 case 0x02:              // CALLQ r/m32/m64
                 {
-                    // Check for calls that use %rsp
-                    // TODO: These can be implmented by adjusting the
-                    //       displacement.
+                    if (pushReturnAddress(addr, offset, size, pic, buf, start)
+                            < 0 && !relax)
+                        return -1;
+
+                    // Convert the call into a jmp:
+                    size_t buf_size = buf->size(start);
+                    buf->push(bytes, i);
+                    modRM = (modRM & ~0x38) | (0x04 << 3);  // jmp op
+
+                    // NASTY SPECIAL CASE:
+                    // Check for calls that use %rsp & adjust
                     uint8_t b = rex & 0x1;
                     switch (mod)
                     {
@@ -332,26 +340,58 @@ no_modification_necessary:
                                 break;
                             uint8_t sib = bytes[i+1];
                             uint8_t base = sib & 0x7;
-                            if (base == 0x4)
-                                return -1;      // callq *displ(%rsp, ...)
-                            break;
+                            if (base != 0x4)
+                                break;
+                            bool ok = false;
+                            int32_t disp = 0;
+                            switch (mod)
+                            {
+                                case 0x0:
+                                    ok = true; break;
+                                case 0x1:
+                                    if (size - i < 3)
+                                        break;
+                                    ok = true;
+                                    disp = (int8_t)bytes[i+2];
+                                    break;
+                                case 0x2:
+                                    if (size - i < 6)
+                                        break;
+                                    ok = true;
+                                    disp = *(uint32_t *)(bytes + i + 2);
+                                    break;
+                            }
+                            if (!ok)
+                                break;
+                            disp += sizeof(void *);     // Adjust for push
+                            if (disp == 0)
+                                modRM = (modRM & ~0xc0) | (0x0 << 6);
+                            else if (disp >= INT8_MIN && disp <= INT8_MAX)
+                                modRM = (modRM & ~0xc0) | (0x1 << 6);
+                            else
+                                modRM = (modRM & ~0xc0) | (0x2 << 6);
+                            buf->push(modRM);
+                            buf->push(sib);
+                            if (disp == 0)
+                                ;
+                            else if (disp >= INT8_MIN && disp <= INT8_MAX)
+                                buf->push((uint8_t)(int8_t)disp);
+                            else
+                                buf->push((const uint8_t *)&disp, sizeof(disp));
+                            return buf->commit(start);
                         }   
                         case 0x3:
                             if (rm == 0x4 && b == 0)
-                                return -1;      // callq *%rsp
+                            {
+                                // callq *%rsp
+                                // cannot be handled :(
+                                return -1; 
+                            }
                             break;
                     }
 
-                    if (pushReturnAddress(addr, offset, size, pic, buf, start)
-                            < 0 && !relax)
-                        return -1;
-
-                    // Convert the call into a jmp:
-                    size_t buf_size = buf->size(start);
-                    buf->push(bytes, i);
-                    modRM = (modRM & ~0x38) | (0x04 << 3);  // jmp op
+                    // Normal case:
                     buf->push(modRM);
-
                     if (mod == 0x0 && rm == 0x05)
                     {
                         // This is a %rip-relative call, so we must adjust 
@@ -368,6 +408,7 @@ no_modification_necessary:
                     }
                     else
                         buf->push(bytes + i + 1, size - i - 1);
+                    return buf->commit(start);
                 }
                 default:
                     break;
