@@ -760,6 +760,7 @@ bool patch(Binary &B, Instr *I, const Trampoline *T)
         return false;       // Failed :(
     }
 
+    const char *name = getTacticName(P->tactic);
     commit(B, P);
     if (option_debug)
     {
@@ -770,8 +771,7 @@ bool patch(Binary &B, Instr *I, const Trampoline *T)
             "entry=" ADDRESS_FORMAT ", "
             "trampoline=" ADDRESS_FORMAT ".." ADDRESS_FORMAT ", "
             "offset=%zd]",
-            I->addr, I->size, getTacticName(P->tactic), 
-            ADDRESS(entry), ADDRESS(lb), ADDRESS(ub),
+            I->addr, I->size, name, ADDRESS(entry), ADDRESS(lb), ADDRESS(ub),
             (ssize_t)(entry - lb));
     }
     log(COLOR_GREEN, '.');
