@@ -87,7 +87,7 @@ EOF
 fi
 
 echo -e "${GREEN}$0${OFF}: building e9patch and e9tool..."
-make clean
+make tool.clean clean
 make -j `nproc` tool release
 
 echo -e "${GREEN}$0${OFF}: done...!"

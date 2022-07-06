@@ -84,6 +84,11 @@ struct CStrCmp
     (IS_ABSOLUTE(p)? (p)-0x6000000000000000: (p))
 
 /*
+ * T0 sizes.
+ */
+#define T0_LIMIT                    32
+
+/*
  * Buffer.
  */
 struct Buffer
@@ -179,6 +184,7 @@ enum EntryKind
     ENTRY_INSTR_BYTES,
     ENTRY_BREAK,
     ENTRY_TAKE,
+    ENTRY_BATCH,
 };
 
 /*
@@ -252,10 +258,11 @@ struct Metadata
  */
 struct Instr
 {
-    const size_t offset:46;             // The instruction offset
+    const size_t offset:45;             // The instruction offset
     const size_t size:4;                // The instruction size (bytes)
     const size_t pcrel32_idx:4;         // 32bit PC-relative imm idx (or 0)
     const size_t pcrel8_idx:4;          // 8bit PC-relative imm idx (or 0)
+    const size_t target:1;              // [Optional] jump target?
     const size_t pic:1;                 // PIC? (stored here for convenience)
     size_t       debug:1;               // Debug trampoline?
     size_t       patch:1;               // Will patch instruction?
@@ -287,20 +294,39 @@ struct Instr
     } patched;
 
     const Metadata *metadata = nullptr; // The instruction metadata.
+    const Trampoline *T = nullptr;      // The instruction trampoline.
     Instr *prev = nullptr;              // The previous instruction.
     Instr *next = nullptr;              // The next instruction.
 
     Instr(off_t offset, intptr_t addr, size_t size, const uint8_t *original,
             uint8_t *bytes, uint8_t *state,  size_t pcrel32_idx,
-            size_t pcrel8_idx, bool pic) :
+            size_t pcrel8_idx, bool pic, bool target) :
         offset((size_t)offset), addr(addr), size(size), original(original),
         patched(bytes, state), pcrel32_idx(pcrel32_idx),
-        pcrel8_idx(pcrel8_idx), pic(pic), debug(false), patch(false),
-        is_evicted(false), no_optimize(false), is_patched(false)
+        pcrel8_idx(pcrel8_idx), target(target), pic(pic), debug(false),
+        patch(false), is_evicted(false), no_optimize(false), is_patched(false)
     {
         ;
     }
 };
+
+/*
+ * Find predecessor instruction.
+ */
+static inline Instr *predecessor(const Instr *I)
+{
+    Instr *J = I->prev;
+    return (J != nullptr && J->addr + J->size == I->addr? J: nullptr);
+}
+
+/*
+ * Find successor instruction.
+ */
+static inline Instr *successor(const Instr *I)
+{
+    Instr *J = I->next;
+    return (J != nullptr && I->addr + I->size == J->addr? J: nullptr);
+}
 
 /*
  * Virtual address space allocation.
@@ -519,6 +545,7 @@ struct Binary
     mutable EntrySet Es;                // All trampoline entry points.
     mutable JumpSet Js;                 // All observed jumps (-Opeephole).
     Allocator allocator;                // Virtual address allocation.
+    const uint8_t *targets = nullptr;   // All targets [optional].
 
     FuncSet inits;                      // Initialization functions.
     FuncSet finis;                      // Finalization functions.
@@ -536,6 +563,7 @@ extern Instr *findInstr(const Binary *B, intptr_t addr);
 extern bool option_is_tty;
 extern bool option_debug;
 extern bool option_batch;
+extern bool option_OCFR;
 extern unsigned option_Oepilogue;
 extern unsigned option_Oepilogue_size;
 extern bool option_Oorder;
@@ -545,6 +573,7 @@ extern unsigned option_Oprologue_size;
 extern bool option_Oscratch_stack;
 extern bool option_tactic_B1;
 extern bool option_tactic_B2;
+extern bool option_tactic_T0;
 extern bool option_tactic_T1;
 extern bool option_tactic_T2;
 extern bool option_tactic_T3;
@@ -593,6 +622,7 @@ extern size_t stat_num_patched;
 extern size_t stat_num_failed;
 extern size_t stat_num_B1;
 extern size_t stat_num_B2;
+extern size_t stat_num_T0;
 extern size_t stat_num_T1;
 extern size_t stat_num_T2;
 extern size_t stat_num_T3;

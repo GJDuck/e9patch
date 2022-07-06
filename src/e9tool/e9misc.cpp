@@ -332,6 +332,12 @@ void usage(FILE *stream, const char *progname)
         "\n"
         "\t--version\n"
         "\t\tPrint the version and exit.\n"
+        "\n"
+        "\t-X\n"
+        "\t\tEnables binary rewriting \"with\" control-flow recovery.  This\n"
+        "\t\tusually makes the rewritten binary much faster, but may\n"
+        "\t\tintroduce rewriting bugs if the built-in recovery analysis is\n"
+        "\t\tinaccurate.\n"
         "\n", progname);
 }
 

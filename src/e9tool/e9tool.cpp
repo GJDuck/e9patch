@@ -758,11 +758,12 @@ int main_2(int argc, char **argv)
     std::vector<ActionEntry> option_actions;
     std::vector<std::string> option_exclude;
     int option_sync = 64, option_threshold = 2;
+    bool option_CFR = false;
     srand(0xe9e9e9e9);
     while (true)
     {
         int idx;
-        int opt = getopt_long_only(argc, argv, "A:c:E:hM:o:O:P:s",
+        int opt = getopt_long_only(argc, argv, "A:c:E:hM:o:O:P:sX",
             long_options, &idx);
         if (opt < 0)
             break;
@@ -916,6 +917,9 @@ int main_2(int argc, char **argv)
             case OPTION_VERSION:
                 puts("E9Tool " STRING(VERSION));
                 return EXIT_SUCCESS;
+            case 'X':
+                option_CFR = true;
+                break;
             default:
                 error("failed to parse command-line options; try `--help' "
                     "for more information");
@@ -1111,6 +1115,7 @@ int main_2(int argc, char **argv)
         options.push_back("--loader-static");
     if (option_trap_all)
         options.push_back("--trap-all");
+    options.push_back((option_CFR? "-OCFR=true": "-OCFR=false"));
     switch (option_optimization_level)
     {
         case '0':

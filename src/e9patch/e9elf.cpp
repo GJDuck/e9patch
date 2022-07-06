@@ -40,14 +40,6 @@
 static const
 #include "e9loader_elf.c"
 
-#ifndef PT_GNU_PROPERTY
-#define PT_GNU_PROPERTY                     0x6474e553
-#define NT_GNU_PROPERTY_TYPE_0              5
-#define GNU_PROPERTY_X86_FEATURE_1_AND      0xc0000002
-#define GNU_PROPERTY_X86_FEATURE_1_IBT      0x1
-#define GNU_PROPERTY_X86_FEATURE_1_SHSTK    0x2
-#endif
-
 /*
  * GNU_PROPERTY handling.
  */
