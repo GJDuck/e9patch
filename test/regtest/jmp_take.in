@@ -1,1 +1,1 @@
-./test -M jump -P 'if always_take(target,asm)@patch goto'
+./test -M jmp -P 'if always_take(target,asm)@patch goto'

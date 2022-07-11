@@ -173,6 +173,14 @@ The following `ATTRIBUTE`s (with corresponding types) are supported:
     <td>True for AVX2 instructions, false otherwise</td></tr>
 <tr><td><b><tt>avx512<tt></b></td><td><tt>Boolean</tt></td>
     <td>True for AVX512 instructions, false otherwise</td></tr>
+<tr><td><b><tt>bytes[i]<tt></b></td><td><tt>Integer</tt></td>
+    <td>The <i>i</i><sup>th</sup> instruction byte</td></tr>
+<tr><td><b><tt>rex<tt></b></td><td><tt>Integer</tt></td>
+    <td>The value of the REX prefix if used, undefined otherwise.</td></tr>
+<tr><td><b><tt>modrm<tt></b></td><td><tt>Integer</tt></td>
+    <td>The value of the MODRM byte if used, undefined otherwise.</td></tr>
+<tr><td><b><tt>sib<tt></b></td><td><tt>Integer</tt></td>
+    <td>The value of the SIB byte if used, undefined otherwise.</td></tr>
 <tr><td><b><tt>op.size</tt></b></td><td><tt>Integer</tt></td>
     <td>The number of operands</td></tr>
 <tr><td><b><tt>src.size</tt></b></td><td><tt>Integer</tt></td>
@@ -743,7 +751,7 @@ The following arguments are supported:
     <td>The ELF address of the matching instruction</td></tr>
 <tr><td><b><tt>id</tt></b></td><td><tt>intptr_t</tt></td>
     <td>A unique identifier (one per patch)</td></tr>
-<tr><td><b><tt>instr</tt></b></td><td><tt>const uint8_t &#42;</tt></td>
+<tr><td><b><tt>bytes</tt></b></td><td><tt>const uint8_t &#42;</tt></td>
     <td>The machine-code bytes of the matching instruction</td></tr>
 <tr><td><b><tt>next</tt></b></td><td><tt>const void &#42;</tt></td>
     <td>The runtime address of the next executed instruction</td></tr>
@@ -760,7 +768,7 @@ The following arguments are supported:
 <tr><td><b><tt>random</tt></b></td><td><tt>intptr_t</tt></td>
     <td>A (statically generated) random integer [0..<tt>RAND_MAX</tt>]</td></tr>
 <tr><td><b><tt>size</tt></b></td><td><tt>size_t</tt></td>
-    <td>The size of <tt>instr</tt> in bytes</td></tr>
+    <td>The size of <tt>bytes</tt></td></tr>
 <tr><td><b><tt>state</tt></b></td><td><tt>void &#42;</tt></td>
     <td>A pointer to a structure containing all general purpose registers</td></tr>
 <tr><td><b><tt>ah</tt></b>,...,<b><tt>dh</tt></b>, <b><tt>al</tt></b>,...,<b><tt>r15b</tt></b></td><td><tt>int8_t</tt></td>

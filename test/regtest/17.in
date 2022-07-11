@@ -1,1 +1,1 @@
-./test -M 'call and imm[0] == 0xa000168' -P 'entry(addr,imm[0],target,instr,size,asm)@inst'
+./test -M 'call and imm[0] == 0xa000168' -P 'entry(addr,imm[0],target,bytes,size,asm)@inst'

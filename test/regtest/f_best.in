@@ -1,1 +1,1 @@
-./test -M 'F.best' -P 'entry(addr,F,BB,instr,size,asm)@inst'
+./test -M 'F.best' -P 'entry(addr,F,BB,bytes,size,asm)@inst'

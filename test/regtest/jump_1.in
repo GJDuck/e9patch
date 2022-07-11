@@ -1,1 +1,1 @@
-./test -M jump -P print
+./test -M jmp -P print

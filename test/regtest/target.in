@@ -1,1 +1,1 @@
-./test -M 'target == &data_END' -P 'entry(addr,target,next,instr,size,asm)@inst'
+./test -M 'target == &data_END' -P 'entry(addr,target,next,bytes,size,asm)@inst'

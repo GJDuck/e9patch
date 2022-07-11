@@ -1,1 +1,1 @@
-./test -M 'mem[0].base == nil' -P 'entry(mem[0].disp,mem[0].index,&mem[0],instr,size,asm)@inst'
+./test -M 'mem[0].base == nil' -P 'entry(mem[0].disp,mem[0].index,&mem[0],bytes,size,asm)@inst'

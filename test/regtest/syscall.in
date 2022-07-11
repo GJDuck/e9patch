@@ -1,4 +1,4 @@
-./test -M 'mnemonic == "syscall"' -P 'replace entry(rax,rdi,rsi,instr,size,asm)@inst'
+./test -M 'mnemonic == "syscall"' -P 'replace entry(rax,rdi,rsi,bytes,size,asm)@inst'
 
 # This should SEGV since it will reach .Lunreachable
 

@@ -1,5 +1,5 @@
-./test -M 'op[0].size == 16' -P 'entry(&data,&data_END,&data2,instr,size,asm)@inst'
+./test -M 'op[0].size == 16' -P 'entry(&data,&data_END,&data2,bytes,size,asm)@inst'
 
-# Although multiple instructions use %xmm regs, only one reads the whole
-# register, so the filter matches exactly 1 instruction.
+# Although multiple bytesuctions use %xmm regs, only one reads the whole
+# register, so the filter matches exactly 1 bytesuction.
 

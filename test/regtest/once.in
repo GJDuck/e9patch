@@ -1,1 +1,1 @@
-./test -M jump -P 'if once(trampoline,addr,next,asm)@init goto'
+./test -M jmp -P 'if once(trampoline,addr,next,asm)@init goto'

@@ -1,1 +1,1 @@
-./test -M 'reg.size == 2' -P 'entry(addr,reg[0],reg[1],instr,size,asm)@inst'
+./test -M 'reg.size == 2' -P 'entry(addr,reg[0],reg[1],bytes,size,asm)@inst'

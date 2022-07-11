@@ -1,0 +1,1 @@
+./test -M 'bytes.size == 4 && bytes[0] == 0xF3 && bytes[1] == 0x0F && bytes[2] == 0x51 && bytes[3] == 0xC8' -P print

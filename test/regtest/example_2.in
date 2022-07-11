@@ -1,1 +1,1 @@
-./test -M 'mnemonic == "jmp"' -P 'entry(addr,target,next,instr,size,asm)@inst'
+./test -M 'mnemonic == "jmp"' -P 'entry(addr,target,next,bytes,size,asm)@inst'

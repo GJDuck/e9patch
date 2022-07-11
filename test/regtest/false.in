@@ -1,1 +1,1 @@
-./test -M false -P 'entry(0x1,0x2,0x3,instr,size,asm)@inst'
+./test -M false -P 'entry(0x1,0x2,0x3,bytes,size,asm)@inst'

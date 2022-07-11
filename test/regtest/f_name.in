@@ -1,1 +1,1 @@
-./test.pie -M 'F.name = "func" && F.best' -P 'entry((static)addr,(static)BB,(static)F,instr,size,asm)@inst'
+./test.pie -M 'F.name = "func" && F.best' -P 'entry((static)addr,(static)BB,(static)F,bytes,size,asm)@inst'
