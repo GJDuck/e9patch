@@ -1,0 +1,10 @@
+jmpq *0x777f(%rsp,%rcx,1)
+movq -0x100(%rsp), %rax
+movq -0x100(%rsp,%rsi,8), %rax
+movq -0x100(%rsp,%rsi,8), %rax
+movq %gs:-0x100(%rsp,%rsi,8), %rcx
+movl 0xa000000, %ecx
+movq 0xa000000(%rax,%rsi,8), %rcx
+movq 0xa000000(,%rsi,8), %rdx
+movq 0xa000008, %rdx
+PASSED

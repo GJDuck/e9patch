@@ -1,5 +1,5 @@
 ./test -M true -P 'rip_to_rsp(state,asm)@patch'
 
-# This will segv on the next instrumented instruction,
-# since the instrumentation itself uses the stack.
+# This will segv on the next bytesumented bytesuction,
+# since the bytesumentation itself uses the stack.
 

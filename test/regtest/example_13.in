@@ -1,1 +1,1 @@
-./test -M 'not rflags in regs' -P 'entry(addr,op[0],op[1],instr,size,asm)@inst'
+./test -M 'not rflags in regs' -P 'entry(addr,op[0],op[1],bytes,size,asm)@inst'

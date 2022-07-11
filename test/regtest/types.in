@@ -1,1 +1,1 @@
-./test -M 'op[0].type == imm && op[1].type == reg' -P 'entry(id,addr,(static)addr,instr,size,asm)@inst'
+./test -M 'op[0].type == imm && op[1].type == reg' -P 'entry(id,addr,(static)addr,bytes,size,asm)@inst'

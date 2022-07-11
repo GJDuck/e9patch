@@ -1,0 +1,1 @@
+./test -M 'defined(I.modrm)' -P print

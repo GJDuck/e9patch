@@ -1,1 +1,1 @@
-./test -M 'op[0] == rax || op[1] == rcx || op[0] == rdi' -P 'entry(config,rax,op[0],instr,size,asm)@inst'
+./test -M 'op[0] == rax || op[1] == rcx || op[0] == rdi' -P 'entry(config,rax,op[0],bytes,size,asm)@inst'

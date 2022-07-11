@@ -5,7 +5,7 @@
  * |  __/\__, | || (_) | (_) | |
  *  \___|  /_/ \__\___/ \___/|_|
  *                              
- * Copyright (C) 2020 National University of Singapore
+ * Copyright (C) 2022 National University of Singapore
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -96,6 +96,7 @@ static const TokenInfo tokens[] =
     {"bp",              TOKEN_REGISTER,         REGISTER_BP},
     {"bpl",             TOKEN_REGISTER,         REGISTER_BPL},
     {"break",           TOKEN_BREAK,            0},
+    {"bytes",           TOKEN_BYTES,            0},
     {"bx",              TOKEN_REGISTER,         REGISTER_BX},
     {"call",            TOKEN_CALL,             0},
     {"ch",              TOKEN_REGISTER,         REGISTER_CH},
@@ -144,6 +145,8 @@ static const TokenInfo tokens[] =
     {"int32_t",         TOKEN_INT32_T,          0},
     {"int64_t",         TOKEN_INT64_T,          0},
     {"int8_t",          TOKEN_INT8_T,           0},
+    {"jcc",             TOKEN_JCC,              0},
+    {"jmp",             TOKEN_JMP,              0},
     {"jump",            TOKEN_JUMP,             0},
     {"len",             TOKEN_LENGTH,           0},
     {"length",          TOKEN_LENGTH,           0},
@@ -155,6 +158,7 @@ static const TokenInfo tokens[] =
     {"mem8",            TOKEN_MEM8,             0},
     {"mmx",             TOKEN_MMX,              0},
     {"mnemonic",        TOKEN_MNEMONIC,         0},
+    {"modrm",           TOKEN_MODRM,            0},
     {"naked",           TOKEN_NAKED,            0},
     {"name",            TOKEN_NAME_2,           0},
     {"next",            TOKEN_NEXT,             0},
@@ -212,7 +216,9 @@ static const TokenInfo tokens[] =
     {"reg",             TOKEN_REG,              OPTYPE_REG},
     {"regs",            TOKEN_REGS,             0},
     {"replace",         TOKEN_REPLACE,          0},
+    {"ret",             TOKEN_RET,              0},
     {"return",          TOKEN_RETURN,           0},
+    {"rex",             TOKEN_REX,              0},
     {"rflags",          TOKEN_REGISTER,         REGISTER_EFLAGS},
     {"rip",             TOKEN_REGISTER,         REGISTER_RIP},
     {"rsi",             TOKEN_REGISTER,         REGISTER_RSI},
@@ -223,6 +229,7 @@ static const TokenInfo tokens[] =
     {"seg",             TOKEN_SEGMENT,          0},
     {"segment",         TOKEN_SEGMENT,          0},
     {"si",              TOKEN_REGISTER,         REGISTER_SI},
+    {"sib",             TOKEN_SIB,              0},
     {"sil",             TOKEN_REGISTER,         REGISTER_SIL},
     {"size",            TOKEN_SIZE,             0},
     {"sp",              TOKEN_REGISTER,         REGISTER_SP},

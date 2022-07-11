@@ -1,1 +1,1 @@
-./test -M 'mnemonic="add" && op[0]=0x8' -P 'entry(addr,%rsp,mem64<(%rsp)>,instr,size,asm)@inst'
+./test -M 'mnemonic="add" && op[0]=0x8' -P 'entry(addr,%rsp,mem64<(%rsp)>,bytes,size,asm)@inst'

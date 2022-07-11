@@ -40,6 +40,19 @@ using namespace e9tool;
 Plugin *openPlugin(const char *basename);
 
 /*
+ * Warning about deprecated syntax.
+ */
+static void deprecated(const char *syntax, const char *alt)
+{
+    static std::set<const char *, CStrCmp> seen;
+    auto i = seen.insert(syntax);
+    if (!i.second)
+        return;
+    warning("the `%s' syntax is deprecated; use `%s' instead", syntax, alt);
+}
+
+
+/*
  * Parse and index.
  */
 static intptr_t parseIndex(Parser &parser, intptr_t lb, intptr_t ub)
@@ -337,7 +350,7 @@ static const MatchArg parseMatchArg(Parser &parser, bool val = false)
 
     // Step (2): attempt to parse a variable:
     MatchSet set = MATCH_Is;
-    bool spec = false;
+    bool spec = false, seen_I = false;
     switch (t)
     {
         case TOKEN_BB:
@@ -355,6 +368,13 @@ static const MatchArg parseMatchArg(Parser &parser, bool val = false)
             set = MATCH_Fs;
             break;
         case TOKEN_I:
+            if (parser.peekToken() == '.')
+            {
+                parser.getToken();
+                t = parser.getToken();
+                seen_I = true;
+                break;
+            }
             if (parser.peekToken() != '[')
                 break;
             spec = true;
@@ -382,36 +402,55 @@ static const MatchArg parseMatchArg(Parser &parser, bool val = false)
             match = MATCH_ASSEMBLY; break;
         case TOKEN_ADDR:
             match = MATCH_ADDRESS; break;
+        case TOKEN_BYTES:
+            match = MATCH_BYTES; break;
         case TOKEN_CALL:
             match = MATCH_CALL; break;
         case TOKEN_DST:
             match = MATCH_DST; break;
         case TOKEN_FALSE:
+            if (seen_I) parser.unexpectedToken();
             match = MATCH_FALSE; break;
         case TOKEN_IMM:
             match = MATCH_IMM; break;
         case TOKEN_CONDJUMP:
+            deprecated("condjump", "jcc");
+            // Fallthrough:
+        case TOKEN_JCC:
             match = MATCH_CONDJUMP; break;
         case TOKEN_JUMP:
+            deprecated("jump", "jmp");
+            // Fallthrough:
+        case TOKEN_JMP:
             match = MATCH_JUMP; break;
         case TOKEN_MEM:
             match = MATCH_MEM; break;
         case TOKEN_MNEMONIC:
             match = MATCH_MNEMONIC; break;
+        case TOKEN_MODRM:
+            match = MATCH_MODRM; break;
         case TOKEN_OFFSET:
             match = MATCH_OFFSET; break;
         case TOKEN_OP:
             match = MATCH_OP; break;
         case TOKEN_PLUGIN:
+            if (seen_I) parser.unexpectedToken();
             match = MATCH_PLUGIN; break;
         case TOKEN_RANDOM:
             match = MATCH_RANDOM; break;
         case TOKEN_REG:
             match = MATCH_REG; break;
         case TOKEN_RETURN:
+            deprecated("return", "ret");
+            // Fallthrough:
+        case TOKEN_RET:
             match = MATCH_RETURN; break;
+        case TOKEN_REX:
+            match = MATCH_REX; break;
         case TOKEN_SECTION:
             match = MATCH_SECTION; break;
+        case TOKEN_SIB:
+            match = MATCH_SIB; break;
         case TOKEN_SIZE: case TOKEN_LENGTH:
             match = MATCH_SIZE; break;
         case TOKEN_SRC:
@@ -419,6 +458,7 @@ static const MatchArg parseMatchArg(Parser &parser, bool val = false)
         case TOKEN_TARGET:
             match = MATCH_TARGET; break;
         case TOKEN_TRUE:
+            if (seen_I) parser.unexpectedToken();
             match = MATCH_TRUE; break;
         case TOKEN_AVX:
             match = MATCH_AVX; break;
@@ -528,6 +568,28 @@ static const MatchArg parseMatchArg(Parser &parser, bool val = false)
                     plugin->filename);
             break;
         }
+
+        case MATCH_BYTES:
+            switch (parser.peekToken())
+            {
+                case '.':
+                    parser.getToken();
+                    switch (parser.peekToken())
+                    {
+                        case TOKEN_SIZE: case TOKEN_LENGTH:
+                            match = MATCH_SIZE; break;
+                        default:
+                            parser.unexpectedToken();
+                    }
+                    parser.getToken();
+                    break;
+                case '[':
+                    j = (unsigned)parseIndex(parser, 0, 14);
+                    break;
+                default:
+                    parser.unexpectedToken();
+            }
+            break;
 
         case MATCH_OP: case MATCH_SRC: case MATCH_DST:
         case MATCH_IMM: case MATCH_REG: case MATCH_MEM:
@@ -887,20 +949,7 @@ const Patch *parsePatch(const ELF &elf, const char *str)
                 switch (t)
                 {
                     case TOKEN_ASM:
-                        arg = ARGUMENT_ASM;
-                        if (parser.peekToken() != '.')
-                            break;
-                        parser.getToken();
-                        switch (parser.getToken())
-                        {
-                            case TOKEN_LENGTH:
-                                arg = ARGUMENT_ASM_LEN; break;
-                            case TOKEN_SIZE:
-                                arg = ARGUMENT_ASM_SIZE; break;
-                            default:
-                                parser.unexpectedToken();
-                        }
-                        break;
+                        arg = ARGUMENT_ASM; break;
                     case TOKEN_ADDR:
                         arg = ARGUMENT_ADDR; break;
                     case TOKEN_BASE:
@@ -920,6 +969,9 @@ const Patch *parsePatch(const ELF &elf, const char *str)
                     case TOKEN_IMM:
                         arg = ARGUMENT_IMM; break;
                     case TOKEN_INSTR:
+                        deprecated("instr", "bytes");
+                        // Fallthrough:
+                    case TOKEN_BYTES:
                         arg = ARGUMENT_BYTES; break;
                     case TOKEN_MEM:
                         arg = ARGUMENT_MEM; break;
@@ -979,6 +1031,20 @@ const Patch *parsePatch(const ELF &elf, const char *str)
                 }
                 switch (arg)
                 {
+                    case ARGUMENT_ASM:
+                        if (parser.peekToken() != '.')
+                            break;
+                        parser.getToken();
+                        switch (parser.getToken())
+                        {
+                            case TOKEN_LENGTH:
+                                arg = ARGUMENT_ASM_LEN; break;
+                            case TOKEN_SIZE:
+                                arg = ARGUMENT_ASM_SIZE; break;
+                            default:
+                                parser.unexpectedToken();
+                        }
+                        break;
                     case ARGUMENT_OP: case ARGUMENT_SRC: case ARGUMENT_DST:
                     case ARGUMENT_IMM: case ARGUMENT_REG: case ARGUMENT_MEM:
                         value = parseIndex(parser, 0, 7);
@@ -1495,6 +1561,10 @@ static MatchVal makeMatchValue(const MatchVar *var, const ELF *elf,
             result.i = false; return result;
         case MATCH_ADDRESS:
             result.i = (intptr_t)I->address; return result;
+        case MATCH_BYTES:
+            if (var->j >= I->size)
+                goto undefined;
+            result.i = I->data[var->j]; return result;
         case MATCH_CALL:
             result.i = ((I->category & CATEGORY_CALL) != 0); return result;
         case MATCH_CONDJUMP:
@@ -1503,6 +1573,9 @@ static MatchVal makeMatchValue(const MatchVar *var, const ELF *elf,
             return result;
         case MATCH_JUMP:
             result.i = ((I->category & CATEGORY_JUMP) != 0); return result;
+        case MATCH_MODRM:
+            if (I->encoding.offset.modrm < 0) goto undefined;
+            result.i = I->data[I->encoding.offset.modrm]; return result;
         case MATCH_OP: case MATCH_SRC: case MATCH_DST:
         case MATCH_IMM: case MATCH_REG: case MATCH_MEM:
             if (var->j < 0)
@@ -1622,6 +1695,12 @@ static MatchVal makeMatchValue(const MatchVar *var, const ELF *elf,
             result.i = (intptr_t)rand(); return result;
         case MATCH_RETURN:
             result.i = ((I->category & CATEGORY_RETURN) != 0); return result;
+        case MATCH_REX:
+            if (I->encoding.offset.rex < 0) goto undefined;
+            result.i = I->data[I->encoding.offset.rex]; return result;
+        case MATCH_SIB:
+            if (I->encoding.offset.sib < 0) goto undefined;
+            result.i = I->data[I->encoding.offset.sib]; return result;
         case MATCH_SIZE:
             result.i = (intptr_t)I->size; return result;
         case MATCH_TARGET:

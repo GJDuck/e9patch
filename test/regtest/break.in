@@ -1,5 +1,5 @@
 ./test -M true -P break
 
-# This effectively disables all instructions, so execution reaches the
+# This effectively disables all bytesuctions, so execution reaches the
 # `data', which is interpreted as `adc %esp,(%rdx)', which promptly SEGVs
 

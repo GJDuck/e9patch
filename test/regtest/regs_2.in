@@ -1,1 +1,1 @@
-./test -M 'reg[0] in {%rax,%rbx,%rcx}' -P 'entry(rax,rbx,rcx,instr,size,asm)@inst'
+./test -M 'reg[0] in {%rax,%rbx,%rcx}' -P 'entry(rax,rbx,rcx,bytes,size,asm)@inst'

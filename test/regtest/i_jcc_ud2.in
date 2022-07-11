@@ -1,1 +1,1 @@
-./test -M 'I[0].condjump && I[1].mnemonic == "ud2"' -P print
+./test -M 'I[0].jcc && I[1].mnemonic == "ud2"' -P print
