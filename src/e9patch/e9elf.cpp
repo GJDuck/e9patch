@@ -246,7 +246,7 @@ bool parseElf(Binary *B)
     const struct e9_config_s *config = (phdr_max == nullptr? nullptr:
         (const struct e9_config_s *)(data + phdr_max->p_offset));
     if (phdr_max != nullptr &&
-            phdr_max->p_offset + phdr_max->p_filesz < size &&
+            phdr_max->p_offset + phdr_max->p_filesz <= size &&
             phdr_max->p_filesz >= sizeof(struct e9_config_s) &&
             strcmp(config->magic, "E9PATCH") == 0)
         error("failed to parse ELF file \"%s\": E9Patch has already "
