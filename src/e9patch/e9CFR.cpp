@@ -499,35 +499,35 @@ void targetAnalysis(Binary *B)
             }
         }
     }
-    else if (pic)
+
+    // PIC-style jump tables
+    // Note: We do this analysis even for non-PIC binaries.  This is because
+    //       it is possible that a non-PIC binary was compiled with -fPIC.
+    for (unsigned i = 0; i < phnum; i++)
     {
-        // PIC-style jump tables
-        for (unsigned i = 0; i < phnum; i++)
+        const Elf64_Phdr *phdr = phdrs + i;
+        if (phdr->p_type != PT_LOAD || (phdr->p_flags & PF_R) == 0)
+            continue;
+        off_t offset  = (off_t)phdr->p_offset;
+        intptr_t addr = (intptr_t)phdr->p_vaddr;
+        size_t size   = (size_t)phdr->p_memsz;
+        off_t end     = (offset + size > B->size? B->size: offset + size);
+        const uint8_t *base = data + offset;
+        auto bounds = getBounds<int32_t>(base, data + end);
+        for (const int32_t *p = bounds.first; p < bounds.second; p++)
         {
-            const Elf64_Phdr *phdr = phdrs + i;
-            if (phdr->p_type != PT_LOAD || (phdr->p_flags & PF_R) == 0)
+            intptr_t table = addr + ((intptr_t)p - (intptr_t)base);
+            auto i = tables.find(table);
+            if (i == tables.end())
                 continue;
-            off_t offset  = (off_t)phdr->p_offset;
-            intptr_t addr = (intptr_t)phdr->p_vaddr;
-            size_t size   = (size_t)phdr->p_memsz;
-            off_t end     = (offset + size > B->size? B->size: offset + size);
-            const uint8_t *base = data + offset;
-            auto bounds = getBounds<int32_t>(base, data + end);
-            for (const int32_t *p = bounds.first; p < bounds.second; p++)
+            
+            for (const int32_t *q = p; q < bounds.second; q++)
             {
-                intptr_t table = addr + ((intptr_t)p - (intptr_t)base);
-                auto i = tables.find(table);
-                if (i == tables.end())
-                    continue;
-                
-                for (const int32_t *q = p; q < bounds.second; q++)
-                {
-                    intptr_t offset = (intptr_t)*q;
-                    intptr_t label = table + offset;
-                    intptr_t target = addrToOffset(phdrs, phnum, label);
-                    if (!setTarget(targets, B->size, target))
-                        break;
-                }
+                intptr_t offset = (intptr_t)*q;
+                intptr_t label = table + offset;
+                intptr_t target = addrToOffset(phdrs, phnum, label);
+                if (!setTarget(targets, B->size, target))
+                    break;
             }
         }
     }
