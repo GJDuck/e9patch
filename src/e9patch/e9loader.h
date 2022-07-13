@@ -1,6 +1,6 @@
 /*
  * e9loader.h
- * Copyright (C) 2021 National University of Singapore
+ * Copyright (C) 2022 National University of Singapore
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -51,6 +51,7 @@ struct e9_map_s
 struct e9_config_s
 {
     char     magic[8];                          // "E9PATCH\0"
+    char     version[16];                       // Version
     uint32_t flags;                             // Flags
     uint32_t size;                              // Loader total size
     intptr_t base;                              // Loader base address
