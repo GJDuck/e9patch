@@ -704,6 +704,84 @@ unsigned getInstrPCRelativeIndex(const uint8_t *bytes, unsigned size)
 }
 
 /*
+ * Calculate the size of the instruction from the modRM byte.
+ */
+int getModRMSize(const uint8_t *bytes, unsigned size)
+{
+    if (1 > size)
+        return -1;
+    uint8_t modRM = bytes[0];
+    uint8_t mod = (modRM & 0xc0) >> 6;
+    uint8_t rm  = modRM & 0x7;
+    switch (mod)
+    {
+        case 0x03:
+            return 1;
+        case 0x00:
+            switch (rm)
+            {
+                case 0x04:
+                    break;
+                case 0x05:
+                    goto displ32;
+                default:
+                    return 1;
+            }
+            break;
+        case 0x01:
+            switch (rm)
+            {
+                case 0x04:
+                    break;
+                default:
+                    if (1 + sizeof(int8_t) > size)
+                        return -1;
+                    return 1 + sizeof(int8_t);
+            }
+            break;
+        case 0x02:
+            switch (rm)
+            {
+                case 0x04:
+                    break;
+                default:
+                displ32:
+                    if (1 + sizeof(int32_t) > size)
+                        return -1;
+                    return 1 + sizeof(int32_t);
+            }
+            break;
+    }
+    if (2 > size)
+        return -1;
+    uint8_t sib = bytes[1];
+    uint8_t base = sib & 0x3;
+    switch (mod)
+    {
+        case 0x00:
+            switch (base)
+            {
+                case 0x05:
+                    goto displ32_sib;
+                default:
+                    return 2;
+            }
+            break;
+        case 0x01:
+            if (2 + sizeof(int8_t) > size)
+                return -1;
+            return 2 + sizeof(int8_t);
+        case 0x02:
+        displ32_sib:
+            if (2 + sizeof(int32_t) > size)
+                return -1;
+            return 2 + sizeof(int32_t);
+        default:
+            return -1;
+    }
+}
+
+/*
  * Get information about a Control-Flow-Transfer instruction.
  */
 static bool getCFTInfo(intptr_t addr, const uint8_t *bytes, unsigned size,
@@ -762,8 +840,7 @@ static bool getCFTInfo(intptr_t addr, const uint8_t *bytes, unsigned size,
                 }
                 case 0xFF:
                 {
-                    // TODO: Accurate size check?
-                    if (size - i < 1)
+                    if (getModRMSize(bytes, size - i) < 0)
                         return false;
                     uint8_t modRM = bytes[i];
                     uint8_t op    = (modRM & 0x38) >> 3;

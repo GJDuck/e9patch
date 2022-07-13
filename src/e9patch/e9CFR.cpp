@@ -18,8 +18,9 @@
 
 #include <sys/mman.h>
 
-#include "e9elf.h"
 #include "e9CFR.h"
+#include "e9elf.h"
+#include "e9x86_64.h"
 
 /*
  * Setter/getter.
@@ -90,84 +91,6 @@ static intptr_t addrToOffset(const Elf64_Phdr *phdrs, size_t phnum,
 }
 
 /*
- * Calculate the size of the instruction from the modRM byte.
- */
-static ssize_t modRMSize(const uint8_t *data, size_t size)
-{
-    if (1 > size)
-        return -1;
-    uint8_t modRM = data[0];
-    uint8_t mod = (modRM & 0xc0) >> 6;
-    uint8_t rm  = modRM & 0x7;
-    switch (mod)
-    {
-        case 0x03:
-            return 1;
-        case 0x00:
-            switch (rm)
-            {
-                case 0x04:
-                    break;
-                case 0x05:
-                    goto displ32;
-                default:
-                    return 1;
-            }
-            break;
-        case 0x01:
-            switch (rm)
-            {
-                case 0x04:
-                    break;
-                default:
-                    if (1 + sizeof(int8_t) > size)
-                        return -1;
-                    return 1 + sizeof(int8_t);
-            }
-            break;
-        case 0x02:
-            switch (rm)
-            {
-                case 0x04:
-                    break;
-                default:
-                displ32:
-                    if (1 + sizeof(int32_t) > size)
-                        return -1;
-                    return 1 + sizeof(int32_t);
-            }
-            break;
-    }
-    if (2 > size)
-        return -1;
-    uint8_t sib = data[1];
-    uint8_t base = sib & 0x3;
-    switch (mod)
-    {
-        case 0x00:
-            switch (base)
-            {
-                case 0x05:
-                    goto displ32_sib;
-                default:
-                    return 2;
-            }
-            break;
-        case 0x01:
-            if (2 + sizeof(int8_t) > size)
-                return -1;
-            return 2 + sizeof(int8_t);
-        case 0x02:
-        displ32_sib:
-            if (2 + sizeof(int32_t) > size)
-                return -1;
-            return 2 + sizeof(int32_t);
-        default:
-            return -1;
-    }
-}
-
-/*
  * Target analysis.  Find instructions that can be reached by a
  * control-flow-transfer, including returns.  This can be a "safe"
  * overapproximation, even if the general case is undecidable.
@@ -183,7 +106,8 @@ void targetAnalysis(Binary *B)
             break;
         default:
             warning("target analysis for Windows PE binaries is "
-                "not-yet-implemented");
+                "not-yet-implemented; `-OCFR' will be ignored");
+            option_OCFR = false;
             return;         // Windows PE is NYI
     }
     bool cet = false;
@@ -283,7 +207,7 @@ void targetAnalysis(Binary *B)
                 {
                     if (j+2 > end)
                         continue;
-                    ssize_t sz = modRMSize(data+j+1, end-(j+1));
+                    ssize_t sz = getModRMSize(data+j+1, end-(j+1));
                     if (sz < 0)
                         continue;
                     next = j + 1 + sz;
@@ -301,7 +225,7 @@ void targetAnalysis(Binary *B)
                 {
                     if (pic || j+2 > end)
                         continue;
-                    ssize_t sz = modRMSize(data+j+1, end-(j+1));
+                    ssize_t sz = getModRMSize(data+j+1, end-(j+1));
                     if (sz < 0 || j+1+sz+(ssize_t)sizeof(int32_t) > end)
                         continue;
                     int32_t imm32 = *(int32_t *)(data + j + 1 + sz);
