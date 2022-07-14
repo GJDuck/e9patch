@@ -564,7 +564,7 @@ static const MatchArg parseMatchArg(Parser &parser, bool val = false)
             plugin = openPlugin(filename.c_str());
             if (plugin->matchFunc == nullptr)
                 error("failed to parse matching; plugin \"%s\" does not "
-                    "export the \"e9_plugin_match_v1\" function",
+                    "export the \"e9_plugin_match\" function",
                     plugin->filename);
             break;
         }

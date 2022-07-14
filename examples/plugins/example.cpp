@@ -59,9 +59,14 @@ static intptr_t address = COUNTERS;
 /*
  * Initialize the counters and the trampoline.
  */
-extern void *e9_plugin_init_v1(const Context *cxt)
+extern void *e9_plugin_init(const Context *cxt)
 {
-    // The e9_plugin_init_v1() is called once per plugin by E9Tool.  This can
+    // Check the version:
+    if (API_VERSION != cxt->api)
+        error("bad API version; expected %u, found %u", API_VERSION,
+            cxt->api);
+
+    // The e9_plugin_init() is called once per plugin by E9Tool.  This can
     // be used to emit additional E9Patch messages, such as address space
     // reservations and trampoline templates.
 
@@ -175,9 +180,9 @@ extern void *e9_plugin_init_v1(const Context *cxt)
 /*
  * We match all control-flow transfer instructions.
  */
-extern intptr_t e9_plugin_match_v1(const Context *cxt)
+extern intptr_t e9_plugin_match(const Context *cxt)
 {
-    // The e9_plugin_match_v1() function is invoked once by E9Tool for each
+    // The e9_plugin_match() function is invoked once by E9Tool for each
     // disassembled instruction.  The function should return a value that is
     // used for matching.
 
@@ -206,9 +211,9 @@ extern intptr_t e9_plugin_match_v1(const Context *cxt)
 /*
  * Emit the patch template code.
  */
-extern void e9_plugin_code_v1(const Context *cxt)
+extern void e9_plugin_code(const Context *cxt)
 {
-    // The e9_plugin_code_v1() function is invoked once by E9tool.
+    // The e9_plugin_code() function is invoked once by E9tool.
     // The function specifies the "code" part of the trampoline template that
     // will be executed for each matching instruction.
 
@@ -220,9 +225,9 @@ extern void e9_plugin_code_v1(const Context *cxt)
 /*
  * Emit the patch template data.
  */
-extern void e9_plugin_data_v1(const Context *cxt)
+extern void e9_plugin_data(const Context *cxt)
 {
-    // The e9_plugin_code_v1() function is invoked once by E9tool.
+    // The e9_plugin_code() function is invoked once by E9tool.
     // The function specifies the "data" part of the trampoline template that
     // will be attached to each matching instruction.
 
@@ -233,9 +238,9 @@ extern void e9_plugin_data_v1(const Context *cxt)
 /*
  * Patch the selected instructions.
  */
-extern void e9_plugin_patch_v1(const Context *cxt)
+extern void e9_plugin_patch(const Context *cxt)
 {
-    // The e9_plugin_patch_v1() function is invoked by E9Tool once per
+    // The e9_plugin_patch() function is invoked by E9Tool once per
     // matching instruciton.  The function specifies the "metadata" which
     // instantiates any macros in the trampoline template (both code or data).
     // The metadata is specified in as comma-seperated "$key":VALUE pairs,
@@ -244,7 +249,7 @@ extern void e9_plugin_patch_v1(const Context *cxt)
 
     // In this example, the metadata instantiates the $counter macro with
     // the counter address corresponding to the instruction type:
-    intptr_t counter = e9_plugin_match_v1(cxt);
+    intptr_t counter = e9_plugin_match(cxt);
     counter = address + (counter - 1) * sizeof(size_t);
     fprintf(cxt->out, "\"$counter\":{\"rel32\":\"0x%lx\"},", counter);
 }
