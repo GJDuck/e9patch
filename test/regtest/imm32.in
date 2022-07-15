@@ -1,0 +1,1 @@
+./test -M 'imm32 < addr' -P 'format("%lx: imm32=0x%.8x (%d)\n",addr,imm32,imm32)@patch'

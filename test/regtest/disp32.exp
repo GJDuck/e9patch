@@ -1,0 +1,16 @@
+addr=0xa00010a, disp32=94
+addr=0xa000140, disp32=40
+addr=0xa000147, disp32=410
+addr=0xa000177, disp32=20
+addr=0xa000189, disp32=30591
+addr=0xa0001b9, disp32=2
+addr=0xa000223, disp32=-256
+addr=0xa000234, disp32=-256
+addr=0xa000243, disp32=-256
+addr=0xa00024c, disp32=-256
+addr=0xa00025c, disp32=167772160
+addr=0xa000268, disp32=167772160
+addr=0xa000272, disp32=167772160
+addr=0xa00027f, disp32=167772168
+addr=0xa000295, disp32=84
+PASSED

@@ -1,0 +1,1 @@
+./test -M 'imm8 < 30' -P 'format("%0.lx: imm8=0x%.2hhx (%d)\n",(static)addr,imm8,imm8)@patch'

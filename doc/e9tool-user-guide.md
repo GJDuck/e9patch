@@ -176,11 +176,23 @@ The following `ATTRIBUTE`s (with corresponding types) are supported:
 <tr><td><b><tt>bytes[i]<tt></b></td><td><tt>Integer</tt></td>
     <td>The <i>i</i><sup>th</sup> instruction byte</td></tr>
 <tr><td><b><tt>rex<tt></b></td><td><tt>Integer</tt></td>
-    <td>The value of the REX prefix if used, undefined otherwise.</td></tr>
+    <td>The value of the REX prefix if used, undefined otherwise</td></tr>
 <tr><td><b><tt>modrm<tt></b></td><td><tt>Integer</tt></td>
-    <td>The value of the MODRM byte if used, undefined otherwise.</td></tr>
+    <td>The value of the MODRM byte if used, undefined otherwise</td></tr>
 <tr><td><b><tt>sib<tt></b></td><td><tt>Integer</tt></td>
-    <td>The value of the SIB byte if used, undefined otherwise.</td></tr>
+    <td>The value of the SIB byte if used, undefined otherwise</td></tr>
+<tr><td><b><tt>disp8<tt></b></td><td><tt>Integer</tt></td>
+    <td>The value of the 8-bit displacement if used, undefined
+        otherwise</td></tr>
+<tr><td><b><tt>disp32<tt></b></td><td><tt>Integer</tt></td>
+    <td>The value of the 32-bit displacement if used, undefined
+        otherwise</td></tr>
+<tr><td><b><tt>imm8<tt></b></td><td><tt>Integer</tt></td>
+    <td>The value of the 8-bit immediate if used, undefined
+        otherwise</td></tr>
+<tr><td><b><tt>imm32<tt></b></td><td><tt>Integer</tt></td>
+    <td>The value of the 32-bit immediate if used, undefined
+        otherwise</td></tr>
 <tr><td><b><tt>op.size</tt></b></td><td><tt>Integer</tt></td>
     <td>The number of operands</td></tr>
 <tr><td><b><tt>src.size</tt></b></td><td><tt>Integer</tt></td>
@@ -753,6 +765,20 @@ The following arguments are supported:
     <td>A unique identifier (one per patch)</td></tr>
 <tr><td><b><tt>bytes</tt></b></td><td><tt>const uint8_t &#42;</tt></td>
     <td>The machine-code bytes of the matching instruction</td></tr>
+<tr><td><b><tt>rex<tt></b></td><td><tt>int8_t</tt></td>
+    <td>The value of the REX prefix</td></tr>
+<tr><td><b><tt>modrm<tt></b></td><td><tt>int8_t</tt></td>
+    <td>The value of the MODRM byte</td></tr>
+<tr><td><b><tt>sib<tt></b></td><td><tt>int8_t</tt></td>
+    <td>The value of the SIB byte</td></tr>
+<tr><td><b><tt>disp8<tt></b></td><td><tt>int8_t</tt></td>
+    <td>The value of the 8-bit displacement</td></tr>
+<tr><td><b><tt>disp32<tt></b></td><td><tt>int32_t</tt></td>
+    <td>The value of the 32-bit displacement</td></tr>
+<tr><td><b><tt>imm8<tt></b></td><td><tt>int8_t</tt></td>
+    <td>The value of the 8-bit immediate</td></tr>
+<tr><td><b><tt>imm32<tt></b></td><td><tt>int32_t</tt></td>
+    <td>The value of the 32-bit immediate</td></tr>
 <tr><td><b><tt>next</tt></b></td><td><tt>const void &#42;</tt></td>
     <td>The runtime address of the next executed instruction</td></tr>
 <tr><td><b><tt>(static)next</tt></b></td><td><tt>const void &#42;</tt></td>

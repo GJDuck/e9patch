@@ -406,6 +406,10 @@ static const MatchArg parseMatchArg(Parser &parser, bool val = false)
             match = MATCH_BYTES; break;
         case TOKEN_CALL:
             match = MATCH_CALL; break;
+        case TOKEN_DISP32:
+            match = MATCH_DISP32; break;
+        case TOKEN_DISP8:
+            match = MATCH_DISP8; break;
         case TOKEN_DST:
             match = MATCH_DST; break;
         case TOKEN_FALSE:
@@ -413,6 +417,10 @@ static const MatchArg parseMatchArg(Parser &parser, bool val = false)
             match = MATCH_FALSE; break;
         case TOKEN_IMM:
             match = MATCH_IMM; break;
+        case TOKEN_IMM32:
+            match = MATCH_IMM32; break;
+        case TOKEN_IMM8:
+            match = MATCH_IMM8; break;
         case TOKEN_CONDJUMP:
             deprecated("condjump", "jcc");
             // Fallthrough:
@@ -618,7 +626,7 @@ static const MatchArg parseMatchArg(Parser &parser, bool val = false)
                         field = MATCH_FIELD_SIZE; break;
                     case TOKEN_SEGMENT:
                         field = MATCH_FIELD_SEG; break;
-                    case TOKEN_DISPLACEMENT:
+                    case TOKEN_DISP:
                         field = MATCH_FIELD_DISPL; break;
                     case TOKEN_BASE:
                         field = MATCH_FIELD_BASE; break;
@@ -1002,6 +1010,20 @@ const Patch *parsePatch(const ELF &elf, const char *str)
                         arg = ARGUMENT_TARGET; break;
                     case TOKEN_TRAMPOLINE:
                         arg = ARGUMENT_TRAMPOLINE; break;
+                    case TOKEN_REX:
+                        arg = ARGUMENT_REX; break;
+                    case TOKEN_MODRM:
+                        arg = ARGUMENT_MODRM; break;
+                    case TOKEN_SIB:
+                        arg = ARGUMENT_SIB; break;
+                    case TOKEN_DISP8:
+                        arg = ARGUMENT_DISP8; break;
+                    case TOKEN_DISP32:
+                        arg = ARGUMENT_DISP32; break;
+                    case TOKEN_IMM8:
+                        arg = ARGUMENT_IMM8; break;
+                    case TOKEN_IMM32:
+                        arg = ARGUMENT_IMM32; break;
                     case TOKEN_REGISTER:
                         value = parser.i;
                         arg = ARGUMENT_REGISTER;
@@ -1058,7 +1080,7 @@ const Patch *parsePatch(const ELF &elf, const char *str)
                                     field = FIELD_BASE; break;
                                 case TOKEN_INDEX:
                                     field = FIELD_INDEX; break;
-                                case TOKEN_DISPLACEMENT:
+                                case TOKEN_DISP:
                                     field = FIELD_DISPL; break;
                                 case TOKEN_SCALE:
                                     field = FIELD_SCALE; break;
@@ -1570,6 +1592,22 @@ static MatchVal makeMatchValue(const MatchVar *var, const ELF *elf,
         case MATCH_CONDJUMP:
             result.i = (((I->category & CATEGORY_JUMP) != 0) &&
                          ((I->category & CATEGORY_CONDITIONAL) != 0));
+            return result;
+        case MATCH_DISP8:
+            if (I->encoding.size.disp != sizeof(int8_t)) goto undefined;
+            result.i = (int8_t)I->data[I->encoding.offset.disp];
+            return result;
+        case MATCH_DISP32:
+            if (I->encoding.size.disp != sizeof(int32_t)) goto undefined;
+            result.i = *(int32_t *)&I->data[I->encoding.offset.disp];
+            return result;
+        case MATCH_IMM8:
+            if (I->encoding.size.imm != sizeof(int8_t)) goto undefined;
+            result.i = (int8_t)I->data[I->encoding.offset.imm];
+            return result;
+        case MATCH_IMM32:
+            if (I->encoding.size.imm != sizeof(int32_t)) goto undefined;
+            result.i = *(int32_t *)&I->data[I->encoding.offset.imm];
             return result;
         case MATCH_JUMP:
             result.i = ((I->category & CATEGORY_JUMP) != 0); return result;

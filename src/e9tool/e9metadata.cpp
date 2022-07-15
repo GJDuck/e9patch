@@ -1879,6 +1879,81 @@ static Type sendLoadArgumentMetadata(FILE *out, CallInfo &info,
             }
             break;
         }
+        case ARGUMENT_REX:
+            if (I->encoding.offset.rex < 0)
+            {
+                sendSExtFromI32ToR64(out, 0, regno);
+                t = TYPE_NULL_PTR;
+                break;
+            }
+            sendLoadValueMetadata(out, I->data[I->encoding.offset.rex], regno);
+            t = TYPE_INT8;
+            break;
+        case ARGUMENT_MODRM:
+            if (I->encoding.offset.modrm < 0)
+            {
+                sendSExtFromI32ToR64(out, 0, regno);
+                t = TYPE_NULL_PTR;
+                break;
+            }
+            sendLoadValueMetadata(out, I->data[I->encoding.offset.modrm],
+                regno);
+            t = TYPE_INT8;
+            break;
+        case ARGUMENT_SIB:
+            if (I->encoding.offset.sib < 0)
+            {
+                sendSExtFromI32ToR64(out, 0, regno);
+                t = TYPE_NULL_PTR;
+                break;
+            }
+            sendLoadValueMetadata(out, I->data[I->encoding.offset.sib], regno);
+            t = TYPE_INT8;
+            break;
+        case ARGUMENT_DISP8:
+            if (I->encoding.size.disp != sizeof(int8_t))
+            {
+                sendSExtFromI32ToR64(out, 0, regno);
+                t = TYPE_NULL_PTR;
+                break;
+            }
+            sendLoadValueMetadata(out,
+                (int8_t)I->data[I->encoding.offset.disp], regno);
+            t = TYPE_INT8;
+            break;
+        case ARGUMENT_DISP32:
+            if (I->encoding.size.disp != sizeof(int32_t))
+            {
+                sendSExtFromI32ToR64(out, 0, regno);
+                t = TYPE_NULL_PTR;
+                break;
+            }
+            sendLoadValueMetadata(out,
+                *(int32_t *)&I->data[I->encoding.offset.disp], regno);
+            t = TYPE_INT32;
+            break;
+        case ARGUMENT_IMM8:
+            if (I->encoding.size.imm != sizeof(int8_t))
+            {
+                sendSExtFromI32ToR64(out, 0, regno);
+                t = TYPE_NULL_PTR;
+                break;
+            }
+            sendLoadValueMetadata(out, (int8_t)I->data[I->encoding.offset.imm],
+                regno);
+            t = TYPE_INT8;
+            break;
+        case ARGUMENT_IMM32:
+            if (I->encoding.size.imm != sizeof(int32_t))
+            {
+                sendSExtFromI32ToR64(out, 0, regno);
+                t = TYPE_NULL_PTR;
+                break;
+            }
+            sendLoadValueMetadata(out,
+                *(int32_t *)&I->data[I->encoding.offset.imm], regno);
+            t = TYPE_INT32;
+            break;
         default:
             error("NYI argument (%d)", arg.kind);
     }

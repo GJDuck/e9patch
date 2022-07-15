@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2021 National University of Singapore
+ * Copyright (C) 2022 National University of Singapore
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -166,7 +166,7 @@ static bool runTest(const struct dirent *test, const std::string &options)
             command += diff;
             printf("\t%s\n", command.c_str());
             (void)system(command.c_str());
-            printf("%s%s%s: %sFAILED%s (miscompare, see %s.diff)\n",
+            printf("%s%s%s: %sFAILED%s (miscompare, see %s)\n",
                 (option_tty? YELLOW: ""), basename.c_str(),
                 (option_tty? WHITE: ""), (option_tty? RED: ""),
                 (option_tty? WHITE: ""), diff.c_str());

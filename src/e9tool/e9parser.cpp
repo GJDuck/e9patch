@@ -96,8 +96,8 @@ static const TokenInfo tokens[] =
     {"bp",              TOKEN_REGISTER,         REGISTER_BP},
     {"bpl",             TOKEN_REGISTER,         REGISTER_BPL},
     {"break",           TOKEN_BREAK,            0},
-    {"bytes",           TOKEN_BYTES,            0},
     {"bx",              TOKEN_REGISTER,         REGISTER_BX},
+    {"bytes",           TOKEN_BYTES,            0},
     {"call",            TOKEN_CALL,             0},
     {"ch",              TOKEN_REGISTER,         REGISTER_CH},
     {"char",            TOKEN_CHAR,             0},
@@ -112,8 +112,10 @@ static const TokenInfo tokens[] =
     {"dh",              TOKEN_REGISTER,         REGISTER_DH},
     {"di",              TOKEN_REGISTER,         REGISTER_DI},
     {"dil",             TOKEN_REGISTER,         REGISTER_DIL},
-    {"disp",            TOKEN_DISPLACEMENT,     0},
-    {"displacement",    TOKEN_DISPLACEMENT,     0},
+    {"disp",            TOKEN_DISP,             0},
+    {"disp32",          TOKEN_DISP32,           0},
+    {"disp8",           TOKEN_DISP8,            0},
+    {"displacement",    TOKEN_DISP,             0},
     {"dl",              TOKEN_REGISTER,         REGISTER_DL},
     {"ds",              TOKEN_REGISTER,         REGISTER_DS},
     {"dst",             TOKEN_DST,              0},
@@ -138,6 +140,8 @@ static const TokenInfo tokens[] =
     {"id",              TOKEN_ID,               0},
     {"if",              TOKEN_IF,               0},
     {"imm",             TOKEN_IMM,              OPTYPE_IMM},
+    {"imm32",           TOKEN_IMM32,            0},
+    {"imm8",            TOKEN_IMM8,             0},
     {"in",              TOKEN_IN,               0},
     {"index",           TOKEN_INDEX,            0},
     {"instr",           TOKEN_INSTR,            0},
@@ -366,7 +370,7 @@ static int compareName(const void *ptr1, const void *ptr2)
  */
 static const TokenInfo *getTokenInfo(const char *name)
 {
-    TokenInfo key = {name, TOKEN_ERROR};
+    TokenInfo key = {name, TOKEN_ERROR, 0};
     const TokenInfo *entry = (const TokenInfo *)bsearch(&key, tokens,
         sizeof(tokens) / sizeof(tokens[0]), sizeof(tokens[0]), compareName);
     return entry;
