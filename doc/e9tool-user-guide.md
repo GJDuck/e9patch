@@ -44,56 +44,37 @@ The basic form of a matching (`MATCH`) is a Boolean expression of
 `TEST`s using the following high-level grammar:
 
 <pre>
-    MATCH ::=   TEST
-              | <b>(</b> MATCH <b>)</b>
-              | <b>not</b> MATCH
-              | MATCH <b>and</b> MATCH
-              | MATCH <b>or</b> MATCH
+    MATCH ::= EXPR
+    EXPR  ::=
+              | VALUE
+              | VARIABLE
+              | <b>defined(</b> EXPR <b>)</b>
+              | <b>(</b> EXPR <b>)</b>
+              | <b>not</b> EXPR
+              | EXPR <b>and</b> EXPR
+              | EXPR <b>or</b> EXPR
+              | EXPR <b>+</b> EXPR | EXPR <b>-</b> EXPR | <b>-</b>EXPR
+              | EXPR <b>&</b> EXPR | EXPR <b>|</b> EXPR | <b>~</b>EXPR
+              | EXPR <b>&lt;&lt;</b> EXPR | EXPR <b>&gt;&gt;</b> EXPR
+              | EXPR <b>==</b> EXPR | EXPR <b>!=</b> EXPR
+              | EXPR <b>&lt;</b> EXPR | EXPR <b>&lt;=</b> EXPR
+              | EXPR <b>&gt;</b> EXPR | EXPR <b>&gt;=</b> EXPR
 </pre>
 
+An instruction will *match* a given expresion `EXPR` if the expression
+evaluates to a non-zero value.
 
-Alternatively, C-style Boolean operations (`!`, `&&`, and `||`) can be used
-instead of (`not`, `and`, and `or`).
-
-Each `TEST` queries some specific property/attribute of the underlying
+Each `VARIABLE` evaluates to some specific property/attribute of the underlying
 instruction, defined using the following grammar:
 
 <pre>
-    TEST ::=   <b>defined</b> <b>(</b> EXPR <b>)</b>
-             | EXPR [ CMP EXPR ]
-
-    EXPR ::=   VALUE 
-             | [ SPECIFIER <b>.</b> ] ATTRIBUTE
-
-    CMP ::=   <b>=</b> | <b>==</b> | <b>!=</b> | <b>&gt;</b> | <b>&gt;=</b> | <b>&lt;</b> | <b>&lt;=</b> | <b>in</b>
+    VARIABLE ::= [ SPECIFIER <b>.</b> ] ATTRIBUTE
 </pre>
 
-A `TEST` tests some underlying instruction `EXPR` expressions using a
-comparison operator `CMP`.
-The following comparison operators are supported:
+See the list of [attributes](#attributes) and instruction
+[specifiers](#specifiers) below.
 
-<table border="1">
-<tr><th>Comparison</th><th>Description</th></tr>
-<tr><td><b><tt>=</tt> or <tt>==</tt></b></td>
-    <td>Equality</td></tr>
-<tr><td><b><tt>!=</tt></b></td>
-    <td>Disequality</td></tr>
-<tr><td><b><tt>&gt;</tt></b></td>
-    <td>Greater-than</td></tr>
-<tr><td><b><tt>&gt;=</tt></b></td>
-    <td>Greater-than-or-equal-to</td></tr>
-<tr><td><b><tt>&lt;</tt></b></td>
-    <td>Less-than</td></tr>
-<tr><td><b><tt>&lt;=</tt></b></td>
-    <td>Less-than-or-equal-to</td></tr>
-<tr><td><b><tt>in</tt></b></td>
-    <td>Set membership or subset</td></tr>
-</table>
-
-If the comparison operator and value are omitted, then the test is
-equivalent to (`EXPR != 0`).
-
-A `VALUE` can be one of:
+A `VALUE` can be one of the following:
 
 * An *integer constant*, e.g., `123`, `0x123`, etc.
 * A *string constant*, e.g., `"abc"`, etc.
@@ -128,6 +109,51 @@ For example, the following explicit memory operands access stack memory:
         mem64<0x200(%rsp,%rax,8)>
         ...
 
+Finally, several operators are supported that can be used to build
+*expressions*.
+Supported operators include:
+
+<table border="1">
+<tr><th>Operator</th><th>Description</th></tr>
+<tr><td><b><tt>+</tt></b></td>
+    <td>Integer addition</td></tr>
+<tr><td><b><tt>-</tt></b></td>
+    <td>Integer subtraction or unary negation</td></tr>
+<tr><td><b><tt>&amp;</tt></b></td>
+    <td>Integer bitwise and</td></tr>
+<tr><td><b><tt>|</tt></b></td>
+    <td>Integer bitwise or</td></tr>
+<tr><td><b><tt>~</tt></b></td>
+    <td>Integer bitwise negation</td></tr>
+<tr><td><b><tt>&lt;&lt;</tt></b></td>
+    <td>Integer left shift</td></tr>
+<tr><td><b><tt>&gt;&gt;</tt></b></td>
+    <td>Integer right shift</td></tr>
+<tr><td><b><tt>=</tt> or <tt>==</tt></b></td>
+    <td>Equality</td></tr>
+<tr><td><b><tt>!=</tt></b></td>
+    <td>Disequality</td></tr>
+<tr><td><b><tt>&gt;</tt></b></td>
+    <td>Greater-than</td></tr>
+<tr><td><b><tt>&gt;=</tt></b></td>
+    <td>Greater-than-or-equal-to</td></tr>
+<tr><td><b><tt>&lt;</tt></b></td>
+    <td>Less-than</td></tr>
+<tr><td><b><tt>&lt;=</tt></b></td>
+    <td>Less-than-or-equal-to</td></tr>
+<tr><td><b><tt>in</tt></b></td>
+    <td>Set membership or subset</td></tr>
+<tr><td><b><tt>and</tt></b></td>
+    <td>Boolean and</td></tr>
+<tr><td><b><tt>or</tt></b></td>
+    <td>Boolean or</td></tr>
+<tr><td><b><tt>not</tt></b></td>
+    <td>Boolean negation</td></tr>
+</table>
+
+Alternatively, C-style Boolean operations (`!`, `&&`, and `||`) can be used
+instead of (`not`, `and`, and `or`).
+
 ---
 ### <a id="attributes">1.1 Attributes</a>
 
@@ -137,13 +163,13 @@ The following `ATTRIBUTE`s (with corresponding types) are supported:
 <tr><th>Attribute</th><th>Type</th><th>Description</th></tr>
 <tr><td><b><tt>true</tt></b></td><td><tt>Boolean</tt></td><td>True</td></tr>
 <tr><td><b><tt>false</tt></b></td><td><tt>Boolean</tt></td><td>False</td></tr>
-<tr><td><b><tt>jump<tt></b></td><td><tt>Boolean</tt></td>
+<tr><td><b><tt>jmp<tt></b></td><td><tt>Boolean</tt></td>
     <td>True for jump instructions, false otherwise</td></tr>
-<tr><td><b><tt>condjump<tt></b></td><td><tt>Boolean</tt></td>
+<tr><td><b><tt>jcc<tt></b></td><td><tt>Boolean</tt></td>
     <td>True for conditional jump instructions, false otherwise</td></tr>
 <tr><td><b><tt>call<tt></b></td><td><tt>Boolean</tt></td>
     <td>True for call instructions, false otherwise</td></tr>
-<tr><td><b><tt>return<tt></b></td><td><tt>Boolean</tt></td>
+<tr><td><b><tt>ret<tt></b></td><td><tt>Boolean</tt></td>
     <td>True for return instructions, false otherwise</td></tr>
 <tr><td><b><tt>asm</tt></b></td><td><tt>String</tt></td>
     <td>The assembly string representation</td></tr>
@@ -373,7 +399,7 @@ and `op[2]` will be *defined*, and `op[3]` and beyond will be
 Similarly, `op[0].base` will be *undefined* if the first operand of the
 instruction is not a memory operand.
 
-Any test that uses an undefined value will fail.
+Any comparison that uses an undefined value will fail.
 For example, both of the tests (`op[3] == 0x1`) and (`op[3] != 0x1`) will
 fail, despite each test being the negation of the other.
 The explicit Boolean operators (`not`, `and`, and `or`) treat failure
@@ -381,8 +407,8 @@ due to undefinedness the same as `false`, thus the tests
 (`op[3] != 0x1`) and (`not op[3] == 0x1`) are not equivalent
 for undefined values.
 
-The special `defined(ATTRIBUTE)` test can be used to determine if
-an attribute is defined or not.
+The special `defined(EXPR)` test can be used to determine if
+the given exression is defined or not.
 
 ---
 ### <a id="control-flow">1.3 Control-flow</a>
@@ -456,7 +482,7 @@ the current instruction.
 For example, the following matches all conditional jump instructions that are
 immediately preceded by a comparison in the same basic block:
 
-        condjump and BB[-1].mnemonic == "cmp"
+        jcc and BB[-1].mnemonic == "cmp"
 
 ---
 ### <a id="csv">1.5 Comma-Separated Values</a>

@@ -1,0 +1,1 @@
+./test -M '(I.modrm >> 6) == 0x0 && I.modrm & 0x7 == 0x05' -P 'format("modrm=0x%.2hhX, asm=\"%s\"\n",modrm,asm)@patch'

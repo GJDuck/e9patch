@@ -282,23 +282,6 @@ struct MatchVar
 };
 
 /*
- * Match comparison.
- */
-enum MatchCmp
-{
-    MATCH_CMP_INVALID,
-    MATCH_CMP_DEFINED,
-    MATCH_CMP_NOT_ZERO,
-    MATCH_CMP_EQ,
-    MATCH_CMP_NEQ,
-    MATCH_CMP_LT,
-    MATCH_CMP_LEQ,
-    MATCH_CMP_GT,
-    MATCH_CMP_GEQ,
-    MATCH_CMP_IN
-};
-
-/*
  * Match instantiation.
  */
 enum MatchInst : uint8_t
@@ -335,35 +318,30 @@ struct MatchArg
 };
 
 /*
- * A match test.
- */
-struct MatchTest
-{
-    const MatchArg lhs;                     // LHS
-    const MatchCmp cmp;                     // Comparator
-    const MatchArg rhs;                     // RHS
-
-    MatchTest(MatchCmp cmp, const MatchArg arg) :
-        cmp(cmp), lhs(arg)
-    {
-        ;
-    }
-    MatchTest(const MatchArg larg, MatchCmp cmp, const MatchArg rarg) :
-        cmp(cmp), lhs(larg), rhs(rarg)
-    {
-        ;
-    }
-};
-
-/*
  * Match operations.
  */
 enum MatchOp
 {
+    MATCH_OP_ARG,
+    MATCH_OP_DEFINED,
     MATCH_OP_NOT,
     MATCH_OP_AND,
     MATCH_OP_OR,
-    MATCH_OP_TEST,
+    MATCH_OP_EQ,
+    MATCH_OP_NEQ,
+    MATCH_OP_LT,
+    MATCH_OP_LEQ,
+    MATCH_OP_GT,
+    MATCH_OP_GEQ,
+    MATCH_OP_IN,
+    MATCH_OP_NEG,
+    MATCH_OP_ADD,
+    MATCH_OP_SUB,
+    MATCH_OP_BIT_NOT,
+    MATCH_OP_BIT_AND,
+    MATCH_OP_BIT_OR,
+    MATCH_OP_LSHIFT,
+    MATCH_OP_RSHIFT,
 };
 
 /*
@@ -374,27 +352,26 @@ struct MatchExpr
     const MatchOp op;
     union
     {
-        const MatchExpr *arg1;
-        const MatchTest *test;
+        const MatchExpr *lhs;
+        const MatchArg arg;
     };
-    const MatchExpr *arg2;
+    const MatchExpr *rhs;
 
-    MatchExpr(MatchOp op, const MatchExpr *arg) :
-        op(op), arg1(arg), arg2(nullptr)
+    MatchExpr(MatchOp op, const MatchExpr *expr) :
+        op(op), lhs(expr), rhs(nullptr)
     {
-        assert(op == MATCH_OP_NOT);
+        ;
     }
 
-    MatchExpr(MatchOp op, const MatchExpr *arg1, const MatchExpr *arg2) :
-        op(op), arg1(arg1), arg2(arg2)
+    MatchExpr(MatchOp op, const MatchExpr *lhs, const MatchExpr *rhs) :
+        op(op), lhs(lhs), rhs(rhs)
     {
-        assert(op == MATCH_OP_AND || op == MATCH_OP_OR);
+        ;
     }
 
-    MatchExpr(MatchOp op, const MatchTest *test) : op(op), test(test),
-        arg2(nullptr)
+    MatchExpr(MatchOp op, const MatchArg arg) : op(op), arg(arg), rhs(nullptr)
     {
-        assert(op == MATCH_OP_TEST);
+        ;
     }
 };
 

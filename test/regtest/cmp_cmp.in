@@ -1,0 +1,1 @@
+./test.pie -M '(addr < offset) != (addr > offset)' -P 'write(".")@patch'

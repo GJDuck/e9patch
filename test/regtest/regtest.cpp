@@ -88,10 +88,16 @@ static bool runTest(const struct dirent *test, const std::string &options)
     fclose(IN);
     command += " -E data..data_END -E data2...text -E .text..begin -o ";
     command += exe;
-    command += " >";
+    command += " >>";
     command += log;
     command += " 2>&1";
 
+    FILE *LOG = fopen(log.c_str(), "w");
+    if (LOG != NULL)
+    {
+        fprintf(LOG, "%s\n", command.c_str());
+        fclose(LOG);
+    }
     printf("\n\t%s\n", command.c_str());
     int r = system(command.c_str());
     if (r != 0)

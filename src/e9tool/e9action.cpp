@@ -660,104 +660,121 @@ static const MatchArg parseMatchArg(Parser &parser, bool val = false)
 }
 
 /*
- * Parse a match test.
+ * Match operators.
  */
-static MatchTest *parseTest(Parser &parser)
+struct MatchOpInfo
 {
-    if (parser.peekToken() == TOKEN_DEFINED)
+    MatchOp op;
+    int prec;
+};
+static const MatchOpInfo *parseMatchOp(int t)
+{
+    switch (t)
     {
-        parser.getToken();
-        parser.expectToken('(');
-        auto arg = parseMatchArg(parser);
-        parser.expectToken(')');
-        return new MatchTest(MATCH_CMP_DEFINED, arg);
-    }
-    auto larg = parseMatchArg(parser);
-    MatchCmp cmp = MATCH_CMP_INVALID;
-    switch (parser.peekToken())
-    {
-        case '=':
-            cmp = MATCH_CMP_EQ; break;
-        case TOKEN_NEQ:
-            cmp = MATCH_CMP_NEQ; break;
-        case '<':
-            cmp = MATCH_CMP_LT; break;
-        case TOKEN_LEQ:
-            cmp = MATCH_CMP_LEQ; break;
-        case '>':
-            cmp = MATCH_CMP_GT; break;
-        case TOKEN_GEQ:
-            cmp = MATCH_CMP_GEQ; break;
+        case TOKEN_LSHIFT:
+            static const MatchOpInfo info_LSHIFT = {MATCH_OP_LSHIFT, 1};
+            return &info_LSHIFT;
+        case TOKEN_RSHIFT:
+            static const MatchOpInfo info_RSHIFT = {MATCH_OP_RSHIFT, 1};
+            return &info_RSHIFT;
+        case '&':
+            static const MatchOpInfo info_BIT_AND = {MATCH_OP_BIT_AND, 2};
+            return &info_BIT_AND;
+        case '|':
+            static const MatchOpInfo info_BIT_OR = {MATCH_OP_BIT_OR, 3};
+            return &info_BIT_OR;
+        case '-':
+            static const MatchOpInfo info_SUB = {MATCH_OP_SUB, 4};
+            return &info_SUB;
+        case '+':
+            static const MatchOpInfo info_ADD = {MATCH_OP_ADD, 4};
+            return &info_ADD;
         case TOKEN_IN:
-            cmp = MATCH_CMP_IN; break;
+            static const MatchOpInfo info_IN = {MATCH_OP_IN, 5};
+            return &info_IN;
+        case '<':
+            static const MatchOpInfo info_LT = {MATCH_OP_LT, 6};
+            return &info_LT;
+        case '>':
+            static const MatchOpInfo info_GT = {MATCH_OP_GT, 6};
+            return &info_GT;
+        case TOKEN_LEQ:
+            static const MatchOpInfo info_LEQ = {MATCH_OP_LEQ, 6};
+            return &info_LEQ;
+        case TOKEN_GEQ:
+            static const MatchOpInfo info_GEQ = {MATCH_OP_GEQ, 6};
+            return &info_GEQ;
+        case '=':
+            static const MatchOpInfo info_EQ = {MATCH_OP_EQ, 7};
+            return &info_EQ;
+        case TOKEN_NEQ:
+            static const MatchOpInfo info_NEQ = {MATCH_OP_NEQ, 7};
+            return &info_NEQ;
+        case TOKEN_AND:
+            static const MatchOpInfo info_AND = {MATCH_OP_AND, 11};
+            return &info_AND;
+        case TOKEN_OR:
+            static const MatchOpInfo info_OR = {MATCH_OP_OR, 12};
+            return &info_OR;
         default:
-            cmp = MATCH_CMP_NOT_ZERO; break;
+            return nullptr;
     }
-    if (cmp == MATCH_CMP_NOT_ZERO)
-        return new MatchTest(cmp, larg);
-    parser.getToken();
-    auto rarg = parseMatchArg(parser);
-    return new MatchTest(larg, cmp, rarg);
-}
-
-/*
- * Parse a match test expr.
- */
-static MatchExpr *parseMatchExpr(Parser &parser, MatchOp op);
-static MatchExpr *parseTestExpr(Parser &parser)
-{
-    MatchExpr *expr = nullptr;
-    switch (parser.peekToken())
-    {
-        case '(':
-            (void)parser.getToken();
-            expr = parseMatchExpr(parser, MATCH_OP_OR);
-            parser.expectToken(')');
-            break;
-        case '!': case TOKEN_NOT:
-            (void)parser.getToken();
-            expr = parseTestExpr(parser);
-            expr = new MatchExpr(MATCH_OP_NOT, expr);
-            break;
-        default:
-        {
-            MatchTest *test = parseTest(parser);
-            expr = new MatchExpr(MATCH_OP_TEST, test);
-            break;
-        }
-    }
-    return expr;
 }
 
 /*
  * Parse a match expr.
  */
-static MatchExpr *parseMatchExpr(Parser &parser, MatchOp op)
+static MatchExpr *parseMatchExpr(Parser &parser, int prec = 99)
 {
     MatchExpr *expr = nullptr;
-    if (op == MATCH_OP_AND)
-        expr = parseTestExpr(parser);
-    else
-        expr = parseMatchExpr(parser, MATCH_OP_AND);
-    while (true)
+    int t = parser.peekToken();
+    switch (t)
     {
-        MatchExpr *arg = nullptr;
-        switch (parser.peekToken())
+        case '(':
+            (void)parser.getToken();
+            expr = parseMatchExpr(parser);
+            parser.expectToken(')');
+            break;
+        case '!': case TOKEN_NOT:
+            (void)parser.getToken();
+            expr = parseMatchExpr(parser, 8);
+            expr = new MatchExpr(MATCH_OP_NOT, expr);
+            break;
+        case TOKEN_NONE:
+            (void)parser.getToken();
+            expr = parseMatchExpr(parser, 0);
+            break;
+        case '~': case '-':
+            (void)parser.getToken();
+            expr = parseMatchExpr(parser, 0);
+            expr = new MatchExpr((t == '-'? MATCH_OP_NEG: MATCH_OP_BIT_NOT),
+                expr);
+            break;
+        case TOKEN_DEFINED:
+            (void)parser.getToken();
+            parser.expectToken('(');
+            expr = parseMatchExpr(parser);
+            parser.expectToken(')');
+            expr = new MatchExpr(MATCH_OP_DEFINED, expr);
+            break;
+        default:
         {
-            case TOKEN_AND:
-                (void)parser.getToken();
-                arg = parseTestExpr(parser);
-                expr = new MatchExpr(MATCH_OP_AND, expr, arg);
-                break;
-            case TOKEN_OR:
-                (void)parser.getToken();
-                arg = parseMatchExpr(parser, MATCH_OP_AND);
-                expr = new MatchExpr(MATCH_OP_OR, expr, arg);
-                break;
-            default:
-                return expr;
+            auto arg = parseMatchArg(parser);
+            expr = new MatchExpr(MATCH_OP_ARG, arg);
+            break;
         }
     }
+    while (true)
+    {
+        int t = parser.peekToken();
+        const MatchOpInfo *info = parseMatchOp(t);
+        if (info == nullptr || info->prec > prec)
+            break;
+        (void)parser.getToken();
+        MatchExpr *arg = parseMatchExpr(parser, info->prec-1);
+        expr = new MatchExpr(info->op, expr, arg);
+    }
+    return expr;
 }
 
 /*
@@ -766,7 +783,7 @@ static MatchExpr *parseMatchExpr(Parser &parser, MatchOp op)
 MatchExpr *parseMatch(const ELF &elf, const char *str)
 {
     Parser parser(str, "matching", elf);
-    MatchExpr *expr = parseMatchExpr(parser, MATCH_OP_OR);
+    MatchExpr *expr = parseMatchExpr(parser);
     parser.expectToken(TOKEN_EOF);
     return expr;
 }
@@ -1227,9 +1244,36 @@ const Patch *parsePatch(const ELF &elf, const char *str)
 }
 
 /*
+ * Should dump value in hexadecimal?
+ */
+static bool shouldDumpHex(const MatchVar &var)
+{
+    switch (var.match)
+    {
+        case MATCH_ADDRESS: case MATCH_TARGET:
+        case MATCH_BB_BEST: case MATCH_BB_ENTRY:
+        case MATCH_BB_EXIT: case MATCH_BB_ADDR:
+        case MATCH_F_BEST: case MATCH_F_ENTRY:
+        case MATCH_F_ADDR:
+            return true;
+        case MATCH_OP: case MATCH_SRC:
+        case MATCH_DST: case MATCH_MEM:
+            switch (var.field)
+            {
+                case MATCH_FIELD_DISPL: case MATCH_FIELD_ADDR:
+                    return true;
+                default:
+                    return false;
+            }
+        default:
+            return false;
+    }
+}
+
+/*
  * Dump a value.
  */
-static void dumpVal(const MatchVal &val, std::string &str)
+static void dumpVal(const MatchVal &val, std::string &str, bool hex = false)
 {
     switch (val.type)
     {
@@ -1238,7 +1282,16 @@ static void dumpVal(const MatchVal &val, std::string &str)
         case MATCH_TYPE_NIL:
             str += "nil"; return;
         case MATCH_TYPE_INTEGER:
-            str += std::to_string(val.i); return;
+            if (!hex)
+                str += std::to_string(val.i);
+            else
+            {
+                std::stringstream ss;
+                ss << std::hex << val.i;
+                str += "0x";
+                str += ss.str();
+            }
+            return;
         case MATCH_TYPE_OPERAND:
             switch (val.op)
             {
@@ -1286,7 +1339,7 @@ static void dumpVal(const MatchVal &val, std::string &str)
                 (val.mem.index != REGISTER_NONE? getRegName(val.mem.index): "");
             str += ',';
             str += std::to_string(val.mem.scale);
-            str += '>';
+            str += ")>";
             return;
         case MATCH_TYPE_STRING:
             str += '\"';
@@ -1334,11 +1387,263 @@ static void dumpVal(const MatchVal &val, std::string &str)
 }
 
 /*
+ * Dump a match expression.
+ */
+static void dumpExpr(const MatchExpr &expr, std::string &str, bool hex = false)
+{
+    switch (expr.op)
+    {
+        case MATCH_OP_DEFINED:
+            str += "defined(";
+            dumpExpr(*expr.lhs, str);
+            str += ')';
+            return;
+        case MATCH_OP_NOT:
+            str += '!';
+            dumpExpr(*expr.lhs, str);
+            return;
+        case MATCH_OP_NEG:
+            str += '-';
+            dumpExpr(*expr.lhs, str);
+            return;
+        case MATCH_OP_BIT_NOT:
+            str += '~';
+            dumpExpr(*expr.lhs, str);
+            return;
+        case MATCH_OP_BIT_AND: case MATCH_OP_BIT_OR:
+            hex = true;
+            // Fallthrough:
+        case MATCH_OP_AND: case MATCH_OP_OR:
+        case MATCH_OP_EQ: case MATCH_OP_NEQ:
+        case MATCH_OP_LT: case MATCH_OP_LEQ:
+        case MATCH_OP_GT: case MATCH_OP_GEQ:
+        case MATCH_OP_IN:
+        case MATCH_OP_ADD: case MATCH_OP_SUB:
+        case MATCH_OP_LSHIFT: case MATCH_OP_RSHIFT:
+            str += '(';
+            dumpExpr(*expr.lhs, str, hex);
+            switch (expr.op)
+            {
+                case MATCH_OP_AND:
+                    str += " && "; break;
+                case MATCH_OP_OR:
+                    str += " || "; break;
+                case MATCH_OP_EQ:
+                    str += " == "; break;
+                case MATCH_OP_NEQ:
+                    str += " != "; break;
+                case MATCH_OP_LT:
+                    str += " < "; break;
+                case MATCH_OP_LEQ:
+                    str += " <= "; break;
+                case MATCH_OP_GT:
+                    str += " > "; break;
+                case MATCH_OP_GEQ:
+                    str += " >= "; break;
+                case MATCH_OP_IN:
+                    str += " in "; break;
+                case MATCH_OP_ADD:
+                    str += '+'; break;
+                case MATCH_OP_SUB:
+                    str += '-'; break;
+                case MATCH_OP_BIT_AND:
+                    str += '&'; break;
+                case MATCH_OP_BIT_OR:
+                    str += '|'; break;
+                case MATCH_OP_LSHIFT:
+                    str += "<<"; break;
+                case MATCH_OP_RSHIFT:
+                    str += ">>"; break;
+                default:
+                    break;
+            }
+            dumpExpr(*expr.rhs, str, hex);
+            str += ')';
+            return;
+        case MATCH_OP_ARG:
+            break;
+        default:
+            error("unknown op (%d)", expr.op);
+    }
+    switch (expr.arg.inst)
+    {
+        case MATCH_INST_VAL:
+            dumpVal(*expr.arg.val, str, hex); return;
+        case MATCH_INST_VAR:
+            break;
+        default:
+            error("unknown inst (%d)", expr.arg.inst);
+    }
+    const MatchVar &var = *expr.arg.var;
+    if (var.i != 0 || var.set != MATCH_Is)
+    {
+        switch (var.set)
+        {
+            case MATCH_Is:
+                str += "I["; break;
+            case MATCH_BBs:
+                str += "BB["; break;
+            case MATCH_Fs:
+                str += "F["; break;
+        }
+        str += std::to_string(var.i);
+        str += "].";
+    }
+    switch (var.match)
+    {
+        case MATCH_TRUE:
+            str += "true"; break;
+        case MATCH_FALSE:
+            str += "false"; break;
+        case MATCH_PLUGIN:
+            str += "plugin(\"";
+            str += var.plugin->filename;
+            str += "\").match()";
+            break;
+        case MATCH_ASSEMBLY:
+            str += "asm"; break;
+        case MATCH_ADDRESS:
+            str += "addr"; break;
+        case MATCH_BYTES:
+            str += "bytes"; break;
+        case MATCH_CALL:
+            str += "call"; break;
+        case MATCH_CONDJUMP:
+            str += "jcc"; break;
+        case MATCH_DISP8:
+            str += "disp8"; break;
+        case MATCH_DISP32:
+            str += "disp32"; break;
+        case MATCH_IMM8:
+            str += "imm8"; break;
+        case MATCH_IMM32:
+            str += "imm32"; break;
+        case MATCH_JUMP:
+            str += "jmp"; break;
+        case MATCH_MMX:
+            str += "mmx"; break;
+        case MATCH_MNEMONIC:
+            str += "mnemonic"; break;
+        case MATCH_MODRM:
+            str += "modrm"; break;
+        case MATCH_OFFSET:
+            str += "offset"; break;
+        case MATCH_RANDOM:
+            str += "random"; break;
+        case MATCH_RETURN:
+            str += "ret"; break;
+        case MATCH_REX:
+            str += "rex"; break;
+        case MATCH_SECTION:
+            str += "section"; break;
+        case MATCH_SIB:
+            str += "sib"; break;
+        case MATCH_SIZE:
+            str += "size"; break;
+        case MATCH_TARGET:
+            str += "target"; break;
+        case MATCH_X87:
+            str += "x87"; break;
+        case MATCH_SSE:
+            str += "sse"; break;
+        case MATCH_AVX:
+            str += "avx"; break;
+        case MATCH_AVX2:
+            str += "avx2"; break;
+        case MATCH_AVX512:
+            str += "avx512"; break;
+        case MATCH_CSV:
+            str += var.basename; break;
+        case MATCH_BB_BEST:
+            str += "BB.best"; break;
+        case MATCH_BB_ENTRY:
+            str += "BB.entry"; break;
+        case MATCH_BB_EXIT:
+            str += "BB.exit"; break;
+        case MATCH_BB_ADDR:
+            str += "BB.addr"; break;
+        case MATCH_BB_OFFSET:
+            str += "BB.offset"; break;
+        case MATCH_BB_SIZE:
+            str += "BB.size"; break;
+        case MATCH_BB_LEN:
+            str += "BB.len"; break;
+        case MATCH_F_BEST:
+            str += "F.best"; break;
+        case MATCH_F_ENTRY:
+            str += "F.entry"; break;
+        case MATCH_F_ADDR:
+            str += "F.addr"; break;
+        case MATCH_F_OFFSET:
+            str += "F.offset"; break;
+        case MATCH_F_SIZE:
+            str += "F.size"; break;
+        case MATCH_F_LEN:
+            str += "F.len"; break;
+        case MATCH_F_NAME:
+            str += "F.name"; break;
+        case MATCH_OP:
+            str += "op"; break;
+        case MATCH_SRC:
+            str += "src"; break;
+        case MATCH_DST:
+            str += "dst"; break;
+        case MATCH_IMM:
+            str += "imm"; break;
+        case MATCH_REG:
+            str += "reg"; break;
+        case MATCH_MEM:
+            str += "mem"; break;
+        case MATCH_REGS:
+            str += "regs"; break;
+        case MATCH_READS:
+            str += "reads"; break;
+        case MATCH_WRITES:
+            str += "writes"; break;
+        default:
+            error("unknown match (%d)", var.match);
+    }
+    if (var.j >= 0)
+    {
+        str += '[';
+        str += std::to_string(var.j);
+        str += ']';
+    }
+    if (var.field != MATCH_FIELD_NONE)
+    {
+        str += '.';
+        switch (var.field)
+        {
+            case MATCH_FIELD_TYPE:
+                str += "type"; break;
+            case MATCH_FIELD_ACCESS:
+                str += "access"; break;
+            case MATCH_FIELD_SIZE:
+                str += "size"; break;
+            case MATCH_FIELD_SEG:
+                str += "seg"; break;
+            case MATCH_FIELD_DISPL:
+                str += "displ"; break;
+            case MATCH_FIELD_BASE:
+                str += "base"; break;
+            case MATCH_FIELD_INDEX:
+                str += "index"; break;
+            case MATCH_FIELD_SCALE:
+                str += "scale"; break;
+            case MATCH_FIELD_ADDR:
+                str += "addr"; break;
+            default:
+                error("unknown field (%d)", var.field);
+        }
+    }
+}
+
+/*
  * Value (dis)equality.
  */
 bool MatchVal::operator==(const MatchVal &val) const
 {
-	switch (type)
+    switch (type)
     {
         case MATCH_TYPE_STRING:
         {
@@ -1860,45 +2165,192 @@ static MatchVal makeMatchValue(const MatchVar *var, const ELF *elf,
 }
 
 /*
- * Evaluate a test.
+ * Cast to bool.
  */
-static bool matchEvalTest(const MatchTest *test, const MatchVal *lval,
-        const MatchVal *rval)
+static MatchVal matchCastToBool(MatchVal val)
 {
-    if (test->cmp == MATCH_CMP_DEFINED)
-        return (lval->type != MATCH_TYPE_UNDEFINED);
-    if (lval->type == MATCH_TYPE_UNDEFINED)
-        return false;
-    if (test->cmp == MATCH_CMP_NOT_ZERO)
-        return (lval->type == MATCH_TYPE_INTEGER && lval->i != 0);
-    if (rval->type == MATCH_TYPE_UNDEFINED)
-        return false;
-    switch (test->cmp)
+    switch (val.type)
     {
-        case MATCH_CMP_EQ:
-            return (*lval == *rval);
-        case MATCH_CMP_NEQ:
-            return (*lval != *rval);
-        case MATCH_CMP_LT:
-            return (*lval < *rval);
-        case MATCH_CMP_LEQ:
-            return (*lval <= *rval);
-        case MATCH_CMP_GT:
-            return (*lval > *rval);
-        case MATCH_CMP_GEQ:
-            return (*lval >= *rval);
-        case MATCH_CMP_IN:
+        case MATCH_TYPE_UNDEFINED:
+            val.type = MATCH_TYPE_INTEGER;
+            val.i    = false;
+        case MATCH_TYPE_INTEGER:
+            val.i    = (val.i != 0);
+            return val;
+        default:
+            std::string str;
+            dumpVal(val, str);
+            error("type error; failed to cast value `%s' to type Boolean",
+                str.c_str());
+    }
+}
+
+/*
+ * Evaluate a matching.
+ */
+static MatchVal matchDoEval(const MatchExpr *expr, const ELF &elf,
+    const std::vector<Instr> &Is, size_t idx, const InstrInfo *I,
+    MatchVal *buf)
+{
+    MatchVal lhs, rhs, res;
+    switch (expr->op)
+    {
+        case MATCH_OP_ARG:
         {
-            if (rval->type != MATCH_TYPE_SET)
-                return false;
-            else if (lval->type != MATCH_TYPE_SET)
-                return isMember(lval, rval);
-            else
-                return isSubset(lval, rval);
+            switch (expr->arg.inst)
+            {
+                case MATCH_INST_VAL:
+                    res = *expr->arg.val;
+                    break;
+                case MATCH_INST_VAR:
+                    res = makeMatchValue(expr->arg.var, &elf, Is, idx, I, buf);
+                    if (option_debug)
+                    {
+                        std::string str_var, str_val;
+                        bool hex = shouldDumpHex(*expr->arg.var);
+                        dumpExpr(*expr, str_var);
+                        dumpVal(res, str_val, hex);
+                        debug("%s0x%lx%s: \tvar %s%s = %s%s",
+                            (option_is_tty? "\33[31m": ""), I->address,
+                            (option_is_tty? "\33[0m": ""),
+                            (option_is_tty? "\33[33m": ""),
+                            str_var.c_str(), str_val.c_str(),
+                            (option_is_tty? "\33[0m": ""));
+                    }
+                    break;
+                default:
+                    error("unexpected inst");
+            }
+            break;
+        }
+        case MATCH_OP_NOT:
+            res = matchCastToBool(matchDoEval(expr->lhs, elf, Is, idx, I, buf));
+            res.i = (res.i == 0);
+            break;
+        case MATCH_OP_AND:
+            res = matchCastToBool(matchDoEval(expr->lhs, elf, Is, idx, I, buf));
+            if (res.i == false)
+                break;
+            res = matchCastToBool(matchDoEval(expr->rhs, elf, Is, idx, I, buf));
+            break;
+        case MATCH_OP_OR:
+            res = matchCastToBool(matchDoEval(expr->lhs, elf, Is, idx, I, buf));
+            if (res.i == true)
+                break;
+            res = matchCastToBool(matchDoEval(expr->rhs, elf, Is, idx, I, buf));
+            break;
+        case MATCH_OP_DEFINED:
+            lhs = matchDoEval(expr->lhs, elf, Is, idx, I, buf);
+            res.type = MATCH_TYPE_INTEGER;
+            res.i    = (lhs.type != MATCH_TYPE_UNDEFINED);
+            break;
+        case MATCH_OP_EQ: case MATCH_OP_NEQ:
+        case MATCH_OP_LT: case MATCH_OP_LEQ:
+        case MATCH_OP_GT: case MATCH_OP_GEQ:
+        case MATCH_OP_IN:
+        {
+            res.type = MATCH_TYPE_INTEGER;
+            res.i    = false;
+            lhs = matchDoEval(expr->lhs, elf, Is, idx, I, buf);
+            if (lhs.type == MATCH_TYPE_UNDEFINED)
+                break;
+            MatchVal rbuf[64];
+            rhs = matchDoEval(expr->rhs, elf, Is, idx, I, rbuf);
+            if (rhs.type == MATCH_TYPE_UNDEFINED)
+                break;
+            switch (expr->op)
+            {
+                case MATCH_OP_EQ:
+                    res.i = (lhs == rhs); break;
+                case MATCH_OP_NEQ:
+                    res.i = (lhs != rhs); break;
+                case MATCH_OP_LT:
+                    res.i = (lhs < rhs); break;
+                case MATCH_OP_LEQ:
+                    res.i = (lhs <= rhs); break;
+                case MATCH_OP_GT:
+                    res.i = (lhs > rhs); break;
+                case MATCH_OP_GEQ:
+                    res.i = (lhs >= rhs); break;
+                case MATCH_OP_IN:
+                {
+                    if (rhs.type != MATCH_TYPE_SET)
+                        res.i = false;
+                    else if (lhs.type != MATCH_TYPE_SET)
+                        res.i = isMember(&lhs, &rhs);
+                    else
+                        res.i = isSubset(&lhs, &rhs);
+                    break;
+                }
+                default:
+                    break;
+            }
+            break;
+        }
+        case MATCH_OP_ADD: case MATCH_OP_SUB:
+        case MATCH_OP_BIT_AND: case MATCH_OP_BIT_OR:
+        case MATCH_OP_LSHIFT: case MATCH_OP_RSHIFT:
+        {
+            res.type = MATCH_TYPE_UNDEFINED;
+            lhs = matchDoEval(expr->lhs, elf, Is, idx, I, buf);
+            if (lhs.type != MATCH_TYPE_INTEGER)
+                break;
+            rhs = matchDoEval(expr->rhs, elf, Is, idx, I, buf);
+            if (lhs.type != MATCH_TYPE_INTEGER)
+                break;
+            res.type = MATCH_TYPE_INTEGER;
+            res.i    = 0;
+            switch (expr->op)
+            {
+                case MATCH_OP_ADD:
+                    res.i = lhs.i + rhs.i; break;
+                case MATCH_OP_SUB:
+                    res.i = lhs.i - rhs.i; break;
+                case MATCH_OP_BIT_AND:
+                    res.i = (intptr_t)((uint64_t)lhs.i & (uint64_t)rhs.i);
+                    break;
+                case MATCH_OP_BIT_OR:
+                    res.i = (intptr_t)((uint64_t)lhs.i | (uint64_t)rhs.i);
+                    break;
+                case MATCH_OP_LSHIFT:
+                    res.i = (intptr_t)
+                        (rhs.i <= 0? lhs.i:
+                         rhs.i >= 64? 0x0: (uint64_t)lhs.i << (unsigned)rhs.i);
+                    break;
+                case MATCH_OP_RSHIFT:
+                    res.i = (intptr_t)
+                        (rhs.i <= 0? lhs.i:
+                         rhs.i >= 64? 0x0: (int64_t)lhs.i >> (unsigned)rhs.i);
+                    break;
+                default:
+                    break;
+            }
+            break;
+        }
+        case MATCH_OP_NEG: case MATCH_OP_BIT_NOT:
+        {
+            res.type = MATCH_TYPE_UNDEFINED;
+            lhs = matchDoEval(expr->lhs, elf, Is, idx, I, buf);
+            if (lhs.type != MATCH_TYPE_INTEGER)
+                break;
+            res.type = MATCH_TYPE_INTEGER;
+            res.i    = 0;
+            switch (expr->op)
+            {
+                case MATCH_OP_NEG:
+                    res.i = -lhs.i; break;
+                case MATCH_OP_BIT_NOT:
+                    res.i = (intptr_t)~(uint64_t)res.i; break;
+                default:
+                    break;
+            }
+            break;
         }
         default:
-            error("unexpected cmp");
+            error("unknown match op (%d)", expr->op);
     }
+
+    return res;
 }
 
 /*
@@ -1907,86 +2359,28 @@ static bool matchEvalTest(const MatchTest *test, const MatchVal *lval,
 bool matchEval(const MatchExpr *expr, const ELF &elf,
     const std::vector<Instr> &Is, size_t idx, const InstrInfo *I)
 {
-    if (expr == nullptr)
-        return true;
-    const MatchTest *test = nullptr;
-    switch (expr->op)
-    {
-        case MATCH_OP_NOT:
-            return !matchEval(expr->arg1, elf, Is, idx, I);
-        case MATCH_OP_AND:
-            return matchEval(expr->arg1, elf, Is, idx, I) &&
-                   matchEval(expr->arg2, elf, Is, idx, I);
-        case MATCH_OP_OR:
-            return matchEval(expr->arg1, elf, Is, idx, I) ||
-                   matchEval(expr->arg2, elf, Is, idx, I);
-        case MATCH_OP_TEST:
-            test = expr->test;
-            break;
-        default:
-            return false;
-    }
-
-    MatchVal LVAL, RVAL;
-    const MatchVal *lval = nullptr, *rval = nullptr;
-    MatchVal lbuf[64], rbuf[64];
-    switch (test->lhs.inst)
-    {
-        case MATCH_INST_VAL:
-            lval = test->lhs.val;
-            break;
-        case MATCH_INST_VAR:
-            LVAL = makeMatchValue(test->lhs.var, &elf, Is, idx, I, lbuf);
-            lval = &LVAL;
-            break;
-        default:
-            error("unexpected inst");
-    }
-    switch (test->rhs.inst)
-    {
-        case MATCH_INST_VAL:
-            rval = test->rhs.val;
-            break;
-        case MATCH_INST_VAR:
-            RVAL = makeMatchValue(test->rhs.var, &elf, Is, idx, I, rbuf);
-            rval = &RVAL;
-            break;
-        case MATCH_INST_EMPTY:
-            break;
-    }
-    bool pass = matchEvalTest(test, lval, rval);
     if (option_debug)
     {
-        std::string str;
-        if (test->cmp == MATCH_CMP_DEFINED)
-            str += "defined(";
-        dumpVal(*lval, str);
-        switch (test->cmp)
-        {
-            case MATCH_CMP_EQ:  str += " == "; break;
-            case MATCH_CMP_NEQ: str += " != "; break;
-            case MATCH_CMP_LT:  str += " < ";  break;
-            case MATCH_CMP_LEQ: str += " <= "; break;
-            case MATCH_CMP_GT:  str += " > ";  break;
-            case MATCH_CMP_GEQ: str += " >= "; break;
-            case MATCH_CMP_IN:  str += " in "; break;
-            default: break;
-        }
-        switch (test->cmp)
-        {
-            case MATCH_CMP_DEFINED:
-                str += ')'; break;
-            case MATCH_CMP_NOT_ZERO:
-                str += " != 0"; break;
-            default:
-                dumpVal(*rval, str); break;
-        }
-        debug("    %s0x%lx%s test (%s) = %s%s%s",
+        debug("%s0x%lx%s:\tinstr %s%s%s",
             (option_is_tty? "\33[31m": ""), I->address,
-            (option_is_tty? "\33[0m": ""), str.c_str(),
+            (option_is_tty? "\33[0m": ""), (option_is_tty? "\33[32m": ""),
+            I->string.instr, (option_is_tty? "\33[0m": ""));
+    }
+    MatchVal buf[64];
+    MatchVal result = matchCastToBool(matchDoEval(expr, elf, Is, idx, I, buf));
+    bool pass = (result.i != 0);
+    if (option_debug)
+    {
+        std::string str_expr, str_val;
+        dumpExpr(*expr, str_expr);
+        dumpVal(result, str_val);
+        debug("%s0x%lx%s: expr %s = %s%s%s",
+            (option_is_tty? "\33[31m": ""), I->address,
+            (option_is_tty? "\33[0m": ""), str_expr.c_str(),
             (option_is_tty? (pass? "\33[32m": "\33[31m"): ""),
             (pass? "TRUE": "FALSE"),
-            (option_is_tty? "\33[0m": ""));
+            (option_is_tty? "\33[0m": ""),
+            str_val.c_str());
     }
     return pass;
 }
