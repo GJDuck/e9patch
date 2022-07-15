@@ -50,7 +50,7 @@ extern bool option_debug;
     }                                                                   \
     while (false)
 
-typedef std::set<intptr_t> RelaInfo;
+typedef std::map<intptr_t, intptr_t> RelaInfo;
 
 /*
  * Insert target information.
@@ -162,7 +162,7 @@ static void CFGCodeAnalysis(const ELF *elf, bool pic, const Instr *Is,
                     addTarget(target, TARGET_INDIRECT | TARGET_FUNCTION,
                         targets);
                 }
-                else if (pic)
+                else
                 {
                     // This does not point to an instruction, but may be
                     // pointing to the base of a PIC-style jump-table.  We
@@ -288,53 +288,53 @@ static void CFGSectionAnalysis(const ELF *elf, bool pic, const char *name,
         }
         return;
     }
-    else if (pic)
+    if (shdr->sh_type == SHT_PROGBITS && (shdr->sh_flags & SHF_WRITE) == 0)
     {
-        if (shdr->sh_type == SHT_PROGBITS && (shdr->sh_flags & SHF_WRITE) == 0)
+        // Scan the data for PIC-style jump tables.
+        // Note: We do this analysis even for non-PIC binaries.  This is
+        //       because it is possible that a non-PIC binary was compiled
+        //       with -fPIC.
+        auto bounds = getBounds<int32_t>(sh_data, sh_data + sh_size);
+        for (const int32_t *p = bounds.first; p < bounds.second; p++)
         {
-            // Scan the data for PIC-style jump tables.
-            auto bounds = getBounds<int32_t>(sh_data, sh_data + sh_size);
-            for (const int32_t *p = bounds.first; p < bounds.second; p++)
-            {
-                intptr_t table = (intptr_t)shdr->sh_addr +
-                    ((intptr_t)p - (intptr_t)sh_data);
-                auto i = tables.find(table);
-                if (i == tables.end())
-                    continue;
+            intptr_t table = (intptr_t)shdr->sh_addr +
+                ((intptr_t)p - (intptr_t)sh_data);
+            auto i = tables.find(table);
+            if (i == tables.end())
+                continue;
 
-                // This is "probably" a PIC-style jump table.
-                for (const int32_t *q = p; q < bounds.second; q++)
-                {
-                    intptr_t offset = (intptr_t)*q;
-                    intptr_t target = table + offset;
-                    if (findInstr(Is, size, target) < 0)
-                        break;
-                    DEBUG(targets, target, "JmpTbl: %p%+zd = %p",
-                        (void *)table, offset, (void *)target);
-                    // Jump tables are treated as direct:
-                    addTarget(target, TARGET_DIRECT, targets);
-                }
+            // This is "probably" a PIC-style jump table.
+            for (const int32_t *q = p; q < bounds.second; q++)
+            {
+                intptr_t offset = (intptr_t)*q;
+                intptr_t target = table + offset;
+                if (findInstr(Is, size, target) < 0)
+                    break;
+                DEBUG(targets, target, "JmpTbl: %p%+zd = %p",
+                    (void *)table, offset, (void *)target);
+                // Jump tables are treated as direct:
+                addTarget(target, TARGET_DIRECT, targets);
             }
         }
+    }
 
-        if (shdr->sh_type == SHT_PROGBITS)
+    if (pic && shdr->sh_type == SHT_PROGBITS)
+    {
+        // Scan for code pointers using relocation information.
+        auto bounds = getBounds<int64_t>(sh_data, sh_data + sh_size);
+        for (const int64_t *p = bounds.first; p < bounds.second; p++)
         {
-            // Scan for code pointers using relocation information.
-            auto bounds = getBounds<int64_t>(sh_data, sh_data + sh_size);
-            for (const int64_t *p = bounds.first; p < bounds.second; p++)
-            {
-                intptr_t offset = (intptr_t)shdr->sh_addr +
-                    ((intptr_t)p - (intptr_t)sh_data);
-                auto i = relas.find(offset);
-                if (i == relas.end())
-                    continue;
-                
-                intptr_t target = *p;
-                if (findInstr(Is, size, target) < 0)
-                    continue;
-                DEBUG(targets, target, "Reloc : %p (F)", (void *)target);
-                addTarget(target, TARGET_INDIRECT | TARGET_FUNCTION, targets);
-            }
+            intptr_t offset = (intptr_t)shdr->sh_addr +
+                ((intptr_t)p - (intptr_t)sh_data);
+            auto i = relas.find(offset);
+            if (i == relas.end())
+                continue;
+
+            intptr_t target = *p + i->second;
+            if (findInstr(Is, size, target) < 0)
+                continue;
+            DEBUG(targets, target, "Reloc : %p (F)", (void *)target);
+            addTarget(target, TARGET_INDIRECT | TARGET_FUNCTION, targets);
         }
     }
 }
@@ -359,9 +359,8 @@ static void CFGDataAnalysis(const ELF *elf, bool pic, const Instr *Is,
         const Elf64_Rela *rela_end = rela + sh_size / sizeof(Elf64_Rela);
         for (; rela < rela_end; rela++)
         {
-            if (ELF64_R_TYPE(rela->r_info) == R_X86_64_RELATIVE &&
-                    rela->r_addend == 0)
-                relas.insert(rela->r_offset);
+            if (ELF64_R_TYPE(rela->r_info) == R_X86_64_RELATIVE)
+                relas.insert({rela->r_offset, rela->r_addend});
         }
     }
 

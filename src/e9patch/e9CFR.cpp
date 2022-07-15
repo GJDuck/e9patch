@@ -368,7 +368,7 @@ void targetAnalysis(Binary *B)
             intptr_t target = addrToOffset(phdrs, phnum, fini_array[i]);
             setTarget(targets, B->size, target);
         }
-        for (size_t i = 0; pic && rela != 0 && i < rela_size; i++)
+        for (size_t i = 0; pic && rela != nullptr && i < rela_size; i++)
         {
             // Rela section
             if (ELF64_R_TYPE(rela[i].r_info) != R_X86_64_RELATIVE)
@@ -377,7 +377,7 @@ void targetAnalysis(Binary *B)
             intptr_t offset = addrToOffset(phdrs, phnum, addr, /*x=*/false);
             if (offset < 0)
                 continue;
-            addr = *(intptr_t *)(data + offset);
+            addr = *(intptr_t *)(data + offset) + rela[i].r_addend;
             intptr_t target = addrToOffset(phdrs, phnum, addr);
             setTarget(targets, B->size, target);
         }
