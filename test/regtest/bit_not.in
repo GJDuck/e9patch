@@ -1,0 +1,1 @@
+./test.pie -M '~addr < 0' -P 'write(".")@patch'

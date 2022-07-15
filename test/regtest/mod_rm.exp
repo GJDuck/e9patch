@@ -1,0 +1,7 @@
+modrm=0x05, asm="movq 0x5e(%rip), %rax"
+modrm=0x05, asm="movq 0x28(%rip), %r8"
+modrm=0x0D, asm="movq 0x19a(%rip), %rcx"
+modrm=0x15, asm="lea 0x14(%rip), %r10"
+modrm=0x15, asm="lea 0x2(%rip), %rdx"
+modrm=0x35, asm="lea 0x54(%rip), %rsi"
+PASSED

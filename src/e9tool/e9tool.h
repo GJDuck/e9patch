@@ -2320,6 +2320,14 @@ enum ArgumentKind : uint8_t
     ARGUMENT_REG,                   // Register operand[i]
     ARGUMENT_MEM,                   // Memory operand[i]
 
+    ARGUMENT_REX,                   // Rex prefix byte
+    ARGUMENT_MODRM,                 // ModRM byte
+    ARGUMENT_SIB,                   // SIB byte
+    ARGUMENT_DISP8,                 // 8-bit displacement
+    ARGUMENT_DISP32,                // 32-bit displacement
+    ARGUMENT_IMM8,                  // 8-bit displacement
+    ARGUMENT_IMM32,                 // 32-bit displacement
+
     ARGUMENT_MAX                    // Maximum argument value
 };
 

@@ -1,0 +1,1 @@
+./test -M 'I[1].addr-I.addr == 2' -P 'format("size=%zu\n",size)@patch'

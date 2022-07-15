@@ -819,3 +819,12 @@ void test_memcpy(intptr_t *ptr)
     exit(0);
 }
 
+extern "C"
+{
+void format(const char *msg, intptr_t a1, intptr_t a2, intptr_t a3,
+    intptr_t a4, intptr_t a5, intptr_t a6, intptr_t a7)
+{
+    fprintf(stderr, msg, a1, a2, a3, a4, a5, a6, a7);
+}
+}   // extern "C"
+

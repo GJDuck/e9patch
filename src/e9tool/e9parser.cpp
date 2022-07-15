@@ -62,11 +62,13 @@ static const TokenInfo tokens[] =
     {"..",              TOKEN_DOTDOT,           0},
     {":",               (Token)':',             0},
     {"<",               (Token)'<',             0},
+    {"<<",              TOKEN_LSHIFT,           0},
     {"<=",              TOKEN_LEQ,              0},
     {"=",               (Token)'=',             0},
     {"==",              (Token)'=',             0},
     {">",               (Token)'>',             0},
     {">=",              TOKEN_GEQ,              0},
+    {">>",              TOKEN_RSHIFT,           0},
     {"@",               (Token)'@',             0},
     {"BB",              TOKEN_BB,               0},
     {"F",               TOKEN_F,                0},
@@ -96,8 +98,8 @@ static const TokenInfo tokens[] =
     {"bp",              TOKEN_REGISTER,         REGISTER_BP},
     {"bpl",             TOKEN_REGISTER,         REGISTER_BPL},
     {"break",           TOKEN_BREAK,            0},
-    {"bytes",           TOKEN_BYTES,            0},
     {"bx",              TOKEN_REGISTER,         REGISTER_BX},
+    {"bytes",           TOKEN_BYTES,            0},
     {"call",            TOKEN_CALL,             0},
     {"ch",              TOKEN_REGISTER,         REGISTER_CH},
     {"char",            TOKEN_CHAR,             0},
@@ -112,8 +114,10 @@ static const TokenInfo tokens[] =
     {"dh",              TOKEN_REGISTER,         REGISTER_DH},
     {"di",              TOKEN_REGISTER,         REGISTER_DI},
     {"dil",             TOKEN_REGISTER,         REGISTER_DIL},
-    {"disp",            TOKEN_DISPLACEMENT,     0},
-    {"displacement",    TOKEN_DISPLACEMENT,     0},
+    {"disp",            TOKEN_DISP,             0},
+    {"disp32",          TOKEN_DISP32,           0},
+    {"disp8",           TOKEN_DISP8,            0},
+    {"displacement",    TOKEN_DISP,             0},
     {"dl",              TOKEN_REGISTER,         REGISTER_DL},
     {"ds",              TOKEN_REGISTER,         REGISTER_DS},
     {"dst",             TOKEN_DST,              0},
@@ -138,6 +142,8 @@ static const TokenInfo tokens[] =
     {"id",              TOKEN_ID,               0},
     {"if",              TOKEN_IF,               0},
     {"imm",             TOKEN_IMM,              OPTYPE_IMM},
+    {"imm32",           TOKEN_IMM32,            0},
+    {"imm8",            TOKEN_IMM8,             0},
     {"in",              TOKEN_IN,               0},
     {"index",           TOKEN_INDEX,            0},
     {"instr",           TOKEN_INSTR,            0},
@@ -347,8 +353,10 @@ static const TokenInfo tokens[] =
     {"zmm8",            TOKEN_REGISTER,         REGISTER_ZMM8},
     {"zmm9",            TOKEN_REGISTER,         REGISTER_ZMM9},
     {"{",               (Token)'{',             0},
+    {"|",               (Token)'|',             0},
     {"||",              TOKEN_OR,               0},
     {"}",               (Token)'}',             0},
+    {"~",               (Token)'~',             0},
 };
 
 /*
@@ -366,7 +374,7 @@ static int compareName(const void *ptr1, const void *ptr2)
  */
 static const TokenInfo *getTokenInfo(const char *name)
 {
-    TokenInfo key = {name, TOKEN_ERROR};
+    TokenInfo key = {name, TOKEN_ERROR, 0};
     const TokenInfo *entry = (const TokenInfo *)bsearch(&key, tokens,
         sizeof(tokens) / sizeof(tokens[0]), sizeof(tokens[0]), compareName);
     return entry;
@@ -458,13 +466,20 @@ int Parser::getToken()
             return TOKEN_EOF;
         case '[': case ']': case '@': case ',': case '(': case ')':
         case '&': case '.': case ':': case '+': case '{': case '}':
-        case '*':
+        case '*': case '|': case '~':
             s[0] = c; s[1] = '\0';
             pos++;
-            if ((c == '&' || c == '.') && buf[pos] == c)
+            switch (c)
             {
-                s[1] = c; s[2] = '\0';
-                pos++;
+                case '&': case '|': case '.':
+                    if (buf[pos] == c)
+                    {
+                        s[1] = c; s[2] = '\0';
+                        pos++;
+                    }
+                    break;
+                default:
+                    break;
             }
             return getTokenFromName(s);
         case '!': case '<': case '>': case '=':
@@ -473,6 +488,11 @@ int Parser::getToken()
             if (buf[pos] == '=')
             {
                 s[1] = '='; s[2] = '\0';
+                pos++;
+            }
+            else if ((c == '<' || c == '>') && buf[pos] == c)
+            {
+                s[1] = c; s[2] = '\0';
                 pos++;
             }
             return getTokenFromName(s);
@@ -492,14 +512,7 @@ int Parser::getToken()
                 pos += 2;
                 return getTokenFromName(s);
             }
-        case '|':
-            if (buf[pos+1] == '|')
-            {
-                s[0] = s[1] = '|'; s[2] = '\0';
-                pos += 2;
-                return TOKEN_OR;
-            }
-            // Fallthrough:
+            break;
         default:
             break;
     }

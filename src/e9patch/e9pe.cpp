@@ -309,6 +309,8 @@ size_t emitPE(Binary *B, const MappingSet &mappings, size_t mapping_size)
     size += sizeof(struct e9_config_s) + sizeof(struct e9_config_pe_s);
     const char magic[]   = "E9PATCH";
     memcpy(config->magic, magic, sizeof(magic));
+    const char version[] = STRING(VERSION);
+    memcpy(config->version, version, sizeof(version));
     config->base  = (intptr_t)size_of_image;
 
     std::vector<Bounds> bounds;

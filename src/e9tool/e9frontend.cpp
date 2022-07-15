@@ -1591,7 +1591,6 @@ intptr_t e9tool::getELFObject(const ELF *elf, const char *name)
 
     // case #4: GOT entry
     val = getELFGOTEntry(elf, name);
-    fprintf(stderr, "LOOKUP %s = %zd\n", name, val);
     if (val != INTPTR_MIN)
         return elf->base + val;
 

@@ -414,6 +414,10 @@ size_t emitElf(Binary *B, const MappingSet &mappings, size_t mapping_size)
     size += sizeof(struct e9_config_elf_s);
     const char magic[] = "E9PATCH";
     memcpy(config->magic, magic, sizeof(magic));
+    const char version[] = STRING(VERSION);
+    static_assert(sizeof(version) <= sizeof(config->version),
+        "VERSION string is too long");
+    memcpy(config->version, version, sizeof(version));
     config->base = option_loader_base;
     if (B->mmap != INTPTR_MIN)
     {

@@ -1,0 +1,1 @@
+./test.pie -M 'bytes[0] | rex == rex' -P 'format("rex=0x%.2hhX, asm=\"%s\"\n",rex,asm)@patch'

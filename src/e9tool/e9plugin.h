@@ -27,6 +27,8 @@
  * See the e9path-programming-guide.md file for documentation.
  */
 
+#define API_VERSION                 1
+
 extern "C"
 {
     /*
@@ -44,6 +46,8 @@ extern "C"
      */
     struct Context
     {
+        unsigned api;                           // API_VERSION
+        const char version[16];                 // E9Tool version
         FILE *out;                              // The output stream
         const std::vector<char *> *argv;        // Plugin command-line args
         void *context;                          // The user context
@@ -62,13 +66,13 @@ extern "C"
     typedef void (*PluginPatch)(const Context *cxt);
     typedef void (*PluginFini)(const Context *cxt);
 
-    extern void *e9_plugin_init_v1(const Context *cxt);
-    extern void e9_plugin_event_v1(const Context *cxt, Event event);
-    extern intptr_t e9_plugin_match_v1(const Context *cxt);
-    extern void e9_plugin_code_v1(const Context *cxt);
-    extern void e9_plugin_data_v1(const Context *cxt);
-    extern void e9_plugin_patch_v1(const Context *cxt);
-    extern void e9_plugin_fini_v1(const Context *cxt);
+    extern void *e9_plugin_init(const Context *cxt);
+    extern void e9_plugin_event(const Context *cxt, Event event);
+    extern intptr_t e9_plugin_match(const Context *cxt);
+    extern void e9_plugin_code(const Context *cxt);
+    extern void e9_plugin_data(const Context *cxt);
+    extern void e9_plugin_patch(const Context *cxt);
+    extern void e9_plugin_fini(const Context *cxt);
 }
 
 #endif

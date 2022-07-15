@@ -189,13 +189,13 @@ Plugin *openPlugin(const char *basename)
     plugin->handle    = handle;
     plugin->context   = nullptr;
     plugin->result    = 0;
-    plugin->initFunc  = (PluginInit)dlsym(handle, "e9_plugin_init_v1");
-    plugin->eventFunc = (PluginEvent)dlsym(handle, "e9_plugin_event_v1");
-    plugin->matchFunc = (PluginMatch)dlsym(handle, "e9_plugin_match_v1");
-    plugin->codeFunc  = (PluginCode)dlsym(handle, "e9_plugin_code_v1");
-    plugin->dataFunc  = (PluginData)dlsym(handle, "e9_plugin_data_v1");
-    plugin->patchFunc = (PluginPatch)dlsym(handle, "e9_plugin_patch_v1");
-    plugin->finiFunc  = (PluginFini)dlsym(handle, "e9_plugin_fini_v1");
+    plugin->initFunc  = (PluginInit)dlsym(handle, "e9_plugin_init");
+    plugin->eventFunc = (PluginEvent)dlsym(handle, "e9_plugin_event");
+    plugin->matchFunc = (PluginMatch)dlsym(handle, "e9_plugin_match");
+    plugin->codeFunc  = (PluginCode)dlsym(handle, "e9_plugin_code");
+    plugin->dataFunc  = (PluginData)dlsym(handle, "e9_plugin_data");
+    plugin->patchFunc = (PluginPatch)dlsym(handle, "e9_plugin_patch");
+    plugin->finiFunc  = (PluginFini)dlsym(handle, "e9_plugin_fini");
     if (plugin->initFunc == nullptr && plugin->eventFunc == nullptr &&
             plugin->codeFunc == nullptr && plugin->dataFunc == nullptr &&
             plugin->patchFunc == nullptr && plugin->finiFunc == nullptr)
@@ -231,8 +231,8 @@ static void notifyPlugins(FILE *out, const ELF *elf,
         Plugin *plugin = i.second;
         if (plugin->eventFunc == nullptr)
             continue;
-        Context cxt = {out, &plugin->argv, plugin->context, elf, &Is, -1,
-            nullptr, -1};
+        Context cxt = {API_VERSION, STRING(VERSION), out, &plugin->argv,
+            plugin->context, elf, &Is, -1, nullptr, -1};
         plugin->eventFunc(&cxt, event);
     }
 }
@@ -248,8 +248,8 @@ static void matchPlugins(FILE *out, const ELF *elf,
         Plugin *plugin = i.second;
         if (plugin->matchFunc == nullptr)
             continue;
-        Context cxt = {out, &plugin->argv, plugin->context, elf, &Is,
-            (ssize_t)idx, I, -1};
+        Context cxt = {API_VERSION, STRING(VERSION), out, &plugin->argv,
+            plugin->context, elf, &Is, (ssize_t)idx, I, -1};
         plugin->result = plugin->matchFunc(&cxt);
     }
 }
@@ -264,8 +264,8 @@ static void initPlugins(FILE *out, const ELF *elf)
         Plugin *plugin = i.second;
         if (plugin->initFunc == nullptr)
             continue;
-        Context cxt = {out, &plugin->argv, nullptr, elf, nullptr, -1,
-            nullptr, -1};
+        Context cxt = {API_VERSION, STRING(VERSION), out, &plugin->argv,
+            nullptr, elf, nullptr, -1, nullptr, -1};
         plugin->context = plugin->initFunc(&cxt);
     }
 }
@@ -280,8 +280,8 @@ static void finiPlugins(FILE *out, const ELF *elf)
         Plugin *plugin = i.second;
         if (plugin->finiFunc == nullptr)
             continue;
-        Context cxt = {out, &plugin->argv, plugin->context, elf, nullptr,
-            -1, nullptr, -1};
+        Context cxt = {API_VERSION, STRING(VERSION), out, &plugin->argv,
+            plugin->context, elf, nullptr, -1, nullptr, -1};
         plugin->finiFunc(&cxt);
     }
 }
@@ -1416,7 +1416,8 @@ int main_2(int argc, char **argv)
     std::map<const Matching *, size_t, MatchingCmp> tmps;
     std::vector<Metadata> metadata;
     std::vector<std::vector<Metadata>> metadatas;
-    Context cxt = {out, nullptr, nullptr, &elf, &Is, -1, nullptr, -1};
+    Context cxt = {API_VERSION, STRING(VERSION), out, nullptr, nullptr, &elf,
+        &Is, -1, nullptr, -1};
     for (const auto *M: Ms.matchings)
     {
         sendMessageHeader(out, "trampoline");
@@ -1526,7 +1527,8 @@ int main_2(int argc, char **argv)
 
         // Send the "patch" message.
         id++;
-        Context cxt = {out, nullptr, nullptr, &elf, &Is, i, &I, id};
+        Context cxt = {API_VERSION, STRING(VERSION), out, nullptr, nullptr,
+            &elf, &Is, i, &I, id};
         const Matching *M = Ms.matchings[Is[i].matching];
         size_t tid = tmps[M];
 

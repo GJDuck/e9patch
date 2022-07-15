@@ -1,0 +1,1 @@
+./test.pie -M 'addr & 0xF == 0x0' -P 'format("addr=0x%lx\n",(static)addr)@patch'

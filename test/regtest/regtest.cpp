@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2021 National University of Singapore
+ * Copyright (C) 2022 National University of Singapore
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -88,10 +88,16 @@ static bool runTest(const struct dirent *test, const std::string &options)
     fclose(IN);
     command += " -E data..data_END -E data2...text -E .text..begin -o ";
     command += exe;
-    command += " >";
+    command += " >>";
     command += log;
     command += " 2>&1";
 
+    FILE *LOG = fopen(log.c_str(), "w");
+    if (LOG != NULL)
+    {
+        fprintf(LOG, "%s\n", command.c_str());
+        fclose(LOG);
+    }
     printf("\n\t%s\n", command.c_str());
     int r = system(command.c_str());
     if (r != 0)
@@ -166,7 +172,7 @@ static bool runTest(const struct dirent *test, const std::string &options)
             command += diff;
             printf("\t%s\n", command.c_str());
             (void)system(command.c_str());
-            printf("%s%s%s: %sFAILED%s (miscompare, see %s.diff)\n",
+            printf("%s%s%s: %sFAILED%s (miscompare, see %s)\n",
                 (option_tty? YELLOW: ""), basename.c_str(),
                 (option_tty? WHITE: ""), (option_tty? RED: ""),
                 (option_tty? WHITE: ""), diff.c_str());
