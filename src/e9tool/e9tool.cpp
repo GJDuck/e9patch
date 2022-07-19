@@ -530,22 +530,6 @@ static size_t exclude(const std::vector<Exclude> &excludes, intptr_t addr)
 }
 
 /*
- * Send an instruction message (if necessary).
- */
-static bool sendInstructionMessage(FILE *out, Instr &I, intptr_t addr,
-    intptr_t base)
-{
-    if (std::abs((intptr_t)I.address - addr) >
-            INT8_MAX + /*sizeof(short jmp)=*/2 + /*max instruction size=*/15)
-        return false;
-    if (I.emitted)
-        return true;
-    I.emitted = true;
-    sendInstructionMessage(out, I.address - base, I.size, I.offset);
-    return true;
-}
-
-/*
  * Metadata.
  */
 struct Metadata
@@ -1391,6 +1375,7 @@ int main_2(int argc, char **argv)
             Is[i].patch    = true;
             Is[i].matching = saveMatching(matching, &I, Ms);
         }
+
         debug("%s0x%lx%s: match %s%s%s%s",
             (option_is_tty? "\33[31m": ""),
             I.address,
@@ -1399,10 +1384,38 @@ int main_2(int argc, char **argv)
             I.string.instr,
             (matched && option_is_tty? "\33[0m": ""),
             (matched && !option_is_tty? " (matched)": ""));
-        if (I.size >= /*sizeof(jmpq)=*/5 &&
-                ((I.category & CATEGORY_JUMP) != 0 ||
-                 (I.category & CATEGORY_CALL) != 0))
-            Is[i].jump = true;
+
+        // Check which instructions to emit:
+        switch (option_optimization_level)
+        {
+            case '2': case '3': case 's':
+                if (I.size >= /*sizeof(jmpq)=*/5 &&
+                        ((I.category & CATEGORY_JUMP) != 0 ||
+                         (I.category & CATEGORY_CALL) != 0))
+                {
+                    // Always emits jump/calls for -Opeephole
+                    Is[i].emit = true;
+                }
+                break;
+        }
+        if (Is[i].patch)
+        {
+            Is[i].emit = true;
+            size_t range =
+                INT8_MAX + /*sizeof(short jmp)=*/2 + /*max instr. size=*/15;
+            for (ssize_t j = i; j >= 0; j--)
+            {
+                if (Is[i].address - Is[j].address > range)
+                    break;
+                Is[j].emit = true;
+            }
+            for (size_t j = i + 1; j < count; j++)
+            {
+                if (Is[j].address - Is[i].address > range)
+                    break;
+                Is[j].emit = true;
+            }
+        }
     }
     notifyPlugins(out, &elf, Is, EVENT_MATCHING_COMPLETE);
 
@@ -1495,30 +1508,15 @@ int main_2(int argc, char **argv)
     intptr_t id = -1;
     for (ssize_t i = (ssize_t)count - 1; i >= 0; i--)
     {
-        switch (option_optimization_level)
-        {
-            case '2': case '3': case 's':
-                if (!Is[i].emitted && Is[i].jump)
-                {
-                    // Always emits jump/calls for -Opeephole
-                    Is[i].emitted = true;
-                    sendInstructionMessage(out, Is[i].address - elf.base,
-                        Is[i].size, Is[i].offset);
-                }
-                break;
-        }
+        if (Is[i].emit)
+            sendInstructionMessage(out, Is[i].address - elf.base, Is[i].size,
+                Is[i].offset);
         if (!Is[i].patch)
             continue;
-
+ 
         // Disassmble the instruction again.
         InstrInfo I;
         getInstrInfo(&elf, &Is[i], &I);
-        bool done = false;
-        for (ssize_t j = i; !done && j >= 0; j--)
-            done = !sendInstructionMessage(out, Is[j], Is[i].address, elf.base);
-        done = false;
-        for (size_t j = i + 1; !done && j < count; j++)
-            done = !sendInstructionMessage(out, Is[j], Is[i].address, elf.base);
 
         // Send the "patch" message.
         id++;

@@ -1,6 +1,6 @@
 /*
  * e9api.cpp
- * Copyright (C) 2021 National University of Singapore
+ * Copyright (C) 2022 National University of Singapore
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -19,8 +19,6 @@
 #include <cstdlib>
 #include <cstring>
 
-#include <string>
-
 #include <fcntl.h>
 #include <sys/mman.h>
 #include <sys/types.h>
@@ -35,78 +33,6 @@
 #include "e9json.h"
 #include "e9tactics.h"
 #include "e9x86_64.h"
-
-/*
- * Insert an instruction into a binary.
- */
-void insertInstruction(Binary *B, Instr *I)
-{
-    // Insert the instruction into the index:
-    auto result = B->Is.insert(std::make_pair((off_t)I->offset, I));
-    if (!result.second)
-        error("failed to insert instruction at offset (+%zu), another "
-            "instruction already exists at that offset", I->offset);
-    InstrSet::iterator i = result.first;
-    B->diff = (off_t)I->addr - (off_t)I->offset;
-
-    // Find and validate successor and predecessor instructions:
-    ++i;
-    if (i != B->Is.end())
-    {
-        Instr *J = i->second;
-        if (I->offset + I->size > J->offset)
-            error("failed to insert instruction at offset (+%zu), instruction "
-                "overlaps with another instruction at offset (+%zu)",
-                I->offset, J->offset);
-        if (I->addr + I->size > J->addr)
-            error("failed to insert instruction at address (%p), instruction "
-                "overlaps with another instruction at address (%p)",
-                (void *)I->addr, (void *)J->addr);
-        I->next = J;
-        J->prev = I;
-    }
-
-    i = result.first;
-    if (i != B->Is.begin())
-    {
-        --i;
-        Instr *J = i->second;
-        if (J->offset + J->size > I->offset)
-            error("failed to insert instruction at offset (+%zu), instruction "
-                "overlaps with another instruction at offset (+%zu)",
-                I->offset, J->offset);
-        if (J->addr + J->size > I->addr)
-            error("failed to insert instruction at address (%p), instruction "
-                "overlaps with another instruction at address (%p)",
-                (void *)I->addr, (void *)J->addr);
-        I->prev = J;
-        J->next = I;
-    }
-
-    // Initialize the state:
-    for (unsigned i = 0; i < I->size; i++)
-    {
-        switch (I->patched.state[i])
-        {
-            case STATE_UNKNOWN:
-                I->patched.state[i] = STATE_INSTRUCTION;
-                break;
-            case STATE_INSTRUCTION | STATE_LOCKED:
-            case STATE_PATCHED:
-            case STATE_PATCHED | STATE_LOCKED:
-            case STATE_QUEUED:
-            case STATE_FREE:
-                error("failed to insert instruction at address (%p), the "
-                    "corresponding virtual memory has already been patched",
-                    (void *)(I->addr + i));
-            default:
-                error("failed to insert instruction at address (%p), the "
-                    "corresponding virtual memory has already been allocated "
-                    "with state (0x%.2X)", (void *)(I->addr + i),
-                    I->patched.state[i]);
-        }
-    }
-}
 
 /*
  * Flush the patching queue up to the new cursor.
@@ -131,8 +57,8 @@ static void queueFlush(Binary *B, intptr_t cursor)
             const Trampoline *T = entry.T;
             for (unsigned i = 0; i < I->size; i++)
             {
-                assert(I->patched.state[i] == STATE_QUEUED);
-                I->patched.state[i] = STATE_INSTRUCTION;
+                assert(I->STATE[i] == STATE_QUEUED);
+                I->STATE[i] = STATE_INSTRUCTION;
             }
             I->debug = (option_trap_all ||
                 option_trap.find(I->addr) != option_trap.end());
@@ -166,8 +92,8 @@ static void queuePatch(Binary *B, Instr *I, const Trampoline *T)
 {
     for (unsigned i = 0; i < I->size; i++)
     {
-        assert(I->patched.state[i] == STATE_INSTRUCTION);
-        I->patched.state[i] = STATE_QUEUED;
+        assert(I->STATE[i] == STATE_INSTRUCTION);
+        I->STATE[i] = STATE_QUEUED;
     }
 
     PatchEntry entry(I, T);
@@ -360,10 +286,42 @@ static void parseInstruction(Binary *B, const Message &msg)
         else
             pcrel32_idx = pcrel_idx;    // Must be pcrel32
     }
-    Instr *I = new Instr(offset, address, length, B->original.bytes + offset,
-        B->patched.bytes + offset, B->patched.state + offset, pcrel32_idx,
-        pcrel8_idx, B->pic);
-    insertInstruction(B, I);
+    if (B->Is.size() > 0)
+    {
+        const Instr *J = B->Is.front();
+        if (offset >= (off_t)J->offset || address >= J->addr)
+            error("failed to insert instruction at address 0x%lx, "
+                "\"instruction\" messages were not sent in reverse order",
+                address);
+        if (offset + length > (off_t)J->offset ||
+                address + (ssize_t)length > J->addr)
+            error("failed to insert instruction at address 0x%lx, instruction "
+                "overlaps with another instruction at 0x%lx",
+                address, J->addr);
+    }
+    Instr *I = new (B->Is.alloc()) Instr(B, offset, address, length,
+        pcrel32_idx, pcrel8_idx, B->pic);
+    for (unsigned i = 0; i < I->size; i++)
+    {
+        switch (I->STATE[i])
+        {
+            case STATE_UNKNOWN:
+                I->STATE[i] = STATE_INSTRUCTION;
+                break;
+            case STATE_INSTRUCTION | STATE_LOCKED:
+            case STATE_PATCHED:
+            case STATE_PATCHED | STATE_LOCKED:
+            case STATE_QUEUED:
+            case STATE_FREE:
+                error("failed to insert instruction at address 0x%lx, the "
+                    "corresponding virtual memory has already been patched",
+                    I->addr + i);
+            default:
+                error("failed to insert instruction at address 0x%lx, the "
+                    "corresponding virtual memory has already been allocated "
+                    "with state (0x%.2X)", I->addr + i, I->STATE[i]);
+        }
+    }
 }
 
 /*
@@ -406,11 +364,10 @@ static void parsePatch(Binary *B, const Message &msg)
         error("failed to parse \"patch\" message (id=%u); duplicate "
             "parameters detected", msg.id);
 
-    auto i = B->Is.find(offset);
-    if (i == B->Is.end())
+    Instr *I = B->Is.find(offset);
+    if (I == nullptr)
         error("failed to parse \"patch\" message (id=%u); no matching "
             "instruction at offset (%zd)", msg.id, offset);
-    Instr *I = i->second;
     if (I->patch)
         error("failed to parse \"patch\" message (id=%u); instruction "
             "at address (0x%lx) is already queued for patching", msg.id,

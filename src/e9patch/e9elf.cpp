@@ -294,9 +294,8 @@ static size_t emitRefactoredPatch(const uint8_t *original, uint8_t *data,
     {
         if (memcmp(original + offset, data + offset, PAGE_SIZE) == 0)
             continue;
-        auto i = Is.lower_bound(offset);
-        assert(i != Is.end());
-        const Instr *I = i->second;
+        const Instr *I = Is.lower_bound(offset);
+        assert(I != nullptr);
         intptr_t page_addr   = I->addr - (I->addr % PAGE_SIZE);
         off_t    page_offset = I->offset - (I->offset % PAGE_SIZE);
         assert(page_offset == offset);

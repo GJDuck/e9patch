@@ -182,19 +182,17 @@ static int buildBreak(const Binary *B, const Instr *I, int32_t offset32,
     while (!cft && optimize && !I->no_optimize && i < option_Oepilogue &&
         size < option_Oepilogue_size)
     {
-        const Instr *K = J->next;
-        if (K == nullptr || J->addr + J->size != K->addr)
+        const Instr *K = J->succ();
+        if (K == nullptr)
             break;
         J = K;
         i++;
         cft = (J->is_patched && !J->is_evicted);
-        cft = cft ||
-            isCFT(J->original.bytes, J->size, CFT_CALL | CFT_RET | CFT_JMP);
+        cft = cft || isCFT(J->ORIG, J->size, CFT_CALL | CFT_RET | CFT_JMP);
         size += J->size;
     }
 
-    const Instr *K = I->next;
-    K = (K != nullptr && I->addr + I->size != K->addr? nullptr: K);
+    const Instr *K = I->succ();
     if (!cft)
     {
         // Optimization cannot be applied --> jump to next instruction.
@@ -217,11 +215,11 @@ static int buildBreak(const Binary *B, const Instr *I, int32_t offset32,
     }
 
     // Build the epilogue:
-    J = I->next;
+    J = I->next();
     int s = I->size, r = 0;
     unsigned start = (mode == BUILD_BYTES? buf->size(): 0);
     bool ok = true;
-    for (unsigned j = 0; j < i; j++, J = J->next)
+    for (unsigned j = 0; j < i; j++, J = J->next())
     {
         if (J->is_patched && !J->is_evicted)
         {
@@ -235,13 +233,13 @@ static int buildBreak(const Binary *B, const Instr *I, int32_t offset32,
         switch (mode)
         {
             case BUILD_SIZE:
-                len = relocateInstr(J->addr, /*offset=*/0, J->original.bytes,
-                    J->size, J->pic, nullptr, /*relax=*/true);
+                len = relocateInstr(J->addr, /*offset=*/0, J->ORIG, J->size,
+                    J->pic, nullptr, /*relax=*/true);
                 break;
             case BUILD_BYTES:
                 bytes = buf->bytes();
-                len = relocateInstr(J->addr, offset32 + (r - s),
-                    J->original.bytes, J->size, J->pic, buf);
+                len = relocateInstr(J->addr, offset32 + (r - s), J->ORIG,
+                    J->size, J->pic, buf);
                 if (len < 0)
                 {
                     buf->reset(start);
@@ -300,7 +298,7 @@ static int buildPrologue(const Binary *B, const Instr *I, int32_t offset32,
     unsigned start = (mode == BUILD_BYTES? buf->size(): 0);
     bool relax = (offset32 == 0x0);
     std::vector<std::pair<const Instr *, intptr_t>> entries;
-    for (; J != I; J = J->next)
+    for (; J != I; J = J->next())
     {
         int len = 0;
         int diff = (int)(I->addr - J->addr);
@@ -309,8 +307,8 @@ static int buildPrologue(const Binary *B, const Instr *I, int32_t offset32,
             case BUILD_BYTES:
             {
                 uint8_t *bytes = buf->bytes();
-                len = relocateInstr(J->addr, diff + offset32 + r,
-                    J->original.bytes, J->size, J->pic, buf);
+                len = relocateInstr(J->addr, diff + offset32 + r, J->ORIG,
+                    J->size, J->pic, buf);
                 if (len < 0)
                 {
                     buf->reset(start);
@@ -323,8 +321,8 @@ static int buildPrologue(const Binary *B, const Instr *I, int32_t offset32,
                 break;
             }
             case BUILD_SIZE:
-                len = relocateInstr(J->addr, /*offset=*/0x0, J->original.bytes,
-                    J->size, J->pic, nullptr, relax);
+                len = relocateInstr(J->addr, /*offset=*/0x0, J->ORIG, J->size,
+                    J->pic, nullptr, relax);
                 break;
         }
         if (len < 0)
@@ -396,8 +394,8 @@ static int getTrampolineSize(const Binary *B, const Trampoline *T,
                 continue;
             case ENTRY_INSTR:
             {
-                int r = relocateInstr(I->addr, /*offset=*/0, I->original.bytes,
-                    I->size, I->pic, nullptr);
+                int r = relocateInstr(I->addr, /*offset=*/0, I->ORIG, I->size,
+                    I->pic, nullptr);
                 if (r < 0)
                     return -1;
                 size += r;
@@ -464,8 +462,8 @@ static intptr_t getBuiltinLabelAddress(const Binary *B, const Instr *I,
         case 't':
             if (strcmp(label, ".Ltake") == 0)
             {
-                intptr_t target = getCFTTarget(I->addr, I->original.bytes,
-                    I->size, CFT_JCC);
+                intptr_t target = getCFTTarget(I->addr, I->ORIG, I->size,
+                    CFT_JCC);
                 if (target == INTPTR_MIN)
                     error("failed to build trampoline; instruction at address "
                         "0x%lx is not a conditional branch (as required by "
@@ -544,8 +542,8 @@ static size_t getTrampolineBounds(const Binary *B, const Trampoline *T,
             }
             case ENTRY_INSTR:
             {
-                int r = relocateInstr(I->addr, /*offset=*/0, I->original.bytes,
-                    I->size, I->pic, nullptr);
+                int r = relocateInstr(I->addr, /*offset=*/0, I->ORIG, I->size,
+                    I->pic, nullptr);
                 size += (r < 0? 0: r);
                 continue;
             }
@@ -632,8 +630,8 @@ static off_t buildLabelSet(const Binary *B, const Trampoline *T,
                 offset += sizeof(int32_t);
                 continue;
             case ENTRY_INSTR:
-                offset += relocateInstr(I->addr, /*offset=*/0,
-                    I->original.bytes, I->size, I->pic, nullptr);
+                offset += relocateInstr(I->addr, /*offset=*/0, I->ORIG,
+                    I->size, I->pic, nullptr);
                 continue;
             case ENTRY_INSTR_BYTES:
                 offset += I->size;
@@ -783,13 +781,13 @@ static void buildBytes(const Binary *B, const Trampoline *T,
 
             case ENTRY_INSTR:
             {
-                relocateInstr(I->addr, entry32 + buf.size(),
-                    I->original.bytes, I->size, I->pic, &buf);
+                relocateInstr(I->addr, entry32 + buf.size(), I->ORIG, I->size,
+                    I->pic, &buf);
                 continue;
             }
 
             case ENTRY_INSTR_BYTES:
-                buf.push(I->original.bytes, I->size);
+                buf.push(I->ORIG, I->size);
                 break;
         
             case ENTRY_BREAK:
@@ -799,8 +797,8 @@ static void buildBytes(const Binary *B, const Trampoline *T,
 
             case ENTRY_TAKE:
             {
-                intptr_t target = getCFTTarget(I->addr, I->original.bytes,
-                    I->size, CFT_JCC);
+                intptr_t target = getCFTTarget(I->addr, I->ORIG, I->size,
+                    CFT_JCC);
                 if (target == INTPTR_MIN)
                     error("failed to build trampoline; instruction at address "
                         "0x%lx is not a conditional branch (as required by "
