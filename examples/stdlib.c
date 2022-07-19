@@ -3624,7 +3624,7 @@ static void *dlopen(const char *filename, int flags)
 {
     if (dlopen_impl == NULL)
         panic("dl not initialized");
-    return (void *)dlcall(dlopen_impl, filename, flags);
+    return (void *)dlcall((void *)dlopen_impl, filename, flags);
 }
 
 static void *dlsym(void *handle, const char *name)
@@ -3633,7 +3633,7 @@ static void *dlsym(void *handle, const char *name)
         panic("dl not initialized");
     if (handle == NULL)
         handle = dldefault;
-    return (void *)dlcall(dlsym_impl, handle, name);
+    return (void *)dlcall((void *)dlsym_impl, handle, name);
 }
 
 static void *dlvsym(void *handle, const char *name, const char *version)
@@ -3642,14 +3642,14 @@ static void *dlvsym(void *handle, const char *name, const char *version)
         panic("dl not initialized or unsupported");
     if (handle == NULL)
         handle = dldefault;
-    return (void *)dlcall(dlvsym_impl, handle, name, version);
+    return (void *)dlcall((void *)dlvsym_impl, handle, name, version);
 }
 
 static int dlclose(void *handle)
 {
     if (dlclose_impl == NULL)
         panic("dl not initialized");
-    return (int)dlcall(dlclose_impl, handle);
+    return (int)dlcall((void *)dlclose_impl, handle);
 }
 
 /*
