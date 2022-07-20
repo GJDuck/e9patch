@@ -53,8 +53,8 @@ The basic form of a matching (`MATCH`) is a Boolean expression of
               | <b>not</b> EXPR
               | EXPR <b>and</b> EXPR
               | EXPR <b>or</b> EXPR
-              | EXPR <b>+</b> EXPR | EXPR <b>-</b> EXPR | <b>-</b>EXPR
-              | EXPR <b>&</b> EXPR | EXPR <b>|</b> EXPR | <b>~</b>EXPR
+              | EXPR <b>+</b> EXPR | EXPR <b>-</b> EXPR | EXPR <b>*</b> EXPR | EXPR <b>/</b> EXPR | EXPR <b>%</b> EXPR | <b>-</b>EXPR
+              | EXPR <b>&</b> EXPR | EXPR <b>|</b> EXPR | EXPR <b>^</b> EXPR | <b>~</b>EXPR
               | EXPR <b>&lt;&lt;</b> EXPR | EXPR <b>&gt;&gt;</b> EXPR
               | EXPR <b>==</b> EXPR | EXPR <b>!=</b> EXPR
               | EXPR <b>&lt;</b> EXPR | EXPR <b>&lt;=</b> EXPR
@@ -119,17 +119,25 @@ Supported operators include:
     <td>Integer addition</td></tr>
 <tr><td><b><tt>-</tt></b></td>
     <td>Integer subtraction or unary negation</td></tr>
+<tr><td><b><tt>*</tt></b></td>
+    <td>Integer multiplication</td></tr>
+<tr><td><b><tt>/</tt></b> or <b><tt>div</tt></b></td>
+    <td>Integer division</td></tr>
+<tr><td><b><tt>%</tt></b> or <b><tt>mod</tt></b></td>
+    <td>Integer modulus</td></tr>
 <tr><td><b><tt>&amp;</tt></b></td>
     <td>Integer bitwise and</td></tr>
 <tr><td><b><tt>|</tt></b></td>
     <td>Integer bitwise or</td></tr>
+<tr><td><b><tt>|</tt></b></td>
+    <td>Integer bitwise xor</td></tr>
 <tr><td><b><tt>~</tt></b></td>
     <td>Integer bitwise negation</td></tr>
 <tr><td><b><tt>&lt;&lt;</tt></b></td>
     <td>Integer left shift</td></tr>
 <tr><td><b><tt>&gt;&gt;</tt></b></td>
     <td>Integer right shift</td></tr>
-<tr><td><b><tt>=</tt> or <tt>==</tt></b></td>
+<tr><td><b><tt>=</tt></b> or <b><tt>==</tt></b></td>
     <td>Equality</td></tr>
 <tr><td><b><tt>!=</tt></b></td>
     <td>Disequality</td></tr>
