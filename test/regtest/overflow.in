@@ -1,0 +1,4 @@
+./test.pie -M '0x44400000000 * addr >= size' -P print -M '0x7fffffffffffffff + size >= 0' -P print -M '-9223372036854775808 - size < 999' -P print
+
+# overflow == undefined, so nothing should match
+

@@ -1,0 +1,1 @@
+./test.pie -M 'mem[0].disp ^ 0xa000008 == 0' -P print

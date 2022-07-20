@@ -1,0 +1,2 @@
+movq 0xa000008(%rax), %rdx
+PASSED
