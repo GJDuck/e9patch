@@ -381,7 +381,17 @@ size_t emitElf(Binary *B, const MappingSet &mappings, size_t mapping_size)
     uint8_t *data = B->patched.bytes;
     size_t size = B->patched.size;
 
-    // Step (0): Disable incompatible ELF features:
+    // Step (0): Round-up to nearest page boundary (zero-fill)
+    stat_input_file_size = size;
+    size = (size % PAGE_SIZE == 0? size:
+        size + PAGE_SIZE - (size % PAGE_SIZE));
+
+    // Step (1): Refactor the patching (if necessary):
+    RefactorSet refactors;
+    size += emitRefactoredPatch(B->original.bytes, data, size, mapping_size,
+        B->Is, refactors);
+    
+    // Step (2): Disable incompatible ELF features:
     ElfInfo &info = B->elf;
     if (info.features != nullptr)
     {
@@ -390,16 +400,6 @@ size_t emitElf(Binary *B, const MappingSet &mappings, size_t mapping_size)
         if ((*info.features & GNU_PROPERTY_X86_FEATURE_1_SHSTK) != 0)
             *info.features &= ~GNU_PROPERTY_X86_FEATURE_1_SHSTK;
     }
-
-    // Step (1): Round-up to nearest page boundary (zero-fill)
-    stat_input_file_size = size;
-    size = (size % PAGE_SIZE == 0? size:
-        size + PAGE_SIZE - (size % PAGE_SIZE));
-
-    // Step (2): Refactor the patching (if necessary):
-    RefactorSet refactors;
-    size += emitRefactoredPatch(B->original.bytes, data, size, mapping_size,
-        B->Is, refactors);
  
     // Step (3): Emit all mappings:
     for (auto *mapping: mappings)
