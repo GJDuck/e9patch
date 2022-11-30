@@ -392,7 +392,8 @@ no_modification_necessary:
 
                     // Normal case:
                     buf->push(modRM);
-                    if (mod == 0x0 && rm == 0x05)
+                    if (mod == 0x0 && rm == 0x05 &&
+                            size - i - 1 >= sizeof(uint32_t))
                     {
                         // This is a %rip-relative call, so we must adjust 
                         int32_t pcrel32 = *(uint32_t *)(bytes + i + 1);
@@ -591,7 +592,7 @@ no_modification_necessary:
     uint32_t modRM = bytes[i++];
     uint8_t mod = (modRM & 0xc0) >> 6;
     uint8_t rm  = modRM & 0x7;
-    if (mod == 0x0 && rm == 0x05)
+    if (mod == 0x0 && rm == 0x05 && size - i >= sizeof(uint32_t))
     {
         // i points to a %rip-relative displacement.  We adjust accordingly.
         int32_t pcrel32 = *(uint32_t *)(bytes + i);
