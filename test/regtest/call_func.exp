@@ -1,6 +1,6 @@
 Hello world!
 Hello world!
-fib = 55
+fib = 89
 prime(121) = 0
 prime(131) = 1
          *         
@@ -14,4 +14,3 @@ prime(131) = 1
  *******   ******* 
 ********* *********
 invoke data_func()
-invoked data_func()
