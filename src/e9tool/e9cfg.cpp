@@ -260,8 +260,13 @@ static void CFGSectionAnalysis(const ELF *elf, bool pic, const char *name,
     
     if (!pic)
     {
-        if (shdr->sh_type != SHT_PROGBITS)
-            return;
+        switch (shdr->sh_type)
+        {
+            case SHT_PROGBITS: case SHT_INIT_ARRAY: case SHT_FINI_ARRAY:
+                break;
+            default:
+                return;
+        }
 
         // Scan the data for absolute addresses.
         auto bounds = getBounds<intptr_t>(sh_data, sh_data + sh_size);
