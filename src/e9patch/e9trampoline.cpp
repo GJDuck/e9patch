@@ -267,11 +267,11 @@ static int buildBreak(const Binary *B, const Instr *I, intptr_t addr,
             case BUILD_BYTES:
                 bytes = buf->bytes();
                 len = relocateInstr(J, addr, buf);
-                if (len > 0)
-                    saveJump(B, J->addr, bytes, len);
+                ok = (len >= 0);
+                if (ok)
+                    saveJump(B, addr, bytes, len);
                 break;
         }
-        ok = (len > 0);
         addr += (unsigned)len;
     }
 
