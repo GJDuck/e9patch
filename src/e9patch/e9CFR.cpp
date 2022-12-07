@@ -377,7 +377,7 @@ void targetAnalysis(Binary *B)
             intptr_t offset = addrToOffset(phdrs, phnum, addr, /*x=*/false);
             if (offset < 0)
                 continue;
-            addr = *(intptr_t *)(data + offset) + rela[i].r_addend;
+            addr = rela[i].r_addend;
             intptr_t target = addrToOffset(phdrs, phnum, addr);
             setTarget(targets, B->size, target);
         }
