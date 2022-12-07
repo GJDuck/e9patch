@@ -1,0 +1,1 @@
+./test_c -M 'mnemonic==/xchg.*/ && reg[0] == %r15 && reg[0] == reg[1] && addr == F.addr' -P 'exit(0)'

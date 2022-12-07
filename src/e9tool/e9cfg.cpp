@@ -50,8 +50,6 @@ extern bool option_debug;
     }                                                                   \
     while (false)
 
-typedef std::map<intptr_t, intptr_t> RelaInfo;
-
 /*
  * Insert target information.
  */
@@ -251,7 +249,7 @@ static void CFGCodeAnalysis(const ELF *elf, bool pic, const Instr *Is,
  * Section analysis pass: find potential code pointers in data.
  */
 static void CFGSectionAnalysis(const ELF *elf, bool pic, const char *name,
-    const Elf64_Shdr *shdr, const Instr *Is, size_t size, const RelaInfo relas,
+    const Elf64_Shdr *shdr, const Instr *Is, size_t size,
     const std::set<intptr_t> &tables, Targets &targets)
 {
     if ((shdr->sh_flags & SHF_EXECINSTR) != 0 || shdr->sh_addr == 0x0)
@@ -262,8 +260,13 @@ static void CFGSectionAnalysis(const ELF *elf, bool pic, const char *name,
     
     if (!pic)
     {
-        if (shdr->sh_type != SHT_PROGBITS)
-            return;
+        switch (shdr->sh_type)
+        {
+            case SHT_PROGBITS: case SHT_INIT_ARRAY: case SHT_FINI_ARRAY:
+                break;
+            default:
+                return;
+        }
 
         // Scan the data for absolute addresses.
         auto bounds = getBounds<intptr_t>(sh_data, sh_data + sh_size);
@@ -317,26 +320,6 @@ static void CFGSectionAnalysis(const ELF *elf, bool pic, const char *name,
             }
         }
     }
-
-    if (pic && shdr->sh_type == SHT_PROGBITS)
-    {
-        // Scan for code pointers using relocation information.
-        auto bounds = getBounds<int64_t>(sh_data, sh_data + sh_size);
-        for (const int64_t *p = bounds.first; p < bounds.second; p++)
-        {
-            intptr_t offset = (intptr_t)shdr->sh_addr +
-                ((intptr_t)p - (intptr_t)sh_data);
-            auto i = relas.find(offset);
-            if (i == relas.end())
-                continue;
-
-            intptr_t target = *p + i->second;
-            if (findInstr(Is, size, target) < 0)
-                continue;
-            DEBUG(targets, target, "Reloc : %p (F)", (void *)target);
-            addTarget(target, TARGET_INDIRECT | TARGET_FUNCTION, targets);
-        }
-    }
 }
 
 /*
@@ -347,7 +330,6 @@ static void CFGDataAnalysis(const ELF *elf, bool pic, const Instr *Is,
 {
     // Gather relocation information:
     const SectionInfo &sections = getELFSectionInfo(elf);
-    RelaInfo relas;
     for (const auto &entry: sections)
     {
         const Elf64_Shdr *shdr = entry.second;
@@ -360,14 +342,18 @@ static void CFGDataAnalysis(const ELF *elf, bool pic, const Instr *Is,
         for (; rela < rela_end; rela++)
         {
             if (ELF64_R_TYPE(rela->r_info) == R_X86_64_RELATIVE)
-                relas.insert({rela->r_offset, rela->r_addend});
+            {
+                intptr_t target = (intptr_t)rela->r_addend;
+                DEBUG(targets, target, "Reloc : %p (F)", (void *)target);
+                addTarget(target, TARGET_INDIRECT | TARGET_FUNCTION, targets);
+            }
         }
     }
 
     // Analyze each data section:
     for (const auto &entry: sections)
         CFGSectionAnalysis(elf, pic, entry.first, entry.second, Is, size,
-            relas, tables, targets);
+            tables, targets);
 }
 
 /*

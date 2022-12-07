@@ -66,6 +66,34 @@ __attribute__((__noinline__)) void triforce(ssize_t n)
     }
 }
 
+void data_func_2(void)
+{
+    printf("invoked data_func()\n");
+    asm volatile ("nop");
+}
+
+static void data_func(void)
+{
+    asm volatile (
+        "xchg %r15, %r15\n"
+        "callq data_func_2");
+}
+
+struct call_s
+{
+    void (*f)(void);
+    const char *name;
+};
+
+static const struct call_s call_info = {data_func, "data_func"};
+
+__attribute__((__noinline__)) void invoke(const struct call_s *info)
+{
+    printf("invoke %s()\n", info->name);
+    fflush(stdout);
+    info->f();
+}
+
 int main(void)
 {
     printf("Hello world!\n");
@@ -87,6 +115,9 @@ int main(void)
     printf("prime(121) = %d\n", is_prime(121));
     printf("prime(131) = %d\n", is_prime(131));
     triforce(9);
+
+    fflush(stdout);
+    invoke(&call_info);
 
     return 0;
 }

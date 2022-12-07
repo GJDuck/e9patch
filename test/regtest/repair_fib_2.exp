@@ -13,3 +13,5 @@ prime(131) = 1
   *****     *****  
  *******   ******* 
 ********* *********
+invoke data_func()
+invoked data_func()

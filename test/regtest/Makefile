@@ -18,6 +18,7 @@ all:
 	gcc -x assembler-with-cpp -shared -o libtest.so libtest.s 
 	gcc -O2 -fPIC $(FCF_NONE) -pie -o test_c test_c.c \
 		-Wl,--export-dynamic -U_FORTIFY_SOURCE
+	strip test_c
 	../../e9compile.sh inst.c -I ../../examples/ -D NO_GLIBC
 	../../e9compile.sh patch.cpp -std=c++11 -I ../../examples/ -D NO_GLIBC
 	../../e9compile.sh dl.c -I ../../examples/
