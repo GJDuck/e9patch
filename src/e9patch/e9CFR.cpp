@@ -404,7 +404,7 @@ void targetAnalysis(Binary *B)
             }
         }
     }
-    if (!pic)
+    if (!pic || option_OCFR_hacks)
     {
         // Non-PIC code pointers & jump tables
         for (unsigned i = 0; i < phnum; i++)

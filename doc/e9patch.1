@@ -49,6 +49,11 @@ the rewritten binary much faster, but may introduce rewriting
 bugs if the built-in CRF analysis is inaccurate.
 .br
 Default: \fBfalse\fR (disabled)
+.IP "\fB\-OCFR-hacks\fR[=\fI\,false\/\fR]" 4
+Makes -OCFR even more conservative.  This may help some
+binaries that use non-standard relocations.
+.br
+Default: \fBfalse\fR (disabled)
 .IP "\fB\-Oepilogue\fR=\fI\,N\/\fR" 4
 Append a epilogue of up to N instructions to the end of each
 trampoline.  This may enhance \fB\-Opeephole\fR.

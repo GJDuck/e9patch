@@ -593,6 +593,7 @@ extern bool option_is_tty;
 extern bool option_debug;
 extern bool option_batch;
 extern bool option_OCFR;
+extern bool option_OCFR_hacks;
 extern unsigned option_Oepilogue;
 extern unsigned option_Oepilogue_size;
 extern bool option_Oorder;

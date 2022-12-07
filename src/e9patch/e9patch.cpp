@@ -48,6 +48,7 @@ bool option_tactic_T2          = true;
 bool option_tactic_T3          = true;
 bool option_tactic_backward_T3 = true;
 bool option_OCFR               = false;
+bool option_OCFR_hacks         = false;
 unsigned option_Oepilogue      = 0;
 unsigned option_Oepilogue_size = 64;
 bool option_Oorder             = false;
@@ -238,6 +239,11 @@ static void usage(FILE *stream, const char *progname)
         "\t\tbugs if the built-in CRF analysis is inaccurate.\n"
         "\t\tDefault: false (disabled)\n"
         "\n"
+        "\t-OCFR-hacks[=false]\n"
+        "\t\tMakes -OCFR even more conservative.  This may help some\n"
+        "\t\tbinaries that use non-standard relocations.\n"
+        "\t\tDefault: false (disabled)\n"
+        "\n"
         "\t-Oepilogue=N\n"
         "\t\tAppend a epilogue of up to N instructions to the end of each\n"
         "\t\ttrampoline.  This may enhance -Opeephole.\n"
@@ -401,6 +407,7 @@ enum Option
     OPTION_MEM_REBASE,
     OPTION_MEM_UB,
     OPTION_OCFR,
+    OPTION_OCFR_HACKS,
     OPTION_OEPILOGUE,
     OPTION_OEPILOGUE_SIZE,
     OPTION_OORDER,
@@ -435,6 +442,7 @@ void parseOptions(char * const argv[], bool api)
     static const struct option long_options[] =
     {
         {"OCFR",               opt_arg, nullptr, OPTION_OCFR},
+        {"OCFR-hacks",         opt_arg, nullptr, OPTION_OCFR_HACKS},
         {"Oepilogue",          req_arg, nullptr, OPTION_OEPILOGUE},
         {"Oepilogue-size",     req_arg, nullptr, OPTION_OEPILOGUE_SIZE},
         {"Oorder",             opt_arg, nullptr, OPTION_OORDER},
@@ -506,7 +514,10 @@ void parseOptions(char * const argv[], bool api)
                 option_input = optarg;
                 break;
             case OPTION_OCFR:
-                option_OCFR = (unsigned)parseBoolOptArg("-OCFR", optarg);
+                option_OCFR = parseBoolOptArg("-OCFR", optarg);
+                break;
+            case OPTION_OCFR_HACKS:
+                option_OCFR_hacks = parseBoolOptArg("-OCFR-hacks", optarg);
                 break;
             case OPTION_OEPILOGUE:
                 option_Oepilogue =
