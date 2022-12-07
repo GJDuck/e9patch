@@ -319,7 +319,7 @@ unsigned e9tool::sendInstructionMessage(FILE *out, intptr_t addr, size_t size,
 {
     sendMessageHeader(out, "instruction");
     sendParamHeader(out, "address");
-    sendInteger(out, addr);
+    fprintf(out, "\"0x%lx\"", addr);
     sendSeparator(out);
     sendParamHeader(out, "length");
     sendInteger(out, (intptr_t)size);

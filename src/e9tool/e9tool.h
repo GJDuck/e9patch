@@ -2098,12 +2098,11 @@ struct Instr
     
     size_t data:1;                  // (E9Tool internal)
     size_t patch:1;                 // (E9Tool internal)
-    size_t emitted:1;               // (E9Tool internal)
-    size_t jump:1;                  // (E9Tool internal)
+    size_t emit:1;                  // (E9Tool internal)
     size_t sus:1;                   // (E9Tool internal)
     size_t first:1;                 // (E9Tool internal)
 
-    Instr() : patch(0), emitted(0), matching(0), jump(0), sus(0), first(0)
+    Instr() : patch(0), emit(0), matching(0), sus(0), first(0)
     {
         ;
     }

@@ -48,6 +48,7 @@ static const TokenInfo tokens[] =
 {
     {"!",               (Token)'!',             0},
     {"!=",              TOKEN_NEQ,              0},
+    {"%",               (Token)'%',             0},
     {"&",               (Token)'&',             0},
     {"&&",              TOKEN_AND,              0},
     {"(",               (Token)'(',             0},
@@ -60,6 +61,7 @@ static const TokenInfo tokens[] =
     {"-w",              TOKEN_WRITE,            ACCESS_WRITE},
     {".",               (Token)'.',             0},
     {"..",              TOKEN_DOTDOT,           0},
+    {"/",               (Token)'/',             0},
     {":",               (Token)':',             0},
     {"<",               (Token)'<',             0},
     {"<<",              TOKEN_LSHIFT,           0},
@@ -76,6 +78,7 @@ static const TokenInfo tokens[] =
     {"NULL",            TOKEN_NULL,             0},
     {"[",               (Token)'[',             0},
     {"]",               (Token)']',             0},
+    {"^",               (Token)'^',             0},
     {"_",               TOKEN_NIL,              0x0},
     {"acc",             TOKEN_ACCESS,           0},
     {"access",          TOKEN_ACCESS,           0},
@@ -118,6 +121,7 @@ static const TokenInfo tokens[] =
     {"disp32",          TOKEN_DISP32,           0},
     {"disp8",           TOKEN_DISP8,            0},
     {"displacement",    TOKEN_DISP,             0},
+    {"div",             TOKEN_DIV,              0},
     {"dl",              TOKEN_REGISTER,         REGISTER_DL},
     {"ds",              TOKEN_REGISTER,         REGISTER_DS},
     {"dst",             TOKEN_DST,              0},
@@ -164,6 +168,7 @@ static const TokenInfo tokens[] =
     {"mem8",            TOKEN_MEM8,             0},
     {"mmx",             TOKEN_MMX,              0},
     {"mnemonic",        TOKEN_MNEMONIC,         0},
+    {"mod",             TOKEN_MOD,              0},
     {"modrm",           TOKEN_MODRM,            0},
     {"naked",           TOKEN_NAKED,            0},
     {"name",            TOKEN_NAME_2,           0},
@@ -430,7 +435,7 @@ static const char *getNameFromToken(Token token)
  */
 Token Parser::getTokenFromName(const char *name)
 {
-    bool reg = (name[0] == '%');
+    bool reg = (name[0] == '%' && name[1] != '\0');
     if (reg)
         name++;
     const TokenInfo *info = getTokenInfo(name);
@@ -466,7 +471,7 @@ int Parser::getToken()
             return TOKEN_EOF;
         case '[': case ']': case '@': case ',': case '(': case ')':
         case '&': case '.': case ':': case '+': case '{': case '}':
-        case '*': case '|': case '~':
+        case '*': case '|': case '~': case '^':
             s[0] = c; s[1] = '\0';
             pos++;
             switch (c)
@@ -531,7 +536,8 @@ int Parser::getToken()
         if (!(base == 10? isdigit(c): isxdigit(c)))
         {
             s[j++] = '\0';
-            return TOKEN_ERROR;
+            error("failed to parse integer token \"%s <--- here\"; expected "
+                "a base-%d digit, got `%c'", s, base, c);
         }
         s[j++] = c;
         pos++;
@@ -540,11 +546,13 @@ int Parser::getToken()
             s[j++] = buf[pos++];
         s[j] = '\0';
         if (j >= TOKEN_MAXLEN)
-            return TOKEN_ERROR;
+            error("failed to parse integer token \"%s <--- here\"; the "
+                "token is too long (max=%zu)", s, TOKEN_MAXLEN);
         char *end = nullptr;
         i = (intptr_t)strtoull(s, &end, base);
         if (end == nullptr || *end != '\0')
-            return TOKEN_ERROR;
+            error("failed to parse integer token \"%s <--- here\"; not "
+                "a valid integer", s);
         return TOKEN_INTEGER;
     }
 
@@ -554,25 +562,32 @@ int Parser::getToken()
         pos++;
         while ((c = buf[pos++]) != '\"')
         {
-            if (c == '\\')
+            switch (c)
             {
-                c = buf[pos++];
-                switch (c)
-                {
-                    case 'n':
-                        c = '\n'; break;
-                    case 't':
-                        c = '\t'; break;
-                    case 'r':
-                        c = '\r'; break;
-                    default:
-                        break;
-                }
-            }
+                case '\\':
+                    c = buf[pos++];
+                    switch (c)
+                    {
+                        case 'n':
+                            c = '\n'; break;
+                        case 't':
+                            c = '\t'; break;
+                        case 'r':
+                            c = '\r'; break;
+                        default:
+                            break;
+                    }
+                    break;
+                case '\0':
+                    s[j] = '\0';
+                    error("failed to parse string token \"%s <--- here\"; "
+                        "expected terminating `\"' character", s);
+            }   
             if (j >= TOKEN_MAXLEN-1)
             {
                 s[j] = '\0';
-                return TOKEN_ERROR;
+                error("failed to parse string token \"%s <--- here\"; "
+                    "the token is too long (max=%zu)", s, TOKEN_MAXLEN);
             }
             s[j++] = c;
         }
@@ -584,17 +599,34 @@ int Parser::getToken()
     if (c == '/')
     {
         pos++;
+        if (c == '\0' || isspace(buf[pos]))
+        {
+            s[0] = '/'; s[1] = '\0';
+            return getTokenFromName(s);
+        }
         while ((c = buf[pos++]) != '/')
         {
-            if (c == '\\' && buf[pos+1] == '/')
+            switch (c)
             {
-                c = '/';
-                pos++;
+                case '\\':
+                    if (buf[pos+1] == '/')
+                    {
+                        c = '/';
+                        pos++;
+                    }
+                    break;
+                case '\0':
+                    s[j] = '\0';
+                    error("failed to parse regex token \"/%s <--- here\"; "
+                        "expected terminating `/' character", s);
+                default:
+                    break;
             }
             if (j >= TOKEN_MAXLEN-1)
             {
                 s[j] = '\0';
-                return TOKEN_ERROR;
+                error("failed to parse regex token \"/%s <--- here\"; the "
+                    "token is too long (max=%zu)", s, TOKEN_MAXLEN);
             }
             s[j++] = c;
         }
@@ -607,12 +639,12 @@ int Parser::getToken()
     {
         s[j++] = c;
         pos++;
-        while ((isalnum(buf[pos]) || buf[pos] == '_') &&
-                j < TOKEN_MAXLEN)
+        while ((isalnum(buf[pos]) || buf[pos] == '_') && j < TOKEN_MAXLEN)
             s[j++] = buf[pos++];
         s[j] = '\0';
         if (j >= TOKEN_MAXLEN)
-            return TOKEN_ERROR;
+            error("failed to parse name token \"%s <--- here\"; the token is "
+                "too long (max=%zu)", s, TOKEN_MAXLEN);
         Token t = getTokenFromName(s);
         if (t == TOKEN_ERROR)
             return TOKEN_NAME;
@@ -621,7 +653,7 @@ int Parser::getToken()
 
     // Unknown:
     s[0] = c; s[1] = '\0';
-    return TOKEN_ERROR;
+    error("failed to parse unknown token \"%s\"", s);
 }
 
 /*
@@ -640,7 +672,7 @@ int Parser::peekToken()
  */
 void Parser::getPositionStr(std::string &str) const
 {
-    for (size_t i = 0; i < prev; i++)
+    for (size_t i = 0; i < prev && buf[i] != '\0'; i++)
         str += buf[i];
     str += " <--- here";
 }

@@ -1,0 +1,1 @@
+./test.pie -M '!defined(addr / (size - 2))' -P 'format("%s (size=%zu)\n",asm,size)@patch'

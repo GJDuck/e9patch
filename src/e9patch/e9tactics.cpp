@@ -75,8 +75,8 @@ struct Patch
 
         Original(const Instr *I) : is_patched(I->is_patched)
         {
-            memcpy(state, I->patched.state, PATCH_MAX);
-            memcpy(bytes, I->patched.bytes, PATCH_MAX);
+            memcpy(state, I->STATE, PATCH_MAX);
+            memcpy(bytes, I->PATCH, PATCH_MAX);
         }
     } original;
     Patch *next = nullptr;              // Next dependent patch.
@@ -165,8 +165,8 @@ static void undo(Binary &B, Patch *P)
         P->I->is_evicted = false;
         for (unsigned i = 0; i < PATCH_MAX; i++)
         {
-            P->I->patched.state[i] = P->original.state[i];
-            P->I->patched.bytes[i] = P->original.bytes[i];
+            P->I->STATE[i] = P->original.state[i];
+            P->I->PATCH[i] = P->original.bytes[i];
         }
         deallocate(&B, P->A);
         Patch *Q = P;
@@ -185,12 +185,11 @@ static Bounds makeBounds(Binary &B, const Trampoline *T, const Instr *I,
     assert(prefix < I->size);
     size_t size = prefix + 1;
     for (; size < I->size &&
-            (I->patched.state[size] == STATE_INSTRUCTION ||
-             I->patched.state[size] == STATE_FREE); size++)
+            (I->STATE[size] == STATE_INSTRUCTION ||
+             I->STATE[size] == STATE_FREE); size++)
         ;
     assert(prefix < size);
-    for (; size < /*sizeof(jmpq)=*/5 && I->patched.state[size] == STATE_FREE;
-            size++)
+    for (; size < /*sizeof(jmpq)=*/5 && I->STATE[size] == STATE_FREE; size++)
         ;   // overflow
     size_t diff = size - prefix - /*sizeof(jmpq opcode)=*/1;
 
@@ -205,7 +204,7 @@ static Bounds makeBounds(Binary &B, const Trampoline *T, const Instr *I,
     {
         uint32_t mask = 0xFFFFFFFFu << (8 * diff);
         uint32_t urel32 =
-          *(uint32_t *)(I->patched.bytes + prefix + /*sizeof(jmpq opcode)=*/1);
+          *(uint32_t *)(I->PATCH + prefix + /*sizeof(jmpq opcode)=*/1);
         uint32_t urel32_lo = urel32 & mask;
         uint32_t urel32_hi = urel32_lo | (0xFFFFFFFFu & ~mask);
         rel32_lo = (int32_t)urel32_lo;
@@ -243,9 +242,9 @@ static Bounds makeBounds(Binary &B, const Trampoline *T, const Instr *I,
     {
         intptr_t pcrel;
         if (I->pcrel32_idx != 0)
-            pcrel = *(const int32_t *)(I->original.bytes + I->pcrel32_idx);
+            pcrel = *(const int32_t *)(I->ORIG + I->pcrel32_idx);
         else
-            pcrel = (int8_t)I->original.bytes[I->pcrel32_idx];
+            pcrel = (int8_t)I->ORIG[I->pcrel32_idx];
         intptr_t target = I->addr + I->size + pcrel;
         intptr_t target_lo = target - (intptr_t)INT32_MAX;
         intptr_t target_hi = target - (intptr_t)INT32_MIN;
@@ -275,7 +274,7 @@ static const Alloc *allocatePunnedJump(Binary &B, const Instr *I,
     unsigned prefix, const Instr *J, const Trampoline *T)
 {
     for (unsigned i = 0; i <= /*sizeof(jmpq)=*/5; i++)
-        if (I->patched.state[prefix + i] == STATE_QUEUED)
+        if (I->STATE[prefix + i] == STATE_QUEUED)
             return nullptr;
     auto b = makeBounds(B, T, I, J, prefix);
     return allocate(&B, b.lb, b.ub, T, J, !option_mem_multi_page);
@@ -299,7 +298,7 @@ static void patchJumpPrefix(Patch *P, unsigned prefix)
     const uint8_t prefixes[] = {0x48, 0x26, 0x36, 0x3E};
     assert(prefix < P->I->size && prefix <= sizeof(prefixes));
 
-    uint8_t *bytes = P->I->patched.bytes, *state = P->I->patched.state;
+    uint8_t *bytes = P->I->PATCH, *state = P->I->STATE;
     for (unsigned i = 0; i < prefix; i++)
     {
         assert(state[i] == STATE_INSTRUCTION);
@@ -322,8 +321,8 @@ static void patchJump(Patch *P, unsigned offset)
     assert(diff >= INT32_MIN && diff <= INT32_MAX);
     int32_t rel32 = (int32_t)diff;
     
-    uint8_t *bytes = P->I->patched.bytes + offset,
-            *state = P->I->patched.state + offset;
+    uint8_t *bytes = P->I->PATCH + offset,
+            *state = P->I->STATE + offset;
     assert(*state == STATE_INSTRUCTION || *state == STATE_FREE);
     *bytes++ = /*jmpq opcode=*/0xE9;
     *state++ = STATE_PATCHED;
@@ -360,8 +359,8 @@ static void patchShortJump(Patch *P, intptr_t addr)
     assert(diff >= INT8_MIN && diff <= INT8_MAX);
     int8_t rel8 = (int8_t)diff;
 
-    uint8_t *bytes = P->I->patched.bytes,
-            *state = P->I->patched.state;
+    uint8_t *bytes = P->I->PATCH,
+            *state = P->I->STATE;
 
     assert(*state == STATE_INSTRUCTION || *state == STATE_FREE);
     *bytes++ = /*short jmp opcode=*/0xEB;
@@ -380,11 +379,11 @@ static void patchUnused(Patch *P, unsigned offset)
     assert(offset <= P->I->size);
     for (unsigned i = offset; i < P->I->size; i++)
     {
-        switch (P->I->patched.state[i])
+        switch (P->I->STATE[i])
         {
             case STATE_INSTRUCTION: case STATE_QUEUED:
-                P->I->patched.bytes[i] = /*int3=*/0xcc;
-                P->I->patched.state[i] = STATE_FREE;
+                P->I->PATCH[i] = /*int3=*/0xcc;
+                P->I->STATE[i] = STATE_FREE;
                 break;
             default:
                 break;
@@ -397,7 +396,7 @@ static void patchUnused(Patch *P, unsigned offset)
  */
 static bool canPatch(const Instr *I)
 {
-    switch (I->patched.state[0])
+    switch (I->STATE[0])
     {
         case STATE_INSTRUCTION: case STATE_FREE:
             return true;
@@ -444,7 +443,7 @@ static Patch *tactic_B2(Binary &B, Instr *I, const Trampoline *T,
  */
 static bool canApplyT1(const Instr *I, unsigned prefix)
 {
-    switch (I->patched.state[prefix])
+    switch (I->STATE[prefix])
     {
         case STATE_INSTRUCTION:
             return (prefix < I->size);
@@ -483,7 +482,7 @@ static Patch *tactic_T2(Binary &B, Instr *I, const Trampoline *T)
         return nullptr;
 
     // Step (1): Evict the successor instruction:
-    Instr *J = successor(I);
+    Instr *J = I->succ();
     if (J == nullptr || !canPatch(J))
         return nullptr;
     const Trampoline *U = evicteeTrampoline;
@@ -520,35 +519,35 @@ static Patch *tactic_T3b(Binary &B, Instr *I, const Trampoline *T)
 
     if (I->size != 1 || !option_tactic_T3 || !canPatch(I))
         return nullptr;
-    Instr *J = I->next;
-    if (J == nullptr || I->addr + I->size != J->addr)
+    Instr *J = I->succ();
+    if (J == nullptr)
         return nullptr;
-    switch (J->patched.state[0])
+    switch (J->STATE[0])
     {
         case STATE_INSTRUCTION: case STATE_FREE:
             break;
         default:
             return nullptr;
     }
-    int8_t rel8 = (int8_t)J->patched.bytes[0];
+    int8_t rel8 = (int8_t)J->PATCH[0];
     if (!option_tactic_backward_T3 && rel8 < 1)
         return nullptr;
     intptr_t target = I->addr + /*sizeof(short jmp)=*/2 + (intptr_t)rel8;
     if (target >= I->addr)
     {
-        for (; J != nullptr && J->addr + J->size <= target; J = J->next)
+        for (; J != nullptr && J->addr + J->size <= target; J = J->next())
             ;
     }
     else
     {
-        for (J = I->prev; J != nullptr && J->addr > target; J = J->prev)
+        for (J = I->prev(); J != nullptr && J->addr > target; J = J->prev())
             ;
     }
     if (J == nullptr || target <= J->addr ||
             (J->addr < I->addr && J->addr + J->size > I->addr))
         return nullptr;
     unsigned i = target - J->addr;
-    uint8_t state = J->patched.state[i];
+    uint8_t state = J->STATE[i];
     Patch *P = nullptr;
     const Alloc *A = nullptr;
     switch (state)
@@ -598,10 +597,10 @@ static Patch *tactic_T3b(Binary &B, Instr *I, const Trampoline *T)
 
     assert(A != nullptr);
     Patch *Q = new Patch(I, TACTIC_T3, A);
-    assert(I->patched.state[0] == STATE_INSTRUCTION);
-    I->patched.state[0] = STATE_PATCHED;
-    I->patched.bytes[0] = /*short jmp opcode=*/0xEB;
-    I->next->patched.state[0] |= STATE_LOCKED;
+    assert(I->STATE[0] == STATE_INSTRUCTION);
+    I->STATE[0] = STATE_PATCHED;
+    I->PATCH[0] = /*short jmp opcode=*/0xEB;
+    I->next()->STATE[0] |= STATE_LOCKED;
     Q->next = P;
     return Q;
 }
@@ -621,7 +620,7 @@ static Patch *tactic_T3(Binary &B, Instr *I, const Trampoline *T)
     Instr *J = I;
     while (true)
     {
-        Instr *K = J->next;
+        Instr *K = J->next();
         if (K == nullptr)
             break;
         if (K->addr - (I->addr + /*sizeof(short jmp)=*/2) > SHORT_JMP_MAX)
@@ -633,7 +632,7 @@ static Patch *tactic_T3(Binary &B, Instr *I, const Trampoline *T)
     Patch *P = nullptr;
     const Alloc *A = nullptr;
     intptr_t addr = 0;
-    for (; P == nullptr; J = J->prev)
+    for (; P == nullptr; J = J->prev())
     {
         if (J == I)
             continue;
@@ -648,14 +647,14 @@ static Patch *tactic_T3(Binary &B, Instr *I, const Trampoline *T)
             break;
         }
 
-        switch (J->patched.state[0])
+        switch (J->STATE[0])
         {
             case STATE_INSTRUCTION: case STATE_FREE:
                 break;
             case STATE_PATCHED:
             case STATE_PATCHED | STATE_LOCKED:
             {
-                if (J->patched.state[J->size-1] == STATE_FREE)
+                if (J->STATE[J->size-1] == STATE_FREE)
                     break;
                 continue;
             }
@@ -665,7 +664,7 @@ static Patch *tactic_T3(Binary &B, Instr *I, const Trampoline *T)
 
         for (int i = 0; i < (int)J->size && P == nullptr; i++)
         {
-            if (i == 0 && J->patched.state[0] != STATE_FREE)
+            if (i == 0 && J->STATE[0] != STATE_FREE)
             {
                 // if (i == 0) then the instruction must be unused.
                 continue;
@@ -691,7 +690,7 @@ static Patch *tactic_T3(Binary &B, Instr *I, const Trampoline *T)
                 continue;
             }
 
-            uint8_t state = J->patched.state[i];
+            uint8_t state = J->STATE[i];
             switch (state)
             {
                 case STATE_FREE:
@@ -769,10 +768,10 @@ static Patch *tactic_T0(Binary &B, Instr *I, const Trampoline *T,
     for (unsigned limit = T0_LIMIT; !J->target && limit > 0; limit--)
     {
         size += J->size;
-        Instr *K = predecessor(J);
+        Instr *K = J->pred();
         if (K == nullptr ||
-                (K->patched.state[0] != STATE_INSTRUCTION &&
-                 K->patched.state[0] != STATE_QUEUED))
+                (K->STATE[0] != STATE_INSTRUCTION &&
+                 K->STATE[0] != STATE_QUEUED))
             break;
         J = K;
     }
@@ -782,20 +781,20 @@ static Patch *tactic_T0(Binary &B, Instr *I, const Trampoline *T,
     bool cft = false;   // isUnconditionalCFT(I);
     while (!cft && size < /*sizeof(jmpq)=*/5)
     {
-        Instr *K = successor(L);
+        Instr *K = L->succ();
         if (K == nullptr || K->target || !canPatch(K) ||
                 (K->is_patched && !K->is_evicted))
             break;
         L = K;
         size += L->size;
-        cft = isCFT(L->original.bytes, L->size, CFT_CALL | CFT_RET | CFT_JMP);
+        cft = isCFT(L->ORIG, L->size, CFT_CALL | CFT_RET | CFT_JMP);
     }
     if (J == L)
         return nullptr; // Batch is a single instruction == T0 failed
 
     // Step (3): "Free" all batched instructions.
     Patch *P = nullptr;
-    for (Instr *K = L; K != nullptr && K->addr >= J->addr; K = predecessor(K))
+    for (Instr *K = L; K != nullptr && K->addr >= J->addr; K = K->pred())
     {
         Patch *Q = new Patch(K, TACTIC_T0, nullptr);
         patchUnused(Q, /*offset=*/0);
@@ -839,15 +838,14 @@ static Patch *tactic_T0(Binary &B, Instr *I, const Trampoline *T,
  */
 bool patch(Binary &B, Instr *I, const Trampoline *T)
 {
-    switch (I->patched.state[0])
+    switch (I->STATE[0])
     {
         case STATE_INSTRUCTION:
             break;
         default:
             error("failed to patch instruction 0x%lx (%zu) with invalid "
                 "state (0x%.2X) (maybe \"patch\" messages are not sent "
-                "in reverse order?)", I->addr, I->size,
-                I->patched.state[0]);
+                "in reverse order?)", I->addr, I->size, I->STATE[0]);
     }
 
     // Try all patching tactics in order T0/B1/B2/T1/T2/T3:

@@ -680,35 +680,47 @@ static const MatchOpInfo *parseMatchOp(int t)
         case '&':
             static const MatchOpInfo info_BIT_AND = {MATCH_OP_BIT_AND, 2};
             return &info_BIT_AND;
+        case '^':
+            static const MatchOpInfo info_BIT_XOR = {MATCH_OP_BIT_XOR, 3};
+            return &info_BIT_XOR;
         case '|':
-            static const MatchOpInfo info_BIT_OR = {MATCH_OP_BIT_OR, 3};
+            static const MatchOpInfo info_BIT_OR = {MATCH_OP_BIT_OR, 4};
             return &info_BIT_OR;
         case '-':
-            static const MatchOpInfo info_SUB = {MATCH_OP_SUB, 4};
+            static const MatchOpInfo info_SUB = {MATCH_OP_SUB, 5};
             return &info_SUB;
         case '+':
-            static const MatchOpInfo info_ADD = {MATCH_OP_ADD, 4};
+            static const MatchOpInfo info_ADD = {MATCH_OP_ADD, 5};
             return &info_ADD;
+        case '*':
+            static const MatchOpInfo info_MUL = {MATCH_OP_MUL, 6};
+            return &info_MUL;
+        case '/': case TOKEN_DIV:
+            static const MatchOpInfo info_DIV = {MATCH_OP_DIV, 6};
+            return &info_DIV;
+        case '%': case TOKEN_MOD:
+            static const MatchOpInfo info_MOD = {MATCH_OP_MOD, 6};
+            return &info_MOD;
         case TOKEN_IN:
-            static const MatchOpInfo info_IN = {MATCH_OP_IN, 5};
+            static const MatchOpInfo info_IN = {MATCH_OP_IN, 7};
             return &info_IN;
         case '<':
-            static const MatchOpInfo info_LT = {MATCH_OP_LT, 6};
+            static const MatchOpInfo info_LT = {MATCH_OP_LT, 8};
             return &info_LT;
         case '>':
-            static const MatchOpInfo info_GT = {MATCH_OP_GT, 6};
+            static const MatchOpInfo info_GT = {MATCH_OP_GT, 8};
             return &info_GT;
         case TOKEN_LEQ:
-            static const MatchOpInfo info_LEQ = {MATCH_OP_LEQ, 6};
+            static const MatchOpInfo info_LEQ = {MATCH_OP_LEQ, 8};
             return &info_LEQ;
         case TOKEN_GEQ:
-            static const MatchOpInfo info_GEQ = {MATCH_OP_GEQ, 6};
+            static const MatchOpInfo info_GEQ = {MATCH_OP_GEQ, 8};
             return &info_GEQ;
         case '=':
-            static const MatchOpInfo info_EQ = {MATCH_OP_EQ, 7};
+            static const MatchOpInfo info_EQ = {MATCH_OP_EQ, 9};
             return &info_EQ;
         case TOKEN_NEQ:
-            static const MatchOpInfo info_NEQ = {MATCH_OP_NEQ, 7};
+            static const MatchOpInfo info_NEQ = {MATCH_OP_NEQ, 9};
             return &info_NEQ;
         case TOKEN_AND:
             static const MatchOpInfo info_AND = {MATCH_OP_AND, 11};
@@ -737,7 +749,7 @@ static MatchExpr *parseMatchExpr(Parser &parser, int prec = 99)
             break;
         case '!': case TOKEN_NOT:
             (void)parser.getToken();
-            expr = parseMatchExpr(parser, 8);
+            expr = parseMatchExpr(parser, 10);
             expr = new MatchExpr(MATCH_OP_NOT, expr);
             break;
         case TOKEN_NONE:
@@ -1410,7 +1422,7 @@ static void dumpExpr(const MatchExpr &expr, std::string &str, bool hex = false)
             str += '~';
             dumpExpr(*expr.lhs, str);
             return;
-        case MATCH_OP_BIT_AND: case MATCH_OP_BIT_OR:
+        case MATCH_OP_BIT_AND: case MATCH_OP_BIT_OR: case MATCH_OP_BIT_XOR:
             hex = true;
             // Fallthrough:
         case MATCH_OP_AND: case MATCH_OP_OR:
@@ -1419,6 +1431,7 @@ static void dumpExpr(const MatchExpr &expr, std::string &str, bool hex = false)
         case MATCH_OP_GT: case MATCH_OP_GEQ:
         case MATCH_OP_IN:
         case MATCH_OP_ADD: case MATCH_OP_SUB:
+        case MATCH_OP_MUL: case MATCH_OP_DIV: case MATCH_OP_MOD:
         case MATCH_OP_LSHIFT: case MATCH_OP_RSHIFT:
             str += '(';
             dumpExpr(*expr.lhs, str, hex);
@@ -1446,10 +1459,18 @@ static void dumpExpr(const MatchExpr &expr, std::string &str, bool hex = false)
                     str += '+'; break;
                 case MATCH_OP_SUB:
                     str += '-'; break;
+                case MATCH_OP_MUL:
+                    str += '*'; break;
+                case MATCH_OP_DIV:
+                    str += '/'; break;
+                case MATCH_OP_MOD:
+                    str += '%'; break;
                 case MATCH_OP_BIT_AND:
                     str += '&'; break;
                 case MATCH_OP_BIT_OR:
                     str += '|'; break;
+                case MATCH_OP_BIT_XOR:
+                    str += '^'; break;
                 case MATCH_OP_LSHIFT:
                     str += "<<"; break;
                 case MATCH_OP_RSHIFT:
@@ -2288,7 +2309,8 @@ static MatchVal matchDoEval(const MatchExpr *expr, const ELF &elf,
             break;
         }
         case MATCH_OP_ADD: case MATCH_OP_SUB:
-        case MATCH_OP_BIT_AND: case MATCH_OP_BIT_OR:
+        case MATCH_OP_MUL: case MATCH_OP_DIV: case MATCH_OP_MOD:
+        case MATCH_OP_BIT_AND: case MATCH_OP_BIT_OR: case MATCH_OP_BIT_XOR:
         case MATCH_OP_LSHIFT: case MATCH_OP_RSHIFT:
         {
             res.type = MATCH_TYPE_UNDEFINED;
@@ -2300,17 +2322,35 @@ static MatchVal matchDoEval(const MatchExpr *expr, const ELF &elf,
                 break;
             res.type = MATCH_TYPE_INTEGER;
             res.i    = 0;
+            typedef __int128 int128_t;
+            int128_t i128 = 0;
             switch (expr->op)
             {
                 case MATCH_OP_ADD:
-                    res.i = lhs.i + rhs.i; break;
+                    i128 = (int128_t)lhs.i + (int128_t)rhs.i;
+                    goto check128;
                 case MATCH_OP_SUB:
-                    res.i = lhs.i - rhs.i; break;
+                    i128 = (int128_t)lhs.i - (int128_t)rhs.i;
+                    goto check128;
+                case MATCH_OP_MUL:
+                    i128 = (int128_t)lhs.i * (int128_t)rhs.i;
+                    goto check128;
+                case MATCH_OP_DIV:
+                    if (rhs.i == 0) goto undefined;
+                    i128 = (int128_t)lhs.i / (int128_t)rhs.i;
+                    goto check128;
+                case MATCH_OP_MOD:
+                    if (rhs.i == 0) goto undefined;
+                    i128 = (int128_t)lhs.i % (int128_t)rhs.i;
+                    goto check128;
                 case MATCH_OP_BIT_AND:
                     res.i = (intptr_t)((uint64_t)lhs.i & (uint64_t)rhs.i);
                     break;
                 case MATCH_OP_BIT_OR:
                     res.i = (intptr_t)((uint64_t)lhs.i | (uint64_t)rhs.i);
+                    break;
+                case MATCH_OP_BIT_XOR:
+                    res.i = (intptr_t)((uint64_t)lhs.i ^ (uint64_t)rhs.i);
                     break;
                 case MATCH_OP_LSHIFT:
                     res.i = (intptr_t)
@@ -2322,7 +2362,12 @@ static MatchVal matchDoEval(const MatchExpr *expr, const ELF &elf,
                         (rhs.i <= 0? lhs.i:
                          rhs.i >= 64? 0x0: (int64_t)lhs.i >> (unsigned)rhs.i);
                     break;
+                check128:
+                    if (i128 < INTPTR_MIN || i128 > INTPTR_MAX) goto undefined;
+                    res.i = (intptr_t)i128; break;
                 default:
+                undefined:
+                    res.type = MATCH_TYPE_UNDEFINED;
                     break;
             }
             break;

@@ -29,10 +29,9 @@ void buildEntrySet(Binary *B)
             option_Oprologue == 0 || option_Oprologue_size == 0)
         return;
 
-    auto i = B->Is.rbegin();
-    if (i == B->Is.rend())
+    const Instr *I = B->Is.back(), *J = nullptr;
+    if (I == nullptr)
         return;
-    const Instr *I = i->second, *J = nullptr;
     unsigned num = 0, size = 0;
     while (I != nullptr)
     {
@@ -41,8 +40,7 @@ void buildEntrySet(Binary *B)
             J = I;
             num = size = 0;
         }
-        else if (isCFT(I->original.bytes, I->size,
-                CFT_CALL | CFT_RET | CFT_JMP))
+        else if (isCFT(I->ORIG, I->size, CFT_CALL | CFT_RET | CFT_JMP))
             J = nullptr;
         if (J != nullptr && num <= option_Oprologue &&
                 size <= option_Oprologue_size)
@@ -52,18 +50,17 @@ void buildEntrySet(Binary *B)
         }
         num  += 1;
         size += I->size;
-        I = I->prev;
-        if (I == nullptr || I->addr + I->size != I->next->addr)
+        I = I->prev();
+        if (I == nullptr || I->next() != I->succ())
             J = nullptr;
     }
 
-    for (const auto &entry: B->Is)
+    for (const Instr *I = B->Is.front(); I != nullptr; I = I->next())
     {
-        const Instr *I = entry.second;
         if (I->patch)
             continue;
         bool is_rel8 = false;
-  		switch (I->original.bytes[0])
+  		switch (I->ORIG[0])
         {
             case 0xEB: case 0xE3:
             case 0x70: case 0x71: case 0x72: case 0x73: case 0x74:
@@ -75,8 +72,7 @@ void buildEntrySet(Binary *B)
                 is_rel8 = true;
                 break;
             case 0x66:
-                if (I->size != /*sizeof(jecxz rel8)*/3 ||
-                        I->original.bytes[1] != 0xE3)
+                if (I->size != /*sizeof(jecxz rel8)*/3 || I->ORIG[1] != 0xE3)
                     continue;
                 is_rel8 = true;
                 break;
@@ -87,7 +83,7 @@ void buildEntrySet(Binary *B)
             case 0x0F:
                 if (I->size != /*sizeof(jcc rel32)=*/6)
                     continue;
-                switch (I->original.bytes[1])
+                switch (I->ORIG[1])
                 {
                     case 0x80: case 0x81: case 0x82: case 0x83: case 0x84:
                     case 0x85: case 0x86: case 0x87: case 0x88: case 0x89:
@@ -105,7 +101,7 @@ void buildEntrySet(Binary *B)
         if (is_rel8)
         {
             int8_t rel8 = (int8_t)*(int8_t *)
-                (I->original.bytes + I->size - sizeof(int8_t));
+                (I->ORIG + I->size - sizeof(int8_t));
             rel = (off_t)rel8;
             if (rel >= 0)
             {
@@ -118,7 +114,7 @@ void buildEntrySet(Binary *B)
         else
         {
             int32_t rel32 = (int32_t)*(int32_t *)
-                (I->original.bytes + I->size - sizeof(int32_t));
+                (I->ORIG + I->size - sizeof(int32_t));
             rel = (off_t)rel32;
         }
         intptr_t target = (intptr_t)I->addr + (intptr_t)I->size + rel;
@@ -151,7 +147,7 @@ const Instr *getTrampolinePrologueStart(const EntrySet &Es, const Instr *I)
     const Instr *J = I, *K = nullptr;
     while (i != j)
     {
-        J = J->prev;
+        J = J->prev();
         i--;
         const EntryPoint &F = i->second;
         if (F.I != E.I)
@@ -197,16 +193,22 @@ void setTrampolineEntry(EntrySet &Es, const Instr *I, intptr_t entry)
  */
 Instr *findInstr(const Binary *B, intptr_t addr)
 {
-    if (addr <= 0)
+    Instr *lb = B->Is.front(), *ub = B->Is.end();
+    if (lb == nullptr || ub == nullptr)
         return nullptr;
-    off_t offset = addr - B->diff;
-    auto i = B->Is.find(offset);
-    if (i == B->Is.end())
-        return nullptr;
-    Instr *I = i->second;
-    if (I->addr != addr)
-        return nullptr;
-    return I;
+    Instr *Is = lb;
+    ssize_t lo = 0, hi = (ub - lb) - 1;
+    while (lo <= hi)
+    {
+        ssize_t mid = (lo + hi) / 2;
+        if (addr > Is[mid].addr)
+            lo = mid+1;
+        else if (addr < Is[mid].addr)
+            hi = mid-1;
+        else
+            return &Is[mid];
+    }
+    return nullptr;
 }
 
 /*
@@ -254,7 +256,7 @@ static void optimizeJump(const Binary *B, intptr_t addr, uint8_t *bytes,
         return;
     target = getTrampolineEntry(B->Es, J);
     if (target == INTPTR_MIN)
-        target = getCFTTarget(J->addr, J->patched.bytes, J->size, CFT_JMP);
+        target = getCFTTarget(J->addr, J->PATCH, J->size, CFT_JMP);
     if (target == INTPTR_MIN)
         return;
 
@@ -283,18 +285,17 @@ void optimizeAllJumps(Binary *B)
         optimizeJump(B, J.addr, J.bytes, J.size);
     B->Js.clear();
 
-    for (const auto &entry: B->Is)
+    for (Instr *I = B->Is.front(); I != nullptr; I = I->next())
     {
-        Instr *I = entry.second;
         if (I->is_patched)
             continue;
         bool ok = true;
         for (size_t i = 0; ok && i < I->size; i++)
-            ok = (I->patched.state[i] == STATE_INSTRUCTION);
+            ok = (I->STATE[i] == STATE_INSTRUCTION);
         if (!ok)
             continue;
 
-        optimizeJump(B, I->addr, I->patched.bytes, I->size);
+        optimizeJump(B, I->addr, I->PATCH, I->size);
     }
 }
 

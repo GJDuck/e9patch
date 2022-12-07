@@ -12,8 +12,9 @@ E9PATCH_OBJS=\
     src/e9patch/e9emit.o \
     src/e9patch/e9json.o \
     src/e9patch/e9mapping.o \
-    src/e9patch/e9patch.o \
+    src/e9patch/e9misc.o \
     src/e9patch/e9optimize.o \
+    src/e9patch/e9patch.o \
     src/e9patch/e9pe.o \
     src/e9patch/e9tactics.o \
     src/e9patch/e9trampoline.o \
@@ -37,8 +38,12 @@ release: $(E9PATCH_OBJS)
 	$(CXX) $(CXXFLAGS) $(E9PATCH_OBJS) -o e9patch $(LDFLAGS)
 	strip e9patch
 
-debug: CXXFLAGS += -O0 -g -fsanitize=address
+debug: CXXFLAGS += -O0 -g
 debug: $(E9PATCH_OBJS)
+	$(CXX) $(CXXFLAGS) $(E9PATCH_OBJS) -o e9patch
+
+sanitize: CXXFLAGS += -O0 -g -fsanitize=address
+sanitize: $(E9PATCH_OBJS)
 	$(CXX) $(CXXFLAGS) $(E9PATCH_OBJS) -o e9patch
 
 tool: CXXFLAGS += -O2 -I src/e9tool/ -I zydis/include/ \
@@ -49,9 +54,15 @@ tool: $(E9TOOL_OBJS)
 	strip e9tool
 
 tool.debug: CXXFLAGS += -O0 -g -I src/e9tool/ -I zydis/include/ \
+    -I zydis/dependencies/zycore/include/ -Wno-unused-function
+tool.debug: $(E9TOOL_OBJS)
+	$(CXX) $(CXXFLAGS) $(E9TOOL_OBJS) -o e9tool libZydis.a \
+        -Wl,--dynamic-list=src/e9tool/e9tool.syms -ldl
+
+tool.sanitize: CXXFLAGS += -O0 -g -I src/e9tool/ -I zydis/include/ \
     -I zydis/dependencies/zycore/include/ -Wno-unused-function \
     -fsanitize=address
-tool.debug: $(E9TOOL_OBJS)
+tool.sanitize: $(E9TOOL_OBJS)
 	$(CXX) $(CXXFLAGS) $(E9TOOL_OBJS) -o e9tool libZydis.a \
         -Wl,--dynamic-list=src/e9tool/e9tool.syms -ldl
 

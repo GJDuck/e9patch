@@ -256,6 +256,7 @@ struct Metadata
 /*
  * Instruction representation.
  */
+struct Binary;
 struct Instr
 {
     const size_t offset:45;             // The instruction offset
@@ -271,62 +272,47 @@ struct Instr
     size_t       no_optimize:1;         // Disable -Ojump-elim?
     const intptr_t addr;                // The address of the instruction
 
-    const struct Original
-    {
-        const uint8_t * const bytes;    // The (unmodified) instruction
-
-        Original(const uint8_t *bytes) : bytes(bytes)
-        {
-            ;
-        }
-    } original;
-
-    const struct Patched
-    {
-        uint8_t * const bytes;          // The (modified/patched) instruction
-        uint8_t * const state;          // The instruction state
-
-        Patched(uint8_t *bytes, uint8_t *state) : bytes(bytes), state(state)
-        {
-            ;
-        }
-
-    } patched;
-
     const Metadata *metadata = nullptr; // The instruction metadata.
     const Trampoline *T = nullptr;      // The instruction trampoline.
-    Instr *prev = nullptr;              // The previous instruction.
-    Instr *next = nullptr;              // The next instruction.
 
-    Instr(off_t offset, intptr_t addr, size_t size, const uint8_t *original,
-            uint8_t *bytes, uint8_t *state,  size_t pcrel32_idx,
-            size_t pcrel8_idx, bool pic, bool target) :
-        offset((size_t)offset), addr(addr), size(size), original(original),
-        patched(bytes, state), pcrel32_idx(pcrel32_idx),
-        pcrel8_idx(pcrel8_idx), target(target), pic(pic), debug(false),
-        patch(false), is_evicted(false), no_optimize(false), is_patched(false)
+    static const Binary *B;             // Reference to the Binary [HACK]
+
+    Instr(const Binary *B1, off_t offset, intptr_t addr, size_t size,
+            size_t pcrel32_idx, size_t pcrel8_idx, bool pic, bool target) :
+        offset((size_t)offset), addr(addr), size(size),
+        pcrel32_idx(pcrel32_idx), pcrel8_idx(pcrel8_idx), target(target),
+        pic(pic), debug(false), patch(false), is_evicted(false),
+        no_optimize(false), is_patched(false)
     {
-        ;
+        assert(B == nullptr || B == B1);
+        B = B1;
     }
+
+    Instr *prev() const
+    {
+        Instr *I = (Instr *)this-1;
+        return (I->offset == 0? nullptr: I);
+    }
+    Instr *next() const
+    {
+        Instr *I = (Instr *)this+1;
+        return (I->offset == 0? nullptr: I);
+    }
+    Instr *pred() const
+    {
+        Instr *I = (Instr *)this-1;
+        return (I->offset == 0 || I->offset + I->size != offset? nullptr: I);
+    }
+    Instr *succ() const
+    {
+        Instr *I = (Instr *)this+1;
+        return (I->offset == 0 || offset + size != I->offset? nullptr: I);
+    }
+
+    const uint8_t *getOrig() const;
+    uint8_t *getPatch() const;
+    uint8_t *getState() const;
 };
-
-/*
- * Find predecessor instruction.
- */
-static inline Instr *predecessor(const Instr *I)
-{
-    Instr *J = I->prev;
-    return (J != nullptr && J->addr + J->size == I->addr? J: nullptr);
-}
-
-/*
- * Find successor instruction.
- */
-static inline Instr *successor(const Instr *I)
-{
-    Instr *J = I->next;
-    return (J != nullptr && I->addr + I->size == J->addr? J: nullptr);
-}
 
 /*
  * Virtual address space allocation.
@@ -501,9 +487,40 @@ struct JumpInfo
 };
 
 /*
+ * Instruction set.
+ */
+struct InstrSet
+{
+    Instr *lb;
+    Instr *ub;
+    void *limit;
+    size_t extend = 8;
+
+    InstrSet();
+    Instr *front() const
+    {
+        return (lb >= ub? nullptr: lb);
+    }
+    Instr *back() const
+    {
+        return (lb >= ub? nullptr: ub-1);
+    }
+    Instr *end() const
+    {
+        return (lb >= ub? nullptr: ub);
+    }
+    Instr *find(off_t offset) const;
+    Instr *lower_bound(off_t offset) const;
+    void *alloc();
+    size_t size() const
+    {
+        return (lb - ub);
+    }
+};
+
+/*
  * Binary representation.
  */
-typedef std::map<off_t, Instr *> InstrSet;
 typedef std::deque<PatchEntry> PatchQueue;
 typedef std::map<const char *, Trampoline *, CStrCmp> TrampolineSet;
 typedef std::vector<intptr_t> FuncSet;
@@ -537,9 +554,6 @@ struct Binary
     intptr_t cursor;                    // Patching cursor.
     PatchQueue Q;                       // Instructions queued for patching.
 
-    off_t diff = 0;                     // Offset/address difference.
-                                        // Used for optimization only.
-
     InstrSet Is;                        // All (known) instructions.
     TrampolineSet Ts;                   // All current trampoline templates.
     mutable EntrySet Es;                // All trampoline entry points.
@@ -553,9 +567,24 @@ struct Binary
 };
 
 /*
- * Binary helpers.
+ * Instruction helpers.
  */
 extern Instr *findInstr(const Binary *B, intptr_t addr);
+inline const uint8_t *Instr::getOrig() const
+{
+    return B->original.bytes + offset;
+}
+inline uint8_t *Instr::getPatch() const
+{
+    return B->patched.bytes + offset;
+}
+inline uint8_t *Instr::getState() const
+{
+    return B->patched.state + offset;
+}
+#define ORIG        getOrig()
+#define PATCH       getPatch()
+#define STATE       getState()
 
 /*
  * Global options.
