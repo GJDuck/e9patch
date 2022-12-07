@@ -24,6 +24,7 @@
 int relocateInstr(intptr_t addr, int32_t offset32, const uint8_t *bytes,
     unsigned size, bool pic, Buffer *buf = nullptr, bool relax = false);
 unsigned getInstrPCRelativeIndex(const uint8_t *bytes, unsigned size);
+int getModRMSize(const uint8_t *bytes, unsigned size);
 
 #define CFT_CALL    0x01
 #define CFT_RET     0x02

@@ -205,6 +205,11 @@ Insert a trap (int3) instruction at the corresponding
 trampoline entry.  This can be used for debugging with gdb.
 .IP "\fB\-\-version\fR" 4
 Print the version and exit.
+.IP "\fB\-X\fR" 4
+Enables binary rewriting "with" control-flow recovery.  This
+usually makes the rewritten binary much faster, but may
+introduce rewriting bugs if the built-in recovery analysis is
+inaccurate.
 .SH "SEE ALSO"
 \fIe9patch\fR(1), \fIe9compile\fR(1), \fIe9afl\fR(1), \fIredfat\fR(1)
 .SH AUTHOR

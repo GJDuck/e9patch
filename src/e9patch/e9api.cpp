@@ -25,6 +25,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
+#include "e9CFR.h"
 #include "e9elf.h"
 #include "e9emit.h"
 #include "e9optimize.h"
@@ -33,6 +34,22 @@
 #include "e9json.h"
 #include "e9tactics.h"
 #include "e9x86_64.h"
+
+/*
+ * Parse & handle options.
+ */
+static void parseOptions(Binary *B, char * const *argv)
+{
+     parseOptions(argv, /*api=*/true);
+     switch (B->mode)
+     {
+         case MODE_ELF_EXE: case MODE_ELF_DSO:
+             B->config = option_loader_base; break;
+         default:
+             break;
+     }
+     targetAnalysis(B);
+}
 
 /*
  * Flush the patching queue up to the new cursor.
@@ -44,8 +61,10 @@ static void queueFlush(Binary *B, intptr_t cursor)
             "messages were not send in reverse order", cursor);
     B->cursor = cursor;
 
-    cursor += /*max short jmp=*/ INT8_MAX + 2 + /*max instruction size=*/15 +
-        /*a bit extra=*/32;
+    cursor += std::max(
+        T0_LIMIT * /*max instruction size=*/15,
+        /*max short jmp=*/ INT8_MAX + 2 + /*max instruction size=*/15) +
+            /*a bit extra=*/32;
     while (!B->Q.empty() &&
             (B->Q.back().options || B->Q.back().I->addr > cursor))
     {
@@ -55,31 +74,35 @@ static void queueFlush(Binary *B, intptr_t cursor)
             // Patch entry
             Instr *I            = entry.I;
             const Trampoline *T = entry.T;
-            for (unsigned i = 0; i < I->size; i++)
+            switch (I->STATE[0])
             {
-                assert(I->STATE[i] == STATE_QUEUED);
-                I->STATE[i] = STATE_INSTRUCTION;
+                case STATE_QUEUED:
+                    for (unsigned i = 0; i < I->size; i++)
+                    {
+                        assert(I->patched.state[i] == STATE_QUEUED);
+                        I->STATE[i] = STATE_INSTRUCTION;
+                    }
+                    I->debug = (option_trap_all ||
+                        option_trap.find(I->addr) != option_trap.end());
+                    if (patch(*B, I, T))
+                        stat_num_patched++;
+                    else
+                        stat_num_failed++;
+                    break;
+                default:
+                    // For other states we assume T0 was applies:
+                    stat_num_patched++;
+                    stat_num_T0++;
+                    log(COLOR_GREEN, '.');
+                    break;
             }
-            I->debug = (option_trap_all ||
-                option_trap.find(I->addr) != option_trap.end());
-            if (patch(*B, I, T))
-                stat_num_patched++;
-            else
-                stat_num_failed++;
         }
         else
         {
             // Options entry
             char * const *argv = entry.argv;
-            parseOptions(argv, /*api=*/true);
+            parseOptions(B, argv);
             delete[] argv;
-            switch (B->mode)
-            {
-                case MODE_ELF_EXE: case MODE_ELF_DSO:
-                    B->config = option_loader_base; break;
-                default:
-                    break;
-            }
         }
         B->Q.pop_back();
     }
@@ -216,6 +239,9 @@ mmap_failed:
     B->patched.state = (uint8_t *)ptr;
     memset(B->patched.state + size, STATE_OVERFLOW, ext_size - size);
 
+    // CFR analysis:
+    targetAnalysis(B);
+
     return B;
 }
 
@@ -228,7 +254,7 @@ static void parseInstruction(Binary *B, const Message &msg)
     size_t   length  = 0;
     off_t    offset  = 0;
     bool have_address = false, have_length = false, have_offset = false,
-        dup = false;
+         dup = false;
     for (unsigned i = 0; i < msg.num_params; i++)
     {
         switch (msg.params[i].name)
@@ -300,7 +326,7 @@ static void parseInstruction(Binary *B, const Message &msg)
                 address, J->addr);
     }
     Instr *I = new (B->Is.alloc()) Instr(B, offset, address, length,
-        pcrel32_idx, pcrel8_idx, B->pic);
+        pcrel32_idx, pcrel8_idx, B->pic, isTarget(B, offset));
     for (unsigned i = 0; i < I->size; i++)
     {
         switch (I->STATE[i])
@@ -374,6 +400,7 @@ static void parsePatch(Binary *B, const Message &msg)
             I->addr);
     I->patch    = true;
     I->metadata = meta;
+    I->T        = T;
 
     queuePatch(B, I, T);
 }
@@ -716,7 +743,7 @@ static void parseOptions(Binary *B, const Message &msg)
             "parameters detected", msg.id);
     if (B->cursor == INTPTR_MAX)
     {
-        parseOptions(argv, /*api=*/true);
+        parseOptions(B, argv);
         delete[] argv;
     }
     else

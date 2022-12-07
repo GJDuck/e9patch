@@ -42,10 +42,13 @@ bool option_debug              = false;
 bool option_batch              = false;
 bool option_tactic_B1          = true;
 bool option_tactic_B2          = true;
+bool option_tactic_T0          = true;
 bool option_tactic_T1          = true;
 bool option_tactic_T2          = true;
 bool option_tactic_T3          = true;
 bool option_tactic_backward_T3 = true;
+bool option_OCFR               = false;
+bool option_OCFR_hacks         = false;
 unsigned option_Oepilogue      = 0;
 unsigned option_Oepilogue_size = 64;
 bool option_Oorder             = false;
@@ -81,6 +84,7 @@ size_t stat_num_patched = 0;
 size_t stat_num_failed  = 0;
 size_t stat_num_B1 = 0;
 size_t stat_num_B2 = 0;
+size_t stat_num_T0 = 0;
 size_t stat_num_T1 = 0;
 size_t stat_num_T2 = 0;
 size_t stat_num_T3 = 0;
@@ -228,6 +232,18 @@ static void usage(FILE *stream, const char *progname)
     fprintf(stream, "usage: %s [OPTIONS]\n\n"
         "OPTIONS:\n"
         "\n"
+        "\t-OCFR[=false]\n"
+        "\t\tEnables [disables] heuristic-based \"Control-Flow Recovery\"\n"
+        "\t\t(CRF) analysis and related optimizations.  This usually makes\n"
+        "\t\tthe rewritten binary much faster, but may introduce rewriting\n"
+        "\t\tbugs if the built-in CRF analysis is inaccurate.\n"
+        "\t\tDefault: false (disabled)\n"
+        "\n"
+        "\t-OCFR-hacks[=false]\n"
+        "\t\tMakes -OCFR even more conservative.  This may help some\n"
+        "\t\tbinaries that use non-standard relocations.\n"
+        "\t\tDefault: false (disabled)\n"
+        "\n"
         "\t-Oepilogue=N\n"
         "\t\tAppend a epilogue of up to N instructions to the end of each\n"
         "\t\ttrampoline.  This may enhance -Opeephole.\n"
@@ -367,8 +383,7 @@ static void usage(FILE *stream, const char *progname)
         "\t\tDefault: false (disabled)\n"
         "\n"
         "\t--version\n"
-        "\t\tPrint the version and exit.\n"
-        "\n",
+        "\t\tPrint the version and exit.\n",
         progname, PAGE_SIZE, PAGE_SIZE);
 }
 
@@ -391,6 +406,8 @@ enum Option
     OPTION_MEM_MULTI_PAGE,
     OPTION_MEM_REBASE,
     OPTION_MEM_UB,
+    OPTION_OCFR,
+    OPTION_OCFR_HACKS,
     OPTION_OEPILOGUE,
     OPTION_OEPILOGUE_SIZE,
     OPTION_OORDER,
@@ -401,6 +418,7 @@ enum Option
     OPTION_OUTPUT,
     OPTION_TACTIC_B1,
     OPTION_TACTIC_B2,
+    OPTION_TACTIC_T0,
     OPTION_TACTIC_T1,
     OPTION_TACTIC_T2,
     OPTION_TACTIC_T3,
@@ -423,6 +441,8 @@ void parseOptions(char * const argv[], bool api)
               no_arg  = no_argument;
     static const struct option long_options[] =
     {
+        {"OCFR",               opt_arg, nullptr, OPTION_OCFR},
+        {"OCFR-hacks",         opt_arg, nullptr, OPTION_OCFR_HACKS},
         {"Oepilogue",          req_arg, nullptr, OPTION_OEPILOGUE},
         {"Oepilogue-size",     req_arg, nullptr, OPTION_OEPILOGUE_SIZE},
         {"Oorder",             opt_arg, nullptr, OPTION_OORDER},
@@ -447,6 +467,7 @@ void parseOptions(char * const argv[], bool api)
         {"output",             req_arg, nullptr, OPTION_OUTPUT},
         {"tactic-B1",          opt_arg, nullptr, OPTION_TACTIC_B1},
         {"tactic-B2",          opt_arg, nullptr, OPTION_TACTIC_B2},
+        {"tactic-T0",          opt_arg, nullptr, OPTION_TACTIC_T0},
         {"tactic-T1",          opt_arg, nullptr, OPTION_TACTIC_T1},
         {"tactic-T2",          opt_arg, nullptr, OPTION_TACTIC_T2},
         {"tactic-T3",          opt_arg, nullptr, OPTION_TACTIC_T3},
@@ -462,7 +483,7 @@ void parseOptions(char * const argv[], bool api)
     while (true)
     {
         int idx;
-        int opt = getopt_long_only(argc, argv, "hi:o:", long_options, &idx);
+        int opt = getopt_long_only(argc, argv, "H::hi:o:", long_options, &idx);
         if (opt < 0)
             break;
         switch (opt)
@@ -491,6 +512,12 @@ void parseOptions(char * const argv[], bool api)
             case 'i':
             case OPTION_INPUT:
                 option_input = optarg;
+                break;
+            case OPTION_OCFR:
+                option_OCFR = parseBoolOptArg("-OCFR", optarg);
+                break;
+            case OPTION_OCFR_HACKS:
+                option_OCFR_hacks = parseBoolOptArg("-OCFR-hacks", optarg);
                 break;
             case OPTION_OEPILOGUE:
                 option_Oepilogue =
@@ -531,6 +558,10 @@ void parseOptions(char * const argv[], bool api)
             case OPTION_TACTIC_B2:
                 option_tactic_B2 =
                     parseBoolOptArg("--tactic-B2", optarg);
+                break;
+            case OPTION_TACTIC_T0:
+                option_tactic_T0 =
+                    parseBoolOptArg("--tactic-T0", optarg);
                 break;
             case OPTION_TACTIC_T1:
                 option_tactic_T1 =
@@ -752,6 +783,10 @@ int realMain(int argc, char **argv)
     printf("num_patched_B2        = %zu / %zu (%.2f%%)\n",
         stat_num_B2, stat_num_total,
         (double)stat_num_B2 / (double)stat_num_total * 100.0);
+    if (option_OCFR)
+        printf("num_patched_T0        = %zu / %zu (%.2f%%)\n",
+            stat_num_T0, stat_num_total,
+            (double)stat_num_T0 / (double)stat_num_total * 100.0);
     printf("num_patched_T1        = %zu / %zu (%.2f%%)\n",
         stat_num_T1, stat_num_total,
         (double)stat_num_T1 / (double)stat_num_total * 100.0);
