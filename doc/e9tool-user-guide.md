@@ -1,40 +1,130 @@
 # E9Tool User's Guide
 
+---
+## Contents
+
+* [1. Usage](#usage)
+    - [1.1 Optimization](#optimization)
+    - [1.1 Compression](#compression)
+    - [1.1 Rewriting Modes](#modes)
+* [2. Matching Language](#matching)
+    - [2.1 Attributes](#attributes)
+    - [2.2 Definedness](#definedness)
+    - [2.3 Control-flow](#control-flow)
+    - [2.4 Instruction Specifiers](#specifiers)
+    - [2.5 Comma-Separated Values](#csv)
+    - [2.6 Examples](#match-examples)
+    - [2.7 Exclusions](#exclusions)
+* [3. Patching Language](#patching)
+    - [3.1 Builtin Trampolines](#builtins)
+    - [3.2 Call Trampolines](#calls)
+        * [3.2.1 Call Trampoline Arguments](#call-args)
+           - [3.2.1.1 Pass-by-pointer](#pass-by-pointer)
+           - [3.2.1.2 Polymorphic Arguments](#polymorphism)
+           - [3.2.1.3 Type Casts and Modifiers](#casts)
+           - [3.2.1.4 Explicit Memory Operand Arguments](#memop-args)
+           - [3.2.1.5 Undefined Arguments](#undefined-args)
+        * [3.2.2 Call Trampoline ABI](#call-abi)
+        * [3.2.3 Conditional Call Trampoline](#conditional-calls)
+        * [3.2.4 Call Trampoline Standard Library](#standard-library)
+        * [3.2.5 Call Trampoline Initialization and Finalization](#init-fini)
+        * [3.2.6 Call Trampoline Dynamic Loading](#dynamic-loading)
+    - [3.3 Plugin Trampolines](#plugins)
+    - [3.4 Composing Trampolines](#composition)
+
+---
+## <a id="usage">1. Usage</a>
+
 E9Tool is the default frontend for E9Patch.
 E9Tool translates high-level patching commands
 (i.e., *what* instructions to patch, and *how* to patch them)
 into low-level commands for E9Patch.
 
----
-## Contents
+The basic usage of E9Tool is as follows:
 
-* [1. Matching Language](#matching)
-    - [1.1 Attributes](#attributes)
-    - [1.2 Definedness](#definedness)
-    - [1.3 Control-flow](#control-flow)
-    - [1.4 Instruction Specifiers](#specifiers)
-    - [1.5 Comma-Separated Values](#csv)
-    - [1.6 Examples](#match-examples)
-    - [1.7 Exclusions](#exclusions)
-* [2. Patch Language](#patching)
-    - [2.1 Builtin Trampolines](#builtins)
-    - [2.2 Call Trampolines](#calls)
-        * [2.2.1 Call Trampoline Arguments](#call-args)
-           - [2.2.1.1 Pass-by-pointer](#pass-by-pointer)
-           - [2.2.1.2 Polymorphic Arguments](#polymorphism)
-           - [2.2.1.3 Type Casts and Modifiers](#casts)
-           - [2.2.1.4 Explicit Memory Operand Arguments](#memop-args)
-           - [2.2.1.5 Undefined Arguments](#undefined-args)
-        * [2.2.2 Call Trampoline ABI](#call-abi)
-        * [2.2.3 Conditional Call Trampoline](#conditional-calls)
-        * [2.2.4 Call Trampoline Standard Library](#standard-library)
-        * [2.2.5 Call Trampoline Initialization and Finalization](#init-fini)
-        * [2.2.6 Call Trampoline Dynamic Loading](#dynamic-loading)
-    - [2.3 Plugin Trampolines](#plugins)
-    - [2.4 Composing Trampolines](#composition)
+        $ e9tool -M MATCH -P PATCH binary
+
+Where:
+
+- `binary` is the binary to patch (executable or shared object)
+- `-M MATCH` specifies *which* instructions in `binary` to patch
+   (see [*Matching Language*](#matching) below)
+- `-P PATCH` specified *how* matching instructions should be patched
+   (see [*Patching Language*](#patching) below)
+
+After rewriting, the patched binary will be written to `a.out`
+(for executables) or `a.so` (for shared objects) by default.
+
+For example, the following command will instrument all jump instructions in
+the `xterm` binary:
+
+        $ e9tool -M jmp -P print xterm
+
+Running the patched binary yields:
+
+        $ ./a.out
+        jz 0x4064d5
+        jz 0x452c36
+        jnz 0x4092d0
+        ...
+
+E9Tool supports many options, see `e9tool --help` for more information.
 
 ---
-## <a id="matching">1. Matching Language</a>
+### <a id="optimization">1.1 Optimization</a>
+
+E9Tool supports several optimization options, namely:
+
+- `-O0` disables all optimization
+- `-O1` conservatively optimizes for performance
+- `-O2` optimizes for performance
+- `-O3` aggressively optimizes for performance
+- `-Os` optimizes for space
+
+The default optimization level of `-O2`.
+
+---
+### <a id="compression">1.2 Compression</a>
+
+E9Tool supports different compression levels for the output binary, controlled
+by the `-c N` option for `N` in 0..9.
+Here 9 means the most compression, and 0 is the least compression.
+
+Higher compression levels generally result in smaller output binaries, but
+will use more mappings (`mmap()` calls), sometimes in the order of thousands.
+Lower compression levels will use less mappings, but may bloat the output
+file size significantly.
+The default compression level is 9 (most compression).
+
+---
+### <a id="modes">1.3 Rewriting Modes</a>
+
+E9Tool (and E9Patch) support two main rewriting modes:
+
+1. The *default* mode that uses binary rewriting without control-flow
+   recovery.
+2. A *control-flow-recovery* (CFR) mode that uses a (conservative) CFR
+   analysis to optimize further binary rewriting.
+
+The CFR mode can be enabled by passing `-X` to E9Tool, e.g.:
+
+        $ e9tool -X -M jmp -P print xterm
+
+The CFR mode has pros and cons, which may or may not be acceptable
+depending on the application.
+The main pros are:
+
+* The rewritten binary will be much faster
+* The patching coverage will be much higher
+* The rewriting speed will be improved
+
+However, since CFR is heuristic-based, it may not be complete, leading to
+possible rewriting errors.
+Thus, the CFR mode is not as robust as the default mode, although it should
+be compatible with most binaries.
+
+---
+## <a id="matching">2. Matching Language</a>
 
 The *matching language* specifies what instructions should be patched by
 the corresponding *patch* (see below).
@@ -163,7 +253,7 @@ Alternatively, C-style Boolean operations (`!`, `&&`, and `||`) can be used
 instead of (`not`, `and`, and `or`).
 
 ---
-### <a id="attributes">1.1 Attributes</a>
+### <a id="attributes">2.1 Attributes</a>
 
 The following `ATTRIBUTE`s (with corresponding types) are supported:
 
@@ -398,7 +488,7 @@ Thus the `Operand` type is the union of the `Integer`, `Register`, and
         Operand = Integer | Register | MemOp
 
 ---
-### <a id="definedness">1.2 Definedness</a>
+### <a id="definedness">2.2 Definedness</a>
 
 Not all attributes are defined for all instructions.
 For example, if the instruction has 3 operands, then only `op[0]`, `op[1]`,
@@ -419,7 +509,7 @@ The special `defined(EXPR)` test can be used to determine if
 the given exression is defined or not.
 
 ---
-### <a id="control-flow">1.3 Control-flow</a>
+### <a id="control-flow">2.3 Control-flow</a>
 
 The `BB.*` attributes represent properties over the current *basic-block*
 which contains the instruction being matched.
@@ -453,7 +543,7 @@ The `F.name` attribute is the name of the current function if known
 the result is *undefined*.
 
 ---
-### <a id="specifiers">1.4 Instruction Specifiers</a>
+### <a id="specifiers">2.4 Instruction Specifiers</a>
 
 The attribute expression may be annotated by an explicit instruction
 `SPECIFIER` of the following form:
@@ -493,7 +583,7 @@ immediately preceded by a comparison in the same basic block:
         jcc and BB[-1].mnemonic == "cmp"
 
 ---
-### <a id="csv">1.5 Comma-Separated Values</a>
+### <a id="csv">2.5 Comma-Separated Values</a>
 
 It is possible to match against user-defined data stored in one or more
 *comma-separated values* (CSV) files using the `NAME[i]` attribute.
@@ -521,7 +611,7 @@ As seen by this example, CSV files can be used to store both integer and
 string values.
 
 ---
-### <a id="match-examples">1.6 Examples</a>
+### <a id="match-examples">2.6 Examples</a>
 
 * (`true`):
   match every instruction.
@@ -576,7 +666,7 @@ string values.
   match all instructions with the corresponding memory operand.
 
 ---
-### <a id="exclusions">1.7 Exclusions</a>
+### <a id="exclusions">2.7 Exclusions</a>
 
 *Exclusions* are an additional method for controlling which instructions are
 patched.
@@ -616,7 +706,7 @@ and E9Tool assumes that `UB` points to a valid instruction from which
 disassembly can resume.
 
 ---
-## <a id="patching">2. Patch Language</a>
+## <a id="patching">3. Patching Language</a>
 
 The *patch language* specifies how to patch matching instructions
 from the input binary.
@@ -649,7 +739,7 @@ The trampoline can be either a *builtin* trampoline, a *call* trampoline,
 or a trampoline defined by a *plugin*.
 
 ---
-### <a id="builtins">2.1 Builtin Trampolines</a>
+### <a id="builtins">3.1 Builtin Trampolines</a>
 
 The builtin trampolines include:
 
@@ -681,7 +771,7 @@ Here:
   This can be used for testing and debugging.
 
 ---
-### <a id="calls">2.2 Call Trampolines</a>
+### <a id="calls">3.2 Call Trampolines</a>
 
 A *call* trampoline calls a user-defined function that can be implemented
 in a high-level programming language such as C or C++.
@@ -748,7 +838,7 @@ For applications where speed is essential, it is recommended
 to design a custom trampoline using a plugin.
 
 ---
-#### <a id="call-args">2.2.1 Call Trampoline Arguments</a>
+#### <a id="call-args">3.2.1 Call Trampoline Arguments</a>
 
 Call trampolines also support passing arguments to the called function.
 The syntax uses the `C`-style round brackets.
@@ -1070,7 +1160,7 @@ Notes:
   corresponding value type from the `NAME.csv` file.
 
 ---
-##### <a id="pass-by-pointer">2.2.1.1 Pass-by-pointer Arguments</a>
+##### <a id="pass-by-pointer">3.2.1.1 Pass-by-pointer Arguments</a>
 
 Some arguments can be passed by pointer.
 This allows the corresponding value to be modified (provided the
@@ -1116,7 +1206,7 @@ may result in a crash for instructions such as (`nop`) and (`lea`) that
 do not access the operand.
 
 ---
-##### <a id="polymorphism">2.2.1.2 Polymorphic Arguments</a>
+##### <a id="polymorphism">3.2.1.2 Polymorphic Arguments</a>
 
 Some arguments can have different types, depending on the instruction.
 For example, with:
@@ -1150,7 +1240,7 @@ matches the argument types, or generate an error if no appropriate
 match can be found.
 
 ---
-##### <a id="casts">2.2.1.3 Type Casts and Modifiers</a>
+##### <a id="casts">3.2.1.3 Type Casts and Modifiers</a>
 
 Arguments can also be cast to different types using a C-style syntax:
 
@@ -1191,7 +1281,7 @@ only:
 The static address also corresponds to the value used by instruction matching.
 
 ---
-##### <a id="memop-args">2.2.1.4 Explicit Memory Operand Arguments</a>
+##### <a id="memop-args">3.2.1.4 Explicit Memory Operand Arguments</a>
 
 It is possible to pass explicit memory operands as arguments.
 This is useful for reading/writing to known memory locations, such as
@@ -1200,7 +1290,7 @@ The syntax is the same as the matching language, e.g.,
 `mem32<(%rax)>`, `mem64<0x200(%rsp,%rax,8)>`, etc.
 
 ---
-##### <a id="undefined-args">2.2.1.5 Undefined Arguments</a>
+##### <a id="undefined-args">3.2.1.5 Undefined Arguments</a>
 
 Some arguments may be undefined, e.g., `op[3]` for a 2-operand instruction.
 In this case, the `NULL` pointer will be passed and the type will
@@ -1210,7 +1300,7 @@ This can also be used for function overloading:
         void func(std::nullptr_t x) { ... }
 
 ---
-#### <a id="call-abi">2.2.2 Call Trampoline ABI</a>
+#### <a id="call-abi">3.2.2 Call Trampoline ABI</a>
 
 Call trampolines support two *Application Binary Interfaces* (ABIs).
 
@@ -1252,7 +1342,7 @@ the function will usually need to be implemented directly in assembly.
 As such, the `naked` ABI is not recommended unless you know what you are doing.
 
 ---
-#### <a id="conditional-calls">2.2.3 Conditional Call Trampolines</a>
+#### <a id="conditional-calls">3.2.3 Conditional Call Trampolines</a>
 
 *Conditional* call trampolines examine the return value of the called
 function, and change the control flow accordingly.
@@ -1282,7 +1372,7 @@ The (`if func(...) goto`) syntax can be thought of as shorthand for:
 The `goto` is only executed if the return value of the `func` is non-`NULL`.
 
 ---
-#### <a id="standard-library">2.2.4 Call Trampoline Standard Library</a>
+#### <a id="standard-library">3.2.4 Call Trampoline Standard Library</a>
 
 The main limitation of call trampolines is that the patch code
 cannot use standard libraries directly, including `glibc`.
@@ -1304,7 +1394,7 @@ Unlike `glibc` the parallel libc is designed to be compatible with the clean
 ABI and handle problems, such as deadlocks, more gracefully.
 
 ---
-#### <a id="init-fini">2.2.5 Call Trampoline Initialization and Finalization</a>
+#### <a id="init-fini">3.2.5 Call Trampoline Initialization and Finalization</a>
 
 It is possible to define an initialization function in the
 instrumentation code.
@@ -1348,7 +1438,7 @@ abnormally, such as a signal (`SIGSEGV`) or if the program calls "fast" exit
 (`_exit()`).
 
 ---
-#### <a id="dynamic-loading">2.2.6 Call Trampoline Dynamic Loading</a>
+#### <a id="dynamic-loading">3.2.6 Call Trampoline Dynamic Loading</a>
 
 The parallel libc also provides an optional implementation of the
 standard dynamic linker functions `dlopen()`, `dlsym()`, and `dlclose()`.
@@ -1403,7 +1493,7 @@ Be aware that the dynamic loading API has several caveats:
 * The `dlcall()` function is relatively slow, so ought to be used sparingly.
 
 ---
-### <a id="plugins">2.3 Plugin Trampolines</a>
+### <a id="plugins">3.3 Plugin Trampolines</a>
 
 By design, call trampolines are very simple to use, but this also comes at
 the cost of efficiency.
@@ -1424,7 +1514,7 @@ For more information, please see the
 [E9Patch Programmer's Guide](https://github.com/GJDuck/e9patch/blob/master/doc/e9patch-programming-guide.md).
 
 ---
-### <a id="composition">2.4 Composing Trampolines</a>
+### <a id="composition">3.4 Composing Trampolines</a>
 
 Depending on the `--match`/`-M` and `--patch`/`-P` options, more than
 one patch may match a given instruction.

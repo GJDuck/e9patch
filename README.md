@@ -220,7 +220,7 @@ projects.
 To find out more, please see the following documentation:
 
 * [E9Patch Programmer's Guide](https://github.com/GJDuck/e9patch/blob/master/doc/e9patch-programming-guide.md)
-* [E9Tool User's Guide](https://github.com/GJDuck/e9patch/blob/master/doc/e9tool-user-guide.md) (incomplete)
+* [E9Tool User's Guide](https://github.com/GJDuck/e9patch/blob/master/doc/e9tool-user-guide.md)
 
 ## Bugs
 
