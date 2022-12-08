@@ -5,8 +5,8 @@
 
 * [1. Usage](#usage)
     - [1.1 Optimization](#optimization)
-    - [1.1 Compression](#compression)
-    - [1.1 Rewriting Modes](#modes)
+    - [1.2 Compression](#compression)
+    - [1.3 Rewriting Modes](#modes)
 * [2. Matching Language](#matching)
     - [2.1 Attributes](#attributes)
     - [2.2 Definedness](#definedness)
