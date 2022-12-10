@@ -283,3 +283,87 @@ MatchVal getCSVValue(intptr_t addr, const char *basename, uint16_t idx)
     return record[idx];
 }
 
+/*
+ * Specialized parser for lists of addresses.
+ */
+void parseAddrs(const char *filename, std::vector<intptr_t> &As)
+{
+    FILE *stream = fopen(filename, "r");
+    if (stream == nullptr)
+        error("failed to open CSV file \"%s\" for reading: %s",
+            filename, strerror(errno));
+
+    Record record;
+    CSV csv = {stream, filename, /*length=*/1, 0};
+    while (true)
+    {
+        if (!parseRecord(csv, record))
+            break;
+        if ((unsigned)record.size() != (unsigned)csv.length)
+            error("failed to parse CSV file \"%s\" at line %u; record with "
+                "invalid length %zu (expected %u)", csv.filename,
+                csv.lineno, record.size(), csv.length);
+        MatchVal &addr = record[0];
+        if (addr.type != MATCH_TYPE_INTEGER)
+            error("failed to parse CSV file \"%s\" at line %u; first record "
+                "entry must be an address", csv.filename, csv.lineno);
+        As.push_back(addr.i);
+        record.clear();
+    }
+
+    fclose(stream);
+    std::sort(As.begin(), As.end());
+    std::unique(As.begin(), As.end());
+    As.shrink_to_fit();
+}
+
+/*
+ * Specialized parser for targets.
+ */
+void parseTargets(const char *filename, const Instr *Is, size_t size,
+    Targets &targets)
+{
+    FILE *stream = fopen(filename, "r");
+    if (stream == nullptr)
+        error("failed to open CSV file \"%s\" for reading: %s",
+            filename, strerror(errno));
+
+    Record record;
+    CSV csv = {stream, filename, /*length=*/2, 0};
+    while (true)
+    {
+        if (!parseRecord(csv, record))
+            break;
+        if (record.size() != 1 && record.size() != 2)
+            error("failed to parse CSV file \"%s\" at line %u; record with "
+                "invalid length %zu (expected 1 or 2)", csv.filename,
+                csv.lineno, record.size());
+        MatchVal &addr = record[0];
+        if (addr.type != MATCH_TYPE_INTEGER)
+            error("failed to parse CSV file \"%s\" at line %u; first record "
+                "entry must be an address", csv.filename, csv.lineno);
+        TargetKind kind = TARGET_DIRECT;
+        if (record.size() == 2)
+        {
+            MatchVal &func = record[1];
+            if (func.type != MATCH_TYPE_INTEGER || (func.i != 0 && func.i != 1))
+                error("failed to parse CSV file \"%s\" at line %u; second "
+                    "record entry must be Boolean value (0 or 1)",
+                    csv.filename, csv.lineno);
+            kind |= (func.i != 0? TARGET_FUNCTION: 0);
+        }
+        if (findInstr(Is, size, addr.i) < 0)
+        {
+            record.clear();
+            continue;
+        }
+        auto r = targets.insert({addr.i, kind});
+        if (!r.second)
+            error("failed to parse CSV file \"%s\" at line %u; duplicate "
+                "record with address 0x%lx", csv.filename, csv.lineno,
+                addr);
+        record.clear();
+    }
+    fclose(stream);
+}
+

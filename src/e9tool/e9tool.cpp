@@ -530,6 +530,29 @@ static size_t exclude(const std::vector<Exclude> &excludes, intptr_t addr)
 }
 
 /*
+ * Next instruction.
+ */
+static size_t nextInstr(const std::vector<intptr_t> &disasm, intptr_t addr)
+{
+    ssize_t max = (ssize_t)disasm.size() - 1;
+    if (disasm.size() == 0 || addr > disasm[max])
+        return INT32_MAX;
+    ssize_t lo = 0, hi = max;
+    while (lo <= hi)
+    {
+        ssize_t mid = (lo + hi) / 2;
+        intptr_t i = disasm[mid];
+        if (addr < i)
+            hi = mid-1;
+        else if (addr > i)
+            lo = mid+1;
+        else
+            return 0;
+    }
+    return disasm[lo] - addr;
+}
+
+/*
  * Metadata.
  */
 struct Metadata
@@ -651,6 +674,8 @@ enum Option
     OPTION_SYNTAX,
     OPTION_TRAP,
     OPTION_TRAP_ALL,
+    OPTION_USE_DISASM,
+    OPTION_USE_TARGETS,
     OPTION_VERSION,
 };
 
@@ -725,6 +750,8 @@ int main_2(int argc, char **argv)
         {"syntax",        req_arg, nullptr, OPTION_SYNTAX},
         {"trap",          req_arg, nullptr, OPTION_TRAP},
         {"trap-all",      no_arg,  nullptr, OPTION_TRAP_ALL},
+        {"use-disasm",    req_arg, nullptr, OPTION_USE_DISASM},
+        {"use-targets",   req_arg, nullptr, OPTION_USE_TARGETS},
         {"version",       no_arg,  nullptr, OPTION_VERSION},
         {nullptr,         no_arg,  nullptr, 0}
     }; 
@@ -741,6 +768,10 @@ int main_2(int argc, char **argv)
     std::vector<std::string> option_patch;
     std::vector<ActionEntry> option_actions;
     std::vector<std::string> option_exclude;
+    std::string option_use_disasm("");
+    std::string option_use_targets("");
+    std::string option_use_funcs("");
+
     int option_sync = 64, option_threshold = 2;
     bool option_CFR = false;
     srand(0xe9e9e9e9);
@@ -897,6 +928,12 @@ int main_2(int argc, char **argv)
             }
             case OPTION_TRAP_ALL:
                 option_trap_all = true;
+                break;
+            case OPTION_USE_DISASM:
+                option_use_disasm = optarg;
+                break;
+            case OPTION_USE_TARGETS:
+                option_use_targets = optarg;
                 break;
             case OPTION_VERSION:
                 puts("E9Tool " STRING(VERSION));
@@ -1252,6 +1289,13 @@ int main_2(int argc, char **argv)
     /*
      * Disassemble the ELF file.
      */
+    std::vector<intptr_t> disasm;
+    bool use_disasm = false;
+    if (option_use_disasm != "")
+    {
+        parseAddrs(option_use_disasm.c_str(), disasm);
+        use_disasm = true;
+    }
     initDisassembler();
     std::vector<Instr> Is;
     std::vector<Desync> desyncs;
@@ -1279,6 +1323,7 @@ int main_2(int argc, char **argv)
         while (true)
         {
             size_t skip = exclude(excludes, address);
+            skip += (use_disasm? nextInstr(disasm, address + skip): 0);
             if (skip > 0)
             {
                 address += skip;
@@ -1296,7 +1341,7 @@ int main_2(int argc, char **argv)
             I.first = first;
             first = false;
 
-            int score = suspiciousness(bytes, I.size);
+            int score = (use_disasm? 0: suspiciousness(bytes, I.size));
             if (option_debug && !I.data)
             {
                 InstrInfo J;
@@ -1310,6 +1355,11 @@ int main_2(int argc, char **argv)
                     (option_is_tty? "\33[0m": ""),
                     (score >= option_threshold? " <data?>": ""));
             }
+
+            if (I.data && use_disasm)
+                error("failed to decode instruction at address 0x%lx; "
+                    "the \"%s\" disassmebly file may be inaccurate",
+                    I.address, option_use_disasm.c_str());
 
             if (I.data || score >= option_threshold)
             {
@@ -1352,13 +1402,20 @@ int main_2(int argc, char **argv)
                 section, section_addr, section_addr + section_size,
                 section_addr, section_addr + (code - start));
     }
+    disasm.clear();
     Is.shrink_to_fit();
     notifyPlugins(out, &elf, Is, EVENT_DISASSEMBLY_COMPLETE);
     size_t count = Is.size();
 
     // Step (1a): CFG Analysis (if necessary).
     if (option_targets)
-        buildTargets(&elf, Is.data(), Is.size(), elf.targets);
+    {
+        if (option_use_targets != "")
+            parseTargets(option_use_targets.c_str(), Is.data(), Is.size(),
+                elf.targets);
+        else
+            buildTargets(&elf, Is.data(), Is.size(), elf.targets);
+    }
     if (option_bbs)
         buildBBs(&elf, Is.data(), Is.size(), elf.targets, elf.bbs);
     if (option_fs)

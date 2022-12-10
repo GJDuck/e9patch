@@ -20,5 +20,8 @@
 #include "e9action.h"
 
 extern MatchVal getCSVValue(intptr_t addr, const char *basename, uint16_t idx);
+void parseAddrs(const char *filename, std::vector<intptr_t> &As);
+void parseTargets(const char *filename, const e9tool::Instr *Is, size_t size,
+    e9tool::Targets &targets);
 
 #endif

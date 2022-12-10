@@ -203,6 +203,16 @@ The default syntax is "ATT".
 .IP "\fB\-\-trap\fR=\fI\,ADDR\/\fR, \fB\-\-trap\-all\fR" 4
 Insert a trap (int3) instruction at the corresponding
 trampoline entry.  This can be used for debugging with gdb.
+.IP "\fB\-\-use\-disasm \fI\,FILE\/\fR" 4
+Use the instruction information in FILE rather than the default
+disassmebler.  Here, FILE is a CSV file with a single column
+representing instruction addresses.
+.IP "\fB\-\-use\-targets \fI\,FILE\/\fR" 4
+Use the jump/call target information in FILE rather than the
+default control-flow recovery analysis.  Here, FILE is a CSV
+file where the first column is all jump/call targets, and an
+optional second column is 1 for call targets (functions), or
+0 otherwise (the default is 0).
 .IP "\fB\-\-version\fR" 4
 Print the version and exit.
 .IP "\fB\-X\fR" 4
