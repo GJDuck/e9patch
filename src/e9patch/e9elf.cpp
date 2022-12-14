@@ -366,6 +366,83 @@ size_t emitLoaderMap(uint8_t *data, intptr_t addr, size_t len, off_t offset,
 }
 
 /*
+ * Get the offset for an address.
+ */
+static off_t addrToOffset(const Binary *B, intptr_t lo, intptr_t hi)
+{
+    const Elf64_Phdr *phdrs =
+        (const Elf64_Phdr *)(B->patched.bytes + B->elf.ehdr->e_phoff);
+    size_t phnum = (size_t)B->elf.ehdr->e_phnum;
+    for (unsigned i = 0; i < phnum; i++)
+    {
+        const Elf64_Phdr *phdr = phdrs + i;
+        switch (phdr->p_type)
+        {
+            case PT_LOAD: case PT_GNU_RELRO:
+                break;
+            default:
+                continue;
+        }
+        intptr_t base = (intptr_t)phdr->p_vaddr;
+        size_t size   = (size_t)phdr->p_filesz;
+        off_t offset  = (off_t)phdr->p_offset;
+        if (lo >= base && hi < base + (ssize_t)size)
+            return offset + (lo - base);
+    }
+    return -1;
+}
+
+/*
+ * Replace an init/fini function.
+ */
+intptr_t replaceInitFini(Binary *B, Elf64_Dyn *dyn_fn,
+    const Elf64_Dyn *dyn_fn_array, size_t dyn_fn_arraysz,
+    const Elf64_Dyn *dyn_rela, size_t dyn_relasz, intptr_t entry)
+{
+    uint8_t *data = B->patched.bytes;
+    if (dyn_fn != nullptr)
+    {
+        intptr_t old = (intptr_t)dyn_fn->d_un.d_ptr;
+        dyn_fn->d_un.d_ptr = (Elf64_Addr)entry;
+        return old;
+    }
+    else if (dyn_fn_array != nullptr && dyn_fn_arraysz > 0)
+    {
+        intptr_t ptr = (intptr_t)dyn_fn_array->d_un.d_ptr;
+        intptr_t offset = addrToOffset(B, ptr, ptr);
+        if (offset < 0)
+            return INTPTR_MIN;
+        Elf64_Addr *fns = (Elf64_Addr *)(data + offset);
+        intptr_t old = (intptr_t)fns[0];
+        fns[0] = (Elf64_Addr)entry;
+        if (dyn_rela != nullptr && dyn_relasz > 0)
+        {
+            // fns[0] may be subject to a relocation:
+            intptr_t rela_ptr = (intptr_t)dyn_rela->d_un.d_ptr;
+            intptr_t rela_offset = addrToOffset(B, rela_ptr,
+                rela_ptr + dyn_relasz);
+            if (rela_offset < 0)
+                return old;
+            size_t rela_size = dyn_relasz / sizeof(Elf64_Rela);
+            Elf64_Rela *rela = (Elf64_Rela *)(B->patched.bytes + rela_offset);
+            for (size_t i = 0; i < rela_size; i++)
+            {
+                if (ELF64_R_TYPE(rela[i].r_info) != R_X86_64_RELATIVE)
+                    continue;
+                if ((intptr_t)rela[i].r_offset == ptr)
+                {
+                    old = rela[i].r_addend;
+                    rela[i].r_addend = (Elf64_Addr)entry;
+                    break;
+                }
+            }
+        }
+        return old;
+    }
+    return INTPTR_MIN;
+}
+
+/*
  * Emit the (modified) ELF binary.
  */
 size_t emitElf(Binary *B, const MappingSet &mappings, size_t mapping_size)
@@ -575,7 +652,10 @@ size_t emitElf(Binary *B, const MappingSet &mappings, size_t mapping_size)
 
     // Step (5): Modify the entry/fini addresses.
     Elf64_Phdr *phdr = B->elf.phdr_dynamic;
-    Elf64_Dyn *dyn_init = nullptr, *dyn_fini = nullptr;
+    Elf64_Dyn *dyn_init = nullptr, *dyn_init_array = nullptr,
+              *dyn_fini = nullptr, *dyn_fini_array = nullptr,
+              *dyn_rela = nullptr;
+    size_t dyn_init_arraysz = 0, dyn_fini_arraysz = 0, dyn_relasz = 0;
     if (phdr != nullptr)
     {
         config_elf->dynamic = (intptr_t)phdr->p_vaddr;
@@ -588,11 +668,21 @@ size_t emitElf(Binary *B, const MappingSet &mappings, size_t mapping_size)
             switch (dynamic[i].d_tag)
             {
                 case DT_INIT:
-                    dyn_init = dynamic + i;
-                    break;
+                    dyn_init = dynamic + i; break;
+                case DT_INIT_ARRAY:
+                    dyn_init_array = dynamic + i; break;
+                case DT_INIT_ARRAYSZ:
+                    dyn_init_arraysz = (size_t)dynamic[i].d_un.d_val; break;
                 case DT_FINI:
-                    dyn_fini = dynamic + i;
-                    break;
+                    dyn_fini = dynamic + i; break;
+                case DT_FINI_ARRAY:
+                    dyn_fini_array = dynamic + i; break;
+                case DT_FINI_ARRAYSZ:
+                    dyn_fini_arraysz = (size_t)dynamic[i].d_un.d_val; break;
+                case DT_RELA:
+                    dyn_rela = dynamic + i; break;
+                case DT_RELASZ:
+                    dyn_relasz = (size_t)dynamic[i].d_un.d_val; break;
                 default:
                     break;
             }
@@ -609,22 +699,22 @@ size_t emitElf(Binary *B, const MappingSet &mappings, size_t mapping_size)
             break;
         }
         case MODE_ELF_DSO:
-            if (dyn_init == nullptr)
-                error("failed to replace DT_INIT entry; no DT_INIT entry "
-                    "was found");
-            config->entry = (intptr_t)dyn_init->d_un.d_ptr;
-            dyn_init->d_un.d_ptr = (Elf64_Addr)entry;
+            config->entry = replaceInitFini(B, dyn_init, dyn_init_array,
+                dyn_init_arraysz, dyn_rela, dyn_relasz, entry);
+            if (config->entry == INTPTR_MIN)
+                error("failed to replace entry point; no DT_INIT or "
+                    "DT_INIT_ARRAY entry found");
             break;
         default:
             error("invalid mode");
     }
     if (fini != 0x0)
     {
-        if (dyn_fini == nullptr)
-            error("failed to replace DT_FINI entry; no DT_FINI entry was "
-                "found");
-        config->fini = (intptr_t)dyn_fini->d_un.d_ptr;
-        dyn_fini->d_un.d_ptr = (Elf64_Addr)fini;
+        config->fini = replaceInitFini(B, dyn_fini, dyn_fini_array,
+            dyn_fini_arraysz, dyn_rela, dyn_relasz, fini);
+        if (config->fini == INTPTR_MIN)
+            error("failed to replace finalization point; no DT_FINI or "
+                "DT_FINI_ARRAY entry found");
     }
 
     // Step (6): Modify the PHDR to load the loader.
