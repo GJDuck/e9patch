@@ -276,7 +276,7 @@ void usage(FILE *stream, const char *progname)
         "\n"
         "\t--plt\n"
         "\t\tEnable the disassembly/rewriting of the .plt.* sections which\n"
-        "\t\texcluded by default.\n"
+        "\t\tare excluded by default.\n"
         "\n"
         "\t--plugin=NAME:OPTION\n"
         "\t\tPass OPTION to the plugin with NAME.  Here NAME must identify a\n"
