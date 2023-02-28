@@ -481,10 +481,10 @@ static __attribute__((__noinline__)) void debug_impl(const char *format, ...)
 #endif
 static __attribute__((__noinline__)) int *__errno_location(void)
 {
-    register int *loc asm ("rax");
+    int *loc;
     asm volatile (
         "mov %%fs:0x0,%0\n"
-        "lea " STRING(ERRNO_TLS_OFFSET) "(%0),%0\n" : "=r"(loc)
+        "lea " STRING(ERRNO_TLS_OFFSET) "(%0),%0\n" : "=a"(loc)
     );
     return loc;
 }
@@ -896,10 +896,10 @@ static int isatty(int fd)
 
 static pid_t mutex_gettid(void)
 {
-    register pid_t tid asm ("eax");
     // Warning: this assumes the thread ID is stored at %fs:0x2d0.
+    pid_t tid;
     asm volatile (
-        "mov %%fs:0x2d0,%0\n" : "=r"(tid)
+        "mov %%fs:0x2d0,%0\n" : "=a"(tid)
     );
     return tid;
 }
@@ -1877,21 +1877,15 @@ static int tolower(int c)
 /* STRING                                                                   */
 /****************************************************************************/
 
-static void *memset(void *s, int c, size_t n)
+static void *memset(void *dst, int c, size_t n)
 {
-    register void *t  asm("rdi") = s;
-    register int d    asm("eax") = c;
-    register size_t m asm("rcx") = n;
-    asm ("rep stosb": : "r"(t), "r"(d), "r"(m));
-    return s;
+    asm volatile ("rep stosb" : "+D"(dst) : "a"(c), "c"(n) : "memory");
+    return dst;
 }
 
 static void *memcpy(void *dst, const void *src, size_t n)
 {
-    register const void *s asm("rsi") = src;
-    register void *d       asm("rdi") = dst;
-    register size_t m      asm("rcx") = n;
-    asm ("rep movsb": : "r"(s), "r"(d), "r"(m));
+    asm volatile ("rep movsb" : "+D"(dst) : "S"(src), "c"(n) : "memory");
     return dst;
 }
 
