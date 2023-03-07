@@ -57,7 +57,7 @@ flexibility.
 
 Call trampolines allow *patch code* to be implemented as ordinary functions
 using a supported programming language, such as `C`, `C++` or assembly.
-The patch code can then be compiled into a *patch binary* will be injected
+The patch code can then be compiled into a *patch binary* and will be injected
 into the rewritten binary.
 The patch functions can then be called from the desired locations.
 
@@ -233,7 +233,7 @@ any of the following:
 * A byte: represented by an integer *0..255*
 * A macro: represented by a string beginning with a dollar character,
   e.g. `"$asmStr`.
-  Macros are expanded with meta data values provided by the `"patch"` message
+  Macros are expanded with metadata values provided by the `"patch"` message
   (see below) or a template from another "trampoline" message.
   There are also some builtin macros (see below).
 * A label: represented by a string beginning with the string `".L"`,
@@ -371,7 +371,7 @@ of the frontend, and E9Patch will simply execute the template "as-is".
 The above code uses two user-defined macros, namely `"$asmStr"` and
 `"$asmStrLen"`.
 The values of these macros depend on the matching instruction, so will be
-instantiated by meta data defined by the "patch" message (see below).
+instantiated by metadata defined by the "patch" message (see below).
 
 ---
 ### <a id="reserve-message">2.3 Reserve Message</a>
@@ -713,7 +713,7 @@ patched using the `plugin(NAME).patch()` syntax.
 The code emitted by the `e9_plugin_code()` function must be
 instruction independent (i.e., `cxt->I` will be `NULL`).
 If instruction-dependent code is necessary, then emit a macro name
-(e.g., `"$myCode"`) and instantiate the macro using `e9_plugin_patch()`
+(e.g., `"$myCode"`) and instantiate the macro using the `e9_plugin_patch()`
 function (see below).
 
 The `e9_plugin_code()` function may be invoked more than once to support
