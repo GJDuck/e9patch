@@ -21,7 +21,7 @@ all:
 	strip test_c
 	../../e9compile.sh inst.c -I ../../examples/ -D NO_GLIBC
 	../../e9compile.sh patch.cpp -std=c++11 -I ../../examples/ -D NO_GLIBC
-	../../e9compile.sh dl.c -I ../../examples/
+	NO_SIMD_CHECK=1 ../../e9compile.sh dl.c -I ../../examples/
 	../../e9compile.sh init.c -I ../../examples/ -D NO_GLIBC
 	../../e9compile.sh fini.c -I ../../examples/ -D NO_GLIBC
 	g++ -std=c++11 -fPIC -shared -o example.so -O2 \

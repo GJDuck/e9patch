@@ -32,7 +32,7 @@ fi
 
 if [ $# -lt 1 ]
 then
-    echo "${YELLOW}usage${OFF}: $0 file.c EXTRA_ARGS" >&2
+    echo "${YELLOW}usage${OFF}: $0 file.c [CFLAGS ...]" >&2
     exit 1
 fi
 
@@ -99,7 +99,7 @@ RELOCS=`readelf -r "$BASENAME" | head -n 10 | grep 'R_X86_64_'`
 if [ ! -z "$RELOCS" ]
 then
     echo >&2
-    echo "${RED}error${OFF}: the generated file (${YELLOW}$BASENAME${OFF}) contains relocations" >&2
+    echo "${RED}warning${OFF}: the generated file (${YELLOW}$BASENAME${OFF}) contains relocations" >&2
     echo >&2
     echo "EXPLANATION:" >&2
     echo >&2
@@ -118,7 +118,24 @@ then
     echo >&2
     echo "      ${YELLOW}const char days[][4] = {\"mon\", \"tue\", \"wed\", \"thu\", \"fri\", \"sat\", \"sun\"};${OFF}" >&2
     echo >&2
-    exit 1
+fi
+
+if [ "$NO_SIMD_CHECK" = "" ]
+then
+    SIMD=`objdump -d "$BASENAME" | grep -E '%(x|y|z)mm[0-9]' | head -n 10`
+    if [ ! -z "$SIMD" ]
+    then
+        echo >&2
+        echo "${RED}warning${OFF}: the generated file (${YELLOW}$BASENAME${OFF}) contains SIMD instructions" >&2
+        echo >&2
+        echo "EXPLANATION:" >&2
+        echo >&2
+        echo "    E9Tool's call instrumentation does not save/restore the extended CPU state." >&2
+        echo "    This can lead to subtle bugs if this state is clobbered by the trampoline" >&2
+        echo "    code.  This warning can be ignored if you know what you are doing." >&2
+        echo "    (define NO_SIMD_CHECK=1 to disable)." >&2
+        echo >&2
+    fi
 fi
 
 exit 0
