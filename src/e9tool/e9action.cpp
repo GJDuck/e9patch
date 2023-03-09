@@ -1155,6 +1155,10 @@ const Patch *parsePatch(const ELF &elf, const char *str)
                             }
                         }
                         break;
+                    case ARGUMENT_STRING:
+                        if (ptr)
+                            arg = ARGUMENT_SYMBOL;
+                        break;
                     case ARGUMENT_MEMOP: case ARGUMENT_SYMBOL:
                         break;
                     case ARGUMENT_REGISTER:
