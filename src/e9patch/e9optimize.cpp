@@ -60,14 +60,14 @@ void buildEntrySet(Binary *B)
         if (I->patch)
             continue;
         bool is_rel8 = false;
-  		switch (I->ORIG[0])
+        switch (I->ORIG[0])
         {
             case 0xEB: case 0xE3:
             case 0x70: case 0x71: case 0x72: case 0x73: case 0x74:
             case 0x75: case 0x76: case 0x77: case 0x78: case 0x79:
             case 0x7A: case 0x7B: case 0x7C: case 0x7D: case 0x7E:
             case 0x7F:
-				if (I->size != /*sizeof(jmp/jcc rel8)*/2)
+                if (I->size != /*sizeof(jmp/jcc rel8)*/2)
                     continue;
                 is_rel8 = true;
                 break;
@@ -126,7 +126,7 @@ void buildEntrySet(Binary *B)
             E.target8 = true;
         else
             E.target32 = true;
- 	}
+    }
 }
 
 /*
@@ -249,7 +249,7 @@ static void optimizeJump(const Binary *B, intptr_t addr, uint8_t *bytes,
             return;
     }
 
-	int32_t rel32 = *(int32_t *)(bytes + (jcc? 2: 1));
+    int32_t rel32 = *(int32_t *)(bytes + (jcc? 2: 1));
     intptr_t target = addr + (intptr_t)size + (intptr_t)rel32;
     const Instr *J = findInstr(B, target);
     if (J == nullptr)

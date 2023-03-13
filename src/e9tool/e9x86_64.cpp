@@ -2384,7 +2384,7 @@ int suspiciousness(const uint8_t *bytes, size_t size)
  * Get an operand.
  */
 const OpInfo *getOperand(const InstrInfo *I, int idx, OpType type,
-	Access access)
+    Access access)
 {
     for (uint8_t i = 0; i < I->count.op; i++)
     {

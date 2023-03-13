@@ -416,7 +416,7 @@ static int fprintf(intptr_t handle, const char *format, ...)
  * Entry point.
  */
 void entry(const struct e9_config_s *config, const void *addr,
-	const uint8_t *instr, size_t size, const char *_asm)
+    const uint8_t *instr, size_t size, const char *_asm)
 {
     intptr_t stderr = get_stderr(config);
 

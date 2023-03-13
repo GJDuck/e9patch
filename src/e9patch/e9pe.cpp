@@ -141,10 +141,10 @@ typedef struct _IMAGE_BASE_RELOCATION
  */
 static uint64_t hash(const char *s)
 {
-	uint64_t h = 777799777ull;
-	while (*s)
-	    h = (3333331ull * h) ^ (0xe9e9ea1bull * (uint64_t)*s++);
-	return h;
+    uint64_t h = 777799777ull;
+    while (*s)
+       h = (3333331ull * h) ^ (0xe9e9ea1bull * (uint64_t)*s++);
+    return h;
 }
 
 /*
@@ -458,7 +458,7 @@ size_t emitPE(Binary *B, const MappingSet &mappings, size_t mapping_size)
                 hash(B->filename): random(B->filename));
             uint64_t base = r % (hi - lo) + lo;
             base -= base % mapping_align;
-			rebase_delta = (intptr_t)base - image_base;
+            rebase_delta = (intptr_t)base - image_base;
             break;
         }
         case OPTION_REBASE_NONE:
