@@ -1,0 +1,1 @@
+./test -M 'sib && &.text == 0xa000000 && &".text" == 0xa000000 && &.text.start == 0xa000000 && &.text.end == 0xa000333 && &".text".end == 0xa000333' -P print

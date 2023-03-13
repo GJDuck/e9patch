@@ -79,7 +79,21 @@ static intptr_t parseIndex(Parser &parser, intptr_t lb, intptr_t ub)
  */
 static intptr_t parseSymbol(Parser &parser, const char *symbol)
 {
-    intptr_t val = getELFObject(parser.elf, symbol);
+    bool end = false;
+    if (parser.peekToken() == '.')
+    {
+        parser.getToken();
+        switch (parser.getToken())
+        {
+            case TOKEN_START:
+                break;
+            case TOKEN_END:
+                end = true; break;
+            default:
+                parser.unexpectedToken();
+        }
+    }
+    intptr_t val = getELFObject(parser.elf, symbol, end);
     if (val == -1)
     {
         warning("symbol \"%s\" is undefined and therefore has value 0x0",
@@ -292,10 +306,27 @@ static const MatchArg parseMatchArg(Parser &parser, bool val = false)
                 error("failed to parse regular expression \"%s\"", parser.s);
             }
         case '&':
+        {
             if (parser.peekToken() == TOKEN_MEM)
                 break;
-            parser.expectToken2(TOKEN_STRING, TOKEN_NAME);
-            return MatchArg(new MatchVal(parseSymbol(parser, parser.s)));
+            std::string name;
+            switch (parser.getToken())
+            {
+                case '.':
+                    name += '.';
+                    parser.expectToken(TOKEN_NAME);
+                    // Fallthrough:
+                case TOKEN_NAME:
+                    name += parser.s;
+                    break;
+                case TOKEN_STRING:
+                    name += parser.s;
+                    break;
+                default:
+                    parser.unexpectedToken();
+            }
+            return MatchArg(new MatchVal(parseSymbol(parser, name.c_str())));
+        }
         case TOKEN_NIL:
             return MatchArg(new MatchVal(nullptr));
         case '-':
@@ -824,6 +855,28 @@ static const char *parseFunctionName(Parser &parser)
 }
 
 /*
+ * Parse a name.
+ */
+static const char *parseSymbolName(Parser &parser, int t, bool ptr)
+{
+    std::string name;
+    switch (t)
+    {
+        case '.':
+            name += '.';
+            parser.expectToken(TOKEN_NAME);
+            name += parser.s;
+            return strDup(name.c_str());
+        case TOKEN_NAME:
+            return strDup(parser.s);
+        case TOKEN_STRING:
+            return (ptr? strDup(parser.s): nullptr);
+        default:
+            return nullptr;
+    }
+}
+
+/*
  * Parse a patch.
  */
 const Patch *parsePatch(const ELF &elf, const char *str)
@@ -970,7 +1023,7 @@ const Patch *parsePatch(const ELF &elf, const char *str)
                     parser.expectToken(')');
                     t = parser.getToken();
                 }
-                bool ptr = false, neg = false;
+                bool ptr = false, end = false, neg = false;
                 if (t == '&')
                 {
                     ptr = true;
@@ -982,7 +1035,9 @@ const Patch *parsePatch(const ELF &elf, const char *str)
                     1, 0};
                 intptr_t value = 0x0;
                 int arg_token = t;
-                const char *name = nullptr;
+                const char *name = parseSymbolName(parser, t, ptr);
+                if (name != nullptr)
+                    t = TOKEN_NAME;
                 switch (t)
                 {
                     case TOKEN_ASM:
@@ -1073,7 +1128,6 @@ const Patch *parsePatch(const ELF &elf, const char *str)
                             ARGUMENT_STRING);
                         break;
                     case TOKEN_NAME:
-                        name = strDup(parser.s);
                         arg = (parser.peekToken() == '['? ARGUMENT_CSV:
                             ARGUMENT_SYMBOL);
                         break;
@@ -1155,11 +1209,22 @@ const Patch *parsePatch(const ELF &elf, const char *str)
                             }
                         }
                         break;
-                    case ARGUMENT_STRING:
-                        if (ptr)
-                            arg = ARGUMENT_SYMBOL;
+                    case ARGUMENT_SYMBOL:
+                        if (parser.peekToken() == '.')
+                        {
+                            parser.getToken();
+                            switch (parser.getToken())
+                            {
+                                case TOKEN_START:
+                                    break;
+                                case TOKEN_END:
+                                    end = true; break;
+                                default:
+                                    parser.unexpectedToken();
+                            }
+                        }
                         break;
-                    case ARGUMENT_MEMOP: case ARGUMENT_SYMBOL:
+                    case ARGUMENT_MEMOP:
                         break;
                     case ARGUMENT_REGISTER:
                         if ((Register)value == REGISTER_RIP)
@@ -1200,7 +1265,7 @@ const Patch *parsePatch(const ELF &elf, const char *str)
                         break;
                     }
                 }
-                args.push_back({arg, field, ptr, _static, duplicate, cast,
+                args.push_back({arg, field, ptr, end, _static, duplicate, cast,
                     value, memop, name});
                 t = parser.getToken();
                 if (t == ')')

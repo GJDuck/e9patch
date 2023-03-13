@@ -1570,12 +1570,13 @@ extern const PLTInfo &e9tool::getELFPLTInfo(const ELF *elf)
 /*
  * Find the address associated with the given name.
  */
-intptr_t e9tool::getELFObject(const ELF *elf, const char *name)
+intptr_t e9tool::getELFObject(const ELF *elf, const char *name, bool end)
 {
     // CASE #1: section
     const Elf64_Shdr *shdr = getELFSection(elf, name);
     if (shdr != nullptr)
-        return elf->base + (intptr_t)shdr->sh_addr;
+        return elf->base + (intptr_t)shdr->sh_addr +
+            (end? (intptr_t)shdr->sh_size: 0);
 
     // CASE #2: symbol
     const Elf64_Sym *sym = getELFDynSym(elf, name);

@@ -2338,6 +2338,7 @@ struct Argument
     ArgumentKind kind;              // Argument kind.
     FieldKind field;                // Argument field.
     bool ptr;                       // Argument is passed by pointer?
+    bool end;                       // Argument ptr to the end of object?
     bool _static;                   // Argument is static?
     bool duplicate;                 // Argument is a duplicate?
     Type cast;                      // Argument type cast.
@@ -2458,7 +2459,8 @@ extern const SymbolInfo &getELFDynSymInfo(const ELF *elf);
 extern const SymbolInfo &getELFSymInfo(const ELF *elf);
 extern const GOTInfo &getELFGOTInfo(const ELF *elf);
 extern const PLTInfo &getELFPLTInfo(const ELF *elf);
-extern intptr_t getELFObject(const ELF *elf, const char *name);
+extern intptr_t getELFObject(const ELF *elf, const char *name,
+    bool end = false);
 
 // Note: Windows PE files are parsed as "pseudo-ELF" files.  This saves having
 //       to rewrite/redesign large parts of E9Tool.  This may change in future.

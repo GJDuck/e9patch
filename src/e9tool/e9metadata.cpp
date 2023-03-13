@@ -1677,7 +1677,7 @@ static Type sendLoadArgumentMetadata(FILE *out, CallInfo &info,
         case ARGUMENT_SYMBOL:
         {
             t = TYPE_CONST | TYPE_VOID | TYPE_PTR;
-            intptr_t val = getELFObject(elf, arg.name);
+            intptr_t val = getELFObject(elf, arg.name, arg.end);
             if (val == -1)
             {
                 warning(CONTEXT_FORMAT "failed to load ELF object into "
@@ -2202,7 +2202,7 @@ void e9tool::sendCallMetadata(FILE *out, const char *name, const ELF *elf,
  * Build metadata.
  */
 void sendMetadata(FILE *out, const ELF *elf, const Action *action, size_t idx,
-	const std::vector<Instr> &Is, size_t i, const InstrInfo *I, intptr_t id,
+    const std::vector<Instr> &Is, size_t i, const InstrInfo *I, intptr_t id,
     Context *cxt)
 {
     if (action == nullptr)

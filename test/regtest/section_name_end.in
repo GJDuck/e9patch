@@ -1,0 +1,1 @@
+./test -M sib -P 'format(".text=%p..%p [%p,%p]\n",.text.start,.text.end,&.text.end,&".text".end)@patch'
