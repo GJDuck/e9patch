@@ -209,6 +209,8 @@ A `VALUE` can be one of the following:
 * A *memory operand* (see below).
 * A *symbolic address* of the form `NAME`, where `NAME` is any section
   or symbol name from the input ELF file.
+  Section names can be modified with a `.start` or `.end` suffix, where
+  the latter will point to the end of the section.
   A symbolic address has type `Integer`.
 * A *set* of `VALUE`s, e.g., `{rax,rbx,rcx}`.
 * A *regular expression* delimited by slashes (`/`), e.g., `/xor.*/`,
@@ -1192,6 +1194,8 @@ Notes:
   case the corresponding register will be updated accordingly.
 * The `NAME[i]` argument will either be an integer or a string, depending on
   the corresponding value type from the `NAME.csv` file.
+* Section names can be modified with a `.start` or `.end` suffix, e.g.,
+  <tt>&amp;.text.end</tt> points to the end of the `.text` section.
 
 ---
 ##### <a id="pass-by-pointer">3.2.1.1 Pass-by-pointer Arguments</a>
