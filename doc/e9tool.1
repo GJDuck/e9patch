@@ -1,4 +1,4 @@
-.TH E9TOOL "1" "June 2022" "E9Tool" "E9Tool"
+.TH E9TOOL "1" "April 2023" "E9Tool" "E9Tool"
 .SH NAME
 E9Tool \- a powerful static binary rewriting tool
 .SH SYNOPSIS
@@ -105,6 +105,11 @@ For more information, please refer to the following document:
 .IP "\fB\-\-backend\fR PROG" 4
 Use PROG as the backend.
 The default is "e9patch".
+.IP "\fB\-CFR\fr, \fB\-X\fR" 4
+Enables binary rewriting "with" control-flow recovery.  This
+usually makes the rewritten binary much faster, but may
+introduce rewriting bugs if the built-in recovery analysis is
+inaccurate.
 .IP "\fB\-\-compression\fR N, \fB\-c\fR N" 4
 Set the compression level to be N, where N is a number within
 the range 0..9.  The default is 9 for maximum compression.
@@ -215,11 +220,6 @@ optional second column is 1 for call targets (functions), or
 0 otherwise (the default is 0).
 .IP "\fB\-\-version\fR" 4
 Print the version and exit.
-.IP "\fB\-X\fR" 4
-Enables binary rewriting "with" control-flow recovery.  This
-usually makes the rewritten binary much faster, but may
-introduce rewriting bugs if the built-in recovery analysis is
-inaccurate.
 .SH "SEE ALSO"
 \fIe9patch\fR(1), \fIe9compile\fR(1), \fIe9afl\fR(1), \fIredfat\fR(1)
 .SH AUTHOR

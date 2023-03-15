@@ -653,6 +653,7 @@ static void checkCompatible(const ELF &elf, const ELF &target)
 enum Option
 {
     OPTION_BACKEND,
+    OPTION_CFR,
     OPTION_COMPRESSION,
     OPTION_DSYNC,
     OPTION_DTHRESHOLD,
@@ -729,6 +730,7 @@ int main_2(int argc, char **argv)
     static const struct option long_options[] =
     {
         {"backend",       req_arg, nullptr, OPTION_BACKEND},
+        {"CFR",           no_arg,  nullptr, OPTION_CFR},
         {"compression",   req_arg, nullptr, OPTION_COMPRESSION},
         {"Dsync",         req_arg, nullptr, OPTION_DSYNC},
         {"Dthreshold",    req_arg, nullptr, OPTION_DTHRESHOLD},
@@ -786,6 +788,10 @@ int main_2(int argc, char **argv)
         {
             case OPTION_BACKEND:
                 option_backend = optarg;
+                break;
+            case OPTION_CFR:
+            case 'X':
+                option_CFR = true;
                 break;
             case OPTION_COMPRESSION:
             case 'c':
@@ -938,9 +944,6 @@ int main_2(int argc, char **argv)
             case OPTION_VERSION:
                 puts("E9Tool " STRING(VERSION));
                 return EXIT_SUCCESS;
-            case 'X':
-                option_CFR = true;
-                break;
             default:
                 error("failed to parse command-line options; try `--help' "
                     "for more information");

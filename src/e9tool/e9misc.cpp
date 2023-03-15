@@ -226,6 +226,12 @@ void usage(FILE *stream, const char *progname)
         "\t--backend PROG\n"
         "\t\tUse PROG as the backend.  The default is \"e9patch\".\n"
         "\n"
+        "\t-CFR, -X\n"
+        "\t\tEnables binary rewriting \"with\" control-flow recovery.  This\n"
+        "\t\tusually makes the rewritten binary much faster, but may\n"
+        "\t\tintroduce rewriting bugs if the built-in recovery analysis is\n"
+        "\t\tinaccurate.\n"
+        "\n"
         "\t--compression N, -c N\n"
         "\t\tSet the compression level to be N, where N is a number within\n"
         "\t\tthe range 0..9.  The default is 9 for maximum compression.\n"
@@ -344,12 +350,6 @@ void usage(FILE *stream, const char *progname)
         "\n"
         "\t--version\n"
         "\t\tPrint the version and exit.\n"
-        "\n"
-        "\t-X\n"
-        "\t\tEnables binary rewriting \"with\" control-flow recovery.  This\n"
-        "\t\tusually makes the rewritten binary much faster, but may\n"
-        "\t\tintroduce rewriting bugs if the built-in recovery analysis is\n"
-        "\t\tinaccurate.\n"
         "\n", progname);
 }
 
