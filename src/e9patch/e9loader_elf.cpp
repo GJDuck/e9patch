@@ -147,19 +147,22 @@ static NO_INLINE void e9load_maps(const e9_map_s *maps, uint32_t num_maps,
         int prot = (maps[i].r? PROT_READ: 0x0) |
                    (maps[i].w? PROT_WRITE: 0x0) |
                    (maps[i].x? PROT_EXEC: 0x0);
+        int flags = MAP_FIXED | MAP_PRIVATE;
 #if 0
         e9debug("mmap(addr=%p,size=%U,offset=+%U,prot=%c%c%c)",
             addr, len, offset,
             (maps[i].r? 'r': '-'), (maps[i].w? 'w': '-'),
             (maps[i].x? 'x': '-'));
 #endif
-        intptr_t result = mmap((void *)addr, len, prot, MAP_FIXED | MAP_PRIVATE,
-            fd, offset);
+        intptr_t result = mmap((void *)addr, len, prot, flags, fd, offset);
         if (result < 0)
             e9panic("mmap(addr=%p,size=%U,offset=+%U,prot=%c%c%c) failed "
-                "(errno=%u)", addr, len, offset,
+                "(errno=%u)%s", addr, len, offset,
                 (maps[i].r? 'r': '-'), (maps[i].w? 'w': '-'),
-                (maps[i].x? 'x': '-'), -(int)result);
+                (maps[i].x? 'x': '-'), -(int)result,
+                (-(int)result == ENOMEM?
+                    "\nhint: see the e9patch manpage for more information.":
+                    ""));
     }
 }
 

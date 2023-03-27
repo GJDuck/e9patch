@@ -194,6 +194,19 @@ Default: \fBfalse\fR (disabled)
 .TP
 \fB\-\-version\fR
 Print the version and exit.
+.SH "TROUBLESHOOTING"
+The instrumented binary may sometimes fail to run properly.
+See below for solutions to common problems.
+.TP
+\fBe9patch loader error: mmap(...) failed (errno=12)\fR
+This occurs when the instrumented binary uses too many mappings.
+This can usually be fixed by lowering the compression level,
+see the \fB--compression\fR option for E9Tool (see \fBman e9tool\fR).
+.TP
+\fBTrace/breakpoint trap\fR
+If using Control Flow Recovery (CFR) mode, the input binary may be
+incompatible.
+Disable CFR to resolve the issue.
 .SH "SEE ALSO"
 \fIe9tool\fR(1), \fIe9compile\fR(1), \fIe9afl\fR(1), \fIredfat\fR(1)
 .SH AUTHOR
