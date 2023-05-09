@@ -819,6 +819,27 @@ void test_memcpy(intptr_t *ptr)
     exit(0);
 }
 
+struct TMP
+{
+    char x[6];
+    char y[6];
+};
+void test_memset_2(void)
+{
+    struct TMP tmp;
+    memset((void *)tmp.x, 'A', 6);
+    memset((void *)tmp.y, 'B', 6);
+    fwrite(&tmp, sizeof(tmp), 1, stderr);
+}
+void test_memcpy_2(void)
+{
+    const char *aaa = "AAAAAA", *bbb = "BBBBBB";
+    struct TMP tmp;
+    memcpy((void *)tmp.x, bbb, 6);
+    memcpy((void *)tmp.y, aaa, 6);
+    fwrite(&tmp, sizeof(tmp), 1, stderr);
+}
+
 extern "C"
 {
 void format(const char *msg, intptr_t a1, intptr_t a2, intptr_t a3,

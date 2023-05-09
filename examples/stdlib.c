@@ -1879,13 +1879,13 @@ static int tolower(int c)
 
 static void *memset(void *dst, int c, size_t n)
 {
-    asm volatile ("rep stosb" : "+D"(dst) : "a"(c), "c"(n) : "memory");
+    asm volatile ("rep stosb" : "+D"(dst), "+c"(n) : "a"(c) : "memory");
     return dst;
 }
 
 static void *memcpy(void *dst, const void *src, size_t n)
 {
-    asm volatile ("rep movsb" : "+D"(dst) : "S"(src), "c"(n) : "memory");
+    asm volatile ("rep movsb" : "+D"(dst), "+c"(n) : "S"(src) : "memory");
     return dst;
 }
 
