@@ -1885,7 +1885,7 @@ static void *memset(void *dst, int c, size_t n)
 
 static void *memcpy(void *dst, const void *src, size_t n)
 {
-    asm volatile ("rep movsb" : "+D"(dst), "+c"(n) : "S"(src) : "memory");
+    asm volatile ("rep movsb" : "+D"(dst), "+c"(n), "+S"(src) : : "memory");
     return dst;
 }
 

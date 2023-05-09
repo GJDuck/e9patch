@@ -840,6 +840,22 @@ void test_memcpy_2(void)
     fwrite(&tmp, sizeof(tmp), 1, stderr);
 }
 
+struct TMP2
+{
+    char x[6];
+    char c;
+    char y[6];
+};
+void test_memcpy_3(void)
+{
+    const char *xxx = "XXXXXX";
+    struct TMP2 tmp;
+    memcpy((void *)tmp.x, xxx, 6);
+    tmp.c = 'Y';
+    memcpy((void *)tmp.y, xxx, 6);
+    fwrite(&tmp, sizeof(tmp), 1, stderr);
+}
+
 extern "C"
 {
 void format(const char *msg, intptr_t a1, intptr_t a2, intptr_t a3,
