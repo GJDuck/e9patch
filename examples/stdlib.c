@@ -164,6 +164,7 @@ extern "C"
 #undef msync
 #undef munmap
 #undef sigaction
+#undef signal
 #undef ioctl
 #undef pipe
 #undef select
@@ -192,6 +193,7 @@ extern "C"
 #undef rmdir
 #undef link
 #undef unlink
+#undef symlink
 #undef readlink
 #undef gettimeofday
 #undef getrlimit
@@ -306,6 +308,7 @@ extern "C"
 #define msync               e9_msync
 #define munmap              e9_munmap
 #define sigaction(a, b, c)  e9_sigaction(a, b, c)
+#define signal              e9_signal
 #define ioctl               e9_ioctl
 #define pipe                e9_pipe
 #define select              e9_select
@@ -334,6 +337,7 @@ extern "C"
 #define rmdir               e9_rmdir
 #define link                e9_link
 #define unlink              e9_unlink
+#define symlink             e9_symlink
 #define readlink            e9_readlink
 #define gettimeofday        e9_gettimeofday
 #define getrlimit           e9_getrlimit
@@ -791,6 +795,11 @@ static int unlink(const char *pathname)
     return (int)syscall(SYS_unlink, pathname);
 }
 
+static int symlink(const char *oldname, const char *newname)
+{
+    return (int)syscall(SYS_symlink, oldname, newname);
+}
+
 static ssize_t readlink(const char *pathname, char *buf, size_t bufsiz)
 {
     return (ssize_t)syscall(SYS_readlink, pathname, buf, bufsiz);
@@ -1005,7 +1014,7 @@ asm (
  * is chosen because (1) it is relatively simple, and (2) the worst-case time
  * and memory performance should be reasonable.
  *
- * The implementation uses code that is dervied from Niels Provos' red-black
+ * The implementation uses code that is derived from Niels Provos' red-black
  * tree implementation.  See the copyright and license (BSD) below.
  */
 
@@ -1810,6 +1819,17 @@ static int sigaction(int signum, const struct sigaction *act,
         oldact->sa_restorer = NULL;
     }
     return result;
+}
+
+static void (*signal(int signum, void (*handler)(int)))(int)
+{
+    struct sigaction action, old_action;
+    memset(&action, 0, sizeof(action));
+    action.sa_handler = handler;
+    action.sa_flags |= SA_RESTART;
+    if (sigaction(signum, &action, &old_action) < 0)
+        return SIG_ERR;
+    return old_action.sa_handler;
 }
 
 /****************************************************************************/
