@@ -856,6 +856,38 @@ void test_memcpy_3(void)
     fwrite(&tmp, sizeof(tmp), 1, stderr);
 }
 
+void test_fread(void)
+{
+    size_t size = 2 * BUFSIZ;
+    FILE *stream = fopen("test.tmp", "w");
+    for (size_t i = 0; i < size; i++)
+        fputc(0xFF, stream);
+    fclose(stream);
+    stream = fopen("test.tmp", "r");
+    uint8_t *buf = (uint8_t *)malloc(size);
+    memset(buf, 0xAA, size);
+    for (size_t i = 0; i < size; )
+    {
+        size_t r = fread(buf+i, 1, size-i, stream);
+        if (r == 0)
+        {
+            fprintf(stderr, "fread() failed\n");
+            abort();
+        }
+        i += r;
+    }
+    fclose(stream);
+    unlink("test.tmp");
+    for (size_t i = 0; i < size; i++)
+    {
+        if (buf[i] != 0xFF)
+        {
+            fprintf(stderr, "buf[%zu] = 0x%.2X?\n", i, buf[i]);
+            break;
+        }
+    }
+}
+
 extern "C"
 {
 void format(const char *msg, intptr_t a1, intptr_t a2, intptr_t a3,

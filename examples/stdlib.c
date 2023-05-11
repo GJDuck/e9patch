@@ -2888,12 +2888,10 @@ static int fgets_unlocked(char *s, int size, FILE *stream)
         else
         {
             c = fgetc_unlocked(stream);
-            if (c == EOF)
-            {
-                if (ferror(stream))
-                    return EOF;
+            if (feof_unlocked(stream))
                 break;
-            }
+            if (ferror_unlocked(stream))
+                return EOF;
         }
         s[i] = c;
         if (c == '\n')
@@ -2944,7 +2942,7 @@ static int ungetc(int c, FILE *stream)
         return EOF;
     }
     if (stream->read_ptr == NULL)
-        panic("ungetc and _IONBF is not supported");
+        panic("ungetc with _IONBF is not supported");
     if (stream->read_ptr <= stream->buf)
     {
         stdio_unlock(stream);
@@ -2987,7 +2985,7 @@ static size_t stdio_fread_unlocked(void *ptr, size_t size, size_t nmemb,
         else
         {
             c = fgetc_unlocked(stream);
-            if (c == EOF)
+            if (feof_unlocked(stream) || ferror_unlocked(stream))
                 break;
         }
         ptr8[i] = c;
