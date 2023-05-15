@@ -1,0 +1,34 @@
+arg = 0x2d9bfa6b1014f832
+[0]
+pos = 94 vs 94
+[1]
+pos = 4
+i = 101
+pos = 1
+pos = 0
+s = "Xbbb"
+s = "XbBb"
+[2]
+c = ' '
+errno = 0 (Success)
+r = 8
+i = 7
+j = 101
+x = 0x2d9bfa6b1014f832
+y = 0xd2640594efeb07ce
+p = 0x2d9bfa6b1014f832
+u = 269809714
+h = 63538
+c = '2'
+s = "cccc"
+s = "cccc"
+c = ' '
+c = 'd'
+[3]
+pos = 1
+pos = 1
+r = 3
+hello = "lo"
+world = "Worl"
+i = 7
+PASSED

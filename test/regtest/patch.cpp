@@ -888,6 +888,111 @@ void test_fread(void)
     }
 }
 
+void test_stdio(intptr_t arg)
+{
+    fprintf(stderr, "arg = 0x%llx\n", arg);
+    
+    fprintf(stderr, "[0]\n");
+    FILE *stream = fopen("test.tmp", "w");
+    if (stream == NULL)
+        fprintf(stderr, "stream is NULL\n");
+    int n = fprintf(stream, "%s %10d %zd -%#lx %p\n%u\t%4hu\t \t%c\n", "aaa",
+        101, arg, arg, (void *)arg, (unsigned)arg, (uint16_t)arg, (char)arg);
+    fprintf(stderr, "pos = %zd vs %d\n", ftell(stream), n);
+    fseek(stream, 1, SEEK_SET);
+    fputs("bbb", stream);
+    fclose(stream);
+
+    fprintf(stderr, "[1]\n");
+    stream = fopen("test.tmp", "r");
+    if (stream == NULL)
+        fprintf(stderr, "stream is NULL\n");
+    fseek(stream, 4, SEEK_CUR);
+    fprintf(stderr, "pos = %zd\n", ftell(stream));
+    int i, j;
+    fscanf(stream, "%d", &i);
+    fprintf(stderr, "i = %d\n", i);
+    fseek(stream, 0, SEEK_SET);
+    getc(stream);
+    fprintf(stderr, "pos = %zd\n", ftell(stream));
+    ungetc('X', stream);
+    fprintf(stderr, "pos = %zd\n", ftell(stream));
+    char s[5];
+    fscanf(stream, " %5s", s);
+    fprintf(stderr, "s = \"%s\"\n", s);
+    char c1, c2, c3, c4;
+    s[2] = toupper(s[2]);
+    sscanf(s, "%c%c%c%c", &c1, &c2, &c3, &c4);
+    fprintf(stderr, "s = \"%c%c%c%c\"\n", c1, c2, c3, c4);
+    fclose(stream);
+
+    fprintf(stderr, "[2]\n");
+    stream = fopen("test.tmp", "r+");
+    if (stream == NULL)
+        fprintf(stderr, "stream is NULL\n");
+    char buf[5];
+    if (setvbuf(stream, buf, _IOLBF, sizeof(buf)) < 0)
+        fprintf(stderr, "setvbuf failed (%s)\n", strerror(errno));
+    fputs("cccc  ", stream);
+    fprintf(stderr, "c = '%c'\n", getc(stream));
+    ungetc('7', stream);
+    intptr_t x, y;
+    void *p;
+    unsigned u;
+    uint16_t h;
+    char c;
+    errno = 0;
+    int r = fscanf(stream, "%d %d\t\r\n%zd   %li %p %u %hu %c", &i, &j, &x,
+        &y, &p, &u, &h, &c);
+    fprintf(stderr, "errno = %d (%s)\n", errno, strerror(errno));
+    fprintf(stderr, "r = %d\n", r);
+    fprintf(stderr, "i = %d\n", i);
+    fprintf(stderr, "j = %d\n", j);
+    fprintf(stderr, "x = 0x%lx\n", x);
+    fprintf(stderr, "y = 0x%lx\n", y);
+    fprintf(stderr, "p = %p\n", p);
+    fprintf(stderr, "u = %u\n", u);
+    fprintf(stderr, "h = %hu\n", h);
+    fprintf(stderr, "c = '%c'\n", c);
+    fseek(stream, 0, SEEK_SET);
+    fscanf(stream, "%s", s);
+    fprintf(stderr, "s = \"%s\"\n", s);
+    fseek(stream, 0, SEEK_SET);
+    fscanf(stream, "%4c", s);
+    fprintf(stderr, "s = \"%s\"\n", s);
+    fscanf(stream, "%4c", s);
+    fseek(stream, 1, SEEK_SET);
+    c = getc(stream);
+    fprintf(stderr, "c = '%c'\n", c);
+    ungetc('d', stream);
+    c = getc(stream);
+    fprintf(stderr, "c = '%c'\n", c);
+    fseek(stream, 0, SEEK_SET);
+    fprintf(stream, "Hello World %i\n\n", 7);
+    fclose(stream);
+
+    fprintf(stderr, "[3]\n");
+    int fd = open("test.tmp", O_RDONLY);
+    stream = fdopen(fd, "r");
+    if (stream == NULL)
+        fprintf(stderr, "stream is NULL\n");
+    if (setvbuf(stream, NULL, _IONBF, 0) < 0)
+        fprintf(stderr, "setvbuf failed (%s)\n", strerror(errno));
+    char hello[10], world[10];
+    fseek(stream, 1, SEEK_CUR);
+    fprintf(stderr, "pos = %zd\n", ftell(stream));
+    fprintf(stderr, "pos = %zd\n", lseek(fileno(stream), SEEK_CUR, 0));
+    ungetc('X', stream);
+    r = fscanf(stream, "Xel%2s %4sd %i ", hello, world, &i);
+    fprintf(stderr, "r = %d\n", r);
+    fprintf(stderr, "hello = \"%s\"\n", hello);
+    fprintf(stderr, "world = \"%s\"\n", world);
+    fprintf(stderr, "i = %d\n", i);
+    fclose(stream);
+
+    unlink("test.tmp");
+}
+
 extern "C"
 {
 void format(const char *msg, intptr_t a1, intptr_t a2, intptr_t a3,

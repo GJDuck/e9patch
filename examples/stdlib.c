@@ -4,7 +4,7 @@
  * \__ \ || (_| | | | |_) |
  * |___/\__\__,_|_|_|_.__/
  *
- * Copyright (C) 2020 National University of Singapore
+ * Copyright (C) 2023 National University of Singapore
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to
@@ -65,11 +65,8 @@
  *
  * Generally, the code has been optimized for size and compilation time
  * rather than performance.  Dependencies between library functions has also
- * been minimized to keep the resulting binary small.  For example, fopen()
- * calls mmap() rather than malloc() to allocate memory.  This avoids pulling
- * in the malloc() implementation for a program that only uses stream I/O.
- * Generally, this file can be compiled in a second or less, depending on how
- * many functions are used.  
+ * been minimized to keep the resulting binary small.  Generally, this file can
+ * be compiled in a second or less, depending on how many functions are used.  
  *
  * This file also assumes no initialization, or failing that, manual
  * initialization (e.g., setting `environ' for getenv()).
@@ -262,6 +259,12 @@ extern "C"
 #undef getc_unlocked
 #undef getchar_unlocked
 #undef fread_unlocked
+#undef vnscanf
+#undef sscanf
+#undef vfscanf
+#undef fscanf
+#undef vscanf
+#undef scanf
 #undef vsnprintf
 #undef snprintf
 #undef vfprintf
@@ -271,6 +274,7 @@ extern "C"
 #undef isalnum
 #undef isalpha
 #undef isdigit
+#undef isupper
 #undef islower
 #undef isprint
 #undef isspace
@@ -289,6 +293,8 @@ extern "C"
 #undef strncat
 #undef strcpy
 #undef strncpy
+#undef strchr
+#undef strdup
 #undef strerror
 
 /***/
@@ -406,6 +412,12 @@ extern "C"
 #define getc_unlocked       e9_getc_unlocked
 #define getchar_unlocked    e9_getchar_unlocked
 #define fread_unlocked      e9_fread_unlocked
+#define vsscanf             e9_vsscanf
+#define sscanf              e9_sscanf
+#define vfscanf             e9_vfscanf
+#define fscanf              e9_fscanf
+#define vscanf              e9_vscanf
+#define scanf               e9_scanf
 #define vsnprintf           e9_vsnprintf
 #define snprintf            e9_snprintf
 #define vfprintf            e9_vfprintf
@@ -415,6 +427,7 @@ extern "C"
 #define isalnum             e9_isalnum
 #define isalpha             e9_isalpha
 #define isdigit             e9_isdigit
+#define isupper             e9_isupper
 #define islower             e9_islower
 #define isprint             e9_isprint
 #define isspace             e9_isspace
@@ -432,6 +445,8 @@ extern "C"
 #define strcat              e9_strcat
 #define strncat             e9_strncat
 #define strcpy              e9_strcpy
+#define strchr              e9_strchr
+#define strdup              e9_strdup
 #define strncpy             e9_strncpy
 #define strerror            e9_strerror
 
@@ -1121,7 +1136,8 @@ static void malloc_init(struct malloc_pool_s *pool)
         return;
     }
     uint32_t buf[2];
-    syscall(SYS_getrandom, buf, sizeof(buf), 0);
+    if (getrandom(buf, sizeof(buf), 0) < 0)
+        panic("getrandom() failed");
     buf[0] &= ~(MA_PAGE_SIZE-1); buf[1] &= ~(MA_PAGE_SIZE-1);
     pool->root = MA_NIL;
     pool->node.base = (uint8_t *)(0xaaa00000000ull | (uintptr_t)buf[0]);
@@ -1857,6 +1873,11 @@ static int islower(int c)
     return (c >= 'a' && c <= 'z');
 }
 
+static int isupper(int c)
+{
+    return (c >= 'A' && c <= 'Z');
+}
+
 static int isprint(int c)
 {
     return (c >= ' ' && c < INT8_MAX);
@@ -1909,24 +1930,40 @@ static void *memcpy(void *dst, const void *src, size_t n)
     return dst;
 }
 
+static int memcmp(const void *s1, const void *s2, size_t n)
+{
+    int cmp;
+    asm (
+        "repz cmpsb\n"
+        "seta %%dil\n"
+        "setb %%sil\n"
+        "subb %%dil,%%sil\n"
+        "movsbl %%sil,%0"
+        : "=r"(cmp), "+D"(s1), "+S"(s2), "+c"(n));
+    return cmp;
+}
+
 static size_t strlen(const char *s)
 {
-    size_t len = 0;
-    while (*s++ != '\0')
-        len++;
+    size_t len;
+    char zero = '\0';
+    asm (
+        "mov $-1,%%rcx\n"
+        "repnz scasb\n"
+        "inc %%rcx\n"
+        "not %%rcx\n"
+        : "+D"(s), "=c"(len) : "a"(zero));
     return len;
 }
 
-static int memcmp(const void *s1, const void *s2, size_t n)
+static size_t strnlen(const char *s, size_t n)
 {
-    const int8_t *a1 = (int8_t *)s1, *a2 = (int8_t *)s2;
-    for (size_t i = 0; i < n; i++)
-    {
-        int cmp = (int)a1[i] - (int)a2[i];
-        if (cmp != 0)
-            return cmp;
-    }
-    return 0;
+    size_t m = n;
+    char zero = '\0';
+    asm (
+        "repnz scasb\n"
+        : "+D"(s), "+c"(n) : "a"(zero));
+    return m - n;
 }
 
 static int strncmp(const char *s1, const char *s2, size_t n)
@@ -1941,14 +1978,6 @@ static int strncmp(const char *s1, const char *s2, size_t n)
         s1++; s2++;
     }
     return 0;
-}
-
-static size_t strnlen(const char *s, size_t n)
-{
-    size_t i;
-    for (i = 0; i < n && s[i] != '\0'; i++)
-        ;
-    return i;
 }
 
 static int strcmp(const char *s1, const char *s2)
@@ -1988,10 +2017,33 @@ static char *strcpy(char *dst, const char *src)
     return dst;
 }
 
+static char *strchr(const char *src, int c0)
+{
+    char c = (char)c0;
+    for (size_t i = 0; src[i] != '\0'; i++)
+        if (src[i] == c)
+            return (char *)(src + i);
+    return NULL;
+}
+
+static char *strdup(const char *src)
+{
+    if (src == NULL)
+        return NULL;
+    size_t len = strlen(src);
+    char *dst = (char *)malloc(len+1);
+    if (dst == NULL)
+        return NULL;
+    memcpy(dst, src, len+1);
+    return dst;
+}
+
 static const char *strerror(int errnum)
 {
     switch (errnum)
     {
+        case 0:
+            return "Success";
         case E2BIG:
             return "Argument list too long";
         case EACCES:
@@ -2263,6 +2315,7 @@ struct stdio_stream_s
     unsigned flags;
     int fd;
     int eol;
+    int unget;
     char *write_ptr;
     char *write_end;
     char *read_ptr;
@@ -2295,17 +2348,15 @@ static __attribute__((__noinline__)) bool stdio_stream_recover(FILE *stream)
 
 static FILE *stdio_stream_alloc(int fd, bool r, bool w, int mode)
 {
-    // Use mmap() rather than malloc() to avoid dependencies.
-    size_t size = sizeof(struct stdio_stream_s);
-    void *ptr = mmap(NULL, size, PROT_READ | PROT_WRITE,
-        MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
-    if (ptr == MAP_FAILED)
+    FILE *stream = (FILE *)malloc(sizeof(struct stdio_stream_s));
+    if (stream == NULL)
         return NULL;
-    FILE *stream = (FILE *)ptr;
+    memset(stream, 0, sizeof(*stream));
     stream->flags  = (r? STDIO_FLAG_READ: 0) |
                      (w? STDIO_FLAG_WRITE: 0) |
                      (mode == _IONBF? STDIO_FLAG_NO_BUF: 0);
     stream->eol    = (mode == _IOLBF? '\n': EOF);
+    stream->unget  = EOF;
     stream->bufsiz = BUFSIZ;
     stream->fd     = fd;
     return stream;
@@ -2320,11 +2371,9 @@ static int stdio_stream_buf_init(FILE *stream)
     }
     else if (stream->buf == NULL)
     {
-        void *ptr = mmap(NULL, stream->bufsiz, PROT_READ | PROT_WRITE,
-            MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
-        if (ptr == MAP_FAILED)
+        stream->buf = (char *)malloc(stream->bufsiz);
+        if (stream->buf == NULL)
             return EOF;
-        stream->buf = (char *)ptr;
         stream->flags |= STDIO_FLAG_OWN_BUF;
     }
     stream->flags |= STDIO_FLAG_INITED;
@@ -2337,12 +2386,12 @@ static ssize_t stdio_stream_read_buf(FILE *stream, char *start, char *end)
     if (size == 0)
     {
         stream->flags |= STDIO_FLAG_EOF;
-        return EOF;
+        return -1;
     }
     if (size < 0)
     {
         stream->flags |= STDIO_FLAG_ERROR;
-        return EOF;
+        return -1;
     }
     return size;
 }
@@ -2414,6 +2463,7 @@ static int fflush_unlocked(FILE *stream)
         return stdio_stream_write(stream);
     if (stream->flags & STDIO_FLAG_READING)
     {
+        stream->unget = EOF;
         off_t offset = stream->read_ptr - stream->read_end;
         stream->read_ptr = stream->buf;
         stream->read_end = stream->buf;
@@ -2423,6 +2473,7 @@ static int fflush_unlocked(FILE *stream)
             return EOF;
         }
     }
+    stream->flags &= ~(STDIO_FLAG_READING | STDIO_FLAG_WRITING);
     return 0;
 }
 
@@ -2446,10 +2497,7 @@ static int stdio_stream_read_init(FILE *stream)
         return EOF;
     }
     if (stream->flags & STDIO_FLAG_WRITING)
-    {
-        stream->flags &= ~STDIO_FLAG_WRITING;
         fflush_unlocked(stream);
-    }
     stream->flags |= STDIO_FLAG_READING;
     if (!(stream->flags & STDIO_FLAG_INITED) &&
             stdio_stream_buf_init(stream) < 0)
@@ -2469,10 +2517,7 @@ static int stdio_stream_write_init(FILE *stream)
         return EOF;
     }
     if (stream->flags & STDIO_FLAG_READING)
-    {
-        stream->flags &= ~STDIO_FLAG_READING;
         fflush_unlocked(stream);
-    }
     stream->flags |= STDIO_FLAG_WRITING;
     if (!(stream->flags & STDIO_FLAG_INITED) &&
             stdio_stream_buf_init(stream) < 0)
@@ -2483,13 +2528,11 @@ static int stdio_stream_write_init(FILE *stream)
     return 0;
 }
 
-static int stdio_stream_free(FILE *stream)
+static void stdio_stream_free(FILE *stream)
 {
-    int result1 = 0, result2 = 0;
     if (stream->buf != NULL && (stream->flags & STDIO_FLAG_OWN_BUF))
-        result1 = munmap(stream->buf, stream->bufsiz);
-    result2 = munmap(stream, sizeof(*stream));
-    return (result1 == 0? result2: result1);
+        free(stream->buf);
+    free(stream);
 }
 
 static int stdio_parse_mode(const char *mode)
@@ -2563,8 +2606,8 @@ static int fclose(FILE *stream)
 {
     int result1 = fflush(stream);
     int result2 = close(stream->fd);
-    int result3 = stdio_stream_free(stream);
-    return (result1 == 0? (result2 == 0? result3: result2): result1);
+    stdio_stream_free(stream);
+    return (result1 == 0? result2: result1);
 }
 
 static FILE *freopen(const char *path, const char *mode, FILE *stream)
@@ -2664,11 +2707,7 @@ static int setvbuf(FILE *stream, char *buf, int mode, size_t size)
 {
     stdio_lock(stream, -1);
     if (stream->flags & STDIO_FLAG_INITED)
-    {
-        stdio_unlock(stream);
-        errno = EINVAL;
-        return EOF;
-    }
+        panic("setvbuf(...) not supported after I/O");
     if (buf != NULL && size > 0)
     {
         stream->buf    = buf;
@@ -2876,6 +2915,12 @@ static int fgetc_unlocked(FILE *stream)
 {
     if (stdio_stream_read_init(stream) < 0)
         return EOF;
+    if (stream->unget != EOF)
+    {
+        int c = stream->unget;
+        stream->unget = EOF;
+        return c;
+    }
     if (stream->read_ptr == NULL)
     {
         char buf[1];
@@ -2952,25 +2997,23 @@ static int getchar_unlocked(void)
     return fgetc_unlocked(stdin);
 }
 
+static int ungetc_unlocked(int c, FILE *stream)
+{
+    if (stream->unget != EOF ||
+        stdio_stream_read_init(stream) < 0)
+    {
+        errno = EINVAL;
+        return EOF;
+    }
+    stream->unget = c;
+    stream->flags &= ~STDIO_FLAG_EOF;
+    return c;
+}
+
 static int ungetc(int c, FILE *stream)
 {
     stdio_lock(stream, EOF);
-    if (!(stream->flags & STDIO_FLAG_READING))
-    {
-        stdio_unlock(stream);
-        errno = EINVAL;
-        return EOF;
-    }
-    if (stream->read_ptr == NULL)
-        panic("ungetc with _IONBF is not supported");
-    if (stream->read_ptr <= stream->buf)
-    {
-        stdio_unlock(stream);
-        errno = EINVAL;
-        return EOF;
-    }
-    stream->read_ptr--;
-    *stream->read_ptr = (char)c;
+    c = ungetc_unlocked(c, stream);
     stdio_unlock(stream);
     return c;
 }
@@ -2989,15 +3032,21 @@ static size_t stdio_fread_unlocked(void *ptr, size_t size, size_t nmemb,
     if (total == 0)
         return 0;
     char *ptr8 = (char *)ptr;
+    bool unget = (stream->unget != EOF);
+    if (unget)
+    {
+        ptr8[0] = (char)stream->unget;
+        stream->unget = EOF;
+    }
     if (stream->read_ptr == NULL)
     {
-        ssize_t result = stdio_stream_read_buf(stream, ptr8, ptr8 + total);
-        if (result < 0)
-            return 0;
+        ssize_t result = stdio_stream_read_buf(stream, ptr8 + unget,
+            ptr8 + total - unget);
+        result = (result < 0? (ssize_t)unget: result);
         return ((size_t)result == total? nmemb: (size_t)result / size);
     }
     size_t i;
-    for (i = 0; i < total; i++)
+    for (i = unget; i < total; i++)
     {
         int c;
         if (stream->read_ptr < stream->read_end)
@@ -3008,7 +3057,7 @@ static size_t stdio_fread_unlocked(void *ptr, size_t size, size_t nmemb,
             if (feof_unlocked(stream) || ferror_unlocked(stream))
                 break;
         }
-        ptr8[i] = c;
+        ptr8[i] = (char)c;
     }
     return (i == total? nmemb: i / size);
 }
@@ -3052,9 +3101,12 @@ static long ftell(FILE *stream)
     long result = -1, offset = 0;
     stdio_lock(stream, -1);
     if (stream->flags & STDIO_FLAG_READING)
+    {
         offset = -(stream->read_end - stream->read_ptr);
+        offset -= (stream->unget != EOF? 1: 0);
+    }
     else if (stream->flags & STDIO_FLAG_WRITING)
-        offset = stream->write_end - stream->write_ptr;
+        offset = stream->write_ptr - stream->buf;
     result = lseek(stream->fd, 0, SEEK_CUR);
     if (result >= 0)
         result += offset;
@@ -3447,6 +3499,430 @@ static int printf_unlocked(const char *format, ...)
     va_list ap;
     va_start(ap, format);
     int result = vfprintf_unlocked(stdout, format, ap);
+    va_end(ap);
+    return result;
+}
+
+/****************************************************************************/
+/* SCANF                                                                    */
+/****************************************************************************/
+
+#define SCANF_FLAG_NEG      0x0001
+#define SCANF_FLAG_DEC      0x0002
+#define SCANF_FLAG_HEX      0x0004
+#define SCANF_FLAG_8        0x0008
+#define SCANF_FLAG_16       0x0010
+#define SCANF_FLAG_64       0x0020
+#define SCANF_FLAG_SIGNED   0x0040
+
+struct scanf_stream_s
+{
+    FILE *stream;
+    const char *str;
+    ssize_t pos;
+};
+
+static __attribute__((__noinline__)) char scanf_get_char(
+    struct scanf_stream_s *in)
+{
+    char c = EOF;
+    if (in->stream != NULL)
+        c = fgetc_unlocked(in->stream);
+    else
+    {
+        if (in->pos < 0 || in->str[in->pos] == '\0')
+            in->pos = -1;
+        else
+            c = in->str[in->pos++];
+    }
+    return c;
+}
+
+static __attribute__((__noinline__)) void scanf_unget_char(char c,
+    struct scanf_stream_s *in)
+{
+    if (c == EOF)
+        return;
+    if (in->stream != NULL)
+        ungetc_unlocked(c, in->stream);
+    else
+    {
+        if (in->pos <= 0)
+            in->pos = -1;
+        else
+            in->pos--;
+    }
+}
+
+static __attribute__((__noinline__)) char scanf_get_char_n(
+    struct scanf_stream_s *in, size_t *width)
+{
+    if (*width == 0)
+        return EOF;
+    *width -= 1;
+    return scanf_get_char(in);
+}
+
+static __attribute__((__noinline__)) void scanf_unget_char_n(char c,
+    struct scanf_stream_s *in, size_t *width)
+{
+    if (c == EOF)
+        return;
+    *width += 1;
+    scanf_unget_char(c, in);
+}
+
+static __attribute__((__noinline__)) bool scanf_get_dec(
+    struct scanf_stream_s *in, size_t *width, uint64_t *p, bool *r)
+{
+    char c = scanf_get_char_n(in, width);
+    if (!isdigit(c))
+    {
+        scanf_unget_char_n(c, in, width);
+        return false;
+    }
+    uint64_t i = 0;
+    do
+    {
+        i *= 10;
+        uint64_t d = (c - '0');
+        if (UINT64_MAX - i < d)
+            *r = true;
+        i = (UINT64_MAX - i < d? UINT64_MAX: i + d);
+    }
+    while (isdigit(c = scanf_get_char_n(in, width)));
+    scanf_unget_char_n(c, in, width);
+    *p = i;
+    return true;
+}
+
+static __attribute__((__noinline__)) bool scanf_get_hex(
+    struct scanf_stream_s *in, size_t *width, uint64_t *p, bool *r)
+{
+    char c = scanf_get_char_n(in, width);
+    if (!isxdigit(c))
+    {
+        scanf_unget_char_n(c, in, width);
+        return false;
+    }
+    uint64_t i = 0;
+    do
+    {
+        i *= 16;
+        uint64_t d = (c >= '0' && c <= '9'? c - '0':
+                      c >= 'a' && c <= 'f'? 10 + c - 'a':
+                      c >= 'A' && c <= 'F'? 10 + c - 'A': 0);
+        if (UINT64_MAX - i < d)
+            *r = true;
+        i = (UINT64_MAX - i < d? UINT64_MAX: i + d);
+    }
+    while (isxdigit(c = scanf_get_char_n(in, width)));
+    scanf_unget_char_n(c, in, width);
+    *p = i;
+    return true;
+}
+
+static __attribute__((__noinline__)) bool scanf_get_num(
+    struct scanf_stream_s *in, size_t width, unsigned flags, void *ptr)
+{
+    size_t size = (flags & SCANF_FLAG_8?  sizeof(uint8_t):
+                   flags & SCANF_FLAG_16? sizeof(uint16_t):
+                   flags & SCANF_FLAG_64? sizeof(uint64_t): sizeof(uint32_t));
+    memset(ptr, 0, size);
+    char c;
+    while (isspace(c = scanf_get_char(in)))
+        ;
+    width--;
+    bool neg = (c == '-');
+    if (neg || c == '+')
+        c = scanf_get_char_n(in, &width);
+    uint64_t i = 0;
+    bool overflow = false;
+    if (c == '0' && (flags & SCANF_FLAG_HEX))
+    {
+        c = scanf_get_char_n(in, &width);
+        if (c == 'x' || c == 'X')
+        {
+            if (!scanf_get_hex(in, &width, &i, &overflow))
+                return false;
+        }
+        else if (flags & SCANF_FLAG_DEC)
+        {
+            c = scanf_get_char_n(in, &width);
+            if (!isdigit(c))
+                i = 0;
+            else if (!scanf_get_dec(in, &width, &i, &overflow))
+                return false;
+        }
+        else
+            return false;
+    }
+    else if (flags & SCANF_FLAG_DEC)
+    {
+        scanf_unget_char_n(c, in, &width);
+        if (!scanf_get_dec(in, &width, &i, &overflow))
+            return false;
+    }
+    else
+    {
+        scanf_unget_char_n(c, in, &width);
+        return false;
+    }
+    if (neg)
+    {
+        if (i > (uint64_t)INT64_MAX+1)
+        {
+            overflow = true;
+            i = (uint64_t)INT64_MIN;
+        }
+        else
+            i = -i;
+    }
+    if (flags & SCANF_FLAG_SIGNED)
+    {
+        int64_t j = (int64_t)i;
+        int64_t lb = (flags & SCANF_FLAG_8?  INT8_MIN:
+                      flags & SCANF_FLAG_16? INT16_MIN:
+                      flags & SCANF_FLAG_64? INT64_MIN: INT32_MIN);
+        if (j < lb)
+        {
+            overflow = true;
+            j = lb;
+        }
+        int64_t ub = (flags & SCANF_FLAG_8?  INT8_MAX:
+                      flags & SCANF_FLAG_16? INT16_MAX:
+                      flags & SCANF_FLAG_64? INT64_MAX: INT32_MAX);
+        if (j > ub)
+        {
+            overflow = true;
+            j = ub;
+        }
+        i = (uint64_t)j;
+    }
+    else
+    {
+        uint64_t ub = (flags & SCANF_FLAG_8?  UINT8_MAX:
+                       flags & SCANF_FLAG_16? UINT16_MAX:
+                       flags & SCANF_FLAG_64? UINT64_MAX: UINT32_MAX);
+        if (i > ub)
+        {
+            overflow = true;
+            i = ub;
+        }
+    }
+    memcpy(ptr, &i, size);
+    if (overflow)
+        errno = ERANGE;
+    return true;
+}
+
+static int scanf_impl(struct scanf_stream_s *in, const char *format, va_list ap)
+{
+    int num = 0;
+    char c;
+    for (; *format != '\0'; format++)
+    {
+        if (isspace(*format))
+        {
+            while (isspace(c = scanf_get_char(in)))
+                ;
+            scanf_unget_char(c, in);
+            while (isspace(format[1]))
+                format++;
+            continue;
+        }
+        switch (*format)
+        {
+            case '%':
+                format++;
+                if (*format != '%')
+                    break;
+                // Fallthrough:
+            default:
+                c = scanf_get_char(in);
+                if (c != *format)
+                {
+                    scanf_unget_char(c, in);
+                    return num;
+                }
+                continue;
+        }
+        
+        size_t width = 0;
+        for (; isdigit(*format); format++)
+        {
+            width *= 10;
+            width += (unsigned)(*format - '0');
+            width = (width > INT32_MAX? INT32_MAX: width);
+        }
+        width = (width == 0? INT32_MAX: width);
+
+        unsigned flags = 0x0;
+        switch (*format)
+        {
+            case 'l':
+                flags |= SCANF_FLAG_64;
+                format++;
+                if (*format == 'l')
+                    format++;
+                break;
+            case 'h':
+                format++;
+                if (*format == 'h')
+                {
+                    format++;
+                    flags |= SCANF_FLAG_8;
+                }
+                else
+                    flags |= SCANF_FLAG_16;
+                break;
+            case 'z': case 'j': case 't':
+                format++;
+                flags |= SCANF_FLAG_64;
+                break;
+        }
+
+        void *ptr = (void *)va_arg(ap, void *);
+        char *ptr8 = (char *)ptr;
+        switch (*format)
+        {
+            case 'c':
+                width = (width == INT32_MAX? 1: 0);
+                while ((c = scanf_get_char_n(in, &width)) != EOF)
+                    *ptr8++ = c;
+                if (width != 0)
+                    return num;
+                break;
+            case 's':
+                while (isspace(c = scanf_get_char_n(in, &width)))
+                    ;
+                *ptr8++ = c;
+                while ((c = scanf_get_char_n(in, &width)) != EOF && !isspace(c))
+                    *ptr8++ = c;
+                scanf_unget_char_n(c, in, &width);
+                *ptr8++ = '\0';
+                break;
+            case 'd':
+                flags |= SCANF_FLAG_DEC | SCANF_FLAG_SIGNED;
+                if (!scanf_get_num(in, width, flags, ptr))
+                    return num;
+                break;
+            case 'u':
+                flags |= SCANF_FLAG_DEC;
+                if (!scanf_get_num(in, width, flags, ptr))
+                    return num;
+                break;
+            case 'x': case 'X':
+                flags |= SCANF_FLAG_HEX;
+                if (!scanf_get_num(in, width, flags, ptr))
+                    return num;
+                break;
+            case 'i':
+                flags |= SCANF_FLAG_DEC | SCANF_FLAG_HEX | SCANF_FLAG_SIGNED;
+                if (!scanf_get_num(in, width, flags, ptr))
+                    return num;
+                break;
+            case 'p':
+                flags |= SCANF_FLAG_HEX | SCANF_FLAG_64;
+                if (!scanf_get_num(in, width, flags, ptr))
+                    return num;
+                break;
+            default:
+                return num;
+        }
+        num++;
+    }
+    return num;
+}
+
+static int vsscanf(const char *str, const char *format, va_list ap)
+{
+    if (str == NULL)
+    {
+        errno = EINVAL;
+        return EOF;
+    }
+    struct scanf_stream_s in = {0};
+    in.stream = NULL;
+    in.str = str;
+    in.pos = 0;
+    return scanf_impl(&in, format, ap);
+}
+
+static int vfscanf_unlocked(FILE *stream, const char *format, va_list ap)
+{
+    if (stream == NULL)
+    {
+        errno = EINVAL;
+        return EOF;
+    }
+    struct scanf_stream_s in;
+    in.stream = stream;
+    int result = scanf_impl(&in, format, ap);
+    if (result == 0 && ferror(stream))
+        result = EOF;
+    return result;
+}
+
+static int vfscanf(FILE *stream, const char *format, va_list ap)
+{
+    stdio_lock(stream, -1);
+    int result = vfscanf_unlocked(stream, format, ap);
+    stdio_unlock(stream);
+    return result;
+}
+
+static int vscanf_unlocked(const char *format, va_list ap)
+{
+    return vfscanf_unlocked(stdin, format, ap);
+}
+
+static int vscanf(const char *format, va_list ap)
+{
+    return vfscanf(stdin, format, ap);
+}
+
+static int sscanf(const char *str, const char *format, ...)
+{
+    va_list ap;
+    va_start(ap, format);
+    int result = vsscanf(str, format, ap);
+    va_end(ap);
+    return result;
+}
+
+static int fscanf(FILE *stream, const char *format, ...)
+{
+    va_list ap;
+    va_start(ap, format);
+    int result = vfscanf(stream, format, ap);
+    va_end(ap);
+    return result;
+}
+
+static int fscanf_unlocked(FILE *stream, const char *format, ...)
+{
+    va_list ap;
+    va_start(ap, format);
+    int result = vfscanf_unlocked(stream, format, ap);
+    va_end(ap);
+    return result;
+}
+
+static int scanf(const char *format, ...)
+{
+    va_list ap;
+    va_start(ap, format);
+    int result = vscanf(format, ap);
+    va_end(ap);
+    return result;
+}
+
+static int scanf_unlocked(const char *format, ...)
+{
+    va_list ap;
+    va_start(ap, format);
+    int result = vscanf_unlocked(format, ap);
     va_end(ap);
     return result;
 }
