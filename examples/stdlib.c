@@ -2117,7 +2117,7 @@ static const char *strerror(int errnum)
         case EPIPE:
             return "Broken pipe";
         case ERANGE:
-            return "Result too large";
+            return "Numerical result out of range";
         case EROFS:
             return "Read-only filesystem";
         case ESPIPE:
@@ -2167,6 +2167,7 @@ static __int128 atoi_convert(const char * __restrict__ nptr,
         errno = EINVAL;
         return 0;
     }
+    char *startptr = (char *)nptr;
     while (isspace(*nptr))
         nptr++;
     bool neg = false;
@@ -2184,24 +2185,43 @@ static __int128 atoi_convert(const char * __restrict__ nptr,
     switch (*nptr)
     {
         case '0':
-            if (base == 0)
+            switch (base)
             {
-                nptr++;
-                if (*nptr == 'x' || *nptr == 'X')
-                {
-                    base = 16;
+                case 16:
                     nptr++;
-                }
-                else
-                    base = 8;
+                    if (*nptr == 'x' || *nptr == 'X')
+                        nptr++;
+                    break;
+                case 8:
+                    nptr++;
+                    break;
+                case 0:
+                    nptr++;
+                    if (*nptr == 'x' || *nptr == 'X')
+                    {
+                        nptr++;
+                        base = 16;
+                    }
+                    else if (atoi_digit(*nptr, 8) >= 0)
+                        base = 8;
+                    else
+                    {
+                        *endptr = (char *)nptr;
+                        return 0;
+                    }
+                    break;
             }
             break;
         case '\0':
-            *endptr = (char *)nptr;
-            errno = EINVAL;
+            *endptr = startptr;
             return 0;
         default:
             base = (base == 0? 10: base);
+            if (atoi_digit(*nptr, base) < 0)
+            {
+                *endptr = (char *)startptr;
+                return 0;
+            }
             break;
     }
         
@@ -2210,6 +2230,7 @@ static __int128 atoi_convert(const char * __restrict__ nptr,
     int d;
     for (i = 0; (d = atoi_digit(*nptr, base)) >= 0; i++)
     {
+        nptr++;
         x *= base;
         if (!neg)
         {
@@ -2231,12 +2252,6 @@ static __int128 atoi_convert(const char * __restrict__ nptr,
                 return min;
             }
         }
-        nptr++;
-    }
-    if (i == 0)
-    {
-        errno = EINVAL;
-        return 0;
     }
     *endptr = (char *)nptr;
     return x;

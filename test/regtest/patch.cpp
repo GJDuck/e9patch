@@ -1061,6 +1061,21 @@ void test_string(void)
         fprintf(stderr, "strnlen(\"%s\", 5) = %zu\n", str, strnlen(str, 5));
         free(str);
     }
+    int bs[] = {0, 8, 10, 16, 36, -1};
+    const char *Xs[] = {"0", " - 1", " \t-1234567890zzz", "0644", "0x123456789abc", NULL};
+    for (size_t i = 0; bs[i] >= 0; i++)
+    {
+        int b = bs[i];
+        for (size_t i = 0; Xs[i] != NULL; i++)
+        {
+            const char *X = Xs[i];
+            errno = 0;
+            char *end = NULL;
+            int64_t x = strtoll(X, &end, b);
+            fprintf(stderr, "strtoll(\"%s\", %d) = %zd (%s) [\"%s\"]\n",
+                X, b, x, strerror(errno), end);
+        }
+    }
     free(s1);
     free(s2);
 }
