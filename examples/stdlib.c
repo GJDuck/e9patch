@@ -2473,8 +2473,11 @@ static int fflush_unlocked(FILE *stream)
         return EOF;
     }
     if (stream->flags & STDIO_FLAG_WRITING)
-        return stdio_stream_write(stream);
-    if (stream->flags & STDIO_FLAG_READING)
+    {
+        if (stdio_stream_write(stream) != 0)
+            return EOF;
+    }
+    else if (stream->flags & STDIO_FLAG_READING)
     {
         stream->unget = EOF;
         off_t offset = stream->read_ptr - stream->read_end;
@@ -2664,10 +2667,7 @@ static FILE *freopen(const char *path, const char *mode, FILE *stream)
 
 static void clearerr_unlocked(FILE *stream)
 {
-    stream->flags &= ~(STDIO_FLAG_EOF | STDIO_FLAG_ERROR |
-        STDIO_FLAG_READING | STDIO_FLAG_WRITING);
-    stream->read_ptr = stream->read_end = NULL;
-    stream->write_ptr = stream->write_end = NULL;
+    stream->flags &= ~(STDIO_FLAG_EOF | STDIO_FLAG_ERROR);
 }
 
 static void clearerr(FILE *stream)

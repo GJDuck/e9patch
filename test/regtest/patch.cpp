@@ -899,7 +899,11 @@ void test_stdio(intptr_t arg)
     int n = fprintf(stream, "%s %10d %zd -%#lx %p\n%u\t%4hu\t \t%c\n", "aaa",
         101, arg, arg, (void *)arg, (unsigned)arg, (uint16_t)arg, (char)arg);
     fprintf(stderr, "pos = %zd vs %d\n", ftell(stream), n);
+    const char HELLO[] = "Hello World!";
+    int r = fwrite(HELLO, sizeof(char), sizeof(HELLO)-1, stream);
+    fprintf(stderr, "write = %d\n", r);
     fseek(stream, 1, SEEK_SET);
+    fprintf(stderr, "getc() = %d\n", getc(stream));
     fputs("bbb", stream);
     fclose(stream);
 
@@ -942,8 +946,8 @@ void test_stdio(intptr_t arg)
     uint16_t h;
     char c;
     errno = 0;
-    int r = fscanf(stream, "%d %d\t\r\n%zd   %li %p %u %hu %c", &i, &j, &x,
-        &y, &p, &u, &h, &c);
+    r = fscanf(stream, "%d %d\t\r\n%zd   %li %p %u %hu %c", &i, &j, &x, &y,
+        &p, &u, &h, &c);
     fprintf(stderr, "errno = %d (%s)\n", errno, strerror(errno));
     fprintf(stderr, "r = %d\n", r);
     fprintf(stderr, "i = %d\n", i);
@@ -954,6 +958,13 @@ void test_stdio(intptr_t arg)
     fprintf(stderr, "u = %u\n", u);
     fprintf(stderr, "h = %hu\n", h);
     fprintf(stderr, "c = '%c'\n", c);
+    getc(stream);
+    char buf1[20] = {0};
+    r = fread(buf1, sizeof(char), sizeof(buf1), stream);
+    fprintf(stderr, "read = \"%s\" (%d)\n", buf1, r);
+    fprintf(stderr, "feof() = %d\n", feof(stream));
+    clearerr(stream);
+    fprintf(stderr, "feof() = %d\n", feof(stream));
     fseek(stream, 0, SEEK_SET);
     fscanf(stream, "%s", s);
     fprintf(stderr, "s = \"%s\"\n", s);

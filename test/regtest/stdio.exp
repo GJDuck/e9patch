@@ -1,6 +1,8 @@
 arg = 0x2d9bfa6b1014f832
 [0]
 pos = 94 vs 94
+write = 12
+getc() = -1
 [1]
 pos = 4
 i = 101
@@ -20,9 +22,12 @@ p = 0x2d9bfa6b1014f832
 u = 269809714
 h = 63538
 c = '2'
+read = "Hello World!" (12)
+feof() = 1
+feof() = 0
 s = "cccc"
 s = "cccc"
-c = ' '
+c = 'c'
 c = 'd'
 [3]
 pos = 1
