@@ -1920,50 +1920,48 @@ static int tolower(int c)
 
 static void *memset(void *dst, int c, size_t n)
 {
-    asm volatile ("rep stosb" : "+D"(dst), "+c"(n) : "a"(c) : "memory");
+    uint8_t *dst8 = (uint8_t *)dst;
+    for (size_t i = 0; i < n; i++)
+        dst8[i] = (uint8_t)c;
     return dst;
 }
 
 static void *memcpy(void *dst, const void *src, size_t n)
 {
-    asm volatile ("rep movsb" : "+D"(dst), "+c"(n), "+S"(src) : : "memory");
+    uint8_t *dst8 = (uint8_t *)dst;
+    const uint8_t *src8 = (const uint8_t *)src;
+    for (size_t i = 0; i < n; i++)
+        dst8[i] = src8[i];
     return dst;
 }
 
-static int memcmp(const void *s1, const void *s2, size_t n)
+static int memcmp(const void *a, const void *b, size_t n)
 {
-    int cmp;
-    asm (
-        "repz cmpsb\n"
-        "seta %%dil\n"
-        "setb %%sil\n"
-        "subb %%dil,%%sil\n"
-        "movsbl %%sil,%0"
-        : "=r"(cmp), "+D"(s1), "+S"(s2), "+c"(n));
-    return cmp;
+    const uint8_t *a8 = (const uint8_t *)a;
+    const uint8_t *b8 = (const uint8_t *)b;
+    for (size_t i = 0; i < n; i++)
+    {
+        int cmp = (int)a8[i] - (int)b8[i];
+        if (cmp != 0)
+            return cmp;
+    }
+    return 0;
 }
 
 static size_t strlen(const char *s)
 {
-    size_t len;
-    char zero = '\0';
-    asm (
-        "mov $-1,%%rcx\n"
-        "repnz scasb\n"
-        "inc %%rcx\n"
-        "not %%rcx\n"
-        : "+D"(s), "=c"(len) : "a"(zero));
-    return len;
+    size_t n = 0;
+    for (size_t i = 0; s[i] != '\0'; i++)
+        n++;
+    return n;
 }
 
 static size_t strnlen(const char *s, size_t n)
 {
-    size_t m = n;
-    char zero = '\0';
-    asm (
-        "repnz scasb\n"
-        : "+D"(s), "+c"(n) : "a"(zero));
-    return m - n;
+    size_t m = 0;
+    for (size_t i = 0; m < n && s[i] != '\0'; i++)
+        m++;
+    return m;
 }
 
 static int strncmp(const char *s1, const char *s2, size_t n)

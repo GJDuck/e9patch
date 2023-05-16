@@ -1,25 +1,49 @@
-Hello World!
-Hello World!
-Hello World!
-Hello World!
-Hello World!
-Hello World!
-Hello World!
-Hello World!
-Hello World!
-Hello World!
-Hello World!
-Hello World!
-Hello World!
-Hello World!
-Hello World!
-Hello World!
-Hello World!
-Hello World!
-Hello World!
-Hello World!
-Hello World!
-Hello World!
-Hello World!
-Hello World!
+strlen("AAAAAAAAAABAAAAAAAAAA") = 21
+strnlen("", 5) = 0
+strnlen("AAAAAAAAAABAAAAAAAAAA", 5) = 5
+strnlen("AAAAAAAAAABAAAAAAAAAA", 25) = 21
+strchr("AAAAAAAAAABAAAAAAAAAA", 'B') = "BAAAAAAAAAA"
+strchr("AAAAAAAAAAAAAAAAAAAAA", 'B') = "(null)"
+memcmp("AAAAAAAAAABAAAAAAAAAA", "AAAAAAAAAABAAAAAAAAAA") = 0
+memcmp("AAAAAAAAAABAAAAAAAAAA", "AAAAAAAAAAAAAAAAAAAAA") = 1
+memcmp("AAAAAAAAAAAAAAAAAAAAA", "AAAAAAAAAAAAAAAAAAAAA") = 0
+memcmp("AAAAAAAAAAAAAAAAAAAAA", "AAAAAAAAAABAAAAAAAAAA") = -1
+strcmp("AAAAAAAAAABAAAAAAAAAA", "AAAAAAAAAABAAAAAAAAAA") = 0
+strcmp("AAAAAAAAAABAAAAAAAAAA", "AAAAAAAAAAAAAAAAAAAAA") = 1
+strcmp("AAAAAAAAAAAAAAAAAAAAA", "AAAAAAAAAAAAAAAAAAAAA") = 0
+strcmp("AAAAAAAAAAAAAAAAAAAAA", "AAAAAAAAAABAAAAAAAAAA") = -1
+strncmp("AAAAAAAAAABAAAAAAAAAA", "AAAAAAAAAABAAAAAAAAAA", 10) = 0
+strncmp("AAAAAAAAAABAAAAAAAAAA", "AAAAAAAAAAAAAAAAAAAAA", 10) = 0
+strncmp("AAAAAAAAAAAAAAAAAAAAA", "AAAAAAAAAAAAAAAAAAAAA", 10) = 0
+strncmp("AAAAAAAAAAAAAAAAAAAAA", "AAAAAAAAAABAAAAAAAAAA", 10) = 0
+strncat("Hello ", "World!", 3) = "Hello Wor"
+strcat("Hello ", "World!") = "Hello World!"
+strcpy("buffer...", "data") = {'d','a','t','a','0','r','.','.','.','0'}
+strncpy("buffer...", "data", 10) = {'d','a','t','a','0','0','0','0','0','0'}
+strlen("") = 0
+strlen("!") = 1
+strlen("d!") = 2
+strlen("ld!") = 3
+strlen("rld!") = 4
+strlen("orld!") = 5
+strlen("World!") = 6
+strlen(" World!") = 7
+strlen("o World!") = 8
+strlen("lo World!") = 9
+strlen("llo World!") = 10
+strlen("ello World!") = 11
+strlen("Hello World!") = 12
+strnlen("", 5) = 0
+strnlen("!", 5) = 1
+strnlen("d!", 5) = 2
+strnlen("ld!", 5) = 3
+strnlen("rld!", 5) = 4
+strnlen("orld!", 5) = 5
+strnlen("World!", 5) = 5
+strnlen(" World!", 5) = 5
+strnlen("o World!", 5) = 5
+strnlen("lo World!", 5) = 5
+strnlen("llo World!", 5) = 5
+strnlen("ello World!", 5) = 5
+strnlen("Hello World!", 5) = 5
 PASSED

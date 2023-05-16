@@ -993,6 +993,78 @@ void test_stdio(intptr_t arg)
     unlink("test.tmp");
 }
 
+void test_string(void)
+{
+    char *s1 = strdup("AAAAAAAAAABAAAAAAAAAA");
+    char *s2 = strdup("AAAAAAAAAAAAAAAAAAAAA");
+    size_t n = strlen(s1);
+    fprintf(stderr, "strlen(\"%s\") = %zu\n", s1, n);
+    fprintf(stderr, "strnlen(\"\", 5) = %zu\n", strnlen("", 5));
+    fprintf(stderr, "strnlen(\"%s\", 5) = %zu\n", s1, strnlen(s1, 5));
+    fprintf(stderr, "strnlen(\"%s\", 25) = %zu\n", s1, strnlen(s1, 25));
+    fprintf(stderr, "strchr(\"%s\", 'B') = \"%s\"\n", s1, strchr(s1, 'B'));
+    fprintf(stderr, "strchr(\"%s\", 'B') = \"%s\"\n", s2, strchr(s2, 'B'));
+    fprintf(stderr, "memcmp(\"%s\", \"%s\") = %d\n",
+        s1, s1, memcmp(s1, s1, n));
+    fprintf(stderr, "memcmp(\"%s\", \"%s\") = %d\n",
+        s1, s2, memcmp(s1, s2, n));
+    fprintf(stderr, "memcmp(\"%s\", \"%s\") = %d\n",
+        s2, s2, memcmp(s2, s2, n));
+    fprintf(stderr, "memcmp(\"%s\", \"%s\") = %d\n",
+        s2, s1, memcmp(s2, s1, n));
+    fprintf(stderr, "strcmp(\"%s\", \"%s\") = %d\n",
+        s1, s1, strcmp(s1, s1));
+    fprintf(stderr, "strcmp(\"%s\", \"%s\") = %d\n",
+        s1, s2, strcmp(s1, s2));
+    fprintf(stderr, "strcmp(\"%s\", \"%s\") = %d\n",
+        s2, s2, strcmp(s2, s2));
+    fprintf(stderr, "strcmp(\"%s\", \"%s\") = %d\n",
+        s2, s1, strcmp(s2, s1));
+    fprintf(stderr, "strncmp(\"%s\", \"%s\", 10) = %d\n",
+        s1, s1, strncmp(s1, s1, 10));
+    fprintf(stderr, "strncmp(\"%s\", \"%s\", 10) = %d\n",
+        s1, s2, strncmp(s1, s2, 10));
+    fprintf(stderr, "strncmp(\"%s\", \"%s\", 10) = %d\n",
+        s2, s2, strncmp(s2, s2, 10));
+    fprintf(stderr, "strncmp(\"%s\", \"%s\", 10) = %d\n",
+        s2, s1, strncmp(s2, s1, 10));
+    char hello[13] = "Hello ", world[] = "World!";
+    fprintf(stderr, "strncat(\"%s\", \"%s\", 3) = ", hello, world);
+    strncat(hello, world, 3);
+    fprintf(stderr, "\"%s\"\n", hello);
+    hello[6] = '\0';
+    fprintf(stderr, "strcat(\"%s\", \"%s\") = ", hello, world);
+    strcat(hello, world);
+    fprintf(stderr, "\"%s\"\n", hello);
+    char buf[10] = "buffer...";
+    char *data = "data";
+    fprintf(stderr, "strcpy(\"%s\", \"%s\") = ", buf, data);
+    strcpy(buf, data);
+    for (size_t i = 0; i < 10; i++)
+        fprintf(stderr, "%c'%c'", (i == 0? '{': ','), (buf[i]? buf[i]: '0'));
+    fputs("}\n", stderr);
+    char buf1[10] = "buffer...";
+    fprintf(stderr, "strncpy(\"%s\", \"%s\", 10) = ", buf1, data);
+    strncpy(buf1, data, 10);
+    for (size_t i = 0; i < 10; i++)
+        fprintf(stderr, "%c'%c'", (i == 0? '{': ','), (buf1[i]? buf1[i]: '0'));
+    fputs("}\n", stderr);
+    for (size_t i = 0; i < sizeof(hello); i++)
+    {
+        char *str = strdup(hello + sizeof(hello) - 1 - i);
+        fprintf(stderr, "strlen(\"%s\") = %zu\n", str, strlen(str));
+        free(str);
+    }
+    for (size_t i = 0; i < sizeof(hello); i++)
+    {
+        char *str = strdup(hello + sizeof(hello) - 1 - i);
+        fprintf(stderr, "strnlen(\"%s\", 5) = %zu\n", str, strnlen(str, 5));
+        free(str);
+    }
+    free(s1);
+    free(s2);
+}
+
 extern "C"
 {
 void format(const char *msg, intptr_t a1, intptr_t a2, intptr_t a3,
