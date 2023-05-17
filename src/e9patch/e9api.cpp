@@ -634,6 +634,7 @@ static void parseReserve(Binary *B, const Message &msg)
         length = getTrampolineSize(B, bytes, nullptr);
         size_t length_lo = address % PAGE_SIZE;
         size_t length_hi = PAGE_SIZE - (length_lo + length) % PAGE_SIZE;
+        length_hi = (length_hi == PAGE_SIZE? 0: length_hi);
         intptr_t address_lo = address - length_lo;
         intptr_t address_hi = address + length;
         const unsigned num_trampolines = 3;
