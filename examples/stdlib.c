@@ -94,6 +94,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
+#include <search.h>
 
 #include <sys/fcntl.h>
 #include <sys/file.h>
@@ -297,6 +298,12 @@ extern "C"
 #undef strdup
 #undef strerror
 
+#undef tsearch
+#undef tfind
+#undef tdelete
+#undef twalk
+#undef tdestroy
+
 /***/
 
 #define __errno_location    e9___errno_location
@@ -449,6 +456,12 @@ extern "C"
 #define strdup              e9_strdup
 #define strncpy             e9_strncpy
 #define strerror            e9_strerror
+
+#define tsearch             e9_tsearch
+#define tfind               e9_tfind
+#define tdelete             e9_tdelete
+#define twalk               e9_twalk
+#define tdestroy            e9_tdestroy
 
 /****************************************************************************/
 /* DEBUG                                                                    */
@@ -4255,7 +4268,436 @@ asm (
     "retq\n"
 );
 
-#endif      /* defined(LIBC) */
+#endif      /* defined(LIBDL) */
+
+/****************************************************************************/
+/* SEARCH                                                                   */
+/****************************************************************************/
+
+/*
+ * This is an implementation of the POSIX tree-search (tsearch) family of
+ * functions, see (man tsearch) for more information.  Unlike the POSIX
+ * specification, this version additionally guarantees that the tree is
+ * balanced, for O(log N) worst-case behaviour.
+ *
+ * The implementation uses code that is derived from Niels Provos' red-black
+ * tree implementation.  See the copyright and license (BSD) below.
+ */
+
+/*
+ * Copyright 2002 Niels Provos <provos@citi.umich.edu>
+ * All rights reserved.
+ *
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions
+ * are met:
+ * 1. Redistributions of source code must retain the above copyright
+ *    notice, this list of conditions and the following disclaimer.
+ * 2. Redistributions in binary form must reproduce the above copyright
+ *    notice, this list of conditions and the following disclaimer in the
+ *    documentation and/or other materials provided with the distribution.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
+ * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
+ * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT,
+ * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
+ * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+ * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+ * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+ * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
+ * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ */
+
+struct node_s
+{
+    void *key;
+    struct node_s *parent;
+    struct node_s *left;
+    struct node_s *right;
+    int color;
+};
+struct tree_s
+{
+    struct node_s *root;
+};
+
+#define TREE_BLACK                  0
+#define TREE_RED                    1
+#define TREE_PARENT(N)              ((N)->parent)
+#define TREE_LEFT(N)                ((N)->left)
+#define TREE_RIGHT(N)               ((N)->right)
+#define TREE_COLOR(N)               ((N)->color)
+
+static void tree_rotate_left(struct tree_s *t, struct node_s *n)
+{
+    struct node_s *tmp = TREE_RIGHT(n);
+    if ((TREE_RIGHT(n) = TREE_LEFT(tmp)) != NULL)
+        TREE_PARENT(TREE_LEFT(tmp)) = n;
+    if ((TREE_PARENT(tmp) = TREE_PARENT(n)) != NULL)
+    {
+        if (n == TREE_LEFT(TREE_PARENT(n)))
+            TREE_LEFT(TREE_PARENT(n)) = tmp;
+        else
+            TREE_RIGHT(TREE_PARENT(n)) = tmp;
+    }
+    else
+        t->root = tmp;
+    TREE_LEFT(tmp) = n;
+    TREE_PARENT(n) = tmp;
+}
+
+static void tree_rotate_right(struct tree_s *t, struct node_s *n)
+{
+    struct node_s *tmp = TREE_LEFT(n);
+    if ((TREE_LEFT(n) = TREE_RIGHT(tmp)) != NULL)
+        TREE_PARENT(TREE_RIGHT(tmp)) = n;
+    if ((TREE_PARENT(tmp) = TREE_PARENT(n)) != NULL)
+    {
+        if (n == TREE_LEFT(TREE_PARENT(n)))
+            TREE_LEFT(TREE_PARENT(n)) = tmp;
+        else
+            TREE_RIGHT(TREE_PARENT(n)) = tmp;
+    } else
+        t->root = tmp;
+    TREE_RIGHT(tmp) = n;
+    TREE_PARENT(n) = tmp;
+}
+
+static void tree_rebalance_insert(struct tree_s *t, struct node_s *n)
+{
+    struct node_s *parent, *gparent, *tmp;
+    while ((parent = TREE_PARENT(n)) != NULL &&
+                TREE_COLOR(parent) == TREE_RED)
+    {
+        gparent = TREE_PARENT(parent);
+        if (parent == TREE_LEFT(gparent))
+        {
+            tmp = TREE_RIGHT(gparent);
+            if (tmp != NULL && TREE_COLOR(tmp) == TREE_RED)
+            {
+                TREE_COLOR(tmp)     = TREE_BLACK;
+                TREE_COLOR(parent)  = TREE_BLACK;
+                TREE_COLOR(gparent) = TREE_RED;
+                n = gparent;
+                continue;
+            }
+            if (TREE_RIGHT(parent) == n)
+            {
+                tree_rotate_left(t, parent);
+                tmp = parent;
+                parent = n;
+                n = tmp;
+            }
+            TREE_COLOR(parent)  = TREE_BLACK;
+            TREE_COLOR(gparent) = TREE_RED;
+            tree_rotate_right(t, gparent);
+        }
+        else
+        {
+            tmp = TREE_LEFT(gparent);
+            if (tmp != NULL && TREE_COLOR(tmp) == TREE_RED)
+            {
+                TREE_COLOR(tmp)     = TREE_BLACK;
+                TREE_COLOR(parent)  = TREE_BLACK;
+                TREE_COLOR(gparent) = TREE_RED;
+                n = gparent;
+                continue;
+            }
+            if (TREE_LEFT(parent) == n)
+            {
+                tree_rotate_right(t, parent);
+                tmp = parent;
+                parent = n;
+                n = tmp;
+            }
+            TREE_COLOR(parent)  = TREE_BLACK;
+            TREE_COLOR(gparent) = TREE_RED;
+            tree_rotate_left(t, gparent);
+        }
+    }
+    TREE_COLOR(t->root) = TREE_BLACK;
+}
+
+static void tree_rebalance_remove(struct tree_s *t, struct node_s *parent,
+    struct node_s *n)
+{
+    struct node_s *tmp;
+    while ((n == NULL || TREE_COLOR(n) == TREE_BLACK) && n != t->root)
+    {
+        if (TREE_LEFT(parent) == n)
+        {
+            tmp = TREE_RIGHT(parent);
+            if (TREE_COLOR(tmp) == TREE_RED)
+            {
+                TREE_COLOR(tmp) = TREE_BLACK;
+                TREE_COLOR(parent) = TREE_RED;
+                tree_rotate_left(t, parent);
+                tmp = TREE_RIGHT(parent);
+            }
+            if ((TREE_LEFT(tmp) == NULL ||
+                    TREE_COLOR(TREE_LEFT(tmp)) == TREE_BLACK) &&
+                (TREE_RIGHT(tmp) == NULL ||
+                    TREE_COLOR(TREE_RIGHT(tmp)) == TREE_BLACK))
+            {
+                TREE_COLOR(tmp) = TREE_RED;
+                n = parent;
+                parent = TREE_PARENT(n);
+            }
+            else
+            {
+                if (TREE_RIGHT(tmp) == NULL ||
+                    TREE_COLOR(TREE_RIGHT(tmp)) == TREE_BLACK)
+                {
+                    struct node_s *oleft;
+                    if ((oleft = TREE_LEFT(tmp)) != NULL)
+                        TREE_COLOR(oleft) = TREE_BLACK;
+                    TREE_COLOR(tmp) = TREE_RED;
+                    tree_rotate_right(t, tmp);
+                    tmp = TREE_RIGHT(parent);
+                }
+                TREE_COLOR(tmp) = TREE_COLOR(parent);
+                TREE_COLOR(parent) = TREE_BLACK;
+                if (TREE_RIGHT(tmp))
+                    TREE_COLOR(TREE_RIGHT(tmp)) = TREE_BLACK;
+                tree_rotate_left(t, parent);
+                n = t->root;
+                break;
+            }
+        }
+        else
+        {
+            tmp = TREE_LEFT(parent);
+            if (TREE_COLOR(tmp) == TREE_RED)
+            {
+                TREE_COLOR(tmp) = TREE_BLACK;
+                TREE_COLOR(parent) = TREE_RED;
+                tree_rotate_right(t, parent);
+                tmp = TREE_LEFT(parent);
+            }
+            if ((TREE_LEFT(tmp) == NULL ||
+                    TREE_COLOR(TREE_LEFT(tmp)) == TREE_BLACK) &&
+                (TREE_RIGHT(tmp) == NULL ||
+                    TREE_COLOR(TREE_RIGHT(tmp)) == TREE_BLACK))
+            {
+                TREE_COLOR(tmp) = TREE_RED;
+                n = parent;
+                parent = TREE_PARENT(n);
+            }
+            else
+            {
+                if (TREE_LEFT(tmp) == NULL ||
+                    TREE_COLOR(TREE_LEFT(tmp)) == TREE_BLACK)
+                {
+                    struct node_s *oright;
+                    if ((oright = TREE_RIGHT(tmp)) != NULL)
+                        TREE_COLOR(oright) = TREE_BLACK;
+                    TREE_COLOR(tmp) = TREE_RED;
+                    tree_rotate_left(t, tmp);
+                    tmp = TREE_LEFT(parent);
+                }
+                TREE_COLOR(tmp) = TREE_COLOR(parent);
+                TREE_COLOR(parent) = TREE_BLACK;
+                if (TREE_LEFT(tmp))
+                    TREE_COLOR(TREE_LEFT(tmp)) = TREE_BLACK;
+                tree_rotate_right(t, parent);
+                n = t->root;
+                break;
+            }
+        }
+    }
+    if (n != NULL)
+        TREE_COLOR(n) = TREE_BLACK;
+}
+
+static struct node_s *tree_remove(struct tree_s *t, struct node_s *n)
+{
+    struct node_s *child, *parent, *old = n;
+    int color;
+    if (TREE_LEFT(n) == NULL)
+        child = TREE_RIGHT(n);
+    else if (TREE_RIGHT(n) == NULL)
+        child = TREE_LEFT(n);
+    else
+    {
+        struct node_s *left;
+        n = TREE_RIGHT(n);
+        while ((left = TREE_LEFT(n)) != NULL)
+            n = left;
+        child = TREE_RIGHT(n);
+        parent = TREE_PARENT(n);
+        color = TREE_COLOR(n);
+        if (child != NULL)
+            TREE_PARENT(child) = parent;
+        if (parent != NULL)
+        {
+            if (TREE_LEFT(parent) == n)
+                TREE_LEFT(parent) = child;
+            else 
+                TREE_RIGHT(parent) = child;
+        }
+        else
+            t->root = child;
+        if (TREE_PARENT(n) == old)
+            parent = n;
+        TREE_PARENT(n) = TREE_PARENT(old);
+        TREE_LEFT(n)   = TREE_LEFT(old);
+        TREE_RIGHT(n)  = TREE_RIGHT(old);
+        TREE_COLOR(n)  = TREE_COLOR(old);
+        if (TREE_PARENT(old) != NULL)
+        {
+            if (TREE_LEFT(TREE_PARENT(old)) == old)
+                TREE_LEFT(TREE_PARENT(old)) = n;
+            else
+                TREE_RIGHT(TREE_PARENT(old)) = n;
+        }
+        else
+            t->root = n;
+        TREE_PARENT(TREE_LEFT(old)) = n;
+        if (TREE_RIGHT(old) != NULL)
+            TREE_PARENT(TREE_RIGHT(old)) = n;
+        goto color;
+    }
+    parent = TREE_PARENT(n);
+    color = TREE_COLOR(n);
+    if (child != NULL)
+        TREE_PARENT(child) = parent;
+    if (parent)
+    {
+        if (TREE_LEFT(parent) == n)
+            TREE_LEFT(parent) = child;
+        else
+            TREE_RIGHT(parent) = child;
+    }
+    else
+        t->root = child;
+color:
+    if (color == TREE_BLACK)
+        tree_rebalance_remove(t, parent, child);
+    return old;
+}
+
+static void *tsearch(const void *key, void **root,
+    int (*compare)(const void *, const void *))
+{
+    if (root == NULL)
+        return NULL;
+    struct tree_s *t = (struct tree_s *)root;
+    struct node_s *n = t->root, *parent = NULL;
+    int cmp = 0;
+    while (n != NULL)
+    {
+        parent = n;
+        cmp = compare(key, n->key);
+        if (cmp < 0)
+            n = TREE_LEFT(n);
+        else if (cmp > 0)
+            n = TREE_RIGHT(n);
+        else
+            return (void *)n;
+    }
+    n = (struct node_s *)malloc(sizeof(struct node_s));
+    n->key = (void *)key;
+    TREE_PARENT(n) = parent;
+    TREE_LEFT(n)   = TREE_RIGHT(n) = NULL;
+    TREE_COLOR(n)  = TREE_RED;
+    if (parent != NULL)
+    {
+        if (cmp < 0)
+            TREE_LEFT(parent) = n;
+        else
+            TREE_RIGHT(parent) = n;
+    }
+    else
+        t->root = n;
+    tree_rebalance_insert(t, n);
+    return n;
+}
+
+static void *tfind(const void *key, void **root,
+    int (*compare)(const void *, const void *))
+{
+    if (root == NULL)
+        return NULL;
+    struct tree_s *t = (struct tree_s *)root;
+    struct node_s *n = t->root;
+    int cmp = 0;
+    while (n != NULL)
+    {
+        cmp = compare(key, n->key);
+        if (cmp < 0)
+            n = TREE_LEFT(n);
+        else if (cmp > 0)
+            n = TREE_RIGHT(n);
+        else
+            return (void *)n;
+    }
+    return NULL;
+}
+
+static void *tdelete(const void *key, void **root,
+    int (*compare)(const void *, const void *))
+{
+    if (root == NULL)
+        return NULL;
+    struct tree_s *t = (struct tree_s *)root;
+    struct node_s *n = t->root;
+    int cmp = 0;
+    while (n != NULL)
+    {
+        cmp = compare(key, n->key);
+        if (cmp < 0)
+            n = TREE_LEFT(n);
+        else if (cmp > 0)
+            n = TREE_RIGHT(n);
+        else
+        {
+            struct node_s *parent = TREE_PARENT(n);
+            n = tree_remove(t, n);
+            free(n);
+            return (parent == NULL? (void *)root: parent);
+        }
+    }
+    return NULL;
+}
+
+static void tree_walk(const struct node_s *n, int depth,
+    void (*action)(const void *, const VISIT, const int))
+{
+    if (TREE_LEFT(n) == NULL && TREE_RIGHT(n) == NULL)
+        action(n, leaf, depth);
+    else
+    {
+        action(n, preorder, depth);
+        if (TREE_LEFT(n) != NULL)
+            tree_walk(TREE_LEFT(n), depth+1, action);
+        action(n, postorder, depth);
+        if (TREE_RIGHT(n) != NULL)
+            tree_walk(TREE_RIGHT(n), depth+1, action);
+        action(n, endorder, depth);
+    }
+}
+static void twalk(const void *root,
+    void (*action)(const void *, const VISIT, const int))
+{
+    if (root == NULL || action == NULL)
+        return;
+    struct node_s *n = (struct node_s *)root;
+    tree_walk(n, 0, action);
+}
+
+static void tree_destroy(const struct node_s *n, void (*free_node)(void *))
+{
+    if (n == NULL)
+        return;
+    tree_destroy(TREE_LEFT(n), free_node);
+    tree_destroy(TREE_RIGHT(n), free_node);
+}
+static void tdestroy(const void *root, void (*free_node)(void *))
+{
+    struct node_s *n = (struct node_s *)root;
+    tree_destroy(n, free_node);
+}
 
 /****************************************************************************/
 /* MISC                                                                     */
