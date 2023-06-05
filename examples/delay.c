@@ -1,5 +1,14 @@
 /*
- * configurable DELAY instrumentation (does nothing, but slowly).
+ * DELAY instrumentation
+ */
+
+/*
+ * Adds a configurable busy-loop delay to each instruction.
+ *
+ * EXAMPLE USAGE:
+ *  $ e9compile delay.c
+ *  $ e9tool -M jmp -P 'entry()@delay' xterm
+ *  $ DELAY=100000 ./a.out
  */
 
 #include "stdlib.c"

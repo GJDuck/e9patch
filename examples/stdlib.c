@@ -4759,11 +4759,6 @@ asm (
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-typedef struct entry
-{
-    char *key;
-    void *data;
-} ENTRY;
 typedef enum
 {
     preorder,
@@ -5059,6 +5054,8 @@ static void *tsearch(const void *key, void **root,
             return (void *)n;
     }
     n = (struct node_s *)malloc(sizeof(struct node_s));
+    if (n == NULL)
+        return NULL;
     n->key = (void *)key;
     TREE_PARENT(n) = parent;
     TREE_LEFT(n)   = TREE_RIGHT(n) = NULL;

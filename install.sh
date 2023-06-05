@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# Copyright (C) 2022 National University of Singapore
+# Copyright (C) 2023 National University of Singapore
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -70,14 +70,13 @@ mkdir -p "./usr/share/e9tool/include/"
 cp "../../src/e9tool/e9tool.h" "./usr/share/e9tool/include/"
 cp "../../src/e9tool/e9plugin.h" "./usr/share/e9tool/include/"
 mkdir -p "./usr/share/e9tool/examples/"
-cp "../../examples/args.c" "./usr/share/e9tool/examples/"
-cp "../../examples/counter.c" "./usr/share/e9tool/examples/"
+cp "../../examples/count.c" "./usr/share/e9tool/examples/"
 cp "../../examples/delay.c" "./usr/share/e9tool/examples/"
 cp "../../examples/hello.c" "./usr/share/e9tool/examples/"
-cp "../../examples/io.c" "./usr/share/e9tool/examples/"
 cp "../../examples/limit.c" "./usr/share/e9tool/examples/"
 cp "../../examples/nop.c" "./usr/share/e9tool/examples/"
 cp "../../examples/print.c" "./usr/share/e9tool/examples/"
+cp "../../examples/printf.c" "./usr/share/e9tool/examples/"
 cp "../../examples/state.c" "./usr/share/e9tool/examples/"
 cp "../../examples/trap.c" "./usr/share/e9tool/examples/"
 cp "../../examples/win64_demo.c" "./usr/share/e9tool/examples/"
@@ -85,7 +84,6 @@ mkdir -p "./usr/share/e9tool/examples/plugins/"
 cp "../../examples/plugins/example.cpp" "./usr/share/e9tool/examples/plugins/"
 mkdir -p "./usr/share/e9compile/include/"
 cp "../../examples/stdlib.c" "./usr/share/e9compile/include/"
-cp "../../examples/rbtree.c" "./usr/share/e9compile/include/"
 cp "../../src/e9patch/e9loader.h" "./usr/share/e9compile/include/"
 mkdir -p "./usr/share/man/man1/"
 gzip --stdout ../../doc/e9patch.1   > ./usr/share/man/man1/e9patch.1.gz

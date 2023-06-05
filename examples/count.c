@@ -1,5 +1,15 @@
 /*
+ * COUNT instrumentation.
+ */
+
+/*
  * Instruction counting instrumentation.
+ * Will periodically print the count to the terminal (controlled by FREQ).
+ *
+ * EXAMPLE USAGE:
+ *  $ e9compile count.c
+ *  $ e9tool -M jmp -P 'entry()@count' xterm
+ *  $ FREQ=1000 ./a.out
  */
 
 #include "stdlib.c"
@@ -12,9 +22,7 @@ static size_t counter_2 = 0;
 static size_t counter   = 0;
 
 /*
- * Instrumentation (note: not thread-safe!).
- *
- * call entry@counter
+ * Entry Point.
  */
 void entry(void)
 {
@@ -28,7 +36,7 @@ void entry(void)
 }
 
 /*
- * Initialization.
+ * Init.
  */
 void init(int argc, char **argv, char **envp)
 {
