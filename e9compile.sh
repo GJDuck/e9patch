@@ -61,7 +61,7 @@ DIRNAME=`dirname $1`
 
 shift
 
-CFLAGS="-fno-stack-protector -fno-builtin \
+CFLAGS="-fno-stack-protector -fno-builtin -fno-exceptions \
     -fpie -O2 -Wno-unused-function \
     -mno-mmx -mno-sse -mno-avx -mno-avx2 -mno-avx512f -msoft-float \
     -mstringop-strategy=loop -fno-tree-vectorize -fomit-frame-pointer \

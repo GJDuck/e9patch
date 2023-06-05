@@ -3,7 +3,6 @@
  */
 
 #include "stdlib.c"
-#include <cstddef>
 
 /*
  * Representation of the state structure.

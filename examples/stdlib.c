@@ -84,41 +84,764 @@
  * underlying files meaning that they must be used with care.
  */
 
-
-#include <ctype.h>
-#include <limits.h>
-#include <errno.h>
-#include <signal.h>
+/*
+ * Only compiler-provided headers should be included.
+ * GLibc headers should NOT be included.
+ */
+#ifdef __cplusplus
+#include <cstdarg>
+#include <cstdbool>
+#include <cstddef>
+#include <cstdint>
+#else
 #include <stdarg.h>
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
-#include <stdio.h>
-#include <string.h>
-#include <search.h>
-
-#include <sys/fcntl.h>
-#include <sys/file.h>
-#include <sys/ioctl.h>
-#include <sys/mman.h>
-#include <sys/poll.h>
-#include <sys/resource.h>
-#include <sys/stat.h>
-#include <sys/time.h>
-#include <sys/types.h>
-#include <sys/wait.h>
-
-#ifndef _GNU_SOURCE
-#define _GNU_SOURCE
 #endif
-#include <sys/syscall.h>
-#include <fcntl.h>
-#include <termios.h>
-#include <unistd.h>
+
+#define STDIN_FILENO                    0
+#define STDOUT_FILENO                   1
+#define STDERR_FILENO                   2
+
+#define SYS_read                        0
+#define SYS_write                       1
+#define SYS_open                        2
+#define SYS_close                       3
+#define SYS_stat                        4
+#define SYS_fstat                       5
+#define SYS_lstat                       6
+#define SYS_poll                        7
+#define SYS_lseek                       8
+#define SYS_mmap                        9
+#define SYS_mprotect                    10
+#define SYS_munmap                      11
+#define SYS_brk                         12
+#define SYS_rt_sigaction                13
+#define SYS_rt_sigprocmask              14
+#define SYS_rt_sigreturn                15
+#define SYS_ioctl                       16
+#define SYS_pread64                     17
+#define SYS_pwrite64                    18
+#define SYS_readv                       19
+#define SYS_writev                      20
+#define SYS_access                      21
+#define SYS_pipe                        22
+#define SYS_select                      23
+#define SYS_sched_yield                 24
+#define SYS_mremap                      25
+#define SYS_msync                       26
+#define SYS_mincore                     27
+#define SYS_madvise                     28
+#define SYS_shmget                      29
+#define SYS_shmat                       30
+#define SYS_shmctl                      31
+#define SYS_dup                         32
+#define SYS_dup2                        33
+#define SYS_pause                       34
+#define SYS_nanosleep                   35
+#define SYS_getitimer                   36
+#define SYS_alarm                       37
+#define SYS_setitimer                   38
+#define SYS_getpid                      39
+#define SYS_sendfile                    40
+#define SYS_socket                      41
+#define SYS_connect                     42
+#define SYS_accept                      43
+#define SYS_sendto                      44
+#define SYS_recvfrom                    45
+#define SYS_sendmsg                     46
+#define SYS_recvmsg                     47
+#define SYS_shutdown                    48
+#define SYS_bind                        49
+#define SYS_listen                      50
+#define SYS_getsockname                 51
+#define SYS_getpeername                 52
+#define SYS_socketpair                  53
+#define SYS_setsockopt                  54
+#define SYS_getsockopt                  55
+#define SYS_clone                       56
+#define SYS_fork                        57
+#define SYS_vfork                       58
+#define SYS_execve                      59
+#define SYS_exit                        60
+#define SYS_wait4                       61
+#define SYS_kill                        62
+#define SYS_uname                       63
+#define SYS_semget                      64
+#define SYS_semop                       65
+#define SYS_semctl                      66
+#define SYS_shmdt                       67
+#define SYS_msgget                      68
+#define SYS_msgsnd                      69
+#define SYS_msgrcv                      70
+#define SYS_msgctl                      71
+#define SYS_fcntl                       72
+#define SYS_flock                       73
+#define SYS_fsync                       74
+#define SYS_fdatasync                   75
+#define SYS_truncate                    76
+#define SYS_ftruncate                   77
+#define SYS_getdents                    78
+#define SYS_getcwd                      79
+#define SYS_chdir                       80
+#define SYS_fchdir                      81
+#define SYS_rename                      82
+#define SYS_mkdir                       83
+#define SYS_rmdir                       84
+#define SYS_creat                       85
+#define SYS_link                        86
+#define SYS_unlink                      87
+#define SYS_symlink                     88
+#define SYS_readlink                    89
+#define SYS_chmod                       90
+#define SYS_fchmod                      91
+#define SYS_chown                       92
+#define SYS_fchown                      93
+#define SYS_lchown                      94
+#define SYS_umask                       95
+#define SYS_gettimeofday                96
+#define SYS_getrlimit                   97
+#define SYS_getrusage                   98
+#define SYS_sysinfo                     99
+#define SYS_times                       100
+#define SYS_ptrace                      101
+#define SYS_getuid                      102
+#define SYS_syslog                      103
+#define SYS_getgid                      104
+#define SYS_setuid                      105
+#define SYS_setgid                      106
+#define SYS_geteuid                     107
+#define SYS_getegid                     108
+#define SYS_setpgid                     109
+#define SYS_getppid                     110
+#define SYS_getpgrp                     111
+#define SYS_setsid                      112
+#define SYS_setreuid                    113
+#define SYS_setregid                    114
+#define SYS_getgroups                   115
+#define SYS_setgroups                   116
+#define SYS_setresuid                   117
+#define SYS_getresuid                   118
+#define SYS_setresgid                   119
+#define SYS_getresgid                   120
+#define SYS_getpgid                     121
+#define SYS_setfsuid                    122
+#define SYS_setfsgid                    123
+#define SYS_getsid                      124
+#define SYS_capget                      125
+#define SYS_capset                      126
+#define SYS_rt_sigpending               127
+#define SYS_rt_sigtimedwait             128
+#define SYS_rt_sigqueueinfo             129
+#define SYS_rt_sigsuspend               130
+#define SYS_sigaltstack                 131
+#define SYS_utime                       132
+#define SYS_mknod                       133
+#define SYS_uselib                      134
+#define SYS_personality                 135
+#define SYS_ustat                       136
+#define SYS_statfs                      137
+#define SYS_fstatfs                     138
+#define SYS_sysfs                       139
+#define SYS_getpriority                 140
+#define SYS_setpriority                 141
+#define SYS_sched_setparam              142
+#define SYS_sched_getparam              143
+#define SYS_sched_setscheduler          144
+#define SYS_sched_getscheduler          145
+#define SYS_sched_get_priority_max      146
+#define SYS_sched_get_priority_min      147
+#define SYS_sched_rr_get_interval       148
+#define SYS_mlock                       149
+#define SYS_munlock                     150
+#define SYS_mlockall                    151
+#define SYS_munlockall                  152
+#define SYS_vhangup                     153
+#define SYS_modify_ldt                  154
+#define SYS_pivot_root                  155
+#define SYS__sysctl                     156
+#define SYS_prctl                       157
+#define SYS_arch_prctl                  158
+#define SYS_adjtimex                    159
+#define SYS_setrlimit                   160
+#define SYS_chroot                      161
+#define SYS_sync                        162
+#define SYS_acct                        163
+#define SYS_settimeofday                164
+#define SYS_mount                       165
+#define SYS_umount2                     166
+#define SYS_swapon                      167
+#define SYS_swapoff                     168
+#define SYS_reboot                      169
+#define SYS_sethostname                 170
+#define SYS_setdomainname               171
+#define SYS_iopl                        172
+#define SYS_ioperm                      173
+#define SYS_create_module               174
+#define SYS_init_module                 175
+#define SYS_delete_module               176
+#define SYS_get_kernel_syms             177
+#define SYS_query_module                178
+#define SYS_quotactl                    179
+#define SYS_nfsservctl                  180
+#define SYS_getpmsg                     181
+#define SYS_putpmsg                     182
+#define SYS_afs_syscall                 183
+#define SYS_tuxcall                     184
+#define SYS_security                    185
+#define SYS_gettid                      186
+#define SYS_readahead                   187
+#define SYS_setxattr                    188
+#define SYS_lsetxattr                   189
+#define SYS_fsetxattr                   190
+#define SYS_getxattr                    191
+#define SYS_lgetxattr                   192
+#define SYS_fgetxattr                   193
+#define SYS_listxattr                   194
+#define SYS_llistxattr                  195
+#define SYS_flistxattr                  196
+#define SYS_removexattr                 197
+#define SYS_lremovexattr                198
+#define SYS_fremovexattr                199
+#define SYS_tkill                       200
+#define SYS_time                        201
+#define SYS_futex                       202
+#define SYS_sched_setaffinity           203
+#define SYS_sched_getaffinity           204
+#define SYS_set_thread_area             205
+#define SYS_io_setup                    206
+#define SYS_io_destroy                  207
+#define SYS_io_getevents                208
+#define SYS_io_submit                   209
+#define SYS_io_cancel                   210
+#define SYS_get_thread_area             211
+#define SYS_lookup_dcookie              212
+#define SYS_epoll_create                213
+#define SYS_epoll_ctl_old               214
+#define SYS_epoll_wait_old              215
+#define SYS_remap_file_pages            216
+#define SYS_getdents64                  217
+#define SYS_set_tid_address             218
+#define SYS_restart_syscall             219
+#define SYS_semtimedop                  220
+#define SYS_fadvise64                   221
+#define SYS_timer_create                222
+#define SYS_timer_settime               223
+#define SYS_timer_gettime               224
+#define SYS_timer_getoverrun            225
+#define SYS_timer_delete                226
+#define SYS_clock_settime               227
+#define SYS_clock_gettime               228
+#define SYS_clock_getres                229
+#define SYS_clock_nanosleep             230
+#define SYS_exit_group                  231
+#define SYS_epoll_wait                  232
+#define SYS_epoll_ctl                   233
+#define SYS_tgkill                      234
+#define SYS_utimes                      235
+#define SYS_vserver                     236
+#define SYS_mbind                       237
+#define SYS_set_mempolicy               238
+#define SYS_get_mempolicy               239
+#define SYS_mq_open                     240
+#define SYS_mq_unlink                   241
+#define SYS_mq_timedsend                242
+#define SYS_mq_timedreceive             243
+#define SYS_mq_notify                   244
+#define SYS_mq_getsetattr               245
+#define SYS_kexec_load                  246
+#define SYS_waitid                      247
+#define SYS_add_key                     248
+#define SYS_request_key                 249
+#define SYS_keyctl                      250
+#define SYS_ioprio_set                  251
+#define SYS_ioprio_get                  252
+#define SYS_inotify_init                253
+#define SYS_inotify_add_watch           254
+#define SYS_inotify_rm_watch            255
+#define SYS_migrate_pages               256
+#define SYS_openat                      257
+#define SYS_mkdirat                     258
+#define SYS_mknodat                     259
+#define SYS_fchownat                    260
+#define SYS_futimesat                   261
+#define SYS_newfstatat                  262
+#define SYS_unlinkat                    263
+#define SYS_renameat                    264
+#define SYS_linkat                      265
+#define SYS_symlinkat                   266
+#define SYS_readlinkat                  267
+#define SYS_fchmodat                    268
+#define SYS_faccessat                   269
+#define SYS_pselect6                    270
+#define SYS_ppoll                       271
+#define SYS_unshare                     272
+#define SYS_set_robust_list             273
+#define SYS_get_robust_list             274
+#define SYS_splice                      275
+#define SYS_tee                         276
+#define SYS_sync_file_range             277
+#define SYS_vmsplice                    278
+#define SYS_move_pages                  279
+#define SYS_utimensat                   280
+#define SYS_epoll_pwait                 281
+#define SYS_signalfd                    282
+#define SYS_timerfd_create              283
+#define SYS_eventfd                     284
+#define SYS_fallocate                   285
+#define SYS_timerfd_settime             286
+#define SYS_timerfd_gettime             287
+#define SYS_accept4                     288
+#define SYS_signalfd4                   289
+#define SYS_eventfd2                    290
+#define SYS_epoll_create1               291
+#define SYS_dup3                        292
+#define SYS_pipe2                       293
+#define SYS_inotify_init1               294
+#define SYS_preadv                      295
+#define SYS_pwritev                     296
+#define SYS_rt_tgsigqueueinfo           297
+#define SYS_perf_event_open             298
+#define SYS_recvmmsg                    299
+#define SYS_fanotify_init               300
+#define SYS_fanotify_mark               301
+#define SYS_prlimit64                   302
+#define SYS_name_to_handle_at           303
+#define SYS_open_by_handle_at           304
+#define SYS_clock_adjtime               305
+#define SYS_syncfs                      306
+#define SYS_sendmmsg                    307
+#define SYS_setns                       308
+#define SYS_getcpu                      309
+#define SYS_process_vm_readv            310
+#define SYS_process_vm_writev           311
+#define SYS_kcmp                        312
+#define SYS_finit_module                313
+#define SYS_sched_setattr               314
+#define SYS_sched_getattr               315
+#define SYS_renameat2                   316
+#define SYS_seccomp                     317
+#define SYS_getrandom                   318
+#define SYS_memfd_create                319
+#define SYS_kexec_file_load             320
+#define SYS_bpf                         321
+#define SYS_execveat                    322
+#define SYS_userfaultfd                 323
+#define SYS_membarrier                  324
+#define SYS_mlock2                      325
+
+#define EPERM                           1
+#define ENOENT                          2
+#define ESRCH                           3
+#define EINTR                           4
+#define EIO                             5
+#define ENXIO                           6
+#define E2BIG                           7
+#define ENOEXEC                         8
+#define EBADF                           9
+#define ECHILD                          10
+#define EAGAIN                          11
+#define ENOMEM                          12
+#define EACCES                          13
+#define EFAULT                          14
+#define ENOTBLK                         15
+#define EBUSY                           16
+#define EEXIST                          17
+#define EXDEV                           18
+#define ENODEV                          19
+#define ENOTDIR                         20
+#define EISDIR                          21
+#define EINVAL                          22
+#define ENFILE                          23
+#define EMFILE                          24
+#define ENOTTY                          25
+#define ETXTBSY                         26
+#define EFBIG                           27
+#define ENOSPC                          28
+#define ESPIPE                          29
+#define EROFS                           30
+#define EMLINK                          31
+#define EPIPE                           32
+#define EDOM                            33
+#define ERANGE                          34
+#define EDEADLK                         35
+#define ENAMETOOLONG                    36
+#define ENOLCK                          37
+#define ENOSYS                          38
+#define ENOTEMPTY                       39
+#define ELOOP                           40
+#define EWOULDBLOCK                     11
+#define ENOMSG                          42
+#define EIDRM                           43
+#define ECHRNG                          44
+#define EL2NSYNC                        45
+#define EL3HLT                          46
+#define EL3RST                          47
+#define ELNRNG                          48
+#define EUNATCH                         49
+#define ENOCSI                          50
+#define EL2HLT                          51
+#define EBADE                           52
+#define EBADR                           53
+#define EXFULL                          54
+#define ENOANO                          55
+#define EBADRQC                         56
+#define EBADSLT                         57
+#define EDEADLOCK                       35
+#define EBFONT                          59
+#define ENOSTR                          60
+#define ENODATA                         61
+#define ETIME                           62
+#define ENOSR                           63
+#define ENONET                          64
+#define ENOPKG                          65
+#define EREMOTE                         66
+#define ENOLINK                         67
+#define EADV                            68
+#define ESRMNT                          69
+#define ECOMM                           70
+#define EPROTO                          71
+#define EMULTIHOP                       72
+#define EDOTDOT                         73
+#define EBADMSG                         74
+#define EOVERFLOW                       75
+#define ENOTUNIQ                        76
+#define EBADFD                          77
+#define EREMCHG                         78
+#define ELIBACC                         79
+#define ELIBBAD                         80
+#define ELIBSCN                         81
+#define ELIBMAX                         82
+#define ELIBEXEC                        83
+#define EILSEQ                          84
+#define ERESTART                        85
+#define ESTRPIPE                        86
+#define EUSERS                          87
+#define ENOTSOCK                        88
+#define EDESTADDRREQ                    89
+#define EMSGSIZE                        90
+#define EPROTOTYPE                      91
+#define ENOPROTOOPT                     92
+#define EPROTONOSUPPORT                 93
+#define ESOCKTNOSUPPORT                 94
+#define EOPNOTSUPP                      95
+#define EPFNOSUPPORT                    96
+#define EAFNOSUPPORT                    97
+#define EADDRINUSE                      98
+#define EADDRNOTAVAIL                   99
+#define ENETDOWN                        100
+#define ENETUNREACH                     101
+#define ENETRESET                       102
+#define ECONNABORTED                    103
+#define ECONNRESET                      104
+#define ENOBUFS                         105
+#define EISCONN                         106
+#define ENOTCONN                        107
+#define ESHUTDOWN                       108
+#define ETOOMANYREFS                    109
+#define ETIMEDOUT                       110
+#define ECONNREFUSED                    111
+#define EHOSTDOWN                       112
+#define EHOSTUNREACH                    113
+#define EALREADY                        114
+#define EINPROGRESS                     115
+#define ESTALE                          116
+#define EUCLEAN                         117
+#define ENOTNAM                         118
+#define ENAVAIL                         119
+#define EISNAM                          120
+#define EREMOTEIO                       121
+#define EDQUOT                          122
+#define ENOMEDIUM                       123
+#define EMEDIUMTYPE                     124
+#define ECANCELED                       125
+#define ENOKEY                          126
+#define EKEYEXPIRED                     127
+#define EKEYREVOKED                     128
+#define EKEYREJECTED                    129
+#define EOWNERDEAD                      130
+#define ENOTRECOVERABLE                 131
+#define ERFKILL                         132
+#define EHWPOISON                       133
+#define ENOTSUP                         95
+
+#define SIGHUP                          1
+#define SIGINT                          2
+#define SIGQUIT                         3
+#define SIGILL                          4
+#define SIGTRAP                         5
+#define SIGABRT                         6
+#define SIGIOT                          6
+#define SIGBUS                          7
+#define SIGFPE                          8
+#define SIGKILL                         9
+#define SIGUSR1                         10
+#define SIGSEGV                         11
+#define SIGUSR2                         12
+#define SIGPIPE                         13
+#define SIGALRM                         14
+#define SIGTERM                         15
+#define SIGSTKFLT                       16
+#define SIGCLD                          SIGCHLD
+#define SIGCHLD                         17
+#define SIGCONT                         18
+#define SIGSTOP                         19
+#define SIGTSTP                         20
+#define SIGTTIN                         21
+#define SIGTTOU                         22
+#define SIGURG                          23
+#define SIGXCPU                         24
+#define SIGXFSZ                         25
+#define SIGVTALRM                       26
+#define SIGPROF                         27
+#define SIGWINCH                        28
+#define SIGPOLL                         SIGIO
+#define SIGIO                           29
+#define SIGPWR                          30
+#define SIGSYS                          31
+#define SIGUNUSED                       31
+#define _NSIG                           65
+
+typedef unsigned short mode_t;
+typedef long ssize_t;
+typedef long off_t;
+typedef long ptrdiff_t;
+typedef int pid_t;
+typedef int uid_t;
+typedef long time_t;
+typedef long clock_t;
+typedef int key_t;
+
+#define CHAR_BIT                        8
+#define SCHAR_MIN                       INT8_MIN
+#define SCHAR_MAX                       INT8_MAX
+#define CHAR_MIN                        SCHAR_MIN
+#define CHAR_MAX                        SCHAR_MAX
+#define UCHAR_MAX                       UINT8_MAX
+#define SHRT_MIN                        INT16_MIN
+#define SHRT_MAX                        INT16_MAX
+#define USHRT_MAX                       UINT16_MAX
+#define INT_MIN                         INT32_MIN
+#define INT_MAX                         INT32_MAX
+#define UINT_MAX                        UINT32_MAX
+#define LONG_MIN                        ((long)INT64_MIN)
+#define LONG_MAX                        ((long)INT64_MAX)
+#define ULONG_MAX                       ((unsigned long)UINT64_MAX)
+#define LLONG_MIN                       ((long long)INT64_MIN)
+#define LLONG_MAX                       ((long long)INT64_MAX)
+#define ULLONG_MAX                      ((unsigned long long)UINT64_MAX)
+
+#define S_IRUSR                         0400
+#define S_IWUSR                         0200
+#define S_IXUSR                         0100
+#define S_IRWXU                         (S_IRUSR|S_IWUSR|S_IXUSR)
+#define S_IRGRP                         (S_IRUSR >> 3)
+#define S_IWGRP                         (S_IWUSR >> 3)
+#define S_IXGRP                         (S_IXUSR >> 3)
+#define S_IRWXG                         (S_IRWXU >> 3)
+#define S_IROTH                         (S_IRGRP >> 3)
+#define S_IWOTH                         (S_IWGRP >> 3)
+#define S_IXOTH                         (S_IXGRP >> 3)
+#define S_IRWXO                         (S_IRWXG >> 3)
+#define S_ISUID                         04000
+#define S_ISGID                         02000
+#define S_ISVTX                         01000
+
+#define O_ACCMODE                       00000003
+#define O_RDONLY                        00000000
+#define O_WRONLY                        00000001
+#define O_RDWR                          00000002
+#define O_CREAT                         00000100
+#define O_EXCL                          00000200
+#define O_NOCTTY                        00000400
+#define O_TRUNC                         00001000
+#define O_APPEND                        00002000
+#define O_NONBLOCK                      00004000
+#define O_DSYNC                         00010000
+#define O_DIRECT                        00040000
+#define O_LARGEFILE                     00100000
+#define O_DIRECTORY                     00200000
+#define O_NOFOLLOW                      00400000
+#define O_NOATIME                       01000000
+#define O_CLOEXEC                       02000000
+#define O_ASYNC                         00020000
+#define O_SYNC                          04010000
+
+#define FD_SETSIZE  512
+typedef struct
+{
+    unsigned long fds_bits[FD_SETSIZE / (8 * sizeof(unsigned long))];
+} fd_set;
+
+typedef unsigned long int nfds_t;
+struct pollfd
+{
+    int fd;
+    short events;
+    short revents;
+};
+
+struct timeval
+{
+    time_t tv_sec;
+    long   tv_usec;
+};
+struct timezone
+{
+    int tz_minuteswest;
+    int tz_dsttime;
+};
+
+struct rusage
+{
+    struct timeval ru_utime;
+    struct timeval ru_stime;
+    long ru_maxrss;
+    long ru_ixrss;
+    long ru_idrss;
+    long ru_isrss;
+    long ru_minflt;
+    long ru_majflt;
+    long ru_nswap;
+    long ru_inblock;
+    long ru_oublock;
+    long ru_msgsnd;
+    long ru_msgrcv;
+    long ru_nsignals;
+    long ru_nvcsw;
+    long ru_nivcsw;
+};
+
+struct rlimit
+{
+    unsigned long rlim_cur;
+    unsigned long rlim_max;
+};
+
+struct termios
+{
+    unsigned c_iflag;
+    unsigned c_oflag;
+    unsigned c_cflag;
+    unsigned c_lflag;
+    unsigned char c_line;
+    unsigned char c_cc[19];
+};
+#define TCGETS      0x5401
+
+#define PROT_READ                       0x1
+#define PROT_WRITE                      0x2
+#define PROT_EXEC                       0x4
+#define PROT_NONE                       0x0
+
+#define MAP_SHARED                      0x0001
+#define MAP_PRIVATE                     0x0002
+#define MAP_FIXED                       0x0010
+#define MAP_ANONYMOUS                   0x0020
+#define MAP_NORESERVE                   0x4000
+#define MAP_POPULATE                    0x8000
+
+#define MAP_FAILED                      ((void *)-1)
+
+typedef unsigned long sigset_t;
+typedef void (*sighandler_t)(int);
+#define SIG_ERR     ((sighandler_t)-1)
+#define SIG_DFL     ((sighandler_t)0)
+#define SIG_IGN     ((sighandler_t)1)
+typedef union
+{
+    int sival_int;
+    void *sival_ptr;
+} sigval_t;
+#define SI_MAX_SIZE     128
+#define SI_PAD_SIZE     ((SI_MAX_SIZE / sizeof(int)) - 4)
+typedef struct
+{
+    int si_signo;
+    int si_errno;
+    int si_code;
+    union
+    {
+        int _pad[SI_PAD_SIZE];
+        struct
+        {
+            pid_t si_pid;
+            uid_t si_uid;
+        } _kill;
+        struct
+        {
+            int si_tid;
+            int si_overrun;
+            sigval_t si_sigval;
+        } _timer;
+        struct
+        {
+            pid_t si_pid;
+            uid_t si_uid;
+            sigval_t si_sigval;
+        } _rt;
+        struct
+        {
+            pid_t si_pid;
+            uid_t si_uid;
+            int si_status;
+            clock_t si_utime;
+            clock_t si_stime;
+        } _sigchld;
+        struct
+        {
+            void *si_addr;
+            short int si_addr_lsb;
+            struct
+            {
+                void *_lower;
+                void *_upper;
+            } si_addr_bnd;
+        } _sigfault;
+        struct
+        {
+            long si_band;
+            int si_fd;
+        } _sigpoll;
+        struct
+        {
+            void *_call_addr;
+            int _syscall;
+            unsigned _arch;
+        } _sigsys;
+      } _sifields;
+} siginfo_t;
+struct sigaction
+{
+    union
+    {
+        sighandler_t sa_handler;
+        void (*sa_sigaction)(int, siginfo_t *, void *);
+    };
+    sigset_t sa_mask;
+    unsigned long sa_flags;
+    void (*sa_restorer)(void);
+};
+#define SA_NOCLDSTOP    0x00000001u
+#define SA_NOCLDWAIT    0x00000002u
+#define SA_SIGINFO      0x00000004u
+#define SA_ONSTACK      0x08000000u
+#define SA_RESTART      0x10000000u
+#define SA_NODEFER      0x40000000u
+#define SA_RESETHAND    0x80000000u
+#define SA_NOMASK       SA_NODEFER
+#define SA_ONESHOT      SA_RESETHAND
+#define SA_RESTORER     0x04000000
 
 #ifdef __cplusplus
 extern "C"
 {
 #endif
+
+long syscall(int callno, ...);
+static void *memset(void *s, int c, size_t n);
+static void *memcpy(void *dest, const void *src, size_t n);
 
 /****************************************************************************/
 /* CONFIG                                                                   */
@@ -132,339 +855,6 @@ extern "C"
 #define ERRNO_REG       1
 #define MUTEX_SAFE      1
 #endif
-
-/****************************************************************************/
-/* NAMES                                                                    */
-/****************************************************************************/
-
-/*
- * We wish to:
- *  - Redefine standard library functions from `extern' to `static'
- *  - Redefine some standard library structures (e.g., FILE).
- *  - Use standard header files to avoid redefining a lot of stuff.
- *
- * To do so, we #undef all identifiers we redefine (in case they are macros),
- * and redefine them with an `e9_' prefix.
- */
-
-#undef __errno_location
-#undef read
-#undef write
-#undef open
-#undef close
-#undef stat
-#undef fstat
-#undef lstat
-#undef poll
-#undef lseek
-#undef mmap
-#undef mprotect
-#undef msync
-#undef munmap
-#undef sigaction
-#undef signal
-#undef ioctl
-#undef pipe
-#undef select
-#undef mremap
-#undef madvise
-#undef shmget
-#undef shmat
-#undef shmctl
-#undef dup
-#undef dup2
-#undef getpid
-#undef fork
-#undef execve
-#undef exit
-#undef waitpid
-#undef kill
-#undef fcntl
-#undef flock
-#undef fsync
-#undef truncate
-#undef ftruncate
-#undef getcwd
-#undef chdir
-#undef rename
-#undef mkdir
-#undef rmdir
-#undef link
-#undef unlink
-#undef symlink
-#undef readlink
-#undef gettimeofday
-#undef getrlimit
-#undef getrusage
-#undef getuid
-#undef geteuid
-#undef pipe2
-#undef dup3
-#undef isatty
-
-#undef malloc
-#undef calloc
-#undef realloc
-#undef free
-#undef getenv
-#undef strtol
-#undef strtoll
-#undef strtoul
-#undef strtoull
-#undef atoi
-#undef atol
-#undef atoll
-#undef abort
-#undef abs
-#undef labs
-#undef environ
-
-#undef FILE
-#undef fopen
-#undef fdopen
-#undef freopen
-#undef fflush
-#undef fclose
-#undef clearerr
-#undef ferror
-#undef feof
-#undef fileno
-#undef setvbuf
-#undef fputc
-#undef fputs
-#undef putc
-#undef putchar
-#undef puts
-#undef fwrite
-#undef fgetc
-#undef fgets
-#undef getc
-#undef getchar
-#undef ungetc
-#undef fread
-#undef fseek
-#undef ftell
-#undef clearerr_unlocked
-#undef feof_unlocked
-#undef ferror_unlocked
-#undef fileno_unlocked
-#undef fflush_unlocked
-#undef fputc_unlocked
-#undef fputs_unlocked
-#undef putc_unlocked
-#undef putchar_unlocked
-#undef puts_unlocked
-#undef fwrite_unlocked
-#undef fgetc_unlocked
-#undef fgets_unlocked
-#undef getc_unlocked
-#undef getchar_unlocked
-#undef fread_unlocked
-#undef vnscanf
-#undef sscanf
-#undef vfscanf
-#undef fscanf
-#undef vscanf
-#undef scanf
-#undef vsnprintf
-#undef snprintf
-#undef vfprintf
-#undef fprintf
-#undef printf
-
-#undef isalnum
-#undef isalpha
-#undef isdigit
-#undef isupper
-#undef islower
-#undef isprint
-#undef isspace
-#undef isxdigit
-#undef toupper
-#undef tolower
-
-#undef memcmp
-#undef memset
-#undef memcpy
-#undef strlen
-#undef strnlen
-#undef strcmp
-#undef strncmp
-#undef strcat
-#undef strncat
-#undef strcpy
-#undef strncpy
-#undef strchr
-#undef strdup
-#undef strerror
-
-#undef tsearch
-#undef tfind
-#undef tdelete
-#undef twalk
-#undef tdestroy
-
-/***/
-
-#define __errno_location    e9___errno_location
-#define read                e9_read
-#define write               e9_write
-#define open                e9_open
-#define close               e9_close
-#define stat                e9_stat
-#define fstat               e9_fstat
-#define lstat               e9_lstat
-#define poll                e9_poll
-#define lseek               e9_lseek
-#define mmap                e9_mmap
-#define mprotect            e9_mprotect
-#define msync               e9_msync
-#define munmap              e9_munmap
-#define sigaction(a, b, c)  e9_sigaction(a, b, c)
-#define signal              e9_signal
-#define ioctl               e9_ioctl
-#define pipe                e9_pipe
-#define select              e9_select
-#define mremap              e9_mremap
-#define madvise             e9_madvise
-#define shmget              e9_shmget
-#define shmat               e9_shmat
-#define shmctl              e9_shmctl
-#define dup                 e9_dup
-#define dup2                e9_dup2
-#define getpid              e9_getpid
-#define fork                e9_fork
-#define execve              e9_execve
-#define exit                e9_exit
-#define waitpid             e9_waitpid
-#define kill                e9_kill
-#define fcntl               e9_fcntl
-#define flock               e9_flock
-#define fsync               e9_fsync
-#define truncate            e9_truncate
-#define ftruncate           e9_ftruncate
-#define getcwd              e9_getcwd
-#define chdir               e9_chdir
-#define rename              e9_rename
-#define mkdir               e9_mkdir
-#define rmdir               e9_rmdir
-#define link                e9_link
-#define unlink              e9_unlink
-#define symlink             e9_symlink
-#define readlink            e9_readlink
-#define gettimeofday        e9_gettimeofday
-#define getrlimit           e9_getrlimit
-#define getrusage           e9_getrusage
-#define getuid              e9_getuid
-#define geteuid             e9_geteuid
-#define pipe2               e9_pipe2
-#define dup3                e9_dup3
-#define isatty              e9_isatty
-
-#define malloc              e9_malloc
-#define calloc              e9_calloc
-#define realloc             e9_realloc
-#define free                e9_free
-#define getenv              e9_getenv
-#define strtol              e9_strtol
-#define strtoll             e9_strtoll
-#define strtoul             e9_strtoul
-#define strtoull            e9_strtoull
-#define atoi                e9_atoi
-#define atol                e9_atol
-#define atoll               e9_atoll
-#define abort               e9_abort
-#define abs                 e9_abs
-#define labs                e9_labs
-#define environ             e9_environ
-
-#define FILE                e9_FILE
-#define fopen               e9_fopen
-#define fdopen              e9_fdopen
-#define freopen             e9_freopen
-#define clearerr            e9_clearerr
-#define ferror              e9_ferror
-#define feof                e9_feof
-#define fileno              e9_fileno
-#define setvbuf             e9_setvbuf
-#define fflush              e9_fflush
-#define fclose              e9_fclose
-#define fputc               e9_fputc
-#define fputs               e9_fputs
-#define putc                e9_putc
-#define putchar             e9_putchar
-#define puts                e9_puts
-#define fwrite              e9_fwrite
-#define fgetc               e9_fgetc
-#define fgets               e9_fgets
-#define getc                e9_getc
-#define getchar             e9_getchar
-#define ungetc              e9_ungetc
-#define fread               e9_fread
-#define fseek               e9_fseek
-#define ftell               e9_ftell
-#define clearerr_unlocked   e9_clearerr_unlocked
-#define feof_unlocked       e9_feof_unlocked
-#define ferror_unlocked     e9_ferror_unlocked
-#define fileno_unlocked     e9_fileno_unlocked
-#define fflush_unlocked     e9_fflush_unlocked
-#define fputc_unlocked      e9_fputc_unlocked
-#define fputs_unlocked      e9_fputs_unlocked
-#define putc_unlocked       e9_putc_unlocked
-#define putchar_unlocked    e9_putchar_unlocked
-#define puts_unlocked       e9_puts_unlocked
-#define fwrite_unlocked     e9_fwrite_unlocked
-#define fgetc_unlocked      e9_fgetc_unlocked
-#define fgets_unlocked      e9_fgets_unlocked
-#define getc_unlocked       e9_getc_unlocked
-#define getchar_unlocked    e9_getchar_unlocked
-#define fread_unlocked      e9_fread_unlocked
-#define vsscanf             e9_vsscanf
-#define sscanf              e9_sscanf
-#define vfscanf             e9_vfscanf
-#define fscanf              e9_fscanf
-#define vscanf              e9_vscanf
-#define scanf               e9_scanf
-#define vsnprintf           e9_vsnprintf
-#define snprintf            e9_snprintf
-#define vfprintf            e9_vfprintf
-#define fprintf             e9_fprintf
-#define printf              e9_printf
-
-#define isalnum             e9_isalnum
-#define isalpha             e9_isalpha
-#define isdigit             e9_isdigit
-#define isupper             e9_isupper
-#define islower             e9_islower
-#define isprint             e9_isprint
-#define isspace             e9_isspace
-#define isxdigit            e9_isxdigit
-#define toupper             e9_toupper
-#define tolower             e9_tolower
-
-#define memcmp              e9_memcmp
-#define memcpy              e9_memcpy
-#define memset              e9_memset
-#define strlen              e9_strlen
-#define strnlen             e9_strnlen
-#define strcmp              e9_strcmp
-#define strncmp             e9_strncmp
-#define strcat              e9_strcat
-#define strncat             e9_strncat
-#define strcpy              e9_strcpy
-#define strchr              e9_strchr
-#define strdup              e9_strdup
-#define strncpy             e9_strncpy
-#define strerror            e9_strerror
-
-#define tsearch             e9_tsearch
-#define tfind               e9_tfind
-#define tdelete             e9_tdelete
-#define twalk               e9_twalk
-#define tdestroy            e9_tdestroy
-
-static void *memset(void *s, int c, size_t n);
-static void *memcpy(void *dest, const void *src, size_t n);
 
 /****************************************************************************/
 /* DEBUG                                                                    */
@@ -523,6 +913,7 @@ static __attribute__((__noinline__)) int *__errno_location(void)
     );
     return loc;
 }
+#define errno                   (*__errno_location())
 #endif
 
 #ifdef ERRNO_REG
@@ -611,7 +1002,7 @@ static int open(const char *pathname, int flags, ...)
 {
     va_list ap;
     va_start(ap, flags);
-    mode_t mode = va_arg(ap, mode_t);
+    mode_t mode = va_arg(ap, int);
     int result = (int)syscall(SYS_open, pathname, flags, mode);
     va_end(ap);
     return result;
@@ -1101,12 +1492,12 @@ struct malloc_node_s
  */
 struct malloc_pool_s
 {
-    mutex_t mutex;
-    uint8_t *base;
-    uint32_t mmap;
-    uint32_t end;
-    uint32_t root;
-    int flags;
+    mutex_t mutex;          // Mutex
+    uint8_t *base;          // Pool base address
+    uint32_t mmap;          // Pool mmap limit
+    uint32_t end;           // Pool end address
+    uint32_t root;          // Pool root node
+    int flags;              // Pool mmap flags
 };
 
 static struct malloc_pool_s malloc_pool = {MUTEX_INITIALIZER, 0};
@@ -2351,15 +2742,27 @@ static long long int atoll(const char *nptr)
 /* STDIO                                                                    */
 /****************************************************************************/
 
-#define STDIO_FLAG_INITED        0x0001
-#define STDIO_FLAG_READ          0x0002
-#define STDIO_FLAG_WRITE         0x0004
-#define STDIO_FLAG_READING       0x0008
-#define STDIO_FLAG_WRITING       0x0010
-#define STDIO_FLAG_NO_BUF        0x0020
-#define STDIO_FLAG_OWN_BUF       0x0040
-#define STDIO_FLAG_EOF           0x0080
-#define STDIO_FLAG_ERROR         0x0100
+#define EOF                         (-1)
+
+#define _IOFBF                      0
+#define _IOLBF                      1
+#define _IONBF                      2
+
+#define BUFSIZ                      8192
+
+#define SEEK_SET                    0
+#define SEEK_CUR                    1
+#define SEEK_END                    2
+
+#define STDIO_FLAG_INITED           0x0001
+#define STDIO_FLAG_READ             0x0002
+#define STDIO_FLAG_WRITE            0x0004
+#define STDIO_FLAG_READING          0x0008
+#define STDIO_FLAG_WRITING          0x0010
+#define STDIO_FLAG_NO_BUF           0x0020
+#define STDIO_FLAG_OWN_BUF          0x0040
+#define STDIO_FLAG_EOF              0x0080
+#define STDIO_FLAG_ERROR            0x0100
 
 struct stdio_stream_s
 {
@@ -4007,16 +4410,37 @@ static int scanf_unlocked(const char *format, ...)
  */
 
 #include <elf.h>
-#include <link.h>
 
-#undef  dlopen
-#undef  dlsym
-#undef  dlvsym
-#undef  dlclose
-#define dlopen      e9_dlopen
-#define dlsym       e9_dlsym
-#define dlvsym      e9_dlvsym
-#define dlclose     e9_dlclose
+struct link_map
+{
+    Elf64_Addr l_addr;
+    char *l_name;
+    Elf64_Dyn *l_ld;
+    struct link_map *l_next, *l_prev;
+};
+struct r_debug
+{
+    int r_version;
+    struct link_map *r_map;
+    Elf64_Addr r_brk;
+    enum
+    {
+        RT_CONSISTENT,
+        RT_ADD,
+        RT_DELETE
+    } r_state;
+    Elf64_Addr r_ldbase;
+};
+
+#define RTLD_DEFAULT    ((void *) 0)
+
+#define RTLD_LAZY       0x0001
+#define RTLD_NOW        0x0002
+#define RTLD_NOLOAD     0x0004
+#define RTLD_DEEPBIND   0x0008
+#define RTLD_GLOBAL     0x0100
+#define RTLD_LOCAL      0x0000
+#define RTLD_NODELETE   0x1000
 
 typedef intptr_t (*dlopen_t)(const char *, int);
 typedef intptr_t (*dlclose_t)(void *);
@@ -4335,6 +4759,18 @@ asm (
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+typedef struct entry
+{
+    char *key;
+    void *data;
+} ENTRY;
+typedef enum
+{
+    preorder,
+    postorder,
+    endorder,
+    leaf
+} VISIT;
 struct node_s
 {
     void *key;
