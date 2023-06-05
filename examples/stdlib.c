@@ -463,6 +463,9 @@ extern "C"
 #define twalk               e9_twalk
 #define tdestroy            e9_tdestroy
 
+static void *memset(void *s, int c, size_t n);
+static void *memcpy(void *dest, const void *src, size_t n);
+
 /****************************************************************************/
 /* DEBUG                                                                    */
 /****************************************************************************/
@@ -970,6 +973,12 @@ typedef struct mutex_s mutex_t;
 
 #define MUTEX_INITIALIZER       {{0}}
 
+static void mutex_init(mutex_t *m)
+{
+    mutex_t m0 = MUTEX_INITIALIZER;
+    memcpy(m, &m0, sizeof(struct mutex_s));
+}
+
 static pid_t *mutex_get_ptr(const mutex_t *m)
 {
     uintptr_t ptr = (uintptr_t)m->val + sizeof(int);
@@ -981,7 +990,8 @@ static pid_t *mutex_get_ptr(const mutex_t *m)
  *       This is because this function can fail with EDEADLOCK in normal use
  *       cases, so the return value should always be checked.
  */
-static __attribute__((__noinline__, __warn_unused_result__)) int mutex_lock(mutex_t *m)
+static __attribute__((__noinline__, __warn_unused_result__))
+    int mutex_lock(mutex_t *m)
 {
     pid_t *x = mutex_get_ptr(m);
     if (mutex_fast_lock(x))
@@ -1071,25 +1081,19 @@ asm (
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-static void *memset(void *s, int c, size_t n);
-static void *memcpy(void *dest, const void *src, size_t n);
-
 /*
  * Malloc metadata node.
  */
 struct malloc_node_s
 {
-    uint32_t color:1;       // RB-tree color
-    uint32_t parent:31;     // RB-tree parent
-    uint32_t alloced:1;     // Allocated?
-    uint32_t left:31;       // RB-tree left
-    uint32_t __unused:1;    // Not used.
-    uint32_t right:31;      // RB-tree right
-    uint32_t base;          // allocation BASE
+    uint32_t parent;        // RB-tree parent
+    uint32_t left;          // RB-tree left
+    uint32_t right;         // RB-tree right
     uint32_t size;          // allocation SIZE
     uint32_t lb;            // sub-tree LB
     uint32_t ub;            // sub-tree UB
     uint32_t gap;           // sub-tree max GAP
+    uint32_t color:1;       // RB-tree color
 };
 
 /*
@@ -1098,69 +1102,116 @@ struct malloc_node_s
 struct malloc_pool_s
 {
     mutex_t mutex;
-    struct malloc_node_s *nodes;
+    uint8_t *base;
+    uint32_t mmap;
+    uint32_t end;
     uint32_t root;
-    struct
-    {
-        uint8_t *base;
-        uint32_t mmap;
-        uint32_t free;
-        uint32_t next;
-    } node;
-    struct
-    {
-        uint8_t *base;
-        uint32_t mmap;
-    } mem;
+    int flags;
 };
 
 static struct malloc_pool_s malloc_pool = {MUTEX_INITIALIZER, 0};
 
 #define MA_UNIT                     16
+#define MA_MAX_SIZE                 (MA_UNIT * UINT32_MAX)
 #define MA_NIL                      0x0
 #define MA_ZERO                     ((void *)-((intptr_t)UINT32_MAX + 1))
-#define MA_PAGE_SIZE                4096
+#define MA_PAGE_SIZE                4096ull
 #define MA_BLACK                    0
 #define MA_RED                      1
-#define MA_PARENT(pool, N)          (pool->nodes[(N)].parent)
-#define MA_LEFT(pool, N)            (pool->nodes[(N)].left)
-#define MA_RIGHT(pool, N)           (pool->nodes[(N)].right)
-#define MA_COLOR(pool, N)           (pool->nodes[(N)].color)
-#define MA_ALLOCED(pool, N)         (pool->nodes[(N)].alloced)
-#define MA_BASE(pool, N)            (pool->nodes[(N)].base)
-#define MA_SIZE(pool, N)            (pool->nodes[(N)].size)
-#define MA_LB(pool, N)              (pool->nodes[(N)].lb)
-#define MA_UB(pool, N)              (pool->nodes[(N)].ub)
-#define MA_GAP(pool, N)             (pool->nodes[(N)].gap)
+#define MA_NODE(pool, N)            \
+    ((struct malloc_node_s *)(pool->base+(N)*MA_UNIT))
+#define MA_PARENT(pool, N)          (MA_NODE(pool, N)->parent)
+#define MA_LEFT(pool, N)            (MA_NODE(pool, N)->left)
+#define MA_RIGHT(pool, N)           (MA_NODE(pool, N)->right)
+#define MA_COLOR(pool, N)           (MA_NODE(pool, N)->color)
+#define MA_SIZE(pool, N)            (MA_NODE(pool, N)->size)
+#define MA_LB(pool, N)              (MA_NODE(pool, N)->lb)
+#define MA_UB(pool, N)              (MA_NODE(pool, N)->ub)
+#define MA_GAP(pool, N)             (MA_NODE(pool, N)->gap)
+#define MA_POOL_LB(pool)            \
+    (sizeof(*pool) / MA_UNIT + (sizeof(*pool) % MA_UNIT? 1: 0))
+#define MA_POOL_UB(pool)            (pool->end)
 
 #define MA_MAX(n, m)                ((n) > (m)? (n): (m))
 #define MA_MIN(n, m)                ((n) < (m)? (n): (m))
 
+#define MA_PAGES(n)                 \
+    ((n) / MA_PAGE_SIZE + ((n) % MA_PAGE_SIZE? 1: 0))
+
+/*
+ * Create a malloc() pool.  Here, flags are mmap() flags.
+ */
+static struct malloc_pool_s *pool_create(int flags, size_t lb, size_t ub)
+{
+    if (ub < lb)
+    {
+        errno = EINVAL;
+        return NULL;
+    }
+    lb += sizeof(struct malloc_pool_s);
+    ub += sizeof(struct malloc_pool_s);
+    void *ptr = mmap(NULL, ub, PROT_NONE,
+        MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE, -1, 0);
+    if (ptr == MAP_FAILED)
+        return NULL;
+    flags |= MAP_ANONYMOUS;
+    struct malloc_pool_s *pool = (struct malloc_pool_s *)ptr;
+    ptr = mmap(ptr, lb, PROT_READ | PROT_WRITE, flags | MAP_FIXED, -1, 0);
+    if (ptr != (void *)pool)
+    {
+        (void)munmap(ptr, ub);
+        errno = EINVAL;
+        return NULL;
+    }
+    mutex_init(&pool->mutex);
+    pool->base  = (uint8_t *)pool;
+    pool->mmap  = (MA_PAGE_SIZE * MA_PAGES(lb)) / MA_UNIT;
+    pool->end   = (MA_PAGE_SIZE * MA_PAGES(ub)) / MA_UNIT;
+    pool->root  = MA_NIL;
+    pool->flags = flags;
+    return pool;
+}
+
+/*
+ * Destroy a malloc() pool.
+ */
+static int pool_destroy(struct malloc_pool_s *pool)
+{
+    if (pool == &malloc_pool)
+    {
+        errno = EINVAL;
+        return -1;
+    }
+    return munmap(pool, (size_t)pool->end * MA_UNIT);
+}
+
 /*
  * Malloc init.
  */
-static void malloc_init(struct malloc_pool_s *pool)
+static void malloc_init(void)
 {
+    struct malloc_pool_s *pool = &malloc_pool;
+    if (pool->base != NULL)
+        return;
     if (mutex_lock(&pool->mutex) < 0)
         return;
-    if (pool->node.base != NULL)
+    if (pool->base != NULL)
     {
         mutex_unlock(&pool->mutex);
         return;
     }
-    uint32_t buf[2];
-    if (getrandom(buf, sizeof(buf), 0) < 0)
-        panic("getrandom() failed");
-    buf[0] &= ~(MA_PAGE_SIZE-1); buf[1] &= ~(MA_PAGE_SIZE-1);
-    pool->root = MA_NIL;
-    pool->node.base = (uint8_t *)(0xaaa00000000ull | (uintptr_t)buf[0]);
-    pool->node.mmap = 0;
-    pool->node.free = MA_NIL;
-    pool->node.next = 1;
-    pool->mem.base = (uint8_t *)(0xbbb00000000ull | (uintptr_t)buf[1]);
-    pool->mem.mmap = 0;
-    pool->nodes = (struct malloc_node_s *)pool->node.base;
-    pool->nodes--;
+    uintptr_t hint = 0xaaa00000000ull;
+    (void)getrandom(&hint, sizeof(uint32_t), 0);
+    hint &= ~(MA_PAGE_SIZE-1);
+    void *ptr = mmap((void *)hint, MA_MAX_SIZE, PROT_NONE,
+        MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE, -1, 0);
+    if (ptr == MAP_FAILED)
+        panic("mmap() failed");
+    pool->base  = (uint8_t *)ptr;
+    pool->mmap  = 0;
+    pool->end   = UINT32_MAX;
+    pool->root  = MA_NIL;
+    pool->flags = MAP_PRIVATE | MAP_ANONYMOUS;
     mutex_unlock(&pool->mutex);
 }
 
@@ -1172,17 +1223,16 @@ static void malloc_fix_invariant(struct malloc_pool_s *pool, uint32_t n)
     if (n == MA_NIL)
         return;
     uint32_t l = MA_LEFT(pool, n), r = MA_RIGHT(pool, n);
-    uint32_t llb = (l != MA_NIL? MA_LB(pool, l): UINT32_MAX);
-    intptr_t rub = (r != MA_NIL? MA_UB(pool, r): 0);
-    MA_LB(pool, n) = MA_MIN(llb, MA_BASE(pool, n));
-    MA_UB(pool, n) = MA_MAX(rub, MA_BASE(pool, n) + MA_SIZE(pool, n));
+    uint32_t llb = (l != MA_NIL? MA_LB(pool, l): MA_POOL_UB(pool));
+    intptr_t rub = (r != MA_NIL? MA_UB(pool, r): MA_POOL_LB(pool));
+    MA_LB(pool, n) = MA_MIN(llb, n);
+    MA_UB(pool, n) = MA_MAX(rub, n + MA_SIZE(pool, n));
     uint32_t lgap = (l != MA_NIL? MA_GAP(pool, l): 0);
     uint32_t rgap = (r != MA_NIL? MA_GAP(pool, r): 0);
     uint32_t gap  = MA_MAX(lgap, rgap);
-    gap = MA_MAX(gap, (uint32_t)(l != MA_NIL?
-        MA_BASE(pool, n) - MA_UB(pool, l): 0));
+    gap = MA_MAX(gap, (uint32_t)(l != MA_NIL?  n - MA_UB(pool, l): 0));
     gap = MA_MAX(gap, (uint32_t)(r != MA_NIL?
-        MA_LB(pool, r) - (MA_BASE(pool, n) + MA_SIZE(pool, n)): 0));
+        MA_LB(pool, r) - (n + MA_SIZE(pool, n)): 0));
     MA_GAP(pool, n) = gap;
 }
 
@@ -1460,59 +1510,23 @@ color:
     return old;
 }
 
-static uint32_t malloc_node_alloc(struct malloc_pool_s *pool)
-{
-    if (pool->node.free != MA_NIL)
-    {
-        uint32_t n = pool->node.free;
-        pool->node.free = MA_PARENT(pool, n);
-        MA_ALLOCED(pool, n) = true;
-        return n;
-    }
-    uint32_t n = pool->node.next;
-    if (n == UINT32_MAX)
-    {
-        errno = ENOMEM;
-        return MA_NIL;
-    }
-    pool->node.next++;
-    if (n >= pool->node.mmap)
-    {
-        size_t size = 2 * MA_PAGE_SIZE;
-        uint8_t *base = pool->node.base +
-            pool->node.mmap * sizeof(struct malloc_node_s);
-        uint8_t *ptr = (uint8_t *)mmap(base, size, PROT_READ | PROT_WRITE,
-            MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED | MAP_NORESERVE, -1, 0);
-        if (ptr != base)
-            return MA_NIL;
-        pool->node.mmap += size / sizeof(struct malloc_node_s);
-    }
-    MA_ALLOCED(pool, n) = true;
-    return n;
-}
-
-static void malloc_node_free(struct malloc_pool_s *pool, uint32_t n)
-{
-    if (!MA_ALLOCED(pool, n))
-        panic("bad free() detected");
-    MA_ALLOCED(pool, n) = false;
-    MA_PARENT(pool, n)  = pool->node.free;
-    pool->node.free     = n;
-}
-
 static bool malloc_mem_grow(struct malloc_pool_s *pool, uint32_t hi)
 {
-    if (hi <= pool->mem.mmap)
+    if (hi <= pool->mmap)
         return true;
-    uint8_t *base = pool->mem.base + (size_t)pool->mem.mmap * MA_UNIT;
-    size_t extension = (size_t)(hi - pool->mem.mmap) * MA_UNIT;
+    uint8_t *base = pool->base + (size_t)pool->mmap * MA_UNIT;
+    size_t extension = (size_t)(hi - pool->mmap) * MA_UNIT;
     extension -= extension % MA_PAGE_SIZE;
     extension += 4 * MA_PAGE_SIZE;          // Extra padding
     uint8_t *ptr = (uint8_t *)mmap(base, extension, PROT_READ | PROT_WRITE,
-        MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED | MAP_NORESERVE, -1, 0);
+        pool->flags | MAP_FIXED, -1, 0);
     if (ptr != base)
+    {
+        (void)munmap(ptr, extension);
+        errno = ENOMEM;
         return false;
-    pool->mem.mmap += extension / MA_UNIT;
+    }
+    pool->mmap += extension / MA_UNIT;
     return true;
 }
 
@@ -1538,27 +1552,23 @@ static bool malloc_mem_realloc(struct malloc_pool_s *pool, uint32_t base,
     return malloc_mem_grow(pool, hi);
 }
 
-static void *malloc_impl(size_t size, bool lock)
+static void *malloc_impl(struct malloc_pool_s *pool, size_t size, bool lock)
 {
     if (size == 0)
         return MA_ZERO;
-    size_t size128 = size / MA_UNIT;
-    size128 += (size % MA_UNIT != 0);
+    size += sizeof(struct malloc_node_s);
+    size_t size128 = size / MA_UNIT + (size % MA_UNIT? 1: 0);
     if (size128 > UINT32_MAX)
     {
         errno = ENOMEM;
         return NULL;
     }
 
-    struct malloc_pool_s *pool = &malloc_pool;
-    if (pool->node.base == NULL)
-        malloc_init(pool);
-
     if (lock && mutex_lock(&pool->mutex) < 0)
         return NULL;
 
     uint32_t n = pool->root, parent = MA_NIL;
-    uint32_t lb = 1, ub = UINT32_MAX;
+    uint32_t lb = MA_POOL_LB(pool), ub = MA_POOL_UB(pool);
     bool left = false;
     while (true)
     {
@@ -1569,19 +1579,21 @@ static void *malloc_impl(size_t size, bool lock)
         {
             // Inner
             uint32_t lgap = (l != MA_NIL?
-                MA_MAX(MA_GAP(pool, l), MA_BASE(pool, n) - MA_UB(pool, l)): 0);
+                MA_MAX(MA_GAP(pool, l), n - MA_UB(pool, l)): 0);
             if (size128 <= lgap)
             {
-                ub = MA_BASE(pool, n);
+                ub = n;
                 parent = n;
                 n = l;
                 left = true;
-                continue;
             }
-            lb = MA_BASE(pool, n) + MA_SIZE(pool, n);
-            parent = n;
-            n = r;
-            left = false;
+            else
+            {
+                lb = n + MA_SIZE(pool, n);
+                parent = n;
+                n = r;
+                left = false;
+            }
             continue;
         }
         else
@@ -1609,25 +1621,17 @@ static void *malloc_impl(size_t size, bool lock)
         }
     }
 
-    uint32_t i = malloc_node_alloc(pool);
+    uint32_t i = malloc_mem_alloc(pool, (uint32_t)size128, lb, ub);
     if (i == MA_NIL)
     {
         if (lock) mutex_unlock(&pool->mutex);
         return NULL;
     }
-    uint32_t j = malloc_mem_alloc(pool, (uint32_t)size128, lb, ub);
-    if (j == MA_NIL)
-    {
-        malloc_node_free(pool, i);
-        if (lock) mutex_unlock(&pool->mutex);
-        return NULL;
-    }
-    struct malloc_node_s *node = pool->nodes + i;
+    struct malloc_node_s *node = MA_NODE(pool, i);
     node->parent = parent;
-    node->base   = j;
     node->size   = size128;
-    node->lb     = j;
-    node->ub     = j + size128;
+    node->lb     = i;
+    node->ub     = i + size128;
     node->left   = node->right = MA_NIL;
     node->gap    = 0;
     if (parent == MA_NIL)
@@ -1645,22 +1649,22 @@ static void *malloc_impl(size_t size, bool lock)
         malloc_rebalance_insert(pool, i);
     }
     if (lock) mutex_unlock(&pool->mutex);
-    void *ptr = (void *)(pool->mem.base + (size_t)j * MA_UNIT);
+    void *ptr = (void *)(pool->base + (size_t)i * MA_UNIT +
+        sizeof(struct malloc_node_s));
     return ptr;
 }
 
-static void free_impl(void *ptr, bool lock)
+static void free_impl(struct malloc_pool_s *pool, void *ptr, bool lock)
 {
     if (ptr == NULL || ptr == MA_ZERO)
         return;
 
-    struct malloc_pool_s *pool = &malloc_pool;
-    if ((uint8_t *)ptr < pool->mem.base ||
-            (uint8_t *)ptr >= pool->mem.base + MA_UNIT * (size_t)UINT32_MAX)
+    if ((uint8_t *)ptr < pool->base ||
+            (uint8_t *)ptr >= pool->base + MA_UNIT * (size_t)pool->end)
         panic("bad free() detected");
     if ((uintptr_t)ptr % MA_UNIT != 0)
         panic("bad free() detected");
-    off_t diff = (uint8_t *)ptr - pool->mem.base;
+    off_t diff = (uint8_t *)ptr - pool->base - sizeof(struct malloc_node_s);
     uint32_t i = (uint32_t)(diff / MA_UNIT);
 
     if (lock && mutex_lock(&pool->mutex) < 0)
@@ -1671,47 +1675,47 @@ static void free_impl(void *ptr, bool lock)
     {
         if (n == MA_NIL)
             panic("bad free() detected");
-        if (MA_BASE(pool, n) == i)
+        if (n == i)
         {
-            n = malloc_remove(pool, n);
-            malloc_node_free(pool, n);
+            malloc_remove(pool, n);
             if (lock) mutex_unlock(&pool->mutex);
             return;
         }
-        n = (i < MA_BASE(pool, n)? MA_LEFT(pool, n): MA_RIGHT(pool, n));
+        n = (i < n? MA_LEFT(pool, n): MA_RIGHT(pool, n));
     }
 }
 
-static void *calloc_impl(size_t nmemb, size_t size, bool lock)
+static void *calloc_impl(struct malloc_pool_s *pool, size_t nmemb,
+    size_t size, bool lock)
 {
-    void *ptr = malloc_impl(nmemb * size, lock);
+    void *ptr = malloc_impl(pool, nmemb * size, lock);
     if (ptr == NULL || ptr == MA_ZERO)
         return ptr;
     memset(ptr, 0, nmemb * size);
     return ptr;
 }
 
-static void *realloc_impl(void *ptr, size_t size, bool lock)
+static void *realloc_impl(struct malloc_pool_s *pool, void *ptr, size_t size,
+    bool lock)
 {
     if (ptr == NULL || ptr == MA_ZERO)
-        return malloc_impl(size, lock);
+        return malloc_impl(pool, size, lock);
 
-    struct malloc_pool_s *pool = &malloc_pool;
-    if ((uint8_t *)ptr < pool->mem.base ||
-            (uint8_t *)ptr >= pool->mem.base + MA_UNIT * (size_t)UINT32_MAX)
+    if ((uint8_t *)ptr < pool->base ||
+            (uint8_t *)ptr >= pool->base + MA_UNIT * (size_t)pool->end)
         panic("bad realloc() detected");
     if ((uintptr_t)ptr % MA_UNIT != 0)
         panic("bad realloc() detected");
     if (size == 0)
     {
-        free_impl(ptr, lock);
+        free_impl(pool, ptr, lock);
         return MA_ZERO;
     }
-    off_t diff = (uint8_t *)ptr - pool->mem.base;
+    off_t diff = (uint8_t *)ptr - pool->base - sizeof(struct malloc_node_s);
     uint32_t i = (uint32_t)(diff / MA_UNIT);
  
-    size_t size128 = size / MA_UNIT;
-    size128 += (size % MA_UNIT != 0);
+    size += sizeof(struct malloc_node_s);
+    size_t size128 = size / MA_UNIT + (size % MA_UNIT? 1: 0);
     if (size128 > UINT32_MAX)
     {
         errno = ENOMEM;
@@ -1726,17 +1730,17 @@ static void *realloc_impl(void *ptr, size_t size, bool lock)
     {
         if (n == MA_NIL)
             panic("bad realloc() detected");
-        if (MA_BASE(pool, n) == i)
+        if (n == i)
             break;
-        left = (i < MA_BASE(pool, n));
+        left = (i < n);
         if (left)
-            ub = MA_BASE(pool, n);
+            ub = n;
         n = (left? MA_LEFT(pool, n): MA_RIGHT(pool, n));
     }
     uint32_t r = MA_RIGHT(pool, n);
     ub = (r != MA_NIL? MA_LB(pool, r): ub);
 
-    if (MA_BASE(pool, n) + size128 <= ub)
+    if (n + size128 <= ub)
     {
         // In-place realloc:
         if (MA_SIZE(pool, n) == size128)
@@ -1744,7 +1748,7 @@ static void *realloc_impl(void *ptr, size_t size, bool lock)
             if (lock) mutex_unlock(&pool->mutex);
             return ptr;
         }
-        if (!malloc_mem_realloc(pool, MA_BASE(pool, n), size128))
+        if (!malloc_mem_realloc(pool, n, size128))
         {
             if (lock) mutex_unlock(&pool->mutex);
             return NULL;
@@ -1756,55 +1760,77 @@ static void *realloc_impl(void *ptr, size_t size, bool lock)
         return ptr;
     }
     size_t copy_size = MA_SIZE(pool, n) * MA_UNIT;
-    MA_ALLOCED(pool, n) = false;        // Take ownership
     if (lock) mutex_unlock(&pool->mutex);
 
-    void *new_ptr = malloc_impl(size, lock);
+    void *new_ptr = malloc_impl(pool, size, lock);
     if (new_ptr == NULL)
         return new_ptr;
     memcpy(new_ptr, ptr, copy_size);
     
     if (lock && mutex_lock(&pool->mutex) < 0)
         return NULL;
-    MA_ALLOCED(pool, n) = true;
-    n = malloc_remove(pool, n);
-    malloc_node_free(pool, n);
+    malloc_remove(pool, n);
     if (lock) mutex_unlock(&pool->mutex);
     return new_ptr;
 }
 
 static void *malloc(size_t size)
 {
-    return malloc_impl(size, /*lock=*/true);
+    malloc_init();
+    return malloc_impl(&malloc_pool, size, /*lock=*/true);
 }
 static void *calloc(size_t nmemb, size_t size)
 {
-    return calloc_impl(nmemb, size, /*lock=*/true);
+    malloc_init();
+    return calloc_impl(&malloc_pool, nmemb, size, /*lock=*/true);
 }
 static void *realloc(void *ptr, size_t size)
 {
-    return realloc_impl(ptr, size, /*lock=*/true);
+    malloc_init();
+    return realloc_impl(&malloc_pool, ptr, size, /*lock=*/true);
 }
 static void free(void *ptr)
 {
-    free_impl(ptr, /*lock=*/true);
+    malloc_init();
+    free_impl(&malloc_pool, ptr, /*lock=*/true);
 }
 
 static void *malloc_unlocked(size_t size)
 {
-    return malloc_impl(size, /*lock=*/false);
+    malloc_init();
+    return malloc_impl(&malloc_pool, size, /*lock=*/false);
 }
 static void *calloc_unlocked(size_t nmemb, size_t size)
 {
-    return calloc_impl(nmemb, size, /*lock=*/false);
+    malloc_init();
+    return calloc_impl(&malloc_pool, nmemb, size, /*lock=*/false);
 }
 static void *realloc_unlocked(void *ptr, size_t size)
 {
-    return realloc_impl(ptr, size, /*lock=*/false);
+    malloc_init();
+    return realloc_impl(&malloc_pool, ptr, size, /*lock=*/false);
 }
 static void free_unlocked(void *ptr)
 {
-    free_impl(ptr, /*lock=*/false);
+    malloc_init();
+    free_impl(&malloc_pool, ptr, /*lock=*/false);
+}
+
+static void *pool_malloc(struct malloc_pool_s *pool, size_t size)
+{
+    return malloc_impl(pool, size, /*lock=*/true);
+}
+static void *pool_calloc(struct malloc_pool_s *pool, size_t nmemb, size_t size)
+{
+    return calloc_impl(pool, nmemb, size, /*lock=*/true);
+}
+static void *pool_realloc(struct malloc_pool_s *pool, void *ptr, size_t size)
+{
+    return realloc_impl(pool, ptr, size, /*lock=*/true);
+}
+static void pool_free(struct malloc_pool_s *pool, void *ptr)
+{
+    free_impl(pool, ptr, /*lock=*/true);
 }
 
 /****************************************************************************/
