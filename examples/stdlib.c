@@ -2365,6 +2365,20 @@ static void *memcpy(void *dst, const void *src, size_t n)
     return dst;
 }
 
+static void *memmove(void *dst, const void *src, size_t n)
+{
+    uint8_t *dst8 = (uint8_t *)dst;
+    const uint8_t *src8 = (const uint8_t *)src;
+    if (dst8 < src8)
+        memcpy(dst, src, n);
+    else
+    {
+        for (ssize_t i = (ssize_t)n-1; i >= 0; i--)
+            dst8[i] = src8[i];
+    }
+    return dst;
+}
+
 static int memcmp(const void *a, const void *b, size_t n)
 {
     const uint8_t *a8 = (const uint8_t *)a;
