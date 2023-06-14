@@ -101,8 +101,8 @@ static intptr_t parseSymbol(Parser &parser, const char *symbol)
         return 0x0;
     }
     else if (val == INTPTR_MIN)
-        error("failed to parse %s; \"%s\" does not correspond to "
-            "any section or symbol name", parser.mode, symbol);
+        warning("failed to match \"%s\" against any section or symbol name",
+            symbol);
     return val;
 }
 
@@ -325,7 +325,9 @@ static const MatchArg parseMatchArg(Parser &parser, bool val = false)
                 default:
                     parser.unexpectedToken();
             }
-            return MatchArg(new MatchVal(parseSymbol(parser, name.c_str())));
+            intptr_t val = parseSymbol(parser, name.c_str());
+            return MatchArg(val == INTPTR_MIN? new MatchVal():
+                                               new MatchVal(val));
         }
         case TOKEN_NIL:
             return MatchArg(new MatchVal(nullptr));

@@ -1,0 +1,1 @@
+./test -M 'addr == &sym_does_not_exist' -P 'format("This should not happen\n")@patch'
