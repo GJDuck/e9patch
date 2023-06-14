@@ -1130,11 +1130,6 @@ static pid_t getpid(void)
     return (pid_t)syscall(SYS_getpid);
 }
 
-static pid_t fork(void)
-{
-    return (pid_t)syscall(SYS_fork);
-}
-
 static int execve(const char *filename, char *const argv[],
     char *const envp[])
 {
@@ -1335,6 +1330,13 @@ static pid_t mutex_gettid(void)
     return tid;
 }
 
+static void mutex_settid(pid_t tid)
+{
+    asm volatile (
+        "mov %0,%%fs:0x2d0\n" : : "r"(tid)
+    );
+}
+
 static bool mutex_fast_lock(pid_t *x)
 {
     pid_t self  = mutex_gettid();
@@ -1348,12 +1350,23 @@ static bool mutex_fast_unlock(pid_t *x)
     return __sync_bool_compare_and_swap(x, self, 0);
 }
 
-#else
+static pid_t gettid(void)
+{
+    return mutex_gettid();
+}
 
+#else       /* MUTEX_SAFE */
+
+#define mutex_settid(tid)		/* NOP */
 #define mutex_fast_lock(x)      false
 #define mutex_fast_unlock(x)    false
 
-#endif
+static pid_t gettid(void)
+{
+    return syscall(SYS_gettid);
+}
+
+#endif      /* MUTEX_SAFE */
 
 struct mutex_s
 {
@@ -1392,6 +1405,7 @@ static __attribute__((__noinline__, __warn_unused_result__))
     if (*x & FUTEX_OWNER_DIED)
     {
         // This can occur if a thread dies while holding a lock.
+        *x &= ~FUTEX_OWNER_DIED;
         errno = EOWNERDEAD;
         return -1;
     }
@@ -1406,6 +1420,14 @@ static __attribute__((__noinline__)) int mutex_unlock(mutex_t *m)
     if (syscall(SYS_futex, x, FUTEX_UNLOCK_PI, 0, NULL, NULL, 0) < 0)
         return -1;
     return 0;                       // released
+}
+
+static pid_t fork(void)
+{
+    pid_t child = (pid_t)syscall(SYS_fork);
+    if (child == 0)
+        mutex_settid((pid_t)syscall(SYS_gettid));
+    return child;
 }
 
 /****************************************************************************/
@@ -1555,11 +1577,11 @@ static struct malloc_pool_s *pool_create(int flags, size_t lb, size_t ub)
         return NULL;
     }
     mutex_init(&pool->mutex);
-    pool->base  = (uint8_t *)pool;
-    pool->mmap  = (MA_PAGE_SIZE * MA_PAGES(lb)) / MA_UNIT;
-    pool->end   = (MA_PAGE_SIZE * MA_PAGES(ub)) / MA_UNIT;
-    pool->root  = MA_NIL;
-    pool->flags = flags;
+    pool->base   = (uint8_t *)pool;
+    pool->mmap   = (MA_PAGE_SIZE * MA_PAGES(lb)) / MA_UNIT;
+    pool->end    = (MA_PAGE_SIZE * MA_PAGES(ub)) / MA_UNIT;
+    pool->root   = MA_NIL;
+    pool->flags  = flags;
     return pool;
 }
 
@@ -1577,19 +1599,19 @@ static int pool_destroy(struct malloc_pool_s *pool)
 }
 
 /*
- * Malloc init.
+ * Pool init.
  */
-static void malloc_init(void)
+static struct malloc_pool_s *pool_init(struct malloc_pool_s *pool)
 {
-    struct malloc_pool_s *pool = &malloc_pool;
+    pool = (pool == NULL? &malloc_pool: pool);
     if (pool->base != NULL)
-        return;
+        return pool;
     if (mutex_lock(&pool->mutex) < 0)
-        return;
+        return pool;
     if (pool->base != NULL)
     {
         mutex_unlock(&pool->mutex);
-        return;
+        return pool;
     }
     uintptr_t hint = 0xaaa00000000ull;
     (void)getrandom(&hint, sizeof(uint32_t), 0);
@@ -1598,12 +1620,13 @@ static void malloc_init(void)
         MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE, -1, 0);
     if (ptr == MAP_FAILED)
         panic("mmap() failed");
-    pool->base  = (uint8_t *)ptr;
-    pool->mmap  = 0;
-    pool->end   = UINT32_MAX;
-    pool->root  = MA_NIL;
-    pool->flags = MAP_PRIVATE | MAP_ANONYMOUS;
+    pool->base   = (uint8_t *)ptr;
+    pool->mmap   = 0;
+    pool->end    = UINT32_MAX;
+    pool->root   = MA_NIL;
+    pool->flags  = MAP_PRIVATE | MAP_ANONYMOUS;
     mutex_unlock(&pool->mutex);
+    return pool;
 }
 
 /*
@@ -1955,6 +1978,7 @@ static void *malloc_impl(struct malloc_pool_s *pool, size_t size, bool lock)
         return NULL;
     }
 
+    pool = pool_init(pool);
     if (lock && mutex_lock(&pool->mutex) < 0)
         return NULL;
 
@@ -2050,6 +2074,7 @@ static void free_impl(struct malloc_pool_s *pool, void *ptr, bool lock)
     if (ptr == NULL || ptr == MA_ZERO)
         return;
 
+    pool = pool_init(pool);
     if ((uint8_t *)ptr < pool->base ||
             (uint8_t *)ptr >= pool->base + MA_UNIT * (size_t)pool->end)
         panic("bad free() detected");
@@ -2092,6 +2117,7 @@ static void *realloc_impl(struct malloc_pool_s *pool, void *ptr, size_t size,
     if (ptr == NULL || ptr == MA_ZERO)
         return malloc_impl(pool, size, lock);
 
+    pool = pool_init(pool);
     if ((uint8_t *)ptr < pool->base ||
             (uint8_t *)ptr >= pool->base + MA_UNIT * (size_t)pool->end)
         panic("bad realloc() detected");
@@ -2167,44 +2193,36 @@ static void *realloc_impl(struct malloc_pool_s *pool, void *ptr, size_t size,
 
 static void *malloc(size_t size)
 {
-    malloc_init();
-    return malloc_impl(&malloc_pool, size, /*lock=*/true);
+    return malloc_impl(NULL, size, /*lock=*/true);
 }
 static void *calloc(size_t nmemb, size_t size)
 {
-    malloc_init();
-    return calloc_impl(&malloc_pool, nmemb, size, /*lock=*/true);
+    return calloc_impl(NULL, nmemb, size, /*lock=*/true);
 }
 static void *realloc(void *ptr, size_t size)
 {
-    malloc_init();
-    return realloc_impl(&malloc_pool, ptr, size, /*lock=*/true);
+    return realloc_impl(NULL, ptr, size, /*lock=*/true);
 }
 static void free(void *ptr)
 {
-    malloc_init();
-    free_impl(&malloc_pool, ptr, /*lock=*/true);
+    free_impl(NULL, ptr, /*lock=*/true);
 }
 
 static void *malloc_unlocked(size_t size)
 {
-    malloc_init();
-    return malloc_impl(&malloc_pool, size, /*lock=*/false);
+    return malloc_impl(NULL, size, /*lock=*/false);
 }
 static void *calloc_unlocked(size_t nmemb, size_t size)
 {
-    malloc_init();
-    return calloc_impl(&malloc_pool, nmemb, size, /*lock=*/false);
+    return calloc_impl(NULL, nmemb, size, /*lock=*/false);
 }
 static void *realloc_unlocked(void *ptr, size_t size)
 {
-    malloc_init();
-    return realloc_impl(&malloc_pool, ptr, size, /*lock=*/false);
+    return realloc_impl(NULL, ptr, size, /*lock=*/false);
 }
 static void free_unlocked(void *ptr)
 {
-    malloc_init();
-    free_impl(&malloc_pool, ptr, /*lock=*/false);
+    free_impl(NULL, ptr, /*lock=*/false);
 }
 
 static void *pool_malloc(struct malloc_pool_s *pool, size_t size)
@@ -5165,6 +5183,7 @@ static void tree_destroy(const struct node_s *n, void (*free_node)(void *))
         return;
     tree_destroy(TREE_LEFT(n), free_node);
     tree_destroy(TREE_RIGHT(n), free_node);
+    free((void *)n);
 }
 static void tdestroy(const void *root, void (*free_node)(void *))
 {
