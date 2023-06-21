@@ -609,6 +609,7 @@ typedef long off_t;
 typedef long ptrdiff_t;
 typedef int pid_t;
 typedef int uid_t;
+typedef int gid_t;
 typedef long time_t;
 typedef long clock_t;
 typedef int key_t;
@@ -669,10 +670,18 @@ typedef int key_t;
 #define O_SYNC                          04010000
 
 #define FD_SETSIZE  512
+#define FD_NBITS    (8 * sizeof(unsigned long))
 typedef struct
 {
-    unsigned long fds_bits[FD_SETSIZE / (8 * sizeof(unsigned long))];
+    unsigned long fds_bits[FD_SETSIZE / FD_NBITS];
 } fd_set;
+#define FD_ZERO(fds)                    memset((fds), 0x0, sizeof(fd_set))
+#define FD_SET(fd, fds)                 \
+    ((fds)->fds_bits[(fd)/FD_NBITS] |= (0x1ul<<((fd)%FD_NBITS)))
+#define FD_CLR(fd, fds)                 \
+    ((fds)->fds_bits[(fd)/FD_NBITS] &= ~(0x1ul<<((fd)%FD_NBITS)))
+#define FD_ISSET(fd, fds)               \
+    (((fds)->fds_bits[(fd)/FD_NBITS] & (0x1ul<<((fd)%FD_NBITS))) != 0)
 
 typedef unsigned long int nfds_t;
 struct pollfd
@@ -687,10 +696,32 @@ struct timeval
     time_t tv_sec;
     long   tv_usec;
 };
+struct timespec
+{
+    time_t tv_sec;
+    long   tv_nsec;
+};
 struct timezone
 {
     int tz_minuteswest;
     int tz_dsttime;
+};
+
+struct stat
+{
+    unsigned long st_dev;
+    unsigned long st_ino;
+    mode_t st_mode;
+    unsigned long st_nlink;
+    uid_t st_uid;
+    gid_t st_gid;
+    unsigned long st_rdev;
+    off_t st_size;
+    long st_blksize;
+    long st_blocks;
+    struct timespec st_atim;
+    struct timespec st_mtim;
+    struct timespec st_ctim;
 };
 
 struct rusage
@@ -1013,7 +1044,6 @@ static int close(int fd)
     return (int)syscall(SYS_close, fd);
 }
 
-struct stat;
 static int stat(const char *pathname, struct stat *buf)
 {
     return (int)syscall(SYS_stat, pathname, buf);
@@ -1262,16 +1292,9 @@ static int getrandom(void *buf, size_t buflen, unsigned int flags)
     return (int)syscall(SYS_getrandom, buf, buflen, flags);
 }
 
-static int isatty(int fd)
+int nanosleep(const struct timespec *req, struct timespec *rem)
 {
-    struct termios buf;
-    if (ioctl(fd, TCGETS, &buf) < 0)
-    {
-        if (errno == EINVAL)
-            errno = ENOTTY;
-        return 0;
-    }
-    return 1;
+    return syscall(SYS_nanosleep, req, rem);
 }
 
 /****************************************************************************/
@@ -2296,6 +2319,11 @@ static void (*signal(int signum, void (*handler)(int)))(int)
     return old_action.sa_handler;
 }
 
+static int raise(int sig)
+{
+    return kill(gettid(), sig);
+}
+
 /****************************************************************************/
 /* CTYPE                                                                    */
 /****************************************************************************/
@@ -2410,6 +2438,18 @@ static int memcmp(const void *a, const void *b, size_t n)
     return 0;
 }
 
+
+static void *memchr(const void *a, int c, size_t n)
+{
+    const uint8_t *a8 = (const uint8_t *)a;
+    for (size_t i = 0; i < n; i++)
+    {
+        if ((int)a8[i] == c)
+            return (void *)(a8 + i);
+    }
+    return NULL;
+}
+
 static size_t strlen(const char *s)
 {
     size_t n = 0;
@@ -2502,98 +2542,81 @@ static const char *strerror(int errnum)
 {
     switch (errnum)
     {
-        case 0:
-            return "Success";
-        case E2BIG:
-            return "Argument list too long";
-        case EACCES:
-            return "Permission denied";
-        case EAGAIN:
-            return "Resource temporarily unavailable";
-        case EBADF:
-            return "Bad file descriptor";
-        case EBADMSG:
-            return "Bad message";
-        case EBUSY:
-            return "Device or resource busy";
-        case ECANCELED:
-            return "Operation canceled";
-        case ECHILD:
-            return "No child processes";
-        case EDEADLK:
-            return "Resource deadlock avoided";
-        case EDOM:
-            return "Mathematics argument out of domain of function";
-        case EEXIST:
-            return "File exists";
-        case EFAULT:
-            return "Bad address";
-        case EFBIG:
-            return "File too large";
-        case EINPROGRESS:
-            return "Operation in progress";
-        case EINTR:
-            return "Interrupted function call";
-        case EINVAL:
-            return "Invalid argument";
-        case EIO:
-            return "Input/output error";
-        case EISDIR:
-            return "Is a directory";
-        case EMFILE:
-            return "Too many open files";
-        case EMLINK:
-            return "Too many links";
-        case EMSGSIZE:
-            return "Message too long";
-        case ENAMETOOLONG:
-            return "Filename too long";
-        case ENFILE:
-            return "Too many open files in system";
-        case ENODEV:
-            return "No such device";
-        case ENOENT:
-            return "No such file or directory";
-        case ENOEXEC:
-            return "Exec format error";
-        case ENOLCK:
-            return "No locks available";
-        case ENOMEM:
-            return "Not enough space";
-        case ENOSPC:
-            return "No space left on device";
-        case ENOSYS:
-            return "Function not implemented";
-        case ENOTDIR:
-            return "Not a directory";
-        case ENOTEMPTY:
-            return "Directory not empty";
-        case ENOTSUP:
-            return "Operation not supported";
-        case ENOTTY:
-            return "Inappropriate I/O control operation";
-        case ENXIO:
-            return "No such device or address";
-        case EPERM:
-            return "Operation not permitted";
-        case EPIPE:
-            return "Broken pipe";
-        case ERANGE:
-            return "Numerical result out of range";
-        case EROFS:
-            return "Read-only filesystem";
-        case ESPIPE:
-            return "Invalid seek";
-        case ESRCH:
-            return "No such process";
-        case ETIMEDOUT:
-            return "Connection timed out";
-        case EXDEV:
-            return "Improper link";
-        case EOWNERDEAD:
-            return "Owner died";
-        default:
-            return "Unknown error code";
+        case 0: return "Success";
+        case E2BIG: return "Argument list too long";
+        case EACCES: return "Permission denied";
+        case EAGAIN: return "Resource temporarily unavailable";
+        case EBADF: return "Bad file descriptor";
+        case EBADMSG: return "Bad message";
+        case EBUSY: return "Device or resource busy";
+        case ECANCELED: return "Operation canceled";
+        case ECHILD: return "No child processes";
+        case EDEADLK: return "Resource deadlock avoided";
+        case EDOM: return "Mathematics argument out of domain of function";
+        case EEXIST: return "File exists";
+        case EFAULT: return "Bad address";
+        case EFBIG: return "File too large";
+        case EINPROGRESS: return "Operation in progress";
+        case EINTR: return "Interrupted function call";
+        case EINVAL: return "Invalid argument";
+        case EIO: return "Input/output error";
+        case EISDIR: return "Is a directory";
+        case EMFILE: return "Too many open files";
+        case EMLINK: return "Too many links";
+        case EMSGSIZE: return "Message too long";
+        case ENAMETOOLONG: return "Filename too long";
+        case ENFILE: return "Too many open files in system";
+        case ENODEV: return "No such device";
+        case ENOENT: return "No such file or directory";
+        case ENOEXEC: return "Exec format error";
+        case ENOLCK: return "No locks available";
+        case ENOMEM: return "Not enough space";
+        case ENOSPC: return "No space left on device";
+        case ENOSYS: return "Function not implemented";
+        case ENOTDIR: return "Not a directory";
+        case ENOTEMPTY: return "Directory not empty";
+        case ENOTSUP: return "Operation not supported";
+        case ENOTTY: return "Inappropriate I/O control operation";
+        case ENXIO: return "No such device or address";
+        case EPERM: return "Operation not permitted";
+        case EPIPE: return "Broken pipe";
+        case ERANGE: return "Numerical result out of range";
+        case EROFS: return "Read-only filesystem";
+        case ESPIPE: return "Invalid seek";
+        case ESRCH: return "No such process";
+        case ETIMEDOUT: return "Connection timed out";
+        case EXDEV: return "Improper link";
+        case EOWNERDEAD: return "Owner died";
+        default: return "Unknown error code";
+    }
+}
+
+static const char *strsignal(int sig)
+{
+    switch (sig)
+    {
+        case SIGHUP: return "Hangup";
+        case SIGINT: return "Interrupt";
+        case SIGQUIT: return "Quit";
+        case SIGILL: return "Illegal instruction";
+        case SIGABRT: return "Aborted";
+        case SIGFPE: return "Floating point exception";
+        case SIGKILL: return "Killed";
+        case SIGSEGV: return "Segmentation fault";
+        case SIGPIPE: return "Broken pipe";
+        case SIGALRM: return "Alarm clock";
+        case SIGTERM: return "Terminated";
+        case SIGUSR1: return "User defined signal 1";
+        case SIGUSR2: return "User defined signal 2";
+        case SIGCHLD: return "Child exited";
+        case SIGCONT: return "Continued";
+        case SIGSTOP: return "Stopped (signal)";
+        case SIGBUS: return "Bus error";
+        case SIGPOLL: return "I/O possible";
+        case SIGSYS: return "Bad system call";
+        case SIGTRAP: return "Trace/breakpoint trap";
+        case SIGURG: return "Urgent I/O condition";
+        default: return "Unknown signal";
     }
 }
 
@@ -3192,48 +3215,51 @@ static int fileno(FILE *stream)
 
 static int setvbuf(FILE *stream, char *buf, int mode, size_t size)
 {
+    void *oldbuf = NULL;
     stdio_lock(stream, -1);
-    if (stream->flags & STDIO_FLAG_INITED)
-        panic("setvbuf(...) not supported after I/O");
-    if (buf != NULL && size > 0)
-    {
-        stream->buf    = buf;
-        stream->bufsiz = size;
-    }
-    int result = 0;
+    fflush_unlocked(stream);
     switch (mode)
     {
         case _IOFBF:
+            if (buf == NULL && stream->buf == NULL)
+                goto invalid;
             stream->flags &= ~STDIO_FLAG_NO_BUF;
             stream->eol = EOF;
             break;
         case _IOLBF:
+            if (buf == NULL && stream->buf == NULL)
+                goto invalid;
             stream->flags &= ~STDIO_FLAG_NO_BUF;
             stream->eol = '\n';
             break;
         case _IONBF:
+            if (buf != NULL || size > 0)
+                goto invalid;
             stream->flags |= STDIO_FLAG_NO_BUF;
             stream->eol = EOF;
             break;
         default:
+        invalid:
+            stdio_unlock(stream);
             errno = EINVAL;
-            result = -1;
-            break;
+            return -1;
+    }
+    if ((buf != NULL && size > 0) || mode == _IONBF)
+    {
+        if (stream->buf != NULL && (stream->flags & STDIO_FLAG_OWN_BUF) != 0)
+            oldbuf = stream->buf;
+        stream->buf    = buf;
+        stream->bufsiz = size;
     }
     stdio_unlock(stream);
-    return result;
+    free(oldbuf);
+    return 0;
 }
 
-static mutex_t stdio_mutex;
+static mutex_t stdio_mutex = MUTEX_INITIALIZER;
 static FILE *stdio_stream[3] = {NULL};
-
-#undef  stdin
 #define stdin   stdio_get_stream(STDIN_FILENO)
-
-#undef  stdout
 #define stdout  stdio_get_stream(STDOUT_FILENO)
-
-#undef  stderr
 #define stderr  stdio_get_stream(STDERR_FILENO)
 
 static __attribute__((__noinline__, __const__)) FILE *stdio_get_stream(int fd)
@@ -3505,12 +3531,7 @@ static int ungetc(int c, FILE *stream)
     return c;
 }
 
-// The define/undef trick does not work for fread_unlocked()...
-#undef fread_unlocked
-#define fread_unlocked(ptr, size, nmemb, stream)                        \
-    stdio_fread_unlocked((ptr), (size), (nmemb), (stream))
-
-static size_t stdio_fread_unlocked(void *ptr, size_t size, size_t nmemb,
+static size_t fread_unlocked(void *ptr, size_t size, size_t nmemb,
         FILE *stream)
 {
     if (stdio_stream_read_init(stream) < 0)
@@ -5245,6 +5266,38 @@ static int abs(int x)
 static long int labs(long int x)
 {
     return (x < 0? -x: x);
+}
+
+static int isatty(int fd)
+{
+    struct termios buf;
+    if (ioctl(fd, TCGETS, &buf) < 0)
+    {
+        if (errno == EINVAL)
+            errno = ENOTTY;
+        return 0;
+    }
+    return 1;
+}
+
+static unsigned sleep(unsigned sec)
+{
+    struct timespec ts = {sec, 0}, tr;
+    if (nanosleep(&ts, &tr) < 0)
+    {
+        if (errno == EINTR)
+            return (unsigned)tr.tv_sec;
+        return sec;
+    }
+    return 0;
+}
+
+static int usleep(unsigned us)
+{
+    size_t ns = us * 1000;
+    struct timespec ts =
+        {(time_t)(ns / 1000000000ul), (long)(ns % 1000000000ul)};
+    return nanosleep(&ts, NULL);
 }
 
 #ifdef __cplusplus
