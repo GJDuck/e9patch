@@ -690,6 +690,12 @@ struct pollfd
     short events;
     short revents;
 };
+#define POLLIN                          0x0001
+#define POLLPRI                         0x0002
+#define POLLOUT                         0x0004
+#define POLLERR                         0x0008
+#define POLLHUP                         0x0010
+#define POLLNVAL                        0x0020
 
 struct timeval
 {
@@ -854,16 +860,95 @@ struct sigaction
     unsigned long sa_flags;
     void (*sa_restorer)(void);
 };
-#define SA_NOCLDSTOP    0x00000001u
-#define SA_NOCLDWAIT    0x00000002u
-#define SA_SIGINFO      0x00000004u
-#define SA_ONSTACK      0x08000000u
-#define SA_RESTART      0x10000000u
-#define SA_NODEFER      0x40000000u
-#define SA_RESETHAND    0x80000000u
-#define SA_NOMASK       SA_NODEFER
-#define SA_ONESHOT      SA_RESETHAND
-#define SA_RESTORER     0x04000000
+#define SA_NOCLDSTOP            0x00000001u
+#define SA_NOCLDWAIT            0x00000002u
+#define SA_SIGINFO              0x00000004u
+#define SA_ONSTACK              0x08000000u
+#define SA_RESTART              0x10000000u
+#define SA_NODEFER              0x40000000u
+#define SA_RESETHAND            0x80000000u
+#define SA_NOMASK               SA_NODEFER
+#define SA_ONESHOT              SA_RESETHAND
+#define SA_RESTORER             0x04000000
+
+struct iovec
+{
+    void *iov_base;
+    size_t iov_len;
+};
+
+#define WNOHANG                 1
+#define WEXITSTATUS(status)     (((status) >> 8) & 0xFF)
+#define WTERMSIG(status)        ((status) & 0x7F)
+#define WIFSIGNALED(status)     (WTERMSIG(status) != 0)
+#define WIFEXITED(status)       (WTERMSIG(status) == 0)
+
+typedef size_t socklen_t;
+#define AF_UNSPEC               0
+#define AF_UNIX                 1
+#define AF_INET                 2
+#define AF_INET6                10
+#define SOCK_STREAM             1
+#define SOCK_DGRAM              2
+#define SOCK_RAW                3
+#define SOCK_SEQPACKET          5
+#define SOCK_PACKET             10
+#define IPPROTO_ICMP            1
+#define IPPROTO_TCP             6
+#define IPPROTO_UDP             17
+struct in_addr
+{
+    uint32_t s_addr;
+};
+struct in6_addr
+{
+    union
+    {
+        uint8_t  s6_addr[16];
+        uint16_t s6_addr16[8];
+        uint32_t s6_addr32[4];
+    };
+};
+typedef unsigned short sa_family_t;
+struct sockaddr
+{
+    sa_family_t sa_family;
+    char sa_data[14];
+};
+struct sockaddr_in
+{
+    sa_family_t sin_family;
+    uint16_t sin_port;
+    struct in_addr sin_addr;
+    unsigned char sin_zero[
+        sizeof(struct sockaddr) -
+        sizeof(sa_family_t) -
+        sizeof(uint16_t) -
+        sizeof(struct in_addr)];
+};
+struct sockaddr_in6
+{
+    sa_family_t sin6_family;
+    uint16_t sin6_port;
+    uint32_t sin6_flowinfo;
+    struct in6_addr sin6_addr;
+    uint32_t sin6_scope_id;
+};
+struct sockaddr_un
+{
+    sa_family_t sun_family;
+    char sun_path[108];
+};
+struct msghdr
+{
+    void *msg_name;
+    socklen_t msg_namelen;
+    struct iovec *msg_iov;
+    size_t msg_iovlen;
+    void *msg_control;
+    size_t msg_controllen;
+    int msg_flags;
+};
 
 #ifdef __cplusplus
 extern "C"
@@ -1380,7 +1465,7 @@ static pid_t gettid(void)
 
 #else       /* MUTEX_SAFE */
 
-#define mutex_settid(tid)		/* NOP */
+#define mutex_settid(tid)       /* NOP */
 #define mutex_fast_lock(x)      false
 #define mutex_fast_unlock(x)    false
 
@@ -1530,6 +1615,7 @@ struct malloc_node_s
     uint32_t ub;            // sub-tree UB
     uint32_t gap;           // sub-tree max GAP
     uint32_t color:1;       // RB-tree color
+    uint32_t magic:31;      // Magic number
 };
 
 /*
@@ -1547,6 +1633,7 @@ struct malloc_pool_s
 
 static struct malloc_pool_s malloc_pool = {MUTEX_INITIALIZER, 0};
 
+#define MA_MAGIC_NUMBER             0x4945F7C2
 #define MA_UNIT                     16
 #define MA_MAX_SIZE                 (MA_UNIT * UINT32_MAX)
 #define MA_NIL                      0x0
@@ -1564,6 +1651,7 @@ static struct malloc_pool_s malloc_pool = {MUTEX_INITIALIZER, 0};
 #define MA_LB(pool, N)              (MA_NODE(pool, N)->lb)
 #define MA_UB(pool, N)              (MA_NODE(pool, N)->ub)
 #define MA_GAP(pool, N)             (MA_NODE(pool, N)->gap)
+#define MA_MAGIC(pool, N)           (MA_NODE(pool, N)->magic)
 #define MA_POOL_LB(pool)            \
     (sizeof(*pool) / MA_UNIT + (sizeof(*pool) % MA_UNIT? 1: 0))
 #define MA_POOL_UB(pool)            (pool->end)
@@ -2072,6 +2160,7 @@ static void *malloc_impl(struct malloc_pool_s *pool, size_t size, bool lock)
     node->ub     = i + size128;
     node->left   = node->right = MA_NIL;
     node->gap    = 0;
+    node->magic  = MA_MAGIC_NUMBER;
     if (parent == MA_NIL)
     {
         node->color = MA_BLACK;
@@ -2116,6 +2205,8 @@ static void free_impl(struct malloc_pool_s *pool, void *ptr, bool lock)
             panic("bad free() detected");
         if (n == i)
         {
+            if (MA_MAGIC(pool, n) != MA_MAGIC_NUMBER)
+                panic("bad free() detected");
             malloc_remove(pool, n);
             if (lock) mutex_unlock(&pool->mutex);
             return;
@@ -2177,6 +2268,8 @@ static void *realloc_impl(struct malloc_pool_s *pool, void *ptr, size_t size,
             ub = n;
         n = (left? MA_LEFT(pool, n): MA_RIGHT(pool, n));
     }
+    if (MA_MAGIC(pool, n) != MA_MAGIC_NUMBER)
+        panic("bad realloc() detected");
     uint32_t r = MA_RIGHT(pool, n);
     ub = (r != MA_NIL? MA_LB(pool, r): ub);
 
@@ -5087,8 +5180,8 @@ color:
     return old;
 }
 
-static void *tsearch(const void *key, void **root,
-    int (*compare)(const void *, const void *))
+static void *pool_tsearch(struct malloc_pool_s *pool, const void *key,
+    void **root, int (*compare)(const void *, const void *))
 {
     if (root == NULL)
         return NULL;
@@ -5106,7 +5199,7 @@ static void *tsearch(const void *key, void **root,
         else
             return (void *)n;
     }
-    n = (struct node_s *)malloc(sizeof(struct node_s));
+    n = (struct node_s *)pool_malloc(pool, sizeof(struct node_s));
     if (n == NULL)
         return NULL;
     n->key = (void *)key;
@@ -5124,6 +5217,11 @@ static void *tsearch(const void *key, void **root,
         t->root = n;
     tree_rebalance_insert(t, n);
     return n;
+}
+static void *tsearch(const void *key, void **root,
+    int (*compare)(const void *, const void *))
+{
+    return pool_tsearch(NULL, key, root, compare);
 }
 
 static void *tfind(const void *key, void **root,
@@ -5147,8 +5245,8 @@ static void *tfind(const void *key, void **root,
     return NULL;
 }
 
-static void *tdelete(const void *key, void **root,
-    int (*compare)(const void *, const void *))
+static void *pool_tdelete(struct malloc_pool_s *pool, const void *key,
+    void **root, int (*compare)(const void *, const void *))
 {
     if (root == NULL)
         return NULL;
@@ -5166,11 +5264,16 @@ static void *tdelete(const void *key, void **root,
         {
             struct node_s *parent = TREE_PARENT(n);
             n = tree_remove(t, n);
-            free(n);
+            pool_free(pool, n);
             return (parent == NULL? (void *)root: parent);
         }
     }
     return NULL;
+}
+static void *tdelete(const void *key, void **root,
+    int (*compare)(const void *, const void *))
+{
+    return pool_tdelete(NULL, key, root, compare);
 }
 
 static void tree_walk(const struct node_s *n, int depth,
@@ -5198,19 +5301,64 @@ static void twalk(const void *root,
     tree_walk(n, 0, action);
 }
 
-static void tree_destroy(const struct node_s *n, void (*free_node)(void *))
+static void tree_destroy(struct malloc_pool_s *pool, const struct node_s *n,
+    void (*free_node)(void *))
 {
     if (n == NULL)
         return;
-    tree_destroy(TREE_LEFT(n), free_node);
-    tree_destroy(TREE_RIGHT(n), free_node);
-    free((void *)n);
+    tree_destroy(pool, TREE_LEFT(n), free_node);
+    tree_destroy(pool, TREE_RIGHT(n), free_node);
+    pool_free(pool, (void *)n);
 }
 static void tdestroy(const void *root, void (*free_node)(void *))
 {
     struct node_s *n = (struct node_s *)root;
-    tree_destroy(n, free_node);
+    tree_destroy(NULL, n, free_node);
 }
+static void pool_tdestroy(struct malloc_pool_s *pool, const void *root,
+    void (*free_node)(void *))
+{
+    struct node_s *n = (struct node_s *)root;
+    tree_destroy(pool, n, free_node);
+}
+
+/****************************************************************************/
+/* SOCKET                                                                   */
+/****************************************************************************/
+
+#define _BSWAP_U16(x)                                   \
+    ((((x) & 0x00FF) << 8) |                            \
+     (((x) & 0xFF00) >> 8))
+#define _BSWAP_U32(x)                                   \
+    ((((x) & 0x000000FF) << 24) |                       \
+     (((x) & 0x0000FF00) << 8) |                        \
+     (((x) & 0x00FF0000) >> 8) |                        \
+     (((x) & 0xFF000000) >> 24))
+#define _BSWAP_U64(x)                                   \
+    ((((x) & 0x00000000000000FFull) << 56) |            \
+     (((x) & 0x000000000000FF00ull) << 40) |            \
+     (((x) & 0x0000000000FF0000ull) << 24) |            \
+     (((x) & 0x00000000FF000000ull) << 8)  |            \
+     (((x) & 0x000000FF00000000ull) >> 8)  |            \
+     (((x) & 0x0000FF0000000000ull) >> 24) |            \
+     (((x) & 0x00FF000000000000ull) >> 40) |            \
+     (((x) & 0xFF00000000000000ull) >> 56))
+
+static uint16_t ntohs(uint16_t x)
+{
+    return _BSWAP_U16(x);
+}
+static uint32_t ntohl(uint32_t x)
+{
+    return _BSWAP_U32(x);
+}
+static uint64_t ntohll(uint64_t x)
+{
+    return _BSWAP_U64(x);
+}
+static uint16_t htons(uint16_t) __attribute__((__alias__("ntohs")));
+static uint32_t htonl(uint32_t) __attribute__((__alias__("ntohl")));
+static uint64_t htonll(uint64_t) __attribute__((__alias__("ntohll")));
 
 /****************************************************************************/
 /* MISC                                                                     */
