@@ -1520,6 +1520,18 @@ static __attribute__((__noinline__, __warn_unused_result__))
     return 0;                       // acquired
 }
 
+static __attribute__((__noinline__)) int mutex_trylock(mutex_t *m)
+{
+    pid_t *x = mutex_get_ptr(m);
+    if (mutex_fast_lock(x))
+        return 0;
+    else
+    {
+        errno = EBUSY;
+        return -1;
+    }
+}
+
 static __attribute__((__noinline__)) int mutex_unlock(mutex_t *m)
 {
     pid_t *x = mutex_get_ptr(m);
@@ -5389,14 +5401,17 @@ static char *getenv(const char *name)
 
 static __attribute__((__noreturn__)) void exit(int status)
 {
-    fflush(stdin);
-    fclose(stdin);
-    fflush(stdout);
-    fclose(stdout);
-    fflush(stderr);
-    fclose(stderr);
-    (void)syscall(SYS_exit, status);
-    __builtin_unreachable();
+    if (mutex_lock(&stdio_mutex) < 0)
+        panic("failed to lock stdio stream");
+    for (int i = 0; i < 3; i++)
+    {
+        FILE *stream = stdio_stream[i];
+        if (stream != NULL)
+            fclose(stream);
+    }
+    (void)syscall(SYS_exit_group, status);
+    while (true)
+        asm volatile ("ud2");
 }
 
 static __attribute__((__noreturn__)) void abort(void)
