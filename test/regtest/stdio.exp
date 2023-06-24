@@ -1,6 +1,6 @@
 arg = 0x2d9bfa6b1014f832
 [0]
-pos = 94 vs 94
+pos = 99 vs 99
 write = 12
 getc() = -1
 [1]
@@ -13,7 +13,7 @@ s = "XbBb"
 [2]
 c = ' '
 errno = 0 (Success)
-r = 8
+r = 9
 i = 7
 j = 101
 x = 0x2d9bfa6b1014f832
@@ -22,6 +22,7 @@ p = 0x2d9bfa6b1014f832
 u = 269809714
 h = 63538
 c = '2'
+o = 0644
 read = "Hello World!" (12)
 feof() = 1
 feof() = 0

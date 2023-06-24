@@ -882,6 +882,8 @@ struct iovec
 #define WTERMSIG(status)        ((status) & 0x7F)
 #define WIFSIGNALED(status)     (WTERMSIG(status) != 0)
 #define WIFEXITED(status)       (WTERMSIG(status) == 0)
+#define EXIT_SUCCESS            0
+#define EXIT_FAILURE            1
 
 typedef size_t socklen_t;
 #define AF_UNSPEC               0
@@ -2481,6 +2483,11 @@ static int isxdigit(int c)
         (c >= '0' && c <= '9');
 }
 
+static int isodigit(int c)
+{
+    return (c >= '0' && c <= '7');
+}
+
 static int toupper(int c)
 {
     if (c >= 'a' && c <= 'z')
@@ -3731,18 +3738,19 @@ static long ftell(FILE *stream)
 /* PRINTF                                                                   */
 /****************************************************************************/
 
-#define PRINTF_FLAG_NEG        0x0001
-#define PRINTF_FLAG_UPPER      0x0002
-#define PRINTF_FLAG_HEX        0x0004
-#define PRINTF_FLAG_PLUS       0x0008
-#define PRINTF_FLAG_HASH       0x0010
-#define PRINTF_FLAG_SPACE      0x0020
-#define PRINTF_FLAG_RIGHT      0x0040
-#define PRINTF_FLAG_ZERO       0x0080
-#define PRINTF_FLAG_PRECISION  0x0100
-#define PRINTF_FLAG_8          0x0200
-#define PRINTF_FLAG_16         0x0400
-#define PRINTF_FLAG_64         0x0800
+#define PRINTF_FLAG_NEG         0x0001
+#define PRINTF_FLAG_UPPER       0x0002
+#define PRINTF_FLAG_OCTAL       0x0004
+#define PRINTF_FLAG_HEX         0x0008
+#define PRINTF_FLAG_PLUS        0x0010
+#define PRINTF_FLAG_HASH        0x0020
+#define PRINTF_FLAG_SPACE       0x0040
+#define PRINTF_FLAG_RIGHT       0x0080
+#define PRINTF_FLAG_ZERO        0x0100
+#define PRINTF_FLAG_PRECISION   0x0200
+#define PRINTF_FLAG_8           0x0400
+#define PRINTF_FLAG_16          0x0800
+#define PRINTF_FLAG_64          0x1000
 
 static __attribute__((__noinline__)) size_t printf_put_char(char *str,
     size_t size, size_t idx, char c)
@@ -3760,22 +3768,25 @@ static __attribute__((__noinline__)) size_t printf_put_num(char *str,
     char prefix[2] = {'\0', '\0'};
     char buf[32];
     size_t i = 0;
-    if (flags & PRINTF_FLAG_HEX)
+    bool seen = false;
+    if (flags & (PRINTF_FLAG_HEX | PRINTF_FLAG_OCTAL))
     {
         if (flags & PRINTF_FLAG_HASH)
         {
             prefix[0] = '0';
-            prefix[1] = (flags & PRINTF_FLAG_UPPER? 'X': 'x');
+            if (flags & PRINTF_FLAG_HEX)
+                prefix[1] = (flags & PRINTF_FLAG_UPPER? 'X': 'x');
         }
         const char digs[] = "0123456789abcdef";
         const char DIGS[] = "0123456789ABCDEF";
         const char *ds = (flags & PRINTF_FLAG_UPPER? DIGS: digs);
-        int shift = (15 * 4);
-        bool seen = false;
+        int shift = (flags & PRINTF_FLAG_HEX? 60: 63),
+              dec = (flags & PRINTF_FLAG_HEX? 4: 3),
+             mask = (flags & PRINTF_FLAG_HEX? 0xF: 0x7);
         while (shift >= 0)
         {
-            char c = ds[(x >> shift) & 0xF];
-            shift -= 4;
+            char c = ds[(x >> shift) & mask];
+            shift -= dec;
             if (!seen && c == '0')
                 continue;
             seen = true;
@@ -3793,7 +3804,6 @@ static __attribute__((__noinline__)) size_t printf_put_num(char *str,
         else if (flags & PRINTF_FLAG_SPACE)
             prefix[0] = ' ';
         unsigned long long r = 10000000000000000000ull;
-        bool seen = false;
         while (r != 0)
         {
             char c = '0' + x / r;
@@ -3980,13 +3990,16 @@ static int vsnprintf(char *str, size_t size, const char *format, va_list ap)
                 idx = printf_put_num(str, size, idx, flags, width,
                     precision, (uint64_t)x);
                 break;
+            case 'o':
+                flags |= PRINTF_FLAG_OCTAL;
+                goto uint;
             case 'X':
                 flags |= PRINTF_FLAG_UPPER;
                 // Fallthrough
             case 'x':
                 flags |= PRINTF_FLAG_HEX;
                 // Fallthrough
-            case 'u':
+            case 'u': uint:
                 if (flags & PRINTF_FLAG_8)
                     y = (uint64_t)(uint8_t)va_arg(ap, unsigned);
                 else if (flags & PRINTF_FLAG_16)
@@ -4122,11 +4135,12 @@ static int printf_unlocked(const char *format, ...)
 
 #define SCANF_FLAG_NEG      0x0001
 #define SCANF_FLAG_DEC      0x0002
-#define SCANF_FLAG_HEX      0x0004
-#define SCANF_FLAG_8        0x0008
-#define SCANF_FLAG_16       0x0010
-#define SCANF_FLAG_64       0x0020
-#define SCANF_FLAG_SIGNED   0x0040
+#define SCANF_FLAG_OCT      0x0004
+#define SCANF_FLAG_HEX      0x0008
+#define SCANF_FLAG_8        0x0010
+#define SCANF_FLAG_16       0x0020
+#define SCANF_FLAG_64       0x0040
+#define SCANF_FLAG_SIGNED   0x0080
 
 struct scanf_stream_s
 {
@@ -4209,6 +4223,30 @@ static __attribute__((__noinline__)) bool scanf_get_dec(
     return true;
 }
 
+static __attribute__((__noinline__)) bool scanf_get_oct(
+    struct scanf_stream_s *in, size_t *width, uint64_t *p, bool *r)
+{
+    char c = scanf_get_char_n(in, width);
+    if (!isodigit(c))
+    {
+        scanf_unget_char_n(c, in, width);
+        return false;
+    }
+    uint64_t i = 0;
+    do
+    {
+        i *= 8;
+        uint64_t d = (c - '0');
+        if (UINT64_MAX - i < d)
+            *r = true;
+        i = (UINT64_MAX - i < d? UINT64_MAX: i + d);
+    }
+    while (isodigit(c = scanf_get_char_n(in, width)));
+    scanf_unget_char_n(c, in, width);
+    *p = i;
+    return true;
+}
+
 static __attribute__((__noinline__)) bool scanf_get_hex(
     struct scanf_stream_s *in, size_t *width, uint64_t *p, bool *r)
 {
@@ -4251,24 +4289,22 @@ static __attribute__((__noinline__)) bool scanf_get_num(
         c = scanf_get_char_n(in, &width);
     uint64_t i = 0;
     bool overflow = false;
-    if (c == '0' && (flags & SCANF_FLAG_HEX))
+    if (c == '0' && (flags & (SCANF_FLAG_OCT | SCANF_FLAG_HEX)))
     {
         c = scanf_get_char_n(in, &width);
-        if (c == 'x' || c == 'X')
+        if ((flags & SCANF_FLAG_HEX) && (c == 'x' || c == 'X'))
         {
             if (!scanf_get_hex(in, &width, &i, &overflow))
                 return false;
         }
-        else if (flags & SCANF_FLAG_DEC)
+        else if (flags & SCANF_FLAG_OCT)
         {
-            c = scanf_get_char_n(in, &width);
-            if (!isdigit(c))
-                i = 0;
-            else if (!scanf_get_dec(in, &width, &i, &overflow))
+            scanf_unget_char_n(c, in, &width);
+            if (!scanf_get_oct(in, &width, &i, &overflow))
                 return false;
         }
         else
-            return false;
+            scanf_unget_char_n(c, in, &width);
     }
     else if (flags & SCANF_FLAG_DEC)
     {
@@ -4410,7 +4446,8 @@ static int scanf_impl(struct scanf_stream_s *in, const char *format, va_list ap)
                 while (isspace(c = scanf_get_char_n(in, &width)))
                     ;
                 *ptr8++ = c;
-                while ((c = scanf_get_char_n(in, &width)) != EOF && !isspace(c))
+                while ((c = scanf_get_char_n(in, &width)) != EOF &&
+                        !isspace(c))
                     *ptr8++ = c;
                 scanf_unget_char_n(c, in, &width);
                 *ptr8++ = '\0';
@@ -4425,13 +4462,19 @@ static int scanf_impl(struct scanf_stream_s *in, const char *format, va_list ap)
                 if (!scanf_get_num(in, width, flags, ptr))
                     return num;
                 break;
+            case 'o':
+                flags |= SCANF_FLAG_OCT;
+                if (!scanf_get_num(in, width, flags, ptr))
+                    return num;
+                break;
             case 'x': case 'X':
                 flags |= SCANF_FLAG_HEX;
                 if (!scanf_get_num(in, width, flags, ptr))
                     return num;
                 break;
             case 'i':
-                flags |= SCANF_FLAG_DEC | SCANF_FLAG_HEX | SCANF_FLAG_SIGNED;
+                flags |= SCANF_FLAG_DEC | SCANF_FLAG_OCT | SCANF_FLAG_HEX |
+                    SCANF_FLAG_SIGNED;
                 if (!scanf_get_num(in, width, flags, ptr))
                     return num;
                 break;
