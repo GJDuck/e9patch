@@ -241,9 +241,9 @@ extern void e9_plugin_data(const Context *cxt)
 extern void e9_plugin_patch(const Context *cxt)
 {
     // The e9_plugin_patch() function is invoked by E9Tool once per
-    // matching instruciton.  The function specifies the "metadata" which
+    // matching instruction.  The function specifies the "metadata" which
     // instantiates any macros in the trampoline template (both code or data).
-    // The metadata is specified in as comma-seperated "$key":VALUE pairs,
+    // The metadata is specified in as comma-separated "$key":VALUE pairs,
     // where $key is a macro name and VALUE is a value in the template
     // template format.
 

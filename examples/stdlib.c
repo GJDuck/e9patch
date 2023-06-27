@@ -669,6 +669,10 @@ typedef int key_t;
 #define O_ASYNC                         00020000
 #define O_SYNC                          04010000
 
+#define LOCK_SH                         1
+#define LOCK_EX                         2
+#define LOCK_UN                         8
+
 #define FD_SETSIZE  512
 #define FD_NBITS    (8 * sizeof(unsigned long))
 typedef struct
@@ -749,12 +753,26 @@ struct rusage
     long ru_nvcsw;
     long ru_nivcsw;
 };
+#define RUSAGE_SELF                     0
+#define RUSAGE_CHILDREN                 (-1)
+#define RUSAGE_THREAD                   1
 
 struct rlimit
 {
     unsigned long rlim_cur;
     unsigned long rlim_max;
 };
+#define RLIMIT_CPU                      0
+#define RLIMIT_FSIZE                    1
+#define RLIMIT_DATA                     2
+#define RLIMIT_STACK                    3
+#define RLIMIT_CORE                     4
+#define RLIMIT_RSS                      5
+#define RLIMIT_NPROC                    6
+#define RLIMIT_NOFILE                   7
+#define RLIMIT_MEMLOCK                  8
+#define RLIMIT_AS                       9
+#define RLIMIT_LOCKS                    10
 
 struct termios
 {
@@ -765,7 +783,7 @@ struct termios
     unsigned char c_line;
     unsigned char c_cc[19];
 };
-#define TCGETS      0x5401
+#define TCGETS                          0x5401
 
 #define PROT_READ                       0x1
 #define PROT_WRITE                      0x2
@@ -778,8 +796,20 @@ struct termios
 #define MAP_ANONYMOUS                   0x0020
 #define MAP_NORESERVE                   0x4000
 #define MAP_POPULATE                    0x8000
-
 #define MAP_FAILED                      ((void *)-1)
+
+#define MREMAP_MAYMOVE                  1
+#define MREMAP_FIXED                    2
+
+#define MS_ASYNC                        1
+#define MS_INVALIDATE                   2
+#define MS_SYNC                         4
+
+#define MADV_NORMAL                     0
+#define MADV_RANDOM                     1
+#define MADV_SEQUENTIAL                 2
+#define MADV_WILLNEED                   3
+#define MADV_DONTNEED                   4
 
 typedef unsigned long sigset_t;
 typedef void (*sighandler_t)(int);
