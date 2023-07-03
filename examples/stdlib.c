@@ -1651,6 +1651,8 @@ asm (
  */
 struct malloc_node_s
 {
+    uint32_t color:1;       // RB-tree color
+    uint32_t magic:31;      // Magic number
     uint32_t parent;        // RB-tree parent
     uint32_t left;          // RB-tree left
     uint32_t right;         // RB-tree right
@@ -1658,8 +1660,6 @@ struct malloc_node_s
     uint32_t lb;            // sub-tree LB
     uint32_t ub;            // sub-tree UB
     uint32_t gap;           // sub-tree max GAP
-    uint32_t color:1;       // RB-tree color
-    uint32_t magic:31;      // Magic number
 };
 
 /*
@@ -5329,6 +5329,11 @@ static void *tfind(const void *key, void **root,
     }
     return NULL;
 }
+static void *pool_tfind(struct malloc_pool_s *pool, const void *key,
+    void **root, int (*compare)(const void *, const void *))
+{
+    return tfind(key, root, compare);
+}
 
 static void *pool_tdelete(struct malloc_pool_s *pool, const void *key,
     void **root, int (*compare)(const void *, const void *))
@@ -5405,6 +5410,30 @@ static void pool_tdestroy(struct malloc_pool_s *pool, const void *root,
 {
     struct node_s *n = (struct node_s *)root;
     tree_destroy(pool, n, free_node);
+}
+
+/****************************************************************************/
+/* RANDOM                                                                   */
+/****************************************************************************/
+
+#define RAND_MAX        0x7FFF
+static volatile uint32_t rand_state = 0;
+
+static void srand(unsigned seed)
+{
+    rand_state = (seed - 1);
+}
+
+static int rand(void)
+{
+    uint32_t x, y;
+    do
+    {
+        x = rand_state;
+        y = (1103515245 * x + 12345) & 0x7FFFFFFF;
+    }
+    while (!__sync_bool_compare_and_swap(&rand_state, x, y));
+    return (y >> 16);
 }
 
 /****************************************************************************/
