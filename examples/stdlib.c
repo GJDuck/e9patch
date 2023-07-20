@@ -1379,6 +1379,11 @@ static int getrlimit(int resource, struct rlimit *rlim)
     return (int)syscall(SYS_getrlimit, resource, rlim);
 }
 
+static int setrlimit(int resource, const struct rlimit *rlim)
+{
+    return (int)syscall(SYS_setrlimit, resource, rlim);
+}
+
 static int getrusage(int who, struct rusage *usage)
 {
     return (int)syscall(SYS_getrusage, who, usage);
@@ -3357,42 +3362,32 @@ static int fileno(FILE *stream)
 
 static int setvbuf(FILE *stream, char *buf, int mode, size_t size)
 {
-    void *oldbuf = NULL;
-    stdio_lock(stream, -1);
-    fflush_unlocked(stream);
     switch (mode)
     {
-        case _IOFBF:
-            if (buf == NULL && stream->buf == NULL)
-                goto invalid;
-            stream->flags &= ~STDIO_FLAG_NO_BUF;
-            stream->eol = EOF;
-            break;
-        case _IOLBF:
-            if (buf == NULL && stream->buf == NULL)
-                goto invalid;
-            stream->flags &= ~STDIO_FLAG_NO_BUF;
-            stream->eol = '\n';
-            break;
         case _IONBF:
-            if (buf != NULL || size > 0)
+            if (buf != NULL)
                 goto invalid;
-            stream->flags |= STDIO_FLAG_NO_BUF;
-            stream->eol = EOF;
             break;
-        default:
-        invalid:
-            stdio_unlock(stream);
+        case _IOFBF: case _IOLBF:
+            break;
+        default: invalid:
             errno = EINVAL;
             return -1;
     }
-    if ((buf != NULL && size > 0) || mode == _IONBF)
-    {
-        if (stream->buf != NULL && (stream->flags & STDIO_FLAG_OWN_BUF) != 0)
-            oldbuf = stream->buf;
-        stream->buf    = buf;
-        stream->bufsiz = size;
-    }
+
+    void *oldbuf = NULL;
+    stdio_lock(stream, -1);
+    fflush_unlocked(stream);
+
+    if (stream->buf != NULL && (stream->flags & STDIO_FLAG_OWN_BUF))
+        oldbuf = stream->buf;
+    stream->flags &=
+        ~(STDIO_FLAG_INITED | STDIO_FLAG_OWN_BUF | STDIO_FLAG_NO_BUF);
+    stream->buf    = buf;
+    stream->bufsiz = (buf == NULL? BUFSIZ: size);
+    stream->eol    = (mode == _IOLBF? '\n': EOF);
+    stream->flags |= (mode == _IONBF? STDIO_FLAG_NO_BUF: 0x0);
+
     stdio_unlock(stream);
     free(oldbuf);
     return 0;
@@ -5543,6 +5538,18 @@ static int isatty(int fd)
         return 0;
     }
     return 1;
+}
+
+static int ttyname_r(int fd, char *buf, size_t buflen)
+{
+    char path[32];
+    ssize_t r = snprintf(path, sizeof(path)-1, "/proc/self/fd/%d", fd);
+    if (r < 0 || r >= sizeof(path)-1)
+        return errno;
+    r = readlink(path, buf, buflen-1);
+    if (r < 0)
+        return (errno == ENAMETOOLONG? ERANGE: errno);
+    return 0;
 }
 
 static unsigned sleep(unsigned sec)
