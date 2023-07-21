@@ -1095,6 +1095,15 @@ void test_string(void)
     free(s2);
 }
 
+void test_stat(const char *filename)
+{
+    struct stat buf;
+    if (stat(filename, &buf) < 0)
+        perror("stat()");
+    fprintf(stderr, "mode = %o\n", buf.st_mode);
+    fprintf(stderr, "size = %zu\n", buf.st_size);
+}
+
 static int tree_compare(const void *a, const void *b)
 {
     return (int)*(size_t *)a - (int)*(size_t *)b;

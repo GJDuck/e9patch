@@ -721,10 +721,11 @@ struct stat
 {
     unsigned long st_dev;
     unsigned long st_ino;
-    mode_t st_mode;
     unsigned long st_nlink;
+    unsigned st_mode;
     uid_t st_uid;
     gid_t st_gid;
+    unsigned __pad;
     unsigned long st_rdev;
     off_t st_size;
     long st_blksize;
@@ -732,6 +733,7 @@ struct stat
     struct timespec st_atim;
     struct timespec st_mtim;
     struct timespec st_ctim;
+    unsigned long __unused[3];
 };
 
 struct rusage
@@ -4152,6 +4154,11 @@ static int printf_unlocked(const char *format, ...)
     int result = vfprintf_unlocked(stdout, format, ap);
     va_end(ap);
     return result;
+}
+
+static void perror(const char *msg)
+{
+    fprintf(stderr, "%s: %s\n", msg, strerror(errno));
 }
 
 /****************************************************************************/
