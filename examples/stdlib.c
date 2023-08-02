@@ -917,7 +917,7 @@ struct iovec
 #define EXIT_SUCCESS            0
 #define EXIT_FAILURE            1
 
-typedef size_t socklen_t;
+typedef int32_t socklen_t;
 #define AF_UNSPEC               0
 #define AF_UNIX                 1
 #define AF_INET                 2
