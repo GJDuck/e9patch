@@ -656,9 +656,11 @@ void dumpInfo(const std::string basename, const Instr *Is, size_t size,
         if (stream == nullptr)
             error("failed to open CSV file \"%s\" for writing: %s",
                 filename.c_str(), strerror(errno));
-        fputs("target,function\n", stream);
+        fputs("target,direct?,indirect?,function?\n", stream);
         for (const auto &entry: targets)
-            fprintf(stream, "%p,%d\n", (void *)entry.first,
+            fprintf(stream, "%p,%d,%d,%d\n", (void *)entry.first,
+                (entry.second & TARGET_DIRECT?   1: 0),
+                (entry.second & TARGET_INDIRECT? 1: 0),
                 (entry.second & TARGET_FUNCTION? 1: 0));
         fclose(stream);
     }

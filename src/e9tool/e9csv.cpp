@@ -350,27 +350,30 @@ void parseTargets(const char *filename, const Instr *Is, size_t size,
             error("failed to parse CSV file \"%s\" at line %u; first record "
                 "entry must be an address", csv.filename, csv.lineno);
         }
-        TargetKind kind = TARGET_DIRECT;
+        TargetKind kind = 0;
+        const TargetKind kinds[3] = {TARGET_DIRECT, TARGET_INDIRECT,
+            TARGET_FUNCTION};
+        const char *counts[3] = {"second", "third", "fourth"};
+        for (size_t i = 0; i < 3; i++)
         if (record.size() >= 2)
         {
-            MatchVal &func = record[1];
-            if (func.type != MATCH_TYPE_INTEGER || (func.i != 0 && func.i != 1))
-                error("failed to parse CSV file \"%s\" at line %u; second "
+            if (i+1 >= record.size())
+                break;
+            MatchVal &func = record[i+1];
+            if (func.type != MATCH_TYPE_INTEGER)
+                error("failed to parse CSV file \"%s\" at line %u; %s "
                     "record entry must be Boolean value (0 or 1)",
-                    csv.filename, csv.lineno);
-            kind |= (func.i != 0? TARGET_FUNCTION: 0);
+                    counts[i], csv.filename, csv.lineno);
+            kind |= (func.i != 0? kinds[i]: 0);
         }
-        if (findInstr(Is, size, addr.i) < 0)
-        {
-            record.clear();
+        record.clear();
+        if (kind == 0 || findInstr(Is, size, addr.i) < 0)
             continue;
-        }
         auto r = targets.insert({addr.i, kind});
         if (!r.second)
             error("failed to parse CSV file \"%s\" at line %u; duplicate "
                 "record with address 0x%lx", csv.filename, csv.lineno,
                 addr);
-        record.clear();
     }
     fclose(stream);
 }

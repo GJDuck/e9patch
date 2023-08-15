@@ -132,7 +132,8 @@ into CSV files of the form "\fBOUTPUT.TYPE.csv\fR", where:
 \- \fBOUTPUT\fR is the output binary name, and
 .br
 \- \fBTYPE\fR is one of {DISASM,TARGETs,BBs,FUNCs}.
-.br
+.IP
+The generated files are compatible with \fB--use-disasm\fR/\fB--use-targets\fR.
 .IP "\fB\-\-exclude\fR RANGE, \fB\-E\fR RANGE" 4
 Exclude the address RANGE from disassembly and rewriting.
 Here, RANGE has the format `LB .. UB', where LB/UB are
@@ -223,9 +224,9 @@ representing instruction addresses.
 .IP "\fB\-\-use\-targets \fI\,FILE\/\fR" 4
 Use the jump/call target information in FILE rather than the
 default control-flow recovery analysis.  Here, FILE is a CSV
-file where the first column is all jump/call targets, and an
-optional second column is 1 for call targets (functions), or
-0 otherwise (the default is 0).
+file where the first column is all jump/call targets, and
+columns 2,3,4 are Boolean values (1 or 0) representing the
+target type (2=direct, 3=indirect, and 4=function).
 .IP "\fB\-\-version\fR" 4
 Print the version and exit.
 .SH "SEE ALSO"
