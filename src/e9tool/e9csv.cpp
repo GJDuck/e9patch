@@ -294,19 +294,23 @@ void parseAddrs(const char *filename, std::vector<intptr_t> &As)
             filename, strerror(errno));
 
     Record record;
-    CSV csv = {stream, filename, /*length=*/1, 0};
-    while (true)
+    CSV csv = {stream, filename, -1, 0};
+    for (size_t i = 0; ; i++)
     {
         if (!parseRecord(csv, record))
             break;
-        if ((unsigned)record.size() != (unsigned)csv.length)
+        if ((unsigned)record.size() < 1)
             error("failed to parse CSV file \"%s\" at line %u; record with "
-                "invalid length %zu (expected %u)", csv.filename,
-                csv.lineno, record.size(), csv.length);
+                "empty length", csv.filename, csv.lineno);
         MatchVal &addr = record[0];
         if (addr.type != MATCH_TYPE_INTEGER)
+        {
+            record.clear();
+            if (i == 0)
+                continue;       // Skip presumed header
             error("failed to parse CSV file \"%s\" at line %u; first record "
                 "entry must be an address", csv.filename, csv.lineno);
+        }
         As.push_back(addr.i);
         record.clear();
     }
@@ -329,21 +333,25 @@ void parseTargets(const char *filename, const Instr *Is, size_t size,
             filename, strerror(errno));
 
     Record record;
-    CSV csv = {stream, filename, /*length=*/2, 0};
-    while (true)
+    CSV csv = {stream, filename, -1, 0};
+    for (size_t i = 0; ; i++)
     {
         if (!parseRecord(csv, record))
             break;
-        if (record.size() != 1 && record.size() != 2)
+        if (record.size() < 1)
             error("failed to parse CSV file \"%s\" at line %u; record with "
-                "invalid length %zu (expected 1 or 2)", csv.filename,
-                csv.lineno, record.size());
+                "empty length", csv.filename, csv.lineno);
         MatchVal &addr = record[0];
         if (addr.type != MATCH_TYPE_INTEGER)
+        {
+            record.clear();
+            if (i == 0)
+                continue;       // Skip presumed header
             error("failed to parse CSV file \"%s\" at line %u; first record "
                 "entry must be an address", csv.filename, csv.lineno);
+        }
         TargetKind kind = TARGET_DIRECT;
-        if (record.size() == 2)
+        if (record.size() >= 2)
         {
             MatchVal &func = record[1];
             if (func.type != MATCH_TYPE_INTEGER || (func.i != 0 && func.i != 1))

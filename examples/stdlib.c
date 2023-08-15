@@ -5398,6 +5398,8 @@ static void tree_destroy(struct malloc_pool_s *pool, const struct node_s *n,
 {
     if (n == NULL)
         return;
+    if (free_node != NULL)
+        free_node(n->key);
     tree_destroy(pool, TREE_LEFT(n), free_node);
     tree_destroy(pool, TREE_RIGHT(n), free_node);
     pool_free(pool, (void *)n);
@@ -5551,7 +5553,7 @@ static int ttyname_r(int fd, char *buf, size_t buflen)
 {
     char path[32];
     ssize_t r = snprintf(path, sizeof(path)-1, "/proc/self/fd/%d", fd);
-    if (r < 0 || r >= sizeof(path)-1)
+    if (r < 0 || r >= (ssize_t)sizeof(path)-1)
         return errno;
     r = readlink(path, buf, buflen-1);
     if (r < 0)

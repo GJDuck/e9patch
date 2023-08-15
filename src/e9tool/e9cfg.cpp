@@ -627,3 +627,79 @@ const F *e9tool::findF(const Fs &fs, size_t idx)
     return nullptr;
 }
 
+/*
+ * Dump all analysis info to CSV files.
+ */
+void dumpInfo(const std::string basename, const Instr *Is, size_t size,
+    const Targets &targets, const BBs &bbs, const Fs &fs)
+{
+    // Instructions:
+    {
+        std::string filename(basename);
+        filename += ".DISASM.csv";
+        FILE *stream = fopen(filename.c_str(), "w");
+        if (stream == nullptr)
+            error("failed to open CSV file \"%s\" for writing: %s",
+                filename.c_str(), strerror(errno));
+        fputs("address,offset,size\n", stream);
+        for (size_t i = 0; i < size; i++)
+            fprintf(stream, "%p,%+zd,%zu\n", (void *)(uintptr_t)Is[i].address,
+                Is[i].offset, Is[i].size);
+        fclose(stream);
+    }
+
+    // Targets:
+    {
+        std::string filename(basename);
+        filename += ".TARGETs.csv";
+        FILE *stream = fopen(filename.c_str(), "w");
+        if (stream == nullptr)
+            error("failed to open CSV file \"%s\" for writing: %s",
+                filename.c_str(), strerror(errno));
+        fputs("target,function\n", stream);
+        for (const auto &entry: targets)
+            fprintf(stream, "%p,%d\n", (void *)entry.first,
+                (entry.second & TARGET_FUNCTION? 1: 0));
+        fclose(stream);
+    }
+
+    // Basic-blocks:
+    {
+        std::string filename(basename);
+        filename += ".BBs.csv";
+        FILE *stream = fopen(filename.c_str(), "w");
+        if (stream == nullptr)
+            error("failed to open CSV file \"%s\" for writing: %s",
+                filename.c_str(), strerror(errno));
+        fputs("entry,exit\n", stream);
+        for (size_t i = 0; i < bbs.size(); i++)
+        {
+            const BB &bb = bbs[i];
+            fprintf(stream, "%p,%p\n",
+                (void *)(uintptr_t)Is[bb.lb].address,
+                (void *)(uintptr_t)Is[bb.ub].address);
+        }
+        fclose(stream);
+    }
+
+    // Functions:
+    {
+        std::string filename(basename);
+        filename += ".FUNCs.csv";
+        FILE *stream = fopen(filename.c_str(), "w");
+        if (stream == nullptr)
+            error("failed to open CSV file \"%s\" for writing: %s",
+                filename.c_str(), strerror(errno));
+        fputs("entry,last,name\n", stream);
+        for (size_t i = 0; i < fs.size(); i++)
+        {
+            const F &f = fs[i];
+            fprintf(stream, "%p,%p,\"%s\"\n",
+                (void *)(uintptr_t)Is[f.lb].address,
+                (void *)(uintptr_t)Is[f.ub].address,
+                (f.name == nullptr? "": f.name));
+        }
+        fclose(stream);
+    }
+}
+

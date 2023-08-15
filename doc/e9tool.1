@@ -125,6 +125,14 @@ Lower numbers means less tolerance.
 The default is 2.
 .IP "\fB\-\-debug\fR" 4
 Enable debug output.
+.IP "\fB\-\-dump\-all\fR" 4
+Dump all analysis information (disasm, targets, BBs, funcs)
+into CSV files of the form "\fBOUTPUT.TYPE.csv\fR", where:
+.IP
+\- \fBOUTPUT\fR is the output binary name, and
+.br
+\- \fBTYPE\fR is one of {DISASM,TARGETs,BBs,FUNCs}.
+.br
 .IP "\fB\-\-exclude\fR RANGE, \fB\-E\fR RANGE" 4
 Exclude the address RANGE from disassembly and rewriting.
 Here, RANGE has the format `LB .. UB', where LB/UB are

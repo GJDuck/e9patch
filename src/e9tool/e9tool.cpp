@@ -658,6 +658,7 @@ enum Option
     OPTION_DSYNC,
     OPTION_DTHRESHOLD,
     OPTION_DEBUG,
+    OPTION_DUMP_ALL,
     OPTION_EXCLUDE,
     OPTION_EXECUTABLE,
     OPTION_FORMAT,
@@ -735,6 +736,7 @@ int main_2(int argc, char **argv)
         {"Dsync",         req_arg, nullptr, OPTION_DSYNC},
         {"Dthreshold",    req_arg, nullptr, OPTION_DTHRESHOLD},
         {"debug",         no_arg,  nullptr, OPTION_DEBUG},
+        {"dump-all",      no_arg,  nullptr, OPTION_DUMP_ALL},
         {"exclude",       req_arg, nullptr, OPTION_EXCLUDE},
         {"executable",    no_arg,  nullptr, OPTION_EXECUTABLE},
         {"format",        req_arg, nullptr, OPTION_FORMAT},
@@ -773,6 +775,7 @@ int main_2(int argc, char **argv)
     std::string option_use_disasm("");
     std::string option_use_targets("");
     std::string option_use_funcs("");
+    bool option_dump_all = false;
 
     int option_sync = 64, option_threshold = 2;
     bool option_CFR = false;
@@ -808,6 +811,10 @@ int main_2(int argc, char **argv)
                 break;
             case OPTION_DEBUG:
                 option_debug = true;
+                break;
+            case OPTION_DUMP_ALL:
+                option_targets = option_bbs = option_fs =
+                    option_dump_all = true;
                 break;
             case OPTION_EXCLUDE:
             case 'E':
@@ -1423,6 +1430,9 @@ int main_2(int argc, char **argv)
         buildBBs(&elf, Is.data(), Is.size(), elf.targets, elf.bbs);
     if (option_fs)
         buildFs(&elf, Is.data(), Is.size(), elf.targets, elf.fs);
+    if (option_dump_all)
+        dumpInfo(option_output, Is.data(), Is.size(), elf.targets,
+            elf.bbs, elf.fs);
 
     // Step (2): Find all matching instructions:
     std::vector<Action *> matching;
