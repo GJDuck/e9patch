@@ -47,7 +47,7 @@ typedef struct
 static void *COV = NULL;                    // Global state.
 static mutex_t mutex = MUTEX_INITIALIZER;   // Global mutex.
 
-static const char *output = NULL;           // Output filename.
+static char *output = NULL;                 // Output filename.
 static FILE *stream = NULL;                 // Output stream.
 
 typedef struct
@@ -147,10 +147,9 @@ void init(int argc, char **argv, char **envp)
 {
     option_tty = isatty(STDERR_FILENO);
     const char *progname = argv[0];
-    size_t len = strlen(progname);
-    char input[len + 16];
-    int r = snprintf(input, sizeof(input)-1, "%s.BBs.csv", progname);
-    if (r < 0 || r >= (int)sizeof(input)-1)
+    
+    char *input;
+    if (asprintf(&input, "%s.BBs.csv", progname) < 0)
         error("failed to create input filename: %s", strerror(errno));
     stream = fopen(input, "r");
     if (stream == NULL)
@@ -185,17 +184,10 @@ void init(int argc, char **argv, char **envp)
     stream = NULL;
     fprintf(stderr, "%sCOV%s: parsed %s%zu%s basic-blocks from \"%s%s%s\"\n",
         GREEN, OFF, YELLOW, BBs.size-1, OFF, YELLOW, input, OFF);
+    free(input);
 
-    char tmp[len + 16];
-    r = snprintf(tmp, sizeof(tmp)-1, "%s.COV.csv", progname);
-    if (r < 0 || r >= (int)sizeof(tmp)-1)
-    {
-        bad_output:
+    if (asprintf(&output, "%s.COV.csv", progname) < 0)
         error("failed to create output filename: %s", strerror(errno));
-    }
-    output = strdup(tmp);
-    if (output == NULL)
-        goto bad_output;
 }
 
 /*

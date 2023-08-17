@@ -4079,6 +4079,26 @@ static int vsnprintf(char *str, size_t size, const char *format, va_list ap)
     return (int)idx;
 }
 
+static int vasprintf(char **strp, const char *format, va_list ap)
+{
+    *strp = NULL;
+    va_list aq;
+    va_copy(aq, ap);
+    int result = vsnprintf(NULL, SIZE_MAX, format, ap);
+    if (result >= 0)
+    {
+        char *buf = (char *)malloc(result+1);
+        result = (buf == NULL? -1: result);
+        if (result >= 0)
+            result = vsnprintf(buf, result+1, format, aq);
+        else
+            free(buf);
+        *strp = (result >= 0? buf: NULL);
+    }
+    va_end(aq);
+    return result;
+}
+
 static int snprintf(char *str, size_t len, const char *format, ...)
 {
     va_list ap;
@@ -4088,35 +4108,50 @@ static int snprintf(char *str, size_t len, const char *format, ...)
     return result;
 }
 
+static int asprintf(char **strp, const char *format, ...)
+{
+    va_list ap;
+    va_start(ap, format);
+    int result = vasprintf(strp, format, ap);
+    va_end(ap);
+    return result;
+}
+
 static int vfprintf(FILE *stream, const char *format, va_list ap)
 {
-    va_list ap1;
-    va_copy(ap1, ap);
+    va_list aq;
+    va_copy(aq, ap);
     int result = vsnprintf(NULL, SIZE_MAX, format, ap);
-    if (result < 0)
-        return result;
-    char buf[result+1];
-    result = vsnprintf(buf, result+1, format, ap1);
-    if (result < 0)
-        return result;
-    if (fputs(buf, stream))
-        return -1;
+    if (result >= 0)
+    {
+        char buf[result+1];
+        result = vsnprintf(buf, result+1, format, aq);
+        if (result >= 0)
+        {
+            if (fputs(buf, stream))
+                result = -1;
+        }
+    }
+    va_end(aq);
     return result;
 }
 
 static int vfprintf_unlocked(FILE *stream, const char *format, va_list ap)
 {
-    va_list ap1;
-    va_copy(ap1, ap);
+    va_list aq;
+    va_copy(aq, ap);
     int result = vsnprintf(NULL, SIZE_MAX, format, ap);
-    if (result < 0)
-        return result;
-    char buf[result+1];
-    result = vsnprintf(buf, result+1, format, ap1);
-    if (result < 0)
-        return result;
-    if (fputs_unlocked(buf, stream))
-        return -1;
+    if (result >= 0)
+    {
+        char buf[result+1];
+        result = vsnprintf(buf, result+1, format, aq);
+        if (result >= 0)
+        {
+            if (fputs_unlocked(buf, stream))
+                result = -1;
+        }
+    }
+    va_end(aq);
     return result;
 }
 
