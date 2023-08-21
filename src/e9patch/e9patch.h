@@ -525,6 +525,7 @@ typedef std::deque<PatchEntry> PatchQueue;
 typedef std::map<const char *, Trampoline *, CStrCmp> TrampolineSet;
 typedef std::vector<intptr_t> FuncSet;
 typedef std::vector<JumpInfo> JumpSet;
+typedef std::vector<const Alloc *> TrapSet;
 struct Binary
 {
     const char *filename;               // The binary's path.
@@ -558,6 +559,7 @@ struct Binary
     TrampolineSet Ts;                   // All current trampoline templates.
     mutable EntrySet Es;                // All trampoline entry points.
     mutable JumpSet Js;                 // All observed jumps (-Opeephole).
+    TrapSet Traps;                      // All traps.
     Allocator allocator;                // Virtual address allocation.
     const uint8_t *targets = nullptr;   // All targets [optional].
 
@@ -601,6 +603,7 @@ extern bool option_Opeephole;
 extern unsigned option_Oprologue;
 extern unsigned option_Oprologue_size;
 extern bool option_Oscratch_stack;
+extern bool option_tactic_B0;
 extern bool option_tactic_B1;
 extern bool option_tactic_B2;
 extern bool option_tactic_T0;
@@ -650,6 +653,7 @@ extern int option_log_color;
  */
 extern size_t stat_num_patched;
 extern size_t stat_num_failed;
+extern size_t stat_num_B0;
 extern size_t stat_num_B1;
 extern size_t stat_num_B2;
 extern size_t stat_num_T0;

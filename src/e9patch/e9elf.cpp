@@ -518,6 +518,15 @@ size_t emitElf(Binary *B, const MappingSet &mappings, size_t mapping_size)
         size += sizeof(addr);
         config->num_finis++;
     }
+    config->traps = (B->Traps.size() > 0? (uint32_t)(size - config_offset): 0);
+    for (auto i = B->Traps.rbegin(); i != B->Traps.rend(); ++i)
+    {
+        const Alloc *A = *i;
+        struct e9_trap_s trap = {A->I->addr, A->lb};
+        memcpy(data + size, &trap, sizeof(trap));
+        size += sizeof(trap);
+        config->num_traps++;
+    }
 
     std::vector<Bounds> bounds;
     intptr_t ub = INTPTR_MIN;
@@ -589,8 +598,8 @@ size_t emitElf(Binary *B, const MappingSet &mappings, size_t mapping_size)
             option_loader_base, ub);
     }
 
-    intptr_t fini = 0x0;
-    size_t fini_rel8_offset = 0;
+    intptr_t fini = 0x0, handler = 0x0;
+    size_t fini_rel8_offset = 0, handler_rel8_offset = 0;
     int32_t config_rel32;
     if (B->finis.size() > 0)
     {
@@ -603,6 +612,19 @@ size_t emitElf(Binary *B, const MappingSet &mappings, size_t mapping_size)
         size += sizeof(config_rel32);
         data[size++] = 0xEB;
         fini_rel8_offset = size;
+        data[size++] = 0x00;
+    }
+    if (B->Traps.size() > 0)
+    {
+        handler = config->handler = (uint32_t)(size - config_offset);
+        // lea config(%rip), %rcx
+        // jmp _hander
+        data[size++] = 0x48; data[size++] = 0x8D; data[size++] = 0x0D;
+        config_rel32 = -(int32_t)((size + sizeof(int32_t)) - config_offset);
+        memcpy(data + size, &config_rel32, sizeof(config_rel32));
+        size += sizeof(config_rel32);
+        data[size++] = 0xEB;
+        handler_rel8_offset = size;
         data[size++] = 0x00;
     }
 
@@ -642,6 +664,12 @@ size_t emitElf(Binary *B, const MappingSet &mappings, size_t mapping_size)
         int8_t fini_rel8 = (int8_t)(size - fini_rel8_offset - 1 +
             /*_fini() offset=*/16);
         data[fini_rel8_offset] = (uint8_t)fini_rel8;
+    }
+    if (handler != 0x0)
+    {
+        int8_t handler_rel8 = (int8_t)(size - handler_rel8_offset - 1 +
+            /*_handler() offset=*/24);
+        data[handler_rel8_offset] = (uint8_t)handler_rel8;
     }
 
     memcpy(data + size, e9loader_elf_bin, sizeof(e9loader_elf_bin));

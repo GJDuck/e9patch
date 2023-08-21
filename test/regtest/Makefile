@@ -19,11 +19,11 @@ all:
 	gcc -O2 -fPIC $(FCF_NONE) -pie -o test_c test_c.c \
 		-Wl,--export-dynamic -U_FORTIFY_SOURCE
 	strip test_c
-	../../e9compile.sh inst.c -I ../../examples/ -D NO_GLIBC
-	../../e9compile.sh patch.cpp -std=c++11 -I ../../examples/ -D NO_GLIBC
+	../../e9compile.sh inst.c -I ../../examples/ 
+	../../e9compile.sh patch.cpp -std=c++11 -I ../../examples/ 
 	NO_SIMD_CHECK=1 ../../e9compile.sh dl.c -I ../../examples/
-	../../e9compile.sh init.c -I ../../examples/ -D NO_GLIBC
-	../../e9compile.sh fini.c -I ../../examples/ -D NO_GLIBC
+	../../e9compile.sh init.c -I ../../examples/ 
+	../../e9compile.sh fini.c -I ../../examples/
 	g++ -std=c++11 -fPIC -shared -o example.so -O2 \
         ../../examples/plugins/example.cpp -I ../../src/e9tool/
 	g++ -std=c++11 -pie -fPIC -o regtest regtest.cpp -O2

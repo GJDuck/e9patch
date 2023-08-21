@@ -40,6 +40,7 @@
 bool option_is_tty             = false;
 bool option_debug              = false;
 bool option_batch              = false;
+bool option_tactic_B0          = false;
 bool option_tactic_B1          = true;
 bool option_tactic_B2          = true;
 bool option_tactic_T0          = true;
@@ -82,6 +83,7 @@ int option_log_color           = COLOR_NONE;
  */
 size_t stat_num_patched = 0;
 size_t stat_num_failed  = 0;
+size_t stat_num_B0 = 0;
 size_t stat_num_B1 = 0;
 size_t stat_num_B2 = 0;
 size_t stat_num_T0 = 0;
@@ -416,6 +418,7 @@ enum Option
     OPTION_OPROLOGUE_SIZE,
     OPTION_OSCRATCH_STACK,
     OPTION_OUTPUT,
+    OPTION_TACTIC_B0,
     OPTION_TACTIC_B1,
     OPTION_TACTIC_B2,
     OPTION_TACTIC_T0,
@@ -465,6 +468,7 @@ void parseOptions(char * const argv[], bool api)
         {"mem-rebase",         req_arg, nullptr, OPTION_MEM_REBASE},
         {"mem-ub",             req_arg, nullptr, OPTION_MEM_UB},
         {"output",             req_arg, nullptr, OPTION_OUTPUT},
+        {"tactic-B0",          opt_arg, nullptr, OPTION_TACTIC_B0},
         {"tactic-B1",          opt_arg, nullptr, OPTION_TACTIC_B1},
         {"tactic-B2",          opt_arg, nullptr, OPTION_TACTIC_B2},
         {"tactic-T0",          opt_arg, nullptr, OPTION_TACTIC_T0},
@@ -550,6 +554,10 @@ void parseOptions(char * const argv[], bool api)
             case 'o':
             case OPTION_OUTPUT:
                 option_output = optarg;
+                break;
+            case OPTION_TACTIC_B0:
+                option_tactic_B0 =
+                    parseBoolOptArg("--tactic-B0", optarg);
                 break;
             case OPTION_TACTIC_B1:
                 option_tactic_B1 =
@@ -777,6 +785,12 @@ int realMain(int argc, char **argv)
     printf("num_patched           = %zu / %zu (%s%s%%)\n",
         stat_num_patched, stat_num_total, (approx? "~": ""),
         percent);
+    if (option_tactic_B0)
+        printf("num_patched_B0        = %s%zu / %zu (%.2f%%)%s\n",
+            (option_is_tty && stat_num_B0 > 0? "\33[31m": ""),
+            stat_num_B0, stat_num_total,
+            (double)stat_num_B0 / (double)stat_num_total * 100.0,
+            (option_is_tty && stat_num_B0 > 0? "\33[0m": "")),
     printf("num_patched_B1        = %zu / %zu (%.2f%%)\n",
         stat_num_B1, stat_num_total,
         (double)stat_num_B1 / (double)stat_num_total * 100.0);
@@ -834,6 +848,9 @@ int realMain(int argc, char **argv)
                     "exceeds": "may exceed"),
                 MAX_MAPPINGS, stat_num_virtual_mappings + 1000,
                 option_mem_mapping_size);
+    if (stat_num_B0 > 0)
+        warning("tactic B0 was used; the output binary (%s) may be very slow!",
+            B->output);
 
     exit(EXIT_SUCCESS);
 }

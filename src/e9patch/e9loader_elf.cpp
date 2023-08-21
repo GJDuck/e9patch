@@ -1,6 +1,6 @@
 /*
  * e9loader_elf.cpp
- * Copyright (C) 2021 National University of Singapore
+ * Copyright (C) 2023 National University of Singapore
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to
@@ -32,16 +32,51 @@
 
 #include <fcntl.h>
 #include <sys/mman.h>
+#include <asm/prctl.h>
+#include <sys/prctl.h>
 #include <syscall.h>
 #include <unistd.h>
 
 #include "e9loader.cpp"
+
+typedef void (*e9handler_t)(int, siginfo_t *, void *);
+struct e9scratch_s
+{
+    uint8_t tls[PAGE_SIZE - sizeof(e9handler_t)];
+    e9handler_t handler;
+};
+
+struct ksigaction
+{
+    void *sa_handler_2;
+    unsigned long sa_flags;
+    void (*sa_restorer)(void);
+    sigset_t sa_mask;
+};
+#define SA_RESTORER 0x04000000
+
+// seccomp filter:
+// if (callno==SYS_rt_sigaction && signum==SIGILL) return -ENOSYS;
+static const uint8_t e9bpf[] =
+{
+    0x20, 0x00, 0x00, 0x00, 0x04, 0x00, 0x00, 0x00, 0x15, 0x00, 0x00, 0x0a,
+    0x3e, 0x00, 0x00, 0xc0, 0x20, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x35, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x40, 0x15, 0x00, 0x00, 0x07,
+    0xff, 0xff, 0xff, 0xff, 0x15, 0x00, 0x00, 0x04, 0x0d, 0x00, 0x00, 0x00,
+    0x20, 0x00, 0x00, 0x00, 0x14, 0x00, 0x00, 0x00, 0x15, 0x00, 0x00, 0x02,
+    0x00, 0x00, 0x00, 0x00, 0x20, 0x00, 0x00, 0x00, 0x10, 0x00, 0x00, 0x00,
+    0x15, 0x00, 0x01, 0x00, 0x04, 0x00, 0x00, 0x00, 0x06, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0xff, 0x7f, 0x06, 0x00, 0x00, 0x00, 0x26, 0x00, 0x05, 0x00,
+    0x06, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
+};
 
 extern "C"
 {
     void *e9init(int argc, char **argv, char **envp,
         const struct e9_config_s *config);
     void *e9fini(const struct e9_config_s *config);
+    void e9handler(int sig, siginfo_t *info, ucontext_t *ctx,
+        const e9_config_s *config);
     intptr_t e9syscall(long number, ...);
 }
 
@@ -62,6 +97,10 @@ asm (
     "_fini:\n"
     "\tcallq e9fini\n"
     "\tjmpq *%rax\n"
+
+    ".align 8\n"        // _handler() offset = +24
+    "_handler:\n"
+    "\tjmp e9handler\n"
 
     ".section .text\n"
 );
@@ -128,6 +167,24 @@ static intptr_t e9mmap(void *ptr, size_t len, int prot, int flags, int fd,
     return e9syscall(SYS_mmap, ptr, len, prot, flags, fd, offset);
 }
 
+/*
+ * Allocate or get scratch.
+ */
+static NO_INLINE struct e9scratch_s *e9scratch(const e9_config_s *config,
+    bool alloc)
+{
+    uint8_t *loader_base = (uint8_t *)config;
+    uint8_t *scratch = loader_base - PAGE_SIZE;
+    if (!alloc)
+        return (struct e9scratch_s *)scratch;
+    intptr_t r = e9mmap(scratch, PAGE_SIZE, PROT_READ | PROT_WRITE,
+        MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    r = (r >= 0 && r != (intptr_t)scratch? -EAGAIN: r);
+    if (r < 0)
+        e9panic("mmap() scratch failed (errno=%u)", (unsigned)-r);
+    return (struct e9scratch_s *)scratch;
+}
+
 typedef intptr_t (*mmap_t)(void *, size_t, int, int, int, off_t);
 typedef void (*init_t)(int, char **, char **, const void *, const void *);
 typedef void (*fini_t)(const void *);
@@ -164,6 +221,99 @@ static NO_INLINE void e9load_maps(const e9_map_s *maps, uint32_t num_maps,
                     "\nhint: see the e9patch manpage for more information.":
                     ""));
     }
+}
+
+/*
+ * Signal handler.
+ */
+void e9handler(int sig, siginfo_t *info, ucontext_t *ctx,
+    const e9_config_s *config)
+{
+    const uint8_t *loader_base = (const uint8_t *)config;
+    const uint8_t *elf_base    = loader_base - config->base;
+
+    const struct e9_trap_s *traps =
+        (const struct e9_trap_s *)(loader_base + config->traps);
+    mcontext_t *mctx = &ctx->uc_mcontext;
+    const uint8_t *rip = (const uint8_t *)mctx->gregs[REG_RIP];
+    int64_t idx = -1;
+    if (rip >= elf_base && rip <= loader_base)
+    {
+        int64_t lo = 0, hi = config->num_traps;
+        intptr_t key = rip - elf_base;
+        while (lo <= hi)
+        {
+            int64_t mid = (lo + hi) / 2;
+            if (key < traps[mid].rip)
+                hi = mid - 1;
+            else if (key > traps[mid].rip)
+                lo = mid + 1;
+            else
+            {
+                idx = mid;
+                break;
+            }
+        }
+    }
+    const uint8_t *trampoline = elf_base + traps[idx].trampoline;
+    if (idx < 0)
+    {
+        // No trampoline found:
+        struct e9scratch_s *scratch = e9scratch(config, /*alloc=*/false);
+        if (scratch->handler != NULL)
+            scratch->handler(sig, info, ctx);   // Try the next binary
+        e9panic("uncaught SIGILL (0x%X)", rip);
+    }
+    void *xstate = (void *)mctx->fpregs;
+    asm volatile (
+        "mov %%rcx,%%fs:0x40\n"                 // trampoline
+        "xor %%edx,%%edx\n"
+        "mov $-1,%%rax\n"
+        "xrstor  (%%rsi)\n"                     // restore xsave state
+        "mov     (%%rbx),%%r8\n"
+        "mov 0x08(%%rbx),%%r9\n"
+        "mov 0x10(%%rbx),%%r10\n"
+        "mov 0x18(%%rbx),%%r11\n"
+        "mov 0x20(%%rbx),%%r12\n"
+        "mov 0x28(%%rbx),%%r13\n"
+        "mov 0x30(%%rbx),%%r14\n"
+        "mov 0x38(%%rbx),%%r15\n"
+        "mov 0x40(%%rbx),%%rdi\n"
+        "mov 0x48(%%rbx),%%rsi\n"
+        "mov 0x50(%%rbx),%%rbp\n"
+        "mov 0x60(%%rbx),%%rdx\n"
+        "mov 0x68(%%rbx),%%rax\n"
+        "mov 0x88(%%rbx),%%rcx\n"               // %rflags
+        "push %%rcx\n"
+        "popfq\n"
+        "mov 0x78(%%rbx),%%rsp\n"
+        "mov 0x70(%%rbx),%%rcx\n"
+        "mov 0x58(%%rbx),%%rbx\n"
+        "jmpq *%%fs:0x40\n"                     // Jump to trampoline
+            : : "b"(mctx), "c"(trampoline), "S"(xstate));
+    __builtin_unreachable();
+}
+
+/*
+ * Prevent future SIGILL handlers.
+ */
+#include <linux/prctl.h>
+#include <linux/seccomp.h>
+#include <linux/filter.h>
+static void e9filter(void)
+{
+    intptr_t r = e9syscall(SYS_prctl, PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0);
+    if (r < 0)
+        e9panic("prctl() failed (errno=%u)", -r);
+    struct sock_fprog filter =
+    {
+        sizeof(e9bpf) / sizeof(struct sock_filter),
+        (struct sock_filter *)e9bpf
+    };
+    r = e9syscall(SYS_seccomp, SECCOMP_SET_MODE_FILTER, /*flags=*/0x0,
+        &filter);
+    if (r < 0)
+        e9panic("seccomp() failed (errno=%u)", -r);
 }
 
 /*
@@ -216,7 +366,24 @@ void *e9init(int argc, char **argv, char **envp, const e9_config_s *config)
     if (fd < 0)
         e9panic("open(path=\"%s\") failed (errno=%u)", buf, -fd);
 
-    // Step (2): Map in the trampoline code:
+    // Step (2): Setup dummy TLS (if necessary):
+    struct e9scratch_s *scratch = NULL;
+    uintptr_t tls = 0x0;
+    intptr_t r = e9syscall(SYS_arch_prctl, ARCH_GET_FS, &tls);
+    if (r < 0)
+        e9panic("arch_prctl() failed (errno=%u)", -r);
+    if (tls == 0x0)
+    {
+        // No libc == no tls:
+        scratch = e9scratch(config, /*alloc=*/true);
+        tls = (uintptr_t)&scratch->tls;
+        r = e9syscall(SYS_arch_prctl, ARCH_SET_FS, tls);
+        if (r < 0)
+            e9panic("arch_prctl() failed (errno=%u)", -r);
+        asm volatile ("mov %0,%%fs:0x00" : : "r"(tls));
+    }
+
+    // Step (3): Map in the trampoline code:
     mmap_t mmap = e9mmap;
     const struct e9_map_s *maps =
         (const struct e9_map_s *)(loader_base + config->maps[0]);
@@ -227,7 +394,7 @@ void *e9init(int argc, char **argv, char **envp, const e9_config_s *config)
     e9load_maps(maps, config->num_maps[1], elf_base, fd, mmap);
     e9syscall(SYS_close, fd);
 
-    // Step (3): Call the initialization routines:
+    // Step (4): Call the initialization routines:
     const struct e9_config_elf_s *config_elf =
         (const struct e9_config_elf_s *)(config + 1);
     const void *dynamic = NULL;
@@ -240,7 +407,23 @@ void *e9init(int argc, char **argv, char **envp, const e9_config_s *config)
         init(argc, argv, envp, dynamic, config);
     }
 
-    // Step (4): Return the entry point:
+    // Step (5): Setup SIGILL handler (if necessary):
+    if (config->num_traps > 0)
+    {
+        const uint8_t *handler = loader_base + config->handler;
+        struct ksigaction action =
+            {(void *)handler, SA_NODEFER | SA_SIGINFO | SA_RESTORER, NULL, 0x0};
+        struct ksigaction old;
+        intptr_t r = e9syscall(SYS_rt_sigaction, SIGILL, &action, &old, 8);
+        if (r < 0)
+            e9panic("sigaction() failed (errno=%u)", -r);
+        scratch =
+            (scratch == NULL? e9scratch(config, /*alloc=*/true): scratch);
+        scratch->handler = (e9handler_t)old.sa_handler_2;
+        e9filter();
+    }
+
+    // Step (6): Return the entry point:
     void *entry = (void *)e9addr(config->entry, elf_base);
     return entry;
 }
