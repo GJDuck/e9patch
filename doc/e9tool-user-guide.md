@@ -7,6 +7,8 @@
     - [1.1 Optimization](#optimization)
     - [1.2 Compression](#compression)
     - [1.3 Rewriting Modes](#modes)
+        * [1.3.1 Control-Flow Recovery Mode](#cfr_mode)
+        * [1.3.2 Full-Coverage Mode](#100_mode)
     - [1.4 Disassembly and Analysis](#analysis)
 * [2. Matching Language](#matching)
     - [2.1 Attributes](#attributes)
@@ -100,16 +102,49 @@ The default compression level is 9 (most compression).
 ---
 ### <a id="modes">1.3 Rewriting Modes</a>
 
-E9Tool (and E9Patch) support two main rewriting modes:
+E9Tool (and E9Patch) supports three main rewriting modes:
 
-1. The *default* mode that uses binary rewriting without control-flow
-   recovery.
-2. A *control-flow-recovery* (CFR) mode that uses a (conservative) CFR
+1. *Default*: Classic binary rewriting without control-flow recovery.
+   This is the "official" mode of E9Tool/E9Patch for benchmarking and testing
+   purposes.
+2. *CFR*: A *control-flow-recovery* (CFR) mode that uses a (conservative) CFR
    analysis to optimize further binary rewriting.
+3. *100%*: A *full-coverage* (100%) mode that ensures that every matching instruction
+   will be patched, even if this (significantly) reduces performance.
 
-The CFR mode can be enabled by passing `-X` to E9Tool, e.g.:
+Below if a summary of the different modes and features:
 
-        $ e9tool -X -M jmp -P print xterm
+<table border="1">
+<tr><th></th><th>Option</th><th>Performance</th><th>Robustness</th><th>Coverage</th></tr>
+<tr><td><b>Default</b></td><td></td>
+    <td>&#9733;&#9733;&#32;</td>
+    <td>&#9733;&#9733;&#9733;</td>
+    <td>&#9733;&#9733;&#32;</td>
+    </tr>
+<tr><td><b>CFR</b></td><td><tt>-CFR</tt></td>
+    <td>&#9733;&#9733;&#9733;</td>
+    <td>&#9733;&frac12;&#32;</td>
+    <td>&#9733;&#9733;&frac12;</td>
+    </tr>
+<tr><td><b>100%</b></td><td><tt>-100</tt></td>
+    <td>0</td>
+    <td>&#9733;&#9733;&#9733;</td>
+    <td>&#9733;&#9733;&#9733;</td>
+    </tr>
+</table>
+
+Here, *Option* is the E9Tool command-line option to enable the mode,
+*Performance* is the relative performance of the rewitten binary,
+*Robustness* is the relative absense rewriting errors, and
+*Coverage* is the patching coverage (number of matching instructions actually
+patched).
+
+---
+#### <a id="cfr_mode">1.3.1 Control-Flow-Recovery Mode</a>
+
+The CFR mode can be enabled by passing `-CFR` to E9Tool, e.g.:
+
+        $ e9tool -CFR -M jmp -P print xterm
 
 The CFR mode has pros and cons, which may or may not be acceptable
 depending on the application.
@@ -123,6 +158,33 @@ However, since CFR is heuristic-based, it may not be complete, leading to
 possible rewriting errors.
 Thus, the CFR mode is not as robust as the default mode, although it should
 be compatible with most binaries.
+
+---
+#### <a id="100_mode">1.3.2 Full-Coverage Mode</a>
+
+The 100% (full coverage) mode can be enabled by passing `-100` to E9Tool, e.g.:
+
+        $ e9tool -100 -M jmp -P print xterm
+
+This mode aims to achieve 100% patching coverage, even if this
+(significantly) degrades performance.
+To do so, the 100% mode will resort to illegal opcodes and `SIGILL` handlers
+if an instruction cannot be patched using any other method.
+The 100% mode is useful for applications that need full coverage, even if
+this comes at the cost of performance.
+
+Note that the 100% mode has some caveats:
+
+* Any attempt by the program to install a `SIGILL` signal handler will fail
+  with errno=`ENOSYS`.
+  This potentially breaks transparency.
+* The patching coverage may not reach 100% for other reasons, such as virtual
+  address space exhaustion.
+  Such cases will be uncommon.
+
+The 100% and CFR modes are compatible and can be combined, e.g.:
+
+        $ e9tool -100 -CFR -M jmp -P print xterm
 
 ---
 ### <a id="analysis">1.4 Disassembly and Analysis</a>
