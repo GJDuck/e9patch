@@ -27,6 +27,7 @@
 #include <cerrno>
 #include <csignal>
 #include <cstdarg>
+#include <cstddef>
 #include <cstdint>
 #include <cstdlib>
 
@@ -39,13 +40,6 @@
 
 #include "e9loader.cpp"
 
-typedef void (*e9handler_t)(int, siginfo_t *, void *);
-struct e9scratch_s
-{
-    uint8_t tls[PAGE_SIZE - sizeof(e9handler_t)];
-    e9handler_t handler;
-};
-
 struct ksigaction
 {
     void *sa_handler_2;
@@ -55,19 +49,11 @@ struct ksigaction
 };
 #define SA_RESTORER 0x04000000
 
-// seccomp filter:
-// if (callno==SYS_rt_sigaction && signum==SIGILL) return -ENOSYS;
-static const uint8_t e9bpf[] =
+typedef void (*e9handler_t)(int, siginfo_t *, void *);
+struct e9scratch_s
 {
-    0x20, 0x00, 0x00, 0x00, 0x04, 0x00, 0x00, 0x00, 0x15, 0x00, 0x00, 0x0a,
-    0x3e, 0x00, 0x00, 0xc0, 0x20, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    0x35, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x40, 0x15, 0x00, 0x00, 0x07,
-    0xff, 0xff, 0xff, 0xff, 0x15, 0x00, 0x00, 0x04, 0x0d, 0x00, 0x00, 0x00,
-    0x20, 0x00, 0x00, 0x00, 0x14, 0x00, 0x00, 0x00, 0x15, 0x00, 0x00, 0x02,
-    0x00, 0x00, 0x00, 0x00, 0x20, 0x00, 0x00, 0x00, 0x10, 0x00, 0x00, 0x00,
-    0x15, 0x00, 0x01, 0x00, 0x04, 0x00, 0x00, 0x00, 0x06, 0x00, 0x00, 0x00,
-    0x00, 0x00, 0xff, 0x7f, 0x06, 0x00, 0x00, 0x00, 0x26, 0x00, 0x05, 0x00,
-    0x06, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
+    e9handler_t next;
+    uint8_t tls[PAGE_SIZE / 2];
 };
 
 extern "C"
@@ -138,7 +124,6 @@ static NO_INLINE NO_RETURN void e9panic(const char *msg, ...)
     e9syscall(SYS_kill, /*pid=*/0, SIGABRT);
     while (true)
         asm volatile ("ud2");
-    __builtin_unreachable();
 }
 
 /*
@@ -229,12 +214,11 @@ static NO_INLINE void e9load_maps(const e9_map_s *maps, uint32_t num_maps,
 void e9handler(int sig, siginfo_t *info, ucontext_t *ctx,
     const e9_config_s *config)
 {
+    mcontext_t *mctx = &ctx->uc_mcontext;
     const uint8_t *loader_base = (const uint8_t *)config;
     const uint8_t *elf_base    = loader_base - config->base;
-
     const struct e9_trap_s *traps =
         (const struct e9_trap_s *)(loader_base + config->traps);
-    mcontext_t *mctx = &ctx->uc_mcontext;
     const uint8_t *rip = (const uint8_t *)mctx->gregs[REG_RIP];
     int64_t idx = -1;
     if (rip >= elf_base && rip <= loader_base)
@@ -260,9 +244,14 @@ void e9handler(int sig, siginfo_t *info, ucontext_t *ctx,
     {
         // No trampoline found:
         struct e9scratch_s *scratch = e9scratch(config, /*alloc=*/false);
-        if (scratch->handler != NULL)
-            scratch->handler(sig, info, ctx);   // Try the next binary
-        e9panic("uncaught SIGILL (0x%X)", rip);
+        if (scratch->next != NULL)
+            scratch->next(sig, info, ctx);      // Try the next binary
+        struct ksigaction action =
+        {
+            (void *)SIG_DFL, SA_NODEFER | SA_RESTORER, NULL, 0
+        };
+        e9syscall(SYS_rt_sigaction, SIGILL, &action, NULL, 8, 0xe9e9e9e9);
+        trampoline = (uint8_t *)mctx->gregs[REG_RIP];
     }
     void *xstate = (void *)mctx->fpregs;
     asm volatile (
@@ -300,18 +289,32 @@ void e9handler(int sig, siginfo_t *info, ucontext_t *ctx,
 #include <linux/prctl.h>
 #include <linux/seccomp.h>
 #include <linux/filter.h>
-static void e9filter(void)
+static void e9filter(struct e9scratch_s *scratch)
 {
     intptr_t r = e9syscall(SYS_prctl, PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0);
     if (r < 0)
         e9panic("prctl() failed (errno=%u)", -r);
-    struct sock_fprog filter =
+       struct sock_filter filter[] =
     {
-        sizeof(e9bpf) / sizeof(struct sock_filter),
-        (struct sock_filter *)e9bpf
+        BPF_STMT(BPF_LD | BPF_W | BPF_ABS, offsetof(struct seccomp_data, nr)),
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_rt_sigaction, 0, 5),
+        BPF_STMT(BPF_LD | BPF_W | BPF_ABS,
+            offsetof(struct seccomp_data, args[4])),
+        // Backdoor: TODO: think of a better solution
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 0xe9e9e9e9, 3, 0),
+        BPF_STMT(BPF_LD | BPF_W | BPF_ABS,
+            offsetof(struct seccomp_data, args[0])),
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SIGILL, 0, 1),
+        BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ERRNO | ENOSYS),
+        BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+    }; 
+    struct sock_fprog fprog =
+    {
+        (unsigned short)(sizeof(filter) / sizeof(filter[0])),
+        filter
     };
     r = e9syscall(SYS_seccomp, SECCOMP_SET_MODE_FILTER, /*flags=*/0x0,
-        &filter);
+        &fprog);
     if (r < 0)
         e9panic("seccomp() failed (errno=%u)", -r);
 }
@@ -322,10 +325,7 @@ static void e9filter(void)
 static NO_INLINE const void *e9addr(intptr_t addr, const uint8_t *elf_base)
 {
     if ((addr & E9_ABS_ADDR) != 0x0)
-    {
-        addr &= ~E9_ABS_ADDR;
-        return (const void *)addr;
-    }
+        return (const void *)(addr & ~E9_ABS_ADDR);
     else
         return (const void *)(elf_base + addr);
 }
@@ -411,16 +411,18 @@ void *e9init(int argc, char **argv, char **envp, const e9_config_s *config)
     if (config->num_traps > 0)
     {
         const uint8_t *handler = loader_base + config->handler;
-        struct ksigaction action =
-            {(void *)handler, SA_NODEFER | SA_SIGINFO | SA_RESTORER, NULL, 0x0};
-        struct ksigaction old;
+        struct ksigaction old, action =
+        {
+            (void *)handler, SA_NODEFER | SA_SIGINFO | SA_RESTORER,
+            NULL, 0x0
+        };
         intptr_t r = e9syscall(SYS_rt_sigaction, SIGILL, &action, &old, 8);
         if (r < 0)
             e9panic("sigaction() failed (errno=%u)", -r);
         scratch =
             (scratch == NULL? e9scratch(config, /*alloc=*/true): scratch);
-        scratch->handler = (e9handler_t)old.sa_handler_2;
-        e9filter();
+        scratch->next = (e9handler_t)old.sa_handler_2;
+        e9filter(scratch);
     }
 
     // Step (6): Return the entry point:
