@@ -260,7 +260,8 @@ static Bounds makeBounds(Binary &B, const Trampoline *T, const Instr *I,
     switch (B.mode)
     {
         case MODE_ELF_EXE: case MODE_ELF_DSO:
-            hi = std::min(hi, option_loader_base);
+            // The additional page is for the loader scratch space
+            hi = std::min(hi, option_loader_base - (intptr_t)PAGE_SIZE);
         default:
             break;
     }

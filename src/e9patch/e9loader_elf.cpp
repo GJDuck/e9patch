@@ -48,6 +48,7 @@ struct ksigaction
     sigset_t sa_mask;
 };
 #define SA_RESTORER 0x04000000
+#define E9_BACKDOOR 0xe9e9e9e9
 
 typedef void (*e9handler_t)(int, siginfo_t *, void *);
 struct e9scratch_s
@@ -163,7 +164,7 @@ static NO_INLINE struct e9scratch_s *e9scratch(const e9_config_s *config,
     if (!alloc)
         return (struct e9scratch_s *)scratch;
     intptr_t r = e9mmap(scratch, PAGE_SIZE, PROT_READ | PROT_WRITE,
-        MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+        MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED, -1, 0);
     r = (r >= 0 && r != (intptr_t)scratch? -EAGAIN: r);
     if (r < 0)
         e9panic("mmap() scratch failed (errno=%u)", (unsigned)-r);
@@ -250,7 +251,7 @@ void e9handler(int sig, siginfo_t *info, ucontext_t *ctx,
         {
             (void *)SIG_DFL, SA_NODEFER | SA_RESTORER, NULL, 0
         };
-        e9syscall(SYS_rt_sigaction, SIGILL, &action, NULL, 8, 0xe9e9e9e9);
+        e9syscall(SYS_rt_sigaction, SIGILL, &action, NULL, 8, E9_BACKDOOR);
         trampoline = (uint8_t *)mctx->gregs[REG_RIP];
     }
     void *xstate = (void *)mctx->fpregs;
@@ -301,7 +302,7 @@ static void e9filter(struct e9scratch_s *scratch)
         BPF_STMT(BPF_LD | BPF_W | BPF_ABS,
             offsetof(struct seccomp_data, args[4])),
         // Backdoor: TODO: think of a better solution
-        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 0xe9e9e9e9, 3, 0),
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, E9_BACKDOOR, 3, 0),
         BPF_STMT(BPF_LD | BPF_W | BPF_ABS,
             offsetof(struct seccomp_data, args[0])),
         BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SIGILL, 0, 1),
@@ -416,7 +417,8 @@ void *e9init(int argc, char **argv, char **envp, const e9_config_s *config)
             (void *)handler, SA_NODEFER | SA_SIGINFO | SA_RESTORER,
             NULL, 0x0
         };
-        intptr_t r = e9syscall(SYS_rt_sigaction, SIGILL, &action, &old, 8);
+        intptr_t r = e9syscall(SYS_rt_sigaction, SIGILL, &action, &old, 8,
+            E9_BACKDOOR);
         if (r < 0)
             e9panic("sigaction() failed (errno=%u)", -r);
         scratch =

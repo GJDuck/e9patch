@@ -522,7 +522,7 @@ size_t emitElf(Binary *B, const MappingSet &mappings, size_t mapping_size)
     for (auto i = B->Traps.rbegin(); i != B->Traps.rend(); ++i)
     {
         const Alloc *A = *i;
-        struct e9_trap_s trap = {A->I->addr, A->lb};
+        struct e9_trap_s trap = {A->I->addr, A->lb + A->entry};
         memcpy(data + size, &trap, sizeof(trap));
         size += sizeof(trap);
         config->num_traps++;
