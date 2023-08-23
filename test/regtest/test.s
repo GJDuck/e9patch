@@ -1,4 +1,4 @@
-# Copyright (C) 2022 National University of Singapore
+# Copyright (C) 2023 National University of Singapore
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -29,14 +29,9 @@ _start:
     mov $0x1c1c1c1c,%edx
 
     # Can change:
-    mov $158,%eax           # SYS_arch_prctl
-    mov $0x1002,%edi        # ARCH_SET_FS
-    lea .Lstack(%rip),%rsi
-    syscall
-    mov $158,%eax           # SYS_arch_prctl
-    mov $0x1001,%edi        # ARCH_SET_GS
-    xor %esi,%esi           # 0x0
-    syscall
+    .byte 0x66, 0x66, 0x66, 0x0f, 0x1f, 0x84, 0x00, 0x00, 0x00, 0x00, 0x00
+    .byte 0x66, 0x66, 0x66, 0x0f, 0x1f, 0x84, 0x00, 0x00, 0x00, 0x00, 0x00
+    .byte 0x66, 0x66, 0x66, 0x0f, 0x1f, 0x84, 0x00, 0x00, 0x00, 0x00, 0x00
 
     lea regs(%rip),%rax
     mov 0x4(%rax),%edx

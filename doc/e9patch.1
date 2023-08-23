@@ -28,6 +28,8 @@ The first phase tracks instruction patching success or failure:
 .IP
 \fB\[char46]\fR = Instruction was patched successfully
 .br
+\fBT\fR = Instruction was patched with tactic B0
+.br
 \fBX\fR = Instruction could not be patched
 .PP
 The second phase tracks physical memory compression:
@@ -159,6 +161,8 @@ automatically/randomly.  The special value "none" leaves the
 original base intact.
 .br
 Default: \fBnone\fR (disabled)
+.IP "\fB\-\-tactic\-B0\fR[=\fI\,false\/\fR]" 4
+.PD 0
 .IP "\fB\-\-tactic\-B1\fR[=\fI\,false\/\fR]" 4
 .PD 0
 .IP "\fB\-\-tactic\-B2\fR[=\fI\,false\/\fR]" 4
@@ -169,12 +173,14 @@ Default: \fBnone\fR (disabled)
 .PD 0
 .IP "\fB\-\-tactic\-T3\fR[=\fI\,false\/\fR]" 4
 .PD
-Enables [disables] the corresponding tactic (B1/B2/T1/T2/T3).
+Enables [disables] corresponding tactic (B1/B2/T1/T2/T3).
 .br
-Default: \fBtrue\fR (enabled)
-.IP
+Default: \fBtrue\fR (enabled) for B1/B2/T1/T2/T3
+         \fBfalse\fR (disabled) for B0
+.TP
 \fB\-\-tactic\-backward\-T3\fR[=\fI\,false\/\fR]
-Enable [disables] backward jumps for tactic T3.
+Enables [disables] backward jumps for tactic T3.
+.br
 Default: \fBtrue\fR (enabled)
 .TP
 \fB\-\-trap\fR=\fI\,ADDR\/\fR
@@ -185,11 +191,13 @@ the trampoline using GDB.
 \fB\-\-trap\-all\fR[=\fI\,false\/\fR]
 Enable [disable] the insertion of a trap (int3) instruction at
 all trampoline entries.
+.br
 Default: \fBfalse\fR (disabled)
 .TP
 \fB\-\-trap\-entry\fR[=\fI\,false\/\fR]
 Enable [disable] the insertion of a trap (int3) at the program
 loader entry\-point.
+.br
 Default: \fBfalse\fR (disabled)
 .TP
 \fB\-\-version\fR

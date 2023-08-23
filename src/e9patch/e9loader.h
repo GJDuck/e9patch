@@ -48,6 +48,12 @@ struct e9_map_s
     uint32_t abs:1;                             // Absolute?
 };
 
+struct e9_trap_s
+{
+    intptr_t rip;                               // Trap location
+    intptr_t trampoline;                        // Trampoline location
+};
+
 struct e9_config_s
 {
     char     magic[8];                          // "E9PATCH\0"
@@ -64,6 +70,9 @@ struct e9_config_s
     uint32_t inits;                             // Init functions offset
     uint32_t num_finis;                         // # Fini functions
     uint32_t finis;                             // Fini functions offset
+    uint32_t num_traps;                         // # Trap functions
+    uint32_t traps;                             // Trap functions offset
+    uint32_t handler;                           // Trap handler function
 };
 
 /*

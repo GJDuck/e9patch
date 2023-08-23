@@ -40,15 +40,15 @@
  */
 static void parseOptions(Binary *B, char * const *argv)
 {
-     parseOptions(argv, /*api=*/true);
-     switch (B->mode)
-     {
-         case MODE_ELF_EXE: case MODE_ELF_DSO:
-             B->config = option_loader_base; break;
-         default:
-             break;
-     }
-     targetAnalysis(B);
+    parseOptions(argv, /*api=*/true);
+    switch (B->mode)
+    {
+        case MODE_ELF_EXE: case MODE_ELF_DSO:
+            B->config = option_loader_base; break;
+        default:
+            break;
+    }
+    targetAnalysis(B);
 }
 
 /*
@@ -79,7 +79,7 @@ static void queueFlush(Binary *B, intptr_t cursor)
                 case STATE_QUEUED:
                     for (unsigned i = 0; i < I->size; i++)
                     {
-                        assert(I->patched.state[i] == STATE_QUEUED);
+                        assert(I->STATE[i] == STATE_QUEUED);
                         I->STATE[i] = STATE_INSTRUCTION;
                     }
                     I->debug = (option_trap_all ||
@@ -217,6 +217,11 @@ mmap_failed:
         case MODE_PE_EXE: case MODE_PE_DLL:
             parsePE(B);
             B->pic = true;
+            if (option_tactic_B0)
+            {
+                warning("tactic B0 is not supported for Windows PE binaries");
+                option_tactic_B0 = false;
+            }
             break;
     }
 

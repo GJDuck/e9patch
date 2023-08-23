@@ -51,6 +51,7 @@
 
 enum Tactic
 {
+    TACTIC_B0,                          // SIGILL.
     TACTIC_B1,                          // Jump.
     TACTIC_B2,                          // Punned jump.
     TACTIC_T0,                          // Grouping.
@@ -98,20 +99,14 @@ static const char *getTacticName(Tactic tactic)
 {
     switch (tactic)
     {
-        case TACTIC_T0:
-            return "T0";
-        case TACTIC_B1:
-            return "B1";
-        case TACTIC_B2:
-            return "B2";
-        case TACTIC_T1:
-            return "T1";
-        case TACTIC_T2:
-            return "T2";
-        case TACTIC_T3:
-            return "T3";
-        default:
-            return "???";
+        case TACTIC_B0: return "B0";
+        case TACTIC_B1: return "B1";
+        case TACTIC_B2: return "B2";
+        case TACTIC_T0: return "T0";
+        case TACTIC_T1: return "T1";
+        case TACTIC_T2: return "T2";
+        case TACTIC_T3: return "T3";
+        default:        return "???";
     }
 }
 
@@ -122,14 +117,17 @@ static void commit(Binary &B, Patch *P)
 {
     switch (P->tactic)
     {
-        case TACTIC_T0:
-            stat_num_T0++;
+        case TACTIC_B0:
+            stat_num_B0++;
             break;
         case TACTIC_B1:
             stat_num_B1++;
             break;
         case TACTIC_B2:
             stat_num_B2++;
+            break;
+        case TACTIC_T0:
+            stat_num_T0++;
             break;
         case TACTIC_T1:
             stat_num_T1++;
@@ -141,6 +139,9 @@ static void commit(Binary &B, Patch *P)
             stat_num_T3++;
             break;
     }
+
+    if (P->tactic == TACTIC_B0)
+        B.Traps.push_back(P->A);
 
     while (P != nullptr)
     {
@@ -179,10 +180,10 @@ static void undo(Binary &B, Patch *P)
  * Calculate trampoline bounds.
  */
 static Bounds makeBounds(Binary &B, const Trampoline *T, const Instr *I,
-    const Instr *J, unsigned prefix)
+    const Instr *J, unsigned prefix, bool trap)
 {
     // Step (1): Calculate the mask to protect overlapping instructions:
-    assert(prefix < I->size);
+    assert(prefix < I->size || trap);
     size_t size = prefix + 1;
     for (; size < I->size &&
             (I->STATE[size] == STATE_INSTRUCTION ||
@@ -195,7 +196,7 @@ static Bounds makeBounds(Binary &B, const Trampoline *T, const Instr *I,
 
     // Step (2): Calculate the minimum and maximum jmpq rel32 values:
     int32_t rel32_lo, rel32_hi;
-    if (diff >= sizeof(int32_t))
+    if (diff >= sizeof(int32_t) || trap)
     {
         rel32_lo = INT32_MIN;
         rel32_hi = INT32_MAX;
@@ -259,7 +260,8 @@ static Bounds makeBounds(Binary &B, const Trampoline *T, const Instr *I,
     switch (B.mode)
     {
         case MODE_ELF_EXE: case MODE_ELF_DSO:
-            hi = std::min(hi, option_loader_base);
+            // The additional page is for the loader scratch space
+            hi = std::min(hi, option_loader_base - (intptr_t)PAGE_SIZE);
         default:
             break;
     }
@@ -276,7 +278,7 @@ static const Alloc *allocatePunnedJump(Binary &B, const Instr *I,
     for (unsigned i = 0; i <= /*sizeof(jmpq)=*/5; i++)
         if (I->STATE[prefix + i] == STATE_QUEUED)
             return nullptr;
-    auto b = makeBounds(B, T, I, J, prefix);
+    auto b = makeBounds(B, T, I, J, prefix, /*trap=*/false);
     return allocate(&B, b.lb, b.ub, T, J, !option_mem_multi_page);
 }
 
@@ -287,6 +289,16 @@ static const Alloc *allocateJump(Binary &B, const Instr *I,
     const Trampoline *T)
 {
     return allocatePunnedJump(B, I, /*prefix=*/0, I, T);
+}
+
+/*
+ * Allocate virtual address space for a trap.
+ */
+static const Alloc *allocateTrap(Binary &B, const Instr *I,
+    const Trampoline *T)
+{
+    auto b = makeBounds(B, T, I, I, /*prefix=*/0, /*trap=*/true);
+    return allocate(&B, b.lb, b.ub, T, I, !option_mem_multi_page);
 }
 
 /*
@@ -301,7 +313,8 @@ static void patchJumpPrefix(Patch *P, unsigned prefix)
     uint8_t *bytes = P->I->PATCH, *state = P->I->STATE;
     for (unsigned i = 0; i < prefix; i++)
     {
-        assert(state[i] == STATE_INSTRUCTION);
+        assert(state[i] == STATE_INSTRUCTION ||
+               state[i] == STATE_FREE);
         bytes[i] = prefixes[i];
         state[i] = STATE_PATCHED;
     }
@@ -372,6 +385,18 @@ static void patchShortJump(Patch *P, intptr_t addr)
 }
 
 /*
+ * Patch in a trap (illegal) instruction.
+ */
+static void patchTrap(Patch *P)
+{
+    uint8_t *bytes = P->I->PATCH,
+            *state = P->I->STATE;
+    assert(*state == STATE_INSTRUCTION || *state == STATE_FREE);
+    bytes[0] = 0x27;    // Invalid x86_64 opcode
+    state[0] = STATE_PATCHED;
+}
+
+/*
  * Patch in unused memory.
  */
 static void patchUnused(Patch *P, unsigned offset)
@@ -403,6 +428,22 @@ static bool canPatch(const Instr *I)
         default:
             return false;
     }
+}
+
+/*
+ * Tactic B0: replace the instruction with an illegal instruction.
+ */
+static Patch *tactic_B0(Binary &B, Instr *I, const Trampoline *T)
+{
+    if (!option_tactic_B0)
+        return nullptr;
+    const Alloc *A = allocateTrap(B, I, T);
+    if (A == nullptr)
+        return nullptr;
+    Patch *P = new Patch(I, TACTIC_B0, A);
+    patchTrap(P);
+    patchUnused(P, /*offset=sizeof(illegal)=*/1);
+    return P;
 }
 
 /*
@@ -461,6 +502,8 @@ static Patch *tactic_T1(Binary &B, Instr *I, const Trampoline *T,
     for (unsigned prefix = 1; prefix < JMP_REL32_SIZE && canApplyT1(I, prefix);
             prefix++)
     {
+        if (prefix >= I->size)
+            break;
         const Alloc *A = allocatePunnedJump(B, I, prefix, I, T);
         if (A != nullptr)
         {
@@ -862,6 +905,8 @@ bool patch(Binary &B, Instr *I, const Trampoline *T)
         P = tactic_T2(B, I, T);
     if (P == nullptr)
         P = tactic_T3(B, I, T);
+    if (P == nullptr)
+        P = tactic_B0(B, I, T);
 
     if (P == nullptr)
     {
@@ -871,6 +916,7 @@ bool patch(Binary &B, Instr *I, const Trampoline *T)
         return false;       // Failed :(
     }
 
+    bool uses_B0 = (P->tactic == TACTIC_B0);
     const char *name = getTacticName(P->tactic);
     commit(B, P);
     if (option_debug)
@@ -885,7 +931,8 @@ bool patch(Binary &B, Instr *I, const Trampoline *T)
             I->addr, I->size, name, ADDRESS(entry), ADDRESS(lb), ADDRESS(ub),
             (ssize_t)(entry - lb));
     }
-    log(COLOR_GREEN, '.');
+    log((uses_B0? COLOR_YELLOW: COLOR_GREEN),
+        (uses_B0? 'T': '.'));
     return true;            // Success!
 }
 

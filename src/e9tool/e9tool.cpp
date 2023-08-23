@@ -652,6 +652,7 @@ static void checkCompatible(const ELF &elf, const ELF &target)
  */
 enum Option
 {
+    OPTION_100,
     OPTION_BACKEND,
     OPTION_CFR,
     OPTION_COMPRESSION,
@@ -730,6 +731,7 @@ int main_2(int argc, char **argv)
               no_arg  = no_argument;
     static const struct option long_options[] =
     {
+        {"100",           no_arg,  nullptr, OPTION_100},
         {"backend",       req_arg, nullptr, OPTION_BACKEND},
         {"CFR",           no_arg,  nullptr, OPTION_CFR},
         {"compression",   req_arg, nullptr, OPTION_COMPRESSION},
@@ -776,9 +778,8 @@ int main_2(int argc, char **argv)
     std::string option_use_targets("");
     std::string option_use_funcs("");
     bool option_dump_all = false;
-
     int option_sync = 64, option_threshold = 2;
-    bool option_CFR = false;
+    bool option_100 = false, option_CFR = false;
     srand(0xe9e9e9e9);
     while (true)
     {
@@ -789,6 +790,9 @@ int main_2(int argc, char **argv)
             break;
         switch (opt)
         {
+            case OPTION_100:
+                option_100 = true;
+                break;
             case OPTION_BACKEND:
                 option_backend = optarg;
                 break;
@@ -1146,7 +1150,10 @@ int main_2(int argc, char **argv)
         options.push_back("--loader-static");
     if (option_trap_all)
         options.push_back("--trap-all");
-    options.push_back((option_CFR? "-OCFR=true": "-OCFR=false"));
+    if (option_100)
+        options.push_back("--tactic-B0");
+    if (option_CFR)
+        options.push_back("-OCFR=true");
     switch (option_optimization_level)
     {
         case '0':

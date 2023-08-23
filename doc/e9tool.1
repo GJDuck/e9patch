@@ -102,6 +102,11 @@ For more information, please refer to the following document:
 .IP "" 4
 \fI/usr/share/doc/e9tool/e9tool-user-guide.html\fR
 .SH OPTIONS
+.IP "\fB\-100\fR" 4
+Enables "full coverage" mode that attempts to patch 100% of matching
+instructions, even at the cost of a significant reduction in performance.
+This is useful for applications that prioritize coverage over other
+considerations.
 .IP "\fB\-\-backend\fR PROG" 4
 Use PROG as the backend.
 The default is "e9patch".
