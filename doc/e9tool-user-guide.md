@@ -1251,7 +1251,7 @@ Notes:
 * The `state` argument is a pointer to a structure containing all
   general-purpose registers, the flag register (`%rflags`), the stack register
   (`%rsp`) and the instruction pointer register (`%rip`).
-  See the `state.c` example for the structure layout.
+  See `STATE` defined in `stdlib.c` for the structure layout.
   Except for `%rip`, the values in the structure can be modified, in which
   case the corresponding register will be updated accordingly.
 * The `NAME[i]` argument will either be an integer or a string, depending on
