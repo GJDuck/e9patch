@@ -440,8 +440,18 @@ static void parseEmit(Binary *B, const Message &msg)
             "\"filename\" parameter", msg.id);
     if (dup)
         error("failed to parse \"emit\" message (id=%u); duplicate "
-            "parameters detected");
+            "parameters detected", msg.id);
     B->output = filename;
+
+    // Ensure B->filename != B->output
+    char *input  = realpath(B->filename, NULL);
+    char *output = realpath(B->output, NULL);
+    if (input != NULL && output != NULL && strcmp(input, output) == 0)
+        error("failed to parse \"emit\" message (id=%u); output "
+            "binary path \"%s\" is the same as the input binary path "
+            "(hint: choose a different output filename)", msg.id, output);
+    free(input);
+    free(output);
 
     // Build trampoline entry set (b4 flush)
     buildEntrySet(B);
