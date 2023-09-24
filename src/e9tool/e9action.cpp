@@ -17,6 +17,7 @@
 
 #include <cassert>
 #include <cerrno>
+#include <csignal>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -879,6 +880,295 @@ static const char *parseSymbolName(Parser &parser, int t, bool ptr)
 }
 
 /*
+ * Parse a patch arg.
+ */
+static const Argument parsePatchArg(Parser &parser)
+{
+    int t = parser.getToken();
+    Type cast = TYPE_NONE;
+    bool _static = false;
+    if (t == '(')
+    {
+        // Parse cast/modifiers
+        if (parser.peekToken() == TOKEN_STATIC)
+        {
+            parser.getToken();
+            _static = true;
+        }
+        bool ptr = false;
+        switch (parser.peekToken())
+        {
+            case ')':
+                if (_static)
+                    break;
+                parser.unexpectedToken();
+            case TOKEN_CONST:
+                parser.getToken();
+                cast |= TYPE_CONST;
+                ptr = true;
+                // Fallthrough:
+            default:
+                switch (parser.getToken())
+                {
+                    case TOKEN_INT8_T:
+                        cast |= TYPE_INT8; break;
+                    case TOKEN_INT16_T:
+                        cast |= TYPE_INT16; break;
+                    case TOKEN_INT32_T:
+                        cast |= TYPE_INT32; break;
+                    case TOKEN_INT64_T:
+                        cast |= TYPE_INT64; break;
+                    case TOKEN_VOID:
+                        ptr = true;
+                        cast |= TYPE_VOID; break;
+                    case TOKEN_CHAR:
+                        ptr = true;
+                        cast |= TYPE_CHAR; break;
+                    default:
+                        parser.unexpectedToken();
+                }
+                if (parser.peekToken() == '*')
+                {
+                    parser.getToken();
+                    cast |= TYPE_PTR;
+                }
+                if (ptr && (cast & TYPE_PTR) == 0x0)
+                    parser.unexpectedToken();
+                break;
+        }
+        parser.expectToken(')');
+        t = parser.getToken();
+    }
+    bool ptr = false, end = false, neg = false;
+    if (t == '&')
+    {
+        ptr = true;
+        t = parser.getToken();
+    }
+    ArgumentKind arg = ARGUMENT_INVALID;
+    FieldKind field  = FIELD_NONE;
+    MemOp memop = {0, REGISTER_NONE, REGISTER_NONE, REGISTER_NONE, 1, 0};
+    intptr_t value = 0x0;
+    int arg_token = t;
+    const char *name = parseSymbolName(parser, t, ptr);
+    if (name != nullptr)
+        t = TOKEN_NAME;
+    switch (t)
+    {
+        case TOKEN_ASM:
+            arg = ARGUMENT_ASM; break;
+        case TOKEN_ADDR:
+            arg = ARGUMENT_ADDR; break;
+        case TOKEN_BASE:
+            arg = ARGUMENT_BASE; break;
+        case TOKEN_BB:
+            option_targets = option_bbs = true;
+            arg = ARGUMENT_BB; break;
+        case TOKEN_DST:
+            arg = ARGUMENT_DST; break;
+        case TOKEN_CONFIG:
+            arg = ARGUMENT_CONFIG; break;
+        case TOKEN_F:
+            option_targets = option_fs = true;
+            arg = ARGUMENT_F; break;
+        case TOKEN_ID:
+            arg = ARGUMENT_ID; break;
+        case TOKEN_IMM:
+            arg = ARGUMENT_IMM; break;
+        case TOKEN_INSTR:
+            deprecated("instr", "bytes");
+            // Fallthrough:
+        case TOKEN_BYTES:
+            arg = ARGUMENT_BYTES; break;
+        case TOKEN_MEM:
+            arg = ARGUMENT_MEM; break;
+        case TOKEN_MEM8: case TOKEN_MEM16: case TOKEN_MEM32:
+        case TOKEN_MEM64:
+            arg = ARGUMENT_MEMOP;
+            memop = parseMemOp(parser, t);
+            break;
+        case TOKEN_NEXT:
+            arg = ARGUMENT_NEXT; break;
+        case TOKEN_NULL:
+            arg = ARGUMENT_NULL; break;
+        case TOKEN_OFFSET:
+            arg = ARGUMENT_OFFSET; break;
+        case TOKEN_OP:
+            arg = ARGUMENT_OP; break;
+        case TOKEN_RANDOM:
+            arg = ARGUMENT_RANDOM; break;
+        case TOKEN_REG:
+            arg = ARGUMENT_REG; break;
+        case TOKEN_SIZE: case TOKEN_LENGTH:
+            arg = ARGUMENT_BYTES_SIZE; break;
+        case TOKEN_STATE:
+            arg = ARGUMENT_STATE; break;
+        case TOKEN_SRC:
+            arg = ARGUMENT_SRC; break;
+        case TOKEN_TARGET:
+            arg = ARGUMENT_TARGET; break;
+        case TOKEN_TRAMPOLINE:
+            arg = ARGUMENT_TRAMPOLINE; break;
+        case TOKEN_REX:
+            arg = ARGUMENT_REX; break;
+        case TOKEN_MODRM:
+            arg = ARGUMENT_MODRM; break;
+        case TOKEN_SIB:
+            arg = ARGUMENT_SIB; break;
+        case TOKEN_DISP8:
+            arg = ARGUMENT_DISP8; break;
+        case TOKEN_DISP32:
+            arg = ARGUMENT_DISP32; break;
+        case TOKEN_IMM8:
+            arg = ARGUMENT_IMM8; break;
+        case TOKEN_IMM32:
+            arg = ARGUMENT_IMM32; break;
+        case TOKEN_REGISTER:
+            value = parser.i;
+            arg = ARGUMENT_REGISTER;
+            break;
+        case '-':
+            neg = true;
+            // Fallthrough:
+        case '+':
+            parser.expectToken(TOKEN_INTEGER);
+            // Fallthrough:
+        case TOKEN_INTEGER:
+            value = (neg? -parser.i: parser.i);
+            arg = ARGUMENT_INTEGER;
+            break;
+        case TOKEN_STRING:
+            name = strDup(parser.s);
+            arg = (parser.peekToken() == '['? ARGUMENT_CSV: ARGUMENT_STRING);
+            break;
+        case TOKEN_NAME:
+            arg = (parser.peekToken() == '['? ARGUMENT_CSV: ARGUMENT_SYMBOL);
+            break;
+        default:
+            parser.unexpectedToken();
+    }
+    switch (arg)
+    {
+        case ARGUMENT_ASM:
+            if (parser.peekToken() != '.')
+                break;
+            parser.getToken();
+            switch (parser.getToken())
+            {
+                case TOKEN_LENGTH:
+                    arg = ARGUMENT_ASM_LEN; break;
+                case TOKEN_SIZE:
+                    arg = ARGUMENT_ASM_SIZE; break;
+                default:
+                    parser.unexpectedToken();
+            }
+            break;
+        case ARGUMENT_OP: case ARGUMENT_SRC: case ARGUMENT_DST:
+        case ARGUMENT_IMM: case ARGUMENT_REG: case ARGUMENT_MEM:
+            value = parseIndex(parser, 0, 7);
+            if (parser.peekToken() == '.')
+            {
+                parser.getToken();
+                t = parser.getToken();
+                switch (t)
+                {
+                    case TOKEN_BASE:
+                        field = FIELD_BASE; break;
+                    case TOKEN_INDEX:
+                        field = FIELD_INDEX; break;
+                    case TOKEN_DISP:
+                        field = FIELD_DISPL; break;
+                    case TOKEN_SCALE:
+                        field = FIELD_SCALE; break;
+                    case TOKEN_SIZE: case TOKEN_LENGTH:
+                        field = FIELD_SIZE; break;
+                    case TOKEN_TYPE:
+                        field = FIELD_TYPE; break;
+                    case TOKEN_ACCESS:
+                        field = FIELD_ACCESS; break;
+                    default:
+                        parser.unexpectedToken();
+                }
+                if (ptr && (field != FIELD_BASE && field != FIELD_INDEX))
+                    error("failed to parse argument; cannot pass field `%s'"
+                        " by pointer", parser.getName(t));
+            }
+            break;
+        case ARGUMENT_BB: case ARGUMENT_F:
+            field = FIELD_ADDR;
+            if (parser.peekToken() == '.')
+            {
+                parser.getToken();
+                switch (parser.getToken())
+                {
+                    case TOKEN_ADDR:
+                        field = FIELD_ADDR; break;
+                    case TOKEN_OFFSET:
+                        field = FIELD_OFFSET; break;
+                    case TOKEN_SIZE:
+                        field = FIELD_SIZE; break;
+                    case TOKEN_LENGTH:
+                        field = FIELD_LEN; break;
+                    case TOKEN_NAME_2:
+                        if (arg != ARGUMENT_F)
+                            parser.unexpectedToken();
+                        field = FIELD_NAME; break;
+                    default:
+                        parser.unexpectedToken();
+                }
+            }
+            break;
+        case ARGUMENT_SYMBOL:
+            if (parser.peekToken() == '.')
+            {
+                parser.getToken();
+                switch (parser.getToken())
+                {
+                    case TOKEN_START:
+                        break;
+                    case TOKEN_END:
+                        end = true; break;
+                    default:
+                        parser.unexpectedToken();
+                }
+            }
+            break;
+        case ARGUMENT_MEMOP:
+            break;
+        case ARGUMENT_REGISTER:
+            if ((Register)value == REGISTER_RIP)
+                goto not_a_ptr;
+            break;
+        case ARGUMENT_CSV:
+            value = parseIndex(parser, INTPTR_MIN, INTPTR_MAX);
+            // Fallthrough:
+        default:
+        not_a_ptr:
+            if (ptr)
+                error("failed to parse argument; cannot pass `%s' by pointer",
+                    parser.getName(arg_token));
+    }
+    switch (arg)
+    {
+        case ARGUMENT_ADDR: case ARGUMENT_NEXT:
+        case ARGUMENT_SYMBOL: case ARGUMENT_TARGET:
+            break;
+        case ARGUMENT_BB: case ARGUMENT_F:
+            if (field == FIELD_ADDR)
+                break;
+            // Fallthrough:
+        default:
+            if (_static)
+                warning("static cast ignored for `%s' argument",
+                    parser.getName(arg_token));
+            _static = false;
+            break;
+    }
+    return {arg, field, ptr, end, _static, /*dup=*/false, cast,
+        value, memop, name};
+}
+
+/*
  * Parse a patch.
  */
 const Patch *parsePatch(const ELF &elf, const char *str)
@@ -909,6 +1199,8 @@ const Patch *parsePatch(const ELF &elf, const char *str)
             kind = PATCH_EMPTY; break;
         case TOKEN_EXIT:
             kind = PATCH_EXIT; break;
+        case TOKEN_SIGNAL:
+            kind = PATCH_SIGNAL; break;
         case TOKEN_PRINT:
             kind = PATCH_PRINT; break;
         case TOKEN_PLUGIN:
@@ -930,7 +1222,7 @@ const Patch *parsePatch(const ELF &elf, const char *str)
     CallABI abi = ABI_CLEAN;
     CallJump jmp = JUMP_NONE;
     std::vector<Argument> args;
-    int status = 0;
+    int status = 0, signal = 0;
     int t = 0;
     switch (kind)
     {
@@ -939,8 +1231,18 @@ const Patch *parsePatch(const ELF &elf, const char *str)
             parser.expectToken(TOKEN_INTEGER);
             if (parser.i < 0 || parser.i > 255)
                 error("failed to parse exit trampoline; the exit status "
-                    " must be an integer within the range 0..255");
+                    "must be an integer within the range 0..255");
             status = (int)parser.i;
+            parser.expectToken(')');
+            break;
+
+        case PATCH_SIGNAL:
+            parser.expectToken('(');
+            parser.expectToken(TOKEN_INTEGER);
+            if (parser.i <= 0 || parser.i > _NSIG)
+                error("failed to parse signal trampoline; the signal "
+                    "must be an integer within the range 1..%d", _NSIG);
+            signal = (int)parser.i;
             parser.expectToken(')');
             break;
 
@@ -968,307 +1270,23 @@ const Patch *parsePatch(const ELF &elf, const char *str)
             }
             while (true)
             {
-                t = parser.getToken();
+                t = parser.peekToken();
                 if (t == ')' && args.size() == 0)
+                {
+                    parser.getToken();
                     break;
-                Type cast = TYPE_NONE;
-                bool _static = false;
-                if (t == '(')
-                {
-                    // Parse cast/modifiers
-                    if (parser.peekToken() == TOKEN_STATIC)
-                    {
-                        parser.getToken();
-                        _static = true;
-                    }
-                    bool ptr = false;
-                    switch (parser.peekToken())
-                    {
-                        case ')':
-                            if (_static)
-                                break;
-                            parser.unexpectedToken();
-                        case TOKEN_CONST:
-                            parser.getToken();
-                            cast |= TYPE_CONST;
-                            ptr = true;
-                            // Fallthrough:
-                        default:
-                            switch (parser.getToken())
-                            {
-                                case TOKEN_INT8_T:
-                                    cast |= TYPE_INT8; break;
-                                case TOKEN_INT16_T:
-                                    cast |= TYPE_INT16; break;
-                                case TOKEN_INT32_T:
-                                    cast |= TYPE_INT32; break;
-                                case TOKEN_INT64_T:
-                                    cast |= TYPE_INT64; break;
-                                case TOKEN_VOID:
-                                    ptr = true;
-                                    cast |= TYPE_VOID; break;
-                                case TOKEN_CHAR:
-                                    ptr = true;
-                                    cast |= TYPE_CHAR; break;
-                                default:
-                                    parser.unexpectedToken();
-                            }
-                            if (parser.peekToken() == '*')
-                            {
-                                parser.getToken();
-                                cast |= TYPE_PTR;
-                            }
-                            if (ptr && (cast & TYPE_PTR) == 0x0)
-                                parser.unexpectedToken();
-                            break;
-                    }
-                    parser.expectToken(')');
-                    t = parser.getToken();
                 }
-                bool ptr = false, end = false, neg = false;
-                if (t == '&')
-                {
-                    ptr = true;
-                    t = parser.getToken();
-                }
-                ArgumentKind arg = ARGUMENT_INVALID;
-                FieldKind field  = FIELD_NONE;
-                MemOp memop = {0, REGISTER_NONE, REGISTER_NONE, REGISTER_NONE,
-                    1, 0};
-                intptr_t value = 0x0;
-                int arg_token = t;
-                const char *name = parseSymbolName(parser, t, ptr);
-                if (name != nullptr)
-                    t = TOKEN_NAME;
-                switch (t)
-                {
-                    case TOKEN_ASM:
-                        arg = ARGUMENT_ASM; break;
-                    case TOKEN_ADDR:
-                        arg = ARGUMENT_ADDR; break;
-                    case TOKEN_BASE:
-                        arg = ARGUMENT_BASE; break;
-                    case TOKEN_BB:
-                        option_targets = option_bbs = true;
-                        arg = ARGUMENT_BB; break;
-                    case TOKEN_DST:
-                        arg = ARGUMENT_DST; break;
-                    case TOKEN_CONFIG:
-                        arg = ARGUMENT_CONFIG; break;
-                    case TOKEN_F:
-                        option_targets = option_fs = true;
-                        arg = ARGUMENT_F; break;
-                    case TOKEN_ID:
-                        arg = ARGUMENT_ID; break;
-                    case TOKEN_IMM:
-                        arg = ARGUMENT_IMM; break;
-                    case TOKEN_INSTR:
-                        deprecated("instr", "bytes");
-                        // Fallthrough:
-                    case TOKEN_BYTES:
-                        arg = ARGUMENT_BYTES; break;
-                    case TOKEN_MEM:
-                        arg = ARGUMENT_MEM; break;
-                    case TOKEN_MEM8: case TOKEN_MEM16: case TOKEN_MEM32:
-                    case TOKEN_MEM64:
-                        arg = ARGUMENT_MEMOP;
-                        memop = parseMemOp(parser, t);
-                        break;
-                    case TOKEN_NEXT:
-                        arg = ARGUMENT_NEXT; break;
-                    case TOKEN_NULL:
-                        arg = ARGUMENT_NULL; break;
-                    case TOKEN_OFFSET:
-                        arg = ARGUMENT_OFFSET; break;
-                    case TOKEN_OP:
-                        arg = ARGUMENT_OP; break;
-                    case TOKEN_RANDOM:
-                        arg = ARGUMENT_RANDOM; break;
-                    case TOKEN_REG:
-                        arg = ARGUMENT_REG; break;
-                    case TOKEN_SIZE: case TOKEN_LENGTH:
-                        arg = ARGUMENT_BYTES_SIZE; break;
-                    case TOKEN_STATE:
-                        arg = ARGUMENT_STATE; break;
-                    case TOKEN_SRC:
-                        arg = ARGUMENT_SRC; break;
-                    case TOKEN_TARGET:
-                        arg = ARGUMENT_TARGET; break;
-                    case TOKEN_TRAMPOLINE:
-                        arg = ARGUMENT_TRAMPOLINE; break;
-                    case TOKEN_REX:
-                        arg = ARGUMENT_REX; break;
-                    case TOKEN_MODRM:
-                        arg = ARGUMENT_MODRM; break;
-                    case TOKEN_SIB:
-                        arg = ARGUMENT_SIB; break;
-                    case TOKEN_DISP8:
-                        arg = ARGUMENT_DISP8; break;
-                    case TOKEN_DISP32:
-                        arg = ARGUMENT_DISP32; break;
-                    case TOKEN_IMM8:
-                        arg = ARGUMENT_IMM8; break;
-                    case TOKEN_IMM32:
-                        arg = ARGUMENT_IMM32; break;
-                    case TOKEN_REGISTER:
-                        value = parser.i;
-                        arg = ARGUMENT_REGISTER;
-                        break;
-                    case '-':
-                        neg = true;
-                        // Fallthrough:
-                    case '+':
-                        parser.expectToken(TOKEN_INTEGER);
-                        // Fallthrough:
-                    case TOKEN_INTEGER:
-                        value = (neg? -parser.i: parser.i);
-                        arg = ARGUMENT_INTEGER;
-                        break;
-                    case TOKEN_STRING:
-                        name = strDup(parser.s);
-                        arg = (parser.peekToken() == '['? ARGUMENT_CSV:
-                            ARGUMENT_STRING);
-                        break;
-                    case TOKEN_NAME:
-                        arg = (parser.peekToken() == '['? ARGUMENT_CSV:
-                            ARGUMENT_SYMBOL);
-                        break;
-                    default:
-                        parser.unexpectedToken();
-                }
-                switch (arg)
-                {
-                    case ARGUMENT_ASM:
-                        if (parser.peekToken() != '.')
-                            break;
-                        parser.getToken();
-                        switch (parser.getToken())
-                        {
-                            case TOKEN_LENGTH:
-                                arg = ARGUMENT_ASM_LEN; break;
-                            case TOKEN_SIZE:
-                                arg = ARGUMENT_ASM_SIZE; break;
-                            default:
-                                parser.unexpectedToken();
-                        }
-                        break;
-                    case ARGUMENT_OP: case ARGUMENT_SRC: case ARGUMENT_DST:
-                    case ARGUMENT_IMM: case ARGUMENT_REG: case ARGUMENT_MEM:
-                        value = parseIndex(parser, 0, 7);
-                        if (parser.peekToken() == '.')
-                        {
-                            parser.getToken();
-                            t = parser.getToken();
-                            switch (t)
-                            {
-                                case TOKEN_BASE:
-                                    field = FIELD_BASE; break;
-                                case TOKEN_INDEX:
-                                    field = FIELD_INDEX; break;
-                                case TOKEN_DISP:
-                                    field = FIELD_DISPL; break;
-                                case TOKEN_SCALE:
-                                    field = FIELD_SCALE; break;
-                                case TOKEN_SIZE: case TOKEN_LENGTH:
-                                    field = FIELD_SIZE; break;
-                                case TOKEN_TYPE:
-                                    field = FIELD_TYPE; break;
-                                case TOKEN_ACCESS:
-                                    field = FIELD_ACCESS; break;
-                                default:
-                                    parser.unexpectedToken();
-                            }
-                            if (ptr &&
-                                (field != FIELD_BASE && field != FIELD_INDEX))
-                            {
-                                error("failed to parse call trampoline; "
-                                    "cannot pass field `%s' by pointer",
-                                    parser.getName(t));
-                            }
-                        }
-                        break;
-                    case ARGUMENT_BB: case ARGUMENT_F:
-                        field = FIELD_ADDR;
-                        if (parser.peekToken() == '.')
-                        {
-                            parser.getToken();
-                            switch (parser.getToken())
-                            {
-                                case TOKEN_ADDR:
-                                    field = FIELD_ADDR; break;
-                                case TOKEN_OFFSET:
-                                    field = FIELD_OFFSET; break;
-                                case TOKEN_SIZE:
-                                    field = FIELD_SIZE; break;
-                                case TOKEN_LENGTH:
-                                    field = FIELD_LEN; break;
-                                case TOKEN_NAME_2:
-                                    if (arg != ARGUMENT_F)
-                                        parser.unexpectedToken();
-                                    field = FIELD_NAME; break;
-                                default:
-                                    parser.unexpectedToken();
-                            }
-                        }
-                        break;
-                    case ARGUMENT_SYMBOL:
-                        if (parser.peekToken() == '.')
-                        {
-                            parser.getToken();
-                            switch (parser.getToken())
-                            {
-                                case TOKEN_START:
-                                    break;
-                                case TOKEN_END:
-                                    end = true; break;
-                                default:
-                                    parser.unexpectedToken();
-                            }
-                        }
-                        break;
-                    case ARGUMENT_MEMOP:
-                        break;
-                    case ARGUMENT_REGISTER:
-                        if ((Register)value == REGISTER_RIP)
-                            goto not_a_ptr;
-                        break;
-                    case ARGUMENT_CSV:
-                        value = parseIndex(parser, INTPTR_MIN, INTPTR_MAX);
-                        // Fallthrough:
-                    default:
-                    not_a_ptr:
-                        if (ptr)
-                            error("failed to parse call trampoline; cannot "
-                                "pass argument `%s' by pointer",
-                                parser.getName(arg_token));
-                }
-                switch (arg)
-                {
-                    case ARGUMENT_ADDR: case ARGUMENT_NEXT:
-                    case ARGUMENT_SYMBOL: case ARGUMENT_TARGET:
-                        break;
-                    case ARGUMENT_BB: case ARGUMENT_F:
-                        if (field == FIELD_ADDR)
-                            break;
-                        // Fallthrough:
-                    default:
-                        if (_static)
-                            warning("static cast ignored for `%s' argument",
-                                parser.getName(arg_token));
-                        _static = false;
-                        break;
-                }
-                bool duplicate = false;
+                Argument arg = parsePatchArg(parser);
                 for (const auto &prevArg: args)
                 {
-                    if (prevArg.kind == arg && prevArg.field == field)
+                    if (prevArg.kind == arg.kind &&
+                        prevArg.field == arg.field)
                     {
-                        duplicate = true;
+                        arg.duplicate = true;
                         break;
                     }
                 }
-                args.push_back({arg, field, ptr, end, _static, duplicate, cast,
-                    value, memop, name});
+                args.push_back(arg);
                 t = parser.getToken();
                 if (t == ')')
                     break;
@@ -1317,6 +1335,10 @@ const Patch *parsePatch(const ELF &elf, const char *str)
             name += "$exit_";
             name += std::to_string(status);
             return new Patch(strDup(name.c_str()), PATCH_EXIT, pos, status);
+        case PATCH_SIGNAL:
+            name += "$signal_";
+            name += std::to_string(signal);
+            return new Patch(strDup(name.c_str()), PATCH_SIGNAL, pos, signal);
         case PATCH_PLUGIN:
             name += "$plugin_";
             name += std::to_string(id++);

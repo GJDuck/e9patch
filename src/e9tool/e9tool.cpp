@@ -1233,7 +1233,7 @@ int main_2(int argc, char **argv)
     bool have_print = false, have_empty = false, have_trap = false;
     std::map<const char *, ELF *, CStrCmp> files;
     std::set<const char *, CStrCmp> have_call;
-    std::set<int> have_exit;
+    std::set<int> have_exit, have_sig;
     intptr_t file_addr = 0x70000000;
     for (auto *action: actions)
     {
@@ -1256,9 +1256,19 @@ int main_2(int argc, char **argv)
                     auto i = have_exit.find(status);
                     if (i == have_exit.end())
                     {
-                        sendExitTrampolineMessage(out, elf.type, 
-                            status);
+                        sendExitTrampolineMessage(out, elf.type, status);
                         have_exit.insert(status);
+                    }
+                    break;
+                }
+                case PATCH_SIGNAL:
+                {
+                    int sig = patch->signal;
+                    auto i = have_sig.find(sig);
+                    if (i == have_sig.end())
+                    {
+                        sendSignalTrampolineMessage(out, elf.type, sig);
+                        have_sig.insert(sig);
                     }
                     break;
                 }

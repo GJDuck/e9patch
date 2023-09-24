@@ -389,6 +389,7 @@ enum PatchKind
     PATCH_TRAP,
     PATCH_PRINT,
     PATCH_EXIT,
+    PATCH_SIGNAL,
     PATCH_CALL,
     PATCH_PLUGIN,
 };
@@ -402,7 +403,11 @@ struct Patch
     const PatchKind kind;
     const e9tool::PatchPos pos;
 
-    int status = 0;
+    union
+    {
+        int status = 0;
+        int signal;
+    };
     const e9tool::CallABI abi = e9tool::ABI_CLEAN;
     const e9tool::CallJump jmp = e9tool::JUMP_NONE;
     const char * const symbol = nullptr;
@@ -421,7 +426,7 @@ struct Patch
     Patch(const char *name, PatchKind kind, e9tool::PatchPos pos, int status) :
         name(name), kind(kind), pos(pos), status(status)
     {
-        assert(kind == PATCH_EXIT);
+        assert(kind == PATCH_EXIT || kind == PATCH_SIGNAL);
     }
 
     Patch(const char *name, PatchKind kind, e9tool::PatchPos pos,

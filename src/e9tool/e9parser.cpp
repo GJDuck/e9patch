@@ -241,6 +241,7 @@ static const TokenInfo tokens[] =
     {"segment",         TOKEN_SEGMENT,          0},
     {"si",              TOKEN_REGISTER,         REGISTER_SI},
     {"sib",             TOKEN_SIB,              0},
+    {"signal",          TOKEN_SIGNAL,           0},
     {"sil",             TOKEN_REGISTER,         REGISTER_SIL},
     {"size",            TOKEN_SIZE,             0},
     {"sp",              TOKEN_REGISTER,         REGISTER_SP},

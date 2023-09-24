@@ -2420,6 +2420,8 @@ extern unsigned sendTrapTrampolineMessage(FILE *out);
 extern unsigned sendPrintTrampolineMessage(FILE *out, BinaryType type);
 extern unsigned sendExitTrampolineMessage(FILE *out, BinaryType type,
     int status);
+extern unsigned sendSignalTrampolineMessage(FILE *out, BinaryType type,
+    int sig);
 extern unsigned sendCallTrampolineMessage(FILE *out, const char *name,
     const ELF *elf, const std::vector<Argument> &args, CallABI abi,
     CallJump jmp, PatchPos pos);

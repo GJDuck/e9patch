@@ -823,6 +823,7 @@ the following high-level grammar:
                    | <b>break</b>
                    | <b>trap</b>
                    | <b>exit(</b>CODE<b>)</b>
+                   | <b>signal(</b>SIG<b>)</b>
                    | <b>print</b>
                    | CALL
                    | <b>if</b> CALL <b>break</b>
@@ -851,6 +852,8 @@ The builtin trampolines include:
     <td>Execute a TRAP (<tt>int3</tt>) instruction</td></tr>
 <tr><td><b><tt>exit(CODE)</tt></b></td>
     <td>Exit with <tt>CODE</tt></td></tr>
+<tr><td><b><tt>signal(SIG)</tt></b></td>
+    <td>Raise signal <tt>SIG</tt></td></tr>
 <tr><td><b><tt>print</tt></b></td>
     <td>Printing the matching instruction</td></tr>
 </table>
@@ -864,6 +867,8 @@ Here:
   program.
 * `trap` executes a single TRAP (`int3`) instruction.
 * `exit(CODE)` will immediately exit from the program with status `CODE`.
+* `signal(SIG)` will raise signal `SIG` in the current thread
+  (equivalent to `kill(gettid(), SIG)`).
 * `print` will print the assembly representation of the matching
   instruction to `stderr`.
   This can be used for testing and debugging.

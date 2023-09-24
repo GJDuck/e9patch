@@ -127,6 +127,7 @@ enum Token
     TOKEN_SECTION,
     TOKEN_SEGMENT,
     TOKEN_SIB,
+    TOKEN_SIGNAL,
     TOKEN_SIZE,
     TOKEN_SRC,
     TOKEN_SSE,

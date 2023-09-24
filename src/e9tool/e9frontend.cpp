@@ -451,9 +451,81 @@ unsigned e9tool::sendTrapTrampolineMessage(FILE *out)
 }
 
 /*
+ * Send a "signal" "trampoline" message.
+ */
+unsigned e9tool::sendSignalTrampolineMessage(FILE *out, BinaryType type,
+    int sig)
+{
+    switch (type)
+    {
+        case BINARY_TYPE_PE_EXE: case BINARY_TYPE_PE_DLL:
+            error("signal trampolines are not-yet-implemented for "
+                "Windows PE binaries");
+        default:
+            break;
+    }
+
+    sendMessageHeader(out, "trampoline");
+    sendParamHeader(out, "name");
+    fprintf(out, "\"$signal_%d\"", sig);
+    sendSeparator(out);
+    sendParamHeader(out, "template");
+    putc('[', out);
+
+    // lea -0x4000(%rsp),%rsp
+    // push %rdi
+    // push %rsi
+    // push %rax
+    // push %rcx
+    // push %rdx
+    // push %r11
+    fprintf(out, "%u,%u,%u,%u,{\"int32\":%d},", 0x48, 0x8d, 0xa4, 0x24,
+        -0x4000);
+    fprintf(out, "%u,", 0x57);
+    fprintf(out, "%u,", 0x56);
+    fprintf(out, "%u,", 0x50);
+    fprintf(out, "%u,", 0x51);
+    fprintf(out, "%u,", 0x52);
+    fprintf(out, "%u,%u,", 0x41, 0x53);
+
+    // mov $SYS_gettid,%eax
+    // syscall
+    fprintf(out, "%u,{\"int32\":%d},", 0xb8, 186);
+    fprintf(out, "%u,%u,", 0x0f, 0x05);
+
+    // mov %eax,%edi
+    // mov $SYS_kill,%eax
+    // mov $sig,%esi
+    // syscall
+    fprintf(out, "%u,%u,", 0x89, 0xc7);
+    fprintf(out, "%u,{\"int32\":%d},", 0xb8, 62);
+    fprintf(out, "%u,{\"int32\":%d},", 0xbe, sig);
+    fprintf(out, "%u,%u", 0x0f, 0x05);
+
+    // pop %r11
+    // pop %rdx
+    // pop %rcx
+    // pop %rax
+    // pop %rsi
+    // pop %rdi
+    // lea 0x4000(%rsp),%rsp
+    fprintf(out, ",%u,%u", 0x41, 0x5b);
+    fprintf(out, ",%u", 0x5a);
+    fprintf(out, ",%u", 0x59);
+    fprintf(out, ",%u", 0x58);
+    fprintf(out, ",%u", 0x5e);
+    fprintf(out, ",%u", 0x5f);
+    fprintf(out, ",%u,%u,%u,%u,{\"int32\":%d}", 0x48, 0x8d, 0xa4, 0x24, 0x4000);
+
+    fputc(']', out);
+    sendSeparator(out, /*last=*/true);
+    return sendMessageFooter(out, /*sync=*/true);
+}
+
+/*
  * Send a "print" "trampoline" message.
  */
-unsigned e9tool::sendPrintTrampolineMessage(FILE *out, e9tool::BinaryType type)
+unsigned e9tool::sendPrintTrampolineMessage(FILE *out, BinaryType type)
 {
     sendMessageHeader(out, "trampoline");
     sendParamHeader(out, "name");
