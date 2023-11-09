@@ -210,6 +210,8 @@ Some other projects that use E9Patch include:
   [AFL](https://github.com/google/AFL) instrumentation into binaries.
 * [E9Syscall](https://github.com/GJDuck/e9syscall): System call
   interception using static binary rewriting of `libc.so`.
+* [Hopper](https://github.com/FuzzAnything/hopper): Automatical fuzzing test
+  cases generation for libraries.
 
 ## Documentation
 
