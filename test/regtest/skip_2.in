@@ -1,0 +1,1 @@
+./test -M 'asm="syscall" && !defined(I[1].mem[0])' -P 'skip(state,size)@patch'

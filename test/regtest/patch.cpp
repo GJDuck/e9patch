@@ -1032,3 +1032,10 @@ void format(const char *msg, intptr_t a1, intptr_t a2, intptr_t a3,
 }
 }   // extern "C"
 
+void skip(void *state_0, size_t size)
+{
+    STATE *state = (STATE *)state_0;
+    state->rip += size;
+    jump(state);
+}
+

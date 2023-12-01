@@ -5655,7 +5655,7 @@ struct STATE
         int16_t sp;
         int16_t spl;
     };
-    const union
+    union
     {
         int64_t rip;
         int32_t eip;
@@ -5672,6 +5672,50 @@ struct STATE
 #define AF      0x1000
 #define ZF      0x4000
 #define SF      0x8000
+
+/*
+ * Jump to state (also restores %rip and %rip)
+ */
+static __attribute__((noreturn)) void jump(const struct STATE *state)
+{
+    asm volatile
+    (
+     /* "mov 0x00(%0),%%rflags\n" */
+        "mov 0x08(%0),%%r15\n"
+        "mov 0x10(%0),%%r14\n"
+        "mov 0x18(%0),%%r13\n"
+        "mov 0x20(%0),%%r12\n"
+        "mov 0x28(%0),%%r11\n"
+        "mov 0x30(%0),%%r10\n"
+        "mov 0x38(%0),%%r9\n"
+        "mov 0x40(%0),%%r8\n"
+        "mov 0x48(%0),%%rdi\n"
+        "mov 0x50(%0),%%rsi\n"
+        "mov 0x58(%0),%%rbp\n"
+        "mov 0x60(%0),%%rbx\n"
+        "mov 0x68(%0),%%rdx\n"
+     /* "mov 0x70(%0),%%rcx\n" */
+     /* "mov 0x78(%0),%%rax\n" */
+        "mov 0x80(%0),%%rsp\n"
+     /* "mov 0x88(%0),%%rip\n" */
+
+        "mov 0x88(%0),%%rax\n"
+        "mov %%rax,%%fs:" STRING(ERRNO_TLS_OFFSET) "\n"
+
+        "mov 0x00(%0),%%rax\n"
+        "add $0x7f,%%al\n"
+        "sahf\n"
+
+        "mov 0x78(%0),%%rax\n"
+        "mov 0x70(%0),%%rcx\n"
+
+        "jmpq *%%fs:" STRING(ERRNO_TLS_OFFSET) "\n"
+
+        : "+c"(state)
+    );
+    while (true)
+        asm volatile ("ud2");
+}
 
 /****************************************************************************/
 /* MISC                                                                     */

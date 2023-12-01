@@ -295,7 +295,7 @@ static void e9filter(struct e9scratch_s *scratch)
     intptr_t r = e9syscall(SYS_prctl, PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0);
     if (r < 0)
         e9panic("prctl() failed (errno=%u)", -r);
-       struct sock_filter filter[] =
+    struct sock_filter filter[] =
     {
         BPF_STMT(BPF_LD | BPF_W | BPF_ABS, offsetof(struct seccomp_data, nr)),
         BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_rt_sigaction, 0, 5),
