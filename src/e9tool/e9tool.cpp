@@ -910,8 +910,10 @@ int main_2(int argc, char **argv)
                 break;
             case OPTION_SEED:
             {
-                unsigned long r = (unsigned long)parseIntOptArg(
-                    "--seed", optarg, 0, RAND_MAX);
+                unsigned long r = (unsigned long)parseIntOptArg("--seed",
+                    optarg, 0, RAND_MAX);
+                if (r == 0)
+                    syscall(/*SYS_getrandom=*/318, &r, sizeof(unsigned), 0);
                 srand((unsigned)r);
                 break;
             }

@@ -1,0 +1,5 @@
+imul %r11, %r10
+jz 0xa0001fb
+movq 0xa000008, %rdx
+syscall
+PASSED
