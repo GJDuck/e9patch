@@ -724,8 +724,8 @@ static off_t lookupLabel(const Binary *B, const char *label,
     const Instr *I, intptr_t addr, const LabelSet &labels)
 {
     if (label[0] != '.' && label[1] != 'L')
-        error("failed to build trampoline; unknown prefix for \"%s\" label",
-            label);
+        error("failed to build trampoline at address 0x%lx; "
+            "unknown prefix for \"%s\" label", I->addr, label);
 
     intptr_t target = getBuiltinLabelAddress(B, I, label);
     if (target != INTPTR_MIN)
@@ -735,7 +735,8 @@ static off_t lookupLabel(const Binary *B, const char *label,
     Label L(I, label);
     auto i = labels.find(L);
     if (i == labels.end())
-        error("failed to build trampoline; unknown label \"%s\"", label); 
+        error("failed to build trampoline at address 0x%lx; "
+            "unknown label \"%s\"", I->addr, label); 
     return i->second - addr;
 }
 

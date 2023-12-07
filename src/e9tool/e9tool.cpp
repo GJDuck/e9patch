@@ -198,7 +198,8 @@ Plugin *openPlugin(const char *basename)
     plugin->finiFunc  = (PluginFini)dlsym(handle, "e9_plugin_fini");
     if (plugin->initFunc == nullptr && plugin->eventFunc == nullptr &&
             plugin->codeFunc == nullptr && plugin->dataFunc == nullptr &&
-            plugin->patchFunc == nullptr && plugin->finiFunc == nullptr)
+            plugin->matchFunc == nullptr && plugin->patchFunc == nullptr &&
+            plugin->finiFunc == nullptr)
         error("failed to load plugin \"%s\"; the shared "
             "object does not export any plugin API functions",
             plugin->filename);
