@@ -1688,6 +1688,9 @@ intptr_t e9tool::getSymbol(const ELF *elf, const char *symbol)
 void e9tool::sendELFFileMessage(FILE *out, const ELF *ptr, bool absolute)
 {
     const ELF &elf = *ptr;
+    if (elf.emitted)
+        return;
+    elf.emitted = true;
 
     /*
      * Sanity checks.
@@ -1792,20 +1795,12 @@ void e9tool::sendELFFileMessage(FILE *out, const ELF *ptr, bool absolute)
  * Send a call ELF trampoline.
  */
 unsigned e9tool::sendCallTrampolineMessage(FILE *out, const char *name,
-    const ELF *elf, const std::vector<Argument> &args, CallABI abi,
-    CallJump jmp, PatchPos pos)
+    const Call &call)
 {
-    bool state = false;
-    for (const auto &arg: args)
-    {
-        if (arg.kind == ARGUMENT_STATE)
-        {
-            state = true;
-            break;
-        }
-    }
+    sendELFFileMessage(out, call.target);
+
     bool sysv = true;
-    switch (elf->type)
+    switch (call.target->type)
     {
         case BINARY_TYPE_PE_EXE: case BINARY_TYPE_PE_DLL:
             sysv = false;
@@ -1827,16 +1822,18 @@ unsigned e9tool::sendCallTrampolineMessage(FILE *out, const char *name,
         0x48, 0x8d, 0xa4, 0x24, -0x4000);
 
     // Push all caller-save registers:
-    bool conditional = (jmp != JUMP_NONE);
-    bool clean = (abi == ABI_CLEAN);
+    bool conditional = (call.jmp != JUMP_NONE);
+    bool clean = (call.abi == ABI_CLEAN);
+    bool state = call.state;
     const int *rsave = getCallerSaveRegs(sysv, clean, state, conditional,
-        args.size());
+        call.args.size());
     int num_rsave = 0;
     Register rscratch = (clean || state? REGISTER_RAX: REGISTER_INVALID);
     int32_t offset = 0x4000;
     for (int i = 0; rsave[i] >= 0; i++, num_rsave++)
     {
-        sendPush(out, offset, (pos != POS_AFTER), getReg(rsave[i]), rscratch);
+        sendPush(out, offset, (call.pos != POS_AFTER), getReg(rsave[i]),
+            rscratch);
         if (rsave[i] != RSP_IDX && rsave[i] != RIP_IDX)
             offset += sizeof(int64_t);
     }
@@ -1902,19 +1899,8 @@ unsigned e9tool::sendCallTrampolineMessage(FILE *out, const char *name,
         }
 
         // The result is non-zero
-        if (jmp == JUMP_GOTO)
+        if (call.jmp == JUMP_GOTO)
         {
-            // The register state, including %rsp, must be fully restored
-            // before implementing the jump.  This means (1) the jump target
-            // must be stored in memory, and (2) must be thread-local.  We
-            // therefore use thread-local address %fs:0x40 (same as stdlib.c
-            // errno).  However, this assumes the binary has set %fs to be the
-            // TLS base address (any binary using glibc should do this).
-            if (elf->type == BINARY_TYPE_ELF_EXE && !elf->dynlink)
-                warning("the statically linked executable \"%s\" is likely "
-                    "incompatible with `if (...) goto' instrumentation; "
-                    "the rewritten binary may crash", elf->filename);
-
             // mov %rax/rcx, %fs:0x40
             // pop %rax/rcx
             //
@@ -1966,5 +1952,79 @@ unsigned e9tool::sendTrampolineMessage(FILE *out, const char *name,
     sendCode(out, template_);
     sendSeparator(out, /*last=*/true);
     return sendMessageFooter(out, /*sync=*/true);
+}
+
+/*
+ * Check if the target is compatible with the input binary.
+ */
+#define CONFIG_ERRNO        0x1
+#define CONFIG_MUTEX        0x2
+static void checkCompatible(const ELF &elf, const ELF &target)
+{
+    const Elf64_Sym *config = getELFDynSym(&target, "_stdlib_config");
+    switch (elf.type)
+    {
+        case BINARY_TYPE_PE_EXE: case BINARY_TYPE_PE_DLL:
+            if (config != nullptr)
+                warning("binary \"%s\" is incompatible with Windows/PE "
+                    "instrumentation; the \"stdlib.c\" library supports "
+                    "Linux/ELF only", target.filename);
+            return;
+        case BINARY_TYPE_ELF_EXE:
+            if (elf.dynlink || config == nullptr)
+                return;
+            if ((config->st_value & CONFIG_ERRNO) == 0 ||
+                    (config->st_value & CONFIG_MUTEX) == 0)
+                warning("binary \"%s\" is incompatible with statically linked "
+                    "Linux/ELF executable instrumentation; please recompile "
+                    "with the `-DNO_GLIBC=1' option",
+                    target.filename);
+            return;
+        default:
+            return;
+    }
+}
+
+/*
+ * Make a call trampoline object.
+ */
+const Call &e9tool::makeCall(const ELF *elf, const char *filename,
+    const char *entry, CallABI abi, CallJump jmp, PatchPos pos,
+    const std::vector<ArgumentKind> &args)
+{
+    static std::map<const char *, ELF *, CStrCmp> files;
+    static intptr_t file_addr = 0x70000000;
+
+    char *pathname = realpath(filename, nullptr);
+    if (pathname == nullptr)
+        error("failed to get path for file \"%s\": %s", filename,
+            strerror(errno));
+
+    ELF *target = nullptr;
+    auto i = files.find(pathname);
+    if (i == files.end())
+    {
+        target = parseELF(filename, file_addr);
+        checkCompatible(*elf, *target);
+        files.insert({pathname, target});
+        file_addr  = target->end + 2 * PAGE_SIZE;
+        file_addr -= file_addr % PAGE_SIZE;
+    }
+    else
+    {
+        free((void *)pathname);
+        target = i->second;
+    }
+
+    bool state = false;
+    for (auto arg: args)
+    {
+        if (arg == ARGUMENT_STATE)
+            state = true;
+        if (state)
+            break;
+    }
+    Call *call = new Call(abi, jmp, pos, state, target, strDup(entry), args);
+    return *call;
 }
 

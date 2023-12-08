@@ -618,37 +618,6 @@ static bool sendTrampoline(FILE *out, const Action *action, size_t idx,
 }
 
 /*
- * Check if the target is compatible with the input binary.
- */
-#define CONFIG_ERRNO        0x1
-#define CONFIG_MUTEX        0x2
-static void checkCompatible(const ELF &elf, const ELF &target)
-{
-    const Elf64_Sym *config = getELFDynSym(&target, "_stdlib_config");
-    switch (elf.type)
-    {
-        case BINARY_TYPE_PE_EXE: case BINARY_TYPE_PE_DLL:
-            if (config != nullptr)
-                warning("binary \"%s\" is incompatible with Windows/PE "
-                    "instrumentation; the \"stdlib.c\" library supports "
-                    "Linux/ELF only", target.filename);
-            return;
-        case BINARY_TYPE_ELF_EXE:
-            if (elf.dynlink || config == nullptr)
-                return;
-            if ((config->st_value & CONFIG_ERRNO) == 0 ||
-                    (config->st_value & CONFIG_MUTEX) == 0)
-                warning("binary \"%s\" is incompatible with statically linked "
-                    "Linux/ELF executable instrumentation; please recompile "
-                    "with the `-DNO_GLIBC=1' option",
-                    target.filename);
-            return;
-        default:
-            return;
-    }
-}
-
-/*
  * Options.
  */
 enum Option
@@ -1234,10 +1203,8 @@ int main_2(int argc, char **argv)
      * Send trampoline definitions:
      */
     bool have_print = false, have_empty = false, have_trap = false;
-    std::map<const char *, ELF *, CStrCmp> files;
     std::set<const char *, CStrCmp> have_call;
     std::set<int> have_exit, have_sig;
-    intptr_t file_addr = 0x70000000;
     for (auto *action: actions)
     {
         for (const auto *patch: action->patch)
@@ -1277,29 +1244,19 @@ int main_2(int argc, char **argv)
                 }
                 case PATCH_CALL:
                 {
-                    // Step (1): Ensure the ELF file is loaded:
-                    ELF *target = nullptr;
-                    auto i = files.find(patch->filename);
-                    if (i == files.end())
-                    {
-                        // Load the called ELF file into the address space:
-                        target = parseELF(patch->filename, file_addr);
-                        checkCompatible(elf, *target);
-                        sendELFFileMessage(out, target);
-                        files.insert({patch->filename, target});
-                        file_addr  = target->end + 2 * PAGE_SIZE;
-                        file_addr -= file_addr % PAGE_SIZE;
-                    }
-                    else
-                        target = i->second;
-                    patch->elf = target;
+                    // Step (1): Create call object:
+                    std::vector<ArgumentKind> sig;
+                    for (const auto &arg: patch->args)
+                        sig.push_back(arg.kind);
+                    const Call &call = makeCall(&elf, patch->filename,
+                        patch->entry, patch->abi, patch->jmp, patch->pos, sig);
+                    patch->call = &call;
 
                     // Step (2): Create the trampoline:
                     auto j = have_call.find(patch->name);
                     if (j == have_call.end())
                     {
-                        sendCallTrampolineMessage(out, patch->name, &elf,
-                            patch->args, patch->abi, patch->jmp, patch->pos);
+                        sendCallTrampolineMessage(out, patch->name, call);
                         have_call.insert(patch->name);
                     }
                     break;

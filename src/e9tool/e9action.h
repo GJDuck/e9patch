@@ -408,12 +408,12 @@ struct Patch
         int status = 0;
         int signal;
     };
+    const char * const filename = nullptr;
+    const char * const entry = nullptr;
     const e9tool::CallABI abi = e9tool::ABI_CLEAN;
     const e9tool::CallJump jmp = e9tool::JUMP_NONE;
-    const char * const symbol = nullptr;
     const std::vector<e9tool::Argument> args;
-    const char * const filename = nullptr;
-    mutable const e9tool::ELF * elf = nullptr;
+    mutable const e9tool::Call *call = nullptr;
     Plugin * const plugin = nullptr;
 
     Patch(const char *name, PatchKind kind, e9tool::PatchPos pos) :
@@ -430,10 +430,11 @@ struct Patch
     }
 
     Patch(const char *name, PatchKind kind, e9tool::PatchPos pos,
-            e9tool::CallABI abi, e9tool::CallJump jmp, const char *symbol,
-            const std::vector<e9tool::Argument> &args, const char *filename) :
+            const char *filename, const char *entry,
+            e9tool::CallABI abi, e9tool::CallJump jmp,
+            const std::vector<e9tool::Argument> &args) :
         name(name), kind(kind), pos(pos),
-        abi(abi), jmp(jmp), symbol(symbol), args(args), filename(filename)
+        filename(filename), entry(entry), abi(abi), jmp(jmp), args(args)
     {
         assert(kind == PATCH_CALL);
     }

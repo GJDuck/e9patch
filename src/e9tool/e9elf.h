@@ -128,6 +128,35 @@ namespace e9tool
         std::list<Elf64_Shdr> sec_cache;// Extra allocated sections (PE).
         std::list<Elf64_Sym> sym_cache; // Extra allocated symbols (PE).
         std::string str_cache;          // Extra allocated strings (PE).
+
+        mutable bool emitted = false;   // Emitted?
+    };
+};
+
+/*
+ * Call trampoline object.
+ */
+namespace e9tool
+{
+    struct Call
+    {
+        const CallABI abi;
+        const CallJump jmp;
+        const PatchPos pos;
+        const bool state;
+        const ELF * const target;
+        const char *const entry;
+        const std::vector<ArgumentKind> args;
+
+        Call(CallABI abi, CallJump jmp, PatchPos pos, bool state,
+                const ELF *target, const char *entry,
+                const std::vector<ArgumentKind> &args) :
+            abi(abi), jmp(jmp), pos(pos), state(state), target(target),
+            entry(entry),
+            args(args)      // copy
+        {
+            ;
+        }
     };
 };
 

@@ -1329,8 +1329,8 @@ const Patch *parsePatch(const ELF &elf, const char *str)
         case PATCH_CALL:
             name += "$call_";
             name += std::to_string(id++);
-            return new Patch(strDup(name.c_str()), PATCH_CALL, pos, abi, jmp,
-                symbol, std::move(args), filename);
+            return new Patch(strDup(name.c_str()), PATCH_CALL, pos, filename,
+                symbol, abi, jmp, std::move(args));
         case PATCH_EXIT:
             name += "$exit_";
             name += std::to_string(status);

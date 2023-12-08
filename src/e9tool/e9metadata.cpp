@@ -450,7 +450,7 @@ static void sendLoadValueMetadata(FILE *out, intptr_t value, int regno)
 }
 
 /*
- * Emits an instructio to load a pointer into the corresponding argno
+ * Emits an instruction to load a pointer into the corresponding argno
  * register.
  */
 static void sendLoadPointerMetadata(FILE *out, CallInfo &info,
@@ -2056,20 +2056,10 @@ void e9tool::sendPrintMetadata(FILE *out, const InstrInfo *I)
  * Send a "call" trampoline metadata.
  */
 void e9tool::sendCallMetadata(FILE *out, const char *name, const ELF *elf,
-    const ELF *patch, const char *symbol, const std::vector<Argument> &args,
-    CallABI abi, CallJump jmp, PatchPos pos, intptr_t id,
-    const std::vector<Instr> &Is, size_t i, const InstrInfo *I)
+    const Call &call, const std::vector<Argument> &args,
+    intptr_t id, const std::vector<Instr> &Is, size_t i, const InstrInfo *I)
 {
     // Load arguments.
-    bool state = false;
-    for (const auto &arg: args)
-    {
-        if (arg.kind == ARGUMENT_STATE)
-        {
-            state = true;
-            break;
-        }
-    }
     bool sysv = true;
     switch (elf->type)
     {
@@ -2083,16 +2073,24 @@ void e9tool::sendCallMetadata(FILE *out, const char *name, const ELF *elf,
     name++;
     sendDefinitionHeader(out, name, "ARGS");
     int argno = 0;
-    bool before = (pos == POS_BEFORE);
-    bool pic = (getELFType(patch) != BINARY_TYPE_ELF_EXE);
-    CallInfo info(sysv, (abi == ABI_CLEAN), state, (jmp != JUMP_NONE),
-        args.size(), before, pic);
+    bool before = (call.pos == POS_BEFORE);
+    bool pic = (getELFType(elf) != BINARY_TYPE_ELF_EXE);
+    CallInfo info(sysv, (call.abi == ABI_CLEAN), call.state,
+        (call.jmp != JUMP_NONE), args.size(), before, pic);
     TypeSig sig = TYPESIG_EMPTY;
+    if (args.size() != call.args.size())
+        error("failed to emit call metadata; expected %zu arguments, "
+            "found %zu", call.args.size(), args.size());
+    size_t j = 0;
     for (const auto &arg: args)
     {
+        if (arg.kind != call.args[j])
+            error("failed to emit call metadata; type mismatch for argument "
+                "#%zu", j+1);
+        j++;
         int regno = getArgRegIdx(sysv, argno);
-        Type t = sendLoadArgumentMetadata(out, info, elf, name, pos, Is, i, I,
-            id, arg, argno, regno);
+        Type t = sendLoadArgumentMetadata(out, info, elf, name, call.pos, Is,
+            i, I, id, arg, argno, regno);
         sig = setType(sig, t, argno);
         argno++;
     }
@@ -2110,7 +2108,7 @@ void e9tool::sendCallMetadata(FILE *out, const char *name, const ELF *elf,
                 break;
         }
     }
-    for (int regno = 0; abi == ABI_NAKED && regno < RMAX_IDX; regno++)
+    for (int regno = 0; call.abi == ABI_NAKED && regno < RMAX_IDX; regno++)
     {
         Register reg = getReg(regno);
         if (!info.isCallerSave(reg) && info.isClobbered(reg))
@@ -2126,25 +2124,26 @@ void e9tool::sendCallMetadata(FILE *out, const char *name, const ELF *elf,
 
     // Find & call the function.
     sendDefinitionHeader(out, name, "FUNC");
-    intptr_t addr = lookupSymbol(patch, symbol, sig);
+    intptr_t addr = lookupSymbol(call.target, call.entry, sig);
     if (addr < 0 || addr > INT32_MAX)
     {
         // Also try e9_... version of the symbol:
         std::string e9symbol("e9_");
-        e9symbol += symbol;
-        addr = lookupSymbol(patch, e9symbol.c_str(), sig);
+        e9symbol += call.entry;
+        addr = lookupSymbol(call.target, e9symbol.c_str(), sig);
     }
     if (addr < 0 || addr > INT32_MAX)
     {
-        lookupSymbolWarnings(patch, I, symbol, sig);
+        lookupSymbolWarnings(call.target, I, call.entry, sig);
         std::string str;
-        getSymbolString(symbol, sig, str);
+        getSymbolString(call.entry, sig, str);
         error(CONTEXT_FORMAT "failed to find a symbol matching \"%s\" "
-            "in binary \"%s\"", CONTEXT(I), str.c_str(), patch->filename);
+            "in binary \"%s\"", CONTEXT(I), str.c_str(),
+            call.target->filename);
     }
     fprintf(out, "{\"rel32\":%d}", (int32_t)addr);
     sendDefinitionFooter(out);
-    info.call(jmp != JUMP_NONE);
+    info.call(call.jmp != JUMP_NONE);
 
     // Restore state.
     sendDefinitionHeader(out, name, "RSTOR");
@@ -2154,7 +2153,7 @@ void e9tool::sendCallMetadata(FILE *out, const char *name, const ELF *elf,
         fprintf(out, "%u,%u,%u,%u,{\"int32\":%d},",
             0x48, 0x8d, 0xa4, 0x24, rsp_args_offset);
     }
-    bool pop_rsp = state;
+    bool pop_rsp = call.state;
     Register reg;
     while ((reg = info.pop()) != REGISTER_INVALID)
     {
@@ -2229,8 +2228,8 @@ void sendMetadata(FILE *out, const ELF *elf, const Action *action, size_t idx,
             sendPrintMetadata(out, I);
             return;
         case PATCH_CALL:
-            sendCallMetadata(out, patch->name, elf, patch->elf, patch->symbol,
-                patch->args, patch->abi, patch->jmp, patch->pos, id, Is, i, I);
+            sendCallMetadata(out, patch->name, elf, *patch->call, patch->args,
+                id, Is, i, I);
             return;
         default:
             return;

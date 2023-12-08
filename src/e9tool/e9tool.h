@@ -1,6 +1,6 @@
 /*
  * e9tool.h
- * Copyright (C) 2022 National University of Singapore
+ * Copyright (C) 2023 National University of Singapore
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -2349,6 +2349,11 @@ struct Argument
 };
 
 /*
+ * Call trampoline object.
+ */
+struct Call;
+
+/*
  * CFG information.
  */
 typedef uint8_t TargetKind;
@@ -2423,8 +2428,7 @@ extern unsigned sendExitTrampolineMessage(FILE *out, BinaryType type,
 extern unsigned sendSignalTrampolineMessage(FILE *out, BinaryType type,
     int sig);
 extern unsigned sendCallTrampolineMessage(FILE *out, const char *name,
-    const ELF *elf, const std::vector<Argument> &args, CallABI abi,
-    CallJump jmp, PatchPos pos);
+    const Call &call);
 extern unsigned sendTrampolineMessage(FILE *out, const char *name,
     const char *template_);
 extern unsigned sendInstructionMessage(FILE *out, intptr_t addr, size_t size,
@@ -2433,9 +2437,9 @@ extern unsigned sendEmitMessage(FILE *out, const char *filename,
     const char *format);
 extern void sendPrintMetadata(FILE *out, const InstrInfo *info);
 extern void sendCallMetadata(FILE *out, const char *name, const ELF *elf,
-    const ELF *patch, const char *symbol, const std::vector<Argument> &args,
-    CallABI abi, CallJump jmp, PatchPos pos, intptr_t id,
-    const std::vector<Instr> &Is, size_t idx, const InstrInfo *info);
+    const Call &call, const std::vector<Argument> &args,
+    intptr_t id, const std::vector<Instr> &Is, size_t idx,
+    const InstrInfo *info);
 
 /*
  * ELF functions.
@@ -2464,12 +2468,14 @@ extern const PLTInfo &getELFPLTInfo(const ELF *elf);
 extern intptr_t getELFObject(const ELF *elf, const char *name,
     bool end = false);
 
-// Note: Windows PE files are parsed as "pseudo-ELF" files.  This saves having
-//       to rewrite/redesign large parts of E9Tool.  This may change in future.
+// Note: Windows PE files are parsed as "pseudo-ELF" files.
 
 /*
  * Misc. functions:
  */
+extern const Call &makeCall(const ELF *elf, const char *filename,
+    const char *entry, CallABI abi, CallJump jmp, PatchPos pos,
+    const std::vector<ArgumentKind> &args);
 extern void getInstrInfo(const ELF *elf, const Instr *I, InstrInfo *info,
     void *raw = nullptr);
 extern const char *getRegName(Register r);
