@@ -258,7 +258,7 @@ void e9handler(int sig, siginfo_t *info, ucontext_t *ctx,
     asm volatile (
         "mov %%rcx,%%fs:0x40\n"                 // trampoline
         "xor %%edx,%%edx\n"
-        "mov $-1,%%rax\n"
+        "mov $0x3FFFF,%%eax\n"
         "xrstor  (%%rsi)\n"                     // restore xsave state
         "mov     (%%rbx),%%r8\n"
         "mov 0x08(%%rbx),%%r9\n"
