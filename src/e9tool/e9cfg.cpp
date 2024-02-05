@@ -643,7 +643,7 @@ void dumpInfo(const std::string basename, const Instr *Is, size_t size,
                 filename.c_str(), strerror(errno));
         fputs("address,offset,size\n", stream);
         for (size_t i = 0; i < size; i++)
-            fprintf(stream, "%p,%+zd,%zu\n", (void *)(uintptr_t)Is[i].address,
+            fprintf(stream, "%p,%+zd,%u\n", (void *)(uintptr_t)Is[i].address,
                 Is[i].offset, Is[i].size);
         fclose(stream);
     }
