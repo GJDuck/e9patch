@@ -61,15 +61,17 @@ DIRNAME=`dirname $1`
 
 shift
 
-CFLAGS="-fno-stack-protector -fno-builtin -fno-exceptions \
-    -fpie -O2 -Wno-unused-function -U_FORTIFY_SOURCE \
-    -mno-mmx -mno-sse -mno-avx -mno-avx2 -mno-avx512f -msoft-float \
-    -mstringop-strategy=loop -fno-tree-vectorize -fomit-frame-pointer \
-    -I examples/"
-COMPILE="$CC $CFLAGS -c -Wall $@ \"$DIRNAME/$BASENAME.$EXTENSION\""
+CFLAGS=(
+    -fno-stack-protector -fno-builtin -fno-exceptions
+    -fpie -O2 -Wno-unused-function -U_FORTIFY_SOURCE
+    -mno-mmx -mno-sse -mno-avx -mno-avx2 -mno-avx512f -msoft-float
+    -mstringop-strategy=loop -fno-tree-vectorize -fomit-frame-pointer
+    -I examples/
+)
+COMPILE=("$CC" "${CFLAGS[@]}" -c -Wall "$@" "$DIRNAME/$BASENAME.$EXTENSION")
 
-echo "$COMPILE" | xargs
-if ! eval "$COMPILE"
+echo "${COMPILE[@]}"
+if ! "${COMPILE[@]}"
 then
     echo >&2
     echo "${RED}error${OFF}: compilation of (${YELLOW}$BASENAME${OFF}) failed" >&2
@@ -77,17 +79,19 @@ then
     exit 1
 fi
 
-CFLAGS="-pie -nostdlib \
-    -Wl,-z -Wl,max-page-size=4096 \
-    -Wl,-z -Wl,norelro \
-    -Wl,-z -Wl,stack-size=0 \
-    -Wl,--export-dynamic \
-    -Wl,--entry=0x0 \
-    -Wl,--strip-all"
-COMPILE="$CC \"$BASENAME.o\" -o \"$BASENAME\" $CFLAGS"
+CFLAGS=(
+    -pie -nostdlib
+    -Wl,-z -Wl,max-page-size=4096
+    -Wl,-z -Wl,norelro
+    -Wl,-z -Wl,stack-size=0
+    -Wl,--export-dynamic
+    -Wl,--entry=0x0
+    -Wl,--strip-all
+)
+COMPILE=("$CC" "$BASENAME.o" -o "$BASENAME" "${CFLAGS[@]}")
 
-echo "$COMPILE" | xargs
-if ! eval "$COMPILE"
+echo "${COMPILE[@]}"
+if ! "${COMPILE[@]}"
 then
     echo >&2
     echo "${RED}error${OFF}: linking (${YELLOW}$BASENAME${OFF}) failed" >&2
