@@ -15,6 +15,8 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+include_examples_path="examples/"
+
 if [ -t 1 ]
 then
     RED=$'\033[31m'
@@ -67,7 +69,7 @@ CFLAGS=(
     -fpie -O2 -Wno-unused-function -U_FORTIFY_SOURCE
     -mno-mmx -mno-sse -mno-avx -mno-avx2 -mno-avx512f -msoft-float
     -mstringop-strategy=loop -fno-tree-vectorize -fomit-frame-pointer
-    -I examples/
+    -I "$include_examples_path"
 )
 COMPILE=("$CC" "${CFLAGS[@]}" -c -Wall "$@" "$SOURCE")
 
