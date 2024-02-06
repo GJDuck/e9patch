@@ -51,11 +51,12 @@ case "$1" in
         ;;
     *)
         echo >&2
-        echo "${RED}error${OFF}: file $1 must have a .c/.cpp/.s extension" >&2
+        echo "${RED}error${OFF}: file ${1@Q} must have a .c/.cpp/.s extension" >&2
         echo >&2
         exit 1
         ;;
 esac
+SOURCE="$1"
 BASENAME="$(basename "$1" .$EXTENSION)"
 DIRNAME="$(dirname "$1")"
 
@@ -68,7 +69,7 @@ CFLAGS=(
     -mstringop-strategy=loop -fno-tree-vectorize -fomit-frame-pointer
     -I examples/
 )
-COMPILE=("$CC" "${CFLAGS[@]}" -c -Wall "$@" "$DIRNAME/$BASENAME.$EXTENSION")
+COMPILE=("$CC" "${CFLAGS[@]}" -c -Wall "$@" "$SOURCE")
 
 echo "${COMPILE[@]}"
 if ! "${COMPILE[@]}"
