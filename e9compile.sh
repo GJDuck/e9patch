@@ -56,8 +56,8 @@ case "$1" in
         exit 1
         ;;
 esac
-BASENAME=`basename $1 .$EXTENSION`
-DIRNAME=`dirname $1`
+BASENAME="$(basename "$1" .$EXTENSION)"
+DIRNAME="$(dirname "$1")"
 
 shift
 
@@ -99,7 +99,7 @@ then
     exit 1
 fi
 
-RELOCS=`readelf -r "$BASENAME" | head -n 10 | grep 'R_X86_64_'`
+RELOCS=$(readelf -r "$BASENAME" | head -n 10 | grep 'R_X86_64_')
 if [ ! -z "$RELOCS" ]
 then
     echo >&2
@@ -126,7 +126,7 @@ fi
 
 if [ "$NO_SIMD_CHECK" = "" ]
 then
-    SIMD=`objdump -d "$BASENAME" | grep -E '%(x|y|z)mm[0-9]' | head -n 10`
+    SIMD=$(objdump -d "$BASENAME" | grep -E '%(x|y|z)mm[0-9]' | head -n 10)
     if [ ! -z "$SIMD" ]
     then
         echo >&2
