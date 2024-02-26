@@ -83,15 +83,12 @@ struct Parser
     size_t lineno;                      // Line number
     char peek = '\0';                   // Peek'ed token
     bool b;                             // Boolean value
-    bool pipe = false;                  // Input is a pipe?
     int32_t i;                          // Integer value
     char s[STRING_MAX];                 // String value
 
     Parser(FILE *stream, size_t lineno) : stream(stream), lineno(lineno)
     {
-        struct stat buf;
-        if (fstat(fileno(stream), &buf) == 0 && S_ISFIFO(buf.st_mode))
-            pipe = true;
+        ;
     }
 
     char getc()
@@ -107,6 +104,12 @@ struct Parser
         if (c == '\n')
             lineno--;
         ::ungetc(c, stream);
+    }
+
+    bool isPipe(void)
+    {
+        struct stat buf;
+        return (fstat(fileno(stream), &buf) == 0 && S_ISFIFO(buf.st_mode));
     }
 };
 
@@ -297,7 +300,7 @@ static char peekToken(Parser &parser)
                 {
                     case EOF:
 bad_string_eof:
-                        if (parser.pipe)
+                        if (parser.isPipe())
                             exit(EXIT_FAILURE);
                         parse_error(parser, "failed to read JSON string, "
                             "reached end-of-file before string terminator "
@@ -378,7 +381,7 @@ static char getToken(Parser &parser)
 static NO_RETURN void unexpectedToken(Parser &parser, const char *object,
     char token)
 {
-    if (parser.pipe && token == EOF)
+    if (parser.isPipe() && token == EOF)
         exit(EXIT_FAILURE);
     parse_error(parser, "failed to parse %s; unexpcted token `%s'",
         object, getTokenName(token));
@@ -392,7 +395,7 @@ static void expectToken(Parser &parser, char token)
     char got = getToken(parser);
     if (got == token)
         return;
-    if (parser.pipe && token == EOF)
+    if (parser.isPipe() && token == EOF)
         exit(EXIT_FAILURE);
     parse_error(parser, "failed to parse JSON message; expected token `%s', "
         "got token `%s'", getTokenName(token), getTokenName(got));
@@ -406,7 +409,7 @@ static char expectToken2(Parser &parser, char token1, char token2)
     char got = getToken(parser);
     if (got == token1 || got == token2)
         return got;
-    if (parser.pipe && got == EOF)
+    if (parser.isPipe() && got == EOF)
         exit(EXIT_FAILURE);
     parse_error(parser, "failed to parse JSON message; expected token "
         "`%s' or `%s', got token `%s'", getTokenName(token1),
