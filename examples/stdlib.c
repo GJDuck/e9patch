@@ -1699,6 +1699,7 @@ static struct malloc_pool_s malloc_pool = {MUTEX_INITIALIZER, 0};
 #define MA_NIL                      0x0
 #define MA_ZERO                     ((void *)-((intptr_t)UINT32_MAX + 1))
 #define MA_PAGE_SIZE                4096ull
+#define MA_RETRIES                  32
 #define MA_BLACK                    0
 #define MA_RED                      1
 #define MA_NODE(pool, N)            \
@@ -1734,17 +1735,35 @@ static struct malloc_pool_s *pool_create(int flags, size_t lb, size_t ub)
     }
     lb += sizeof(struct malloc_pool_s);
     ub += sizeof(struct malloc_pool_s);
-    void *ptr = mmap(NULL, ub, PROT_NONE,
-        MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE, -1, 0);
-    if (ptr == MAP_FAILED)
+
+    void *ptr = NULL;
+    for (size_t i = 0; i < MA_RETRIES; i++)
+    {
+        uintptr_t hint = 0xb0000000000ull;
+        (void)getrandom(&hint, sizeof(uint32_t)+1, 0);
+        hint &= ~(MA_PAGE_SIZE-1);
+        ptr = mmap((void *)hint, ub, PROT_NONE,
+            MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE, -1, 0);
+        if (ptr == MAP_FAILED)
+            return NULL;
+        if (ptr == (void *)hint)
+            break;
+        (void)munmap(ptr, ub);
+        ptr = NULL;
+    }
+    if (ptr == NULL)
+    {
+        errno = ENOMEM;
         return NULL;
+    }
+
     flags |= MAP_ANONYMOUS;
     struct malloc_pool_s *pool = (struct malloc_pool_s *)ptr;
     ptr = mmap(ptr, lb, PROT_READ | PROT_WRITE, flags | MAP_FIXED, -1, 0);
     if (ptr != (void *)pool)
     {
         (void)munmap(ptr, ub);
-        errno = EINVAL;
+        errno = ENOMEM;
         return NULL;
     }
     mutex_init(&pool->mutex);
