@@ -5020,6 +5020,27 @@ asm (
 /* SEARCH                                                                   */
 /****************************************************************************/
 
+static void *bsearch(const void *key, const void *base0, size_t nmemb,
+    size_t size, int (*compare)(const void *, const void *))
+{
+    if (nmemb == 0)
+        return NULL;
+    const uint8_t *base = (uint8_t *)base0;
+    ssize_t lo = 0, hi = (ssize_t)nmemb-1;
+    while (lo <= hi)
+    {
+        ssize_t mid = lo + (hi - lo) / 2;
+        int cmp = compare(key, base + mid * size);
+        if (cmp < 0)
+            hi = mid - 1;
+        else if (cmp > 0)
+            lo = mid + 1;
+        else
+            return (void *)(base + mid * size);
+    }
+    return NULL;
+}
+
 /*
  * This is an implementation of the POSIX tree-search (tsearch) family of
  * functions, see (man tsearch) for more information.  Unlike the POSIX
@@ -5477,6 +5498,49 @@ static void pool_tdestroy(struct malloc_pool_s *pool, const void *root,
 {
     struct node_s *n = (struct node_s *)root;
     tree_destroy(pool, n, free_node);
+}
+
+/****************************************************************************/
+/* QSORT                                                                    */
+/****************************************************************************/
+
+static void qsort_swap(void *a, void *b, size_t size)
+{
+    uint8_t tmp[size];
+    memcpy(tmp, a, size);
+    memcpy(a, b, size);
+    memcpy(b, tmp, size);
+}
+static size_t qsort_partition(uint8_t *base, size_t size, ssize_t lo,
+    ssize_t hi, int (*compare)(const void *, const void *))
+{
+    uint8_t *pivot = base + size * hi;
+    ssize_t i = lo - 1;
+    for (ssize_t j = lo; j < hi; j++)
+    {
+        if (compare(base + size * j, pivot) <= 0)
+        {
+            i++;
+            qsort_swap(base + size * i, base + size * j, size);
+        }
+    }
+    i++;
+    qsort_swap(base + size * i, pivot, size);
+    return i;
+}
+static void qsort_2(uint8_t *base, size_t size, ssize_t lo, ssize_t hi,
+    int (*compare)(const void *, const void *))
+{
+    if (lo < 0 || lo >= hi)
+        return;
+    int mid = qsort_partition(base, size, lo, hi, compare);
+    qsort_2(base, size, lo, mid - 1, compare);
+    qsort_2(base, size, mid + 1, hi, compare);
+}
+static void qsort(void *base, size_t nmemb, size_t size,
+    int (*compare)(const void *, const void *))
+{
+    qsort_2((uint8_t *)base, size, 0, (ssize_t)nmemb-1, compare);
 }
 
 /****************************************************************************/

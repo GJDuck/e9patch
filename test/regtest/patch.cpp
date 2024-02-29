@@ -1039,3 +1039,54 @@ void skip(void *state_0, size_t size)
     jump(state);
 }
 
+static int int_compare(const void *A, const void *B)
+{
+    int a = *(int *)A, b = *(int *)B;
+    if (a == b)
+        return 0;
+    return (a < b? -1: 1);
+}
+void test_qsort(void)
+{
+    int M = 50;
+    int a[M];
+    for (int i = 0; i < M; i++)
+        a[i] = i;
+    srand(1234);
+    for (int X = 0; X < 50; X++, M--)
+    {
+        printf("\n---- test #%d\n", X+1);
+        for (int i = 0; i < M; i++)
+        {
+            int j = rand() % M, k = rand() % M;
+            int t = a[j]; a[j] = a[k]; a[k] = t;
+        }
+        for (int i = 0; i < M; i++)
+            printf("%s%d", (i == 0? "": ","), a[i]);
+        putchar('\n');
+        qsort(a, M, sizeof(a[0]), int_compare);
+        for (int i = 0; i < M; i++)
+        {
+            if (i > 0 && a[i] <= a[i-1]) abort();
+            printf("%s%d", (i == 0? "": ","), a[i]);
+        }
+        putchar('\n');
+        for (int Y = 0; Y < 10; Y++)
+        {
+            int k = rand() % M + 10;
+            void *r = bsearch(&k, a, M, sizeof(a[0]), int_compare);
+            if (r == NULL)
+            {
+                if (k < M) abort();
+                printf("%s%d=_", (Y == 0? "": " "), k);
+            }
+            else
+            {
+                if (*(int *)r != k) abort();
+                printf("%s%d=X", (Y == 0? "": " "), k);
+            }
+        }
+        putchar('\n');
+    }
+}
+
