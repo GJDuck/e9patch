@@ -1726,43 +1726,37 @@ static struct malloc_pool_s malloc_pool = {MUTEX_INITIALIZER, 0};
 /*
  * Create a malloc() pool.  Here, flags are mmap() flags.
  */
-static struct malloc_pool_s *pool_create(int flags, size_t lb, size_t ub)
+static struct malloc_pool_s *pool_create(int flags, void *base,
+    size_t lb, size_t ub)
 {
-    if (ub < lb)
+    if ((uintptr_t)base % MA_PAGE_SIZE != 0)
     {
         errno = EINVAL;
         return NULL;
     }
-    lb += sizeof(struct malloc_pool_s);
-    ub += sizeof(struct malloc_pool_s);
+    ub += (ub == 0? MA_PAGE_SIZE: 0);
+    ub += (ub % MA_PAGE_SIZE != 0? MA_PAGE_SIZE - ub % MA_PAGE_SIZE: 0);
+    lb = (lb > ub? ub: lb);
 
     void *ptr = NULL;
-    for (size_t i = 0; i < MA_RETRIES; i++)
+    bool own = false;
+    if (base == NULL)
     {
-        uintptr_t hint = 0xb0000000000ull;
-        (void)getrandom(&hint, sizeof(uint32_t)+1, 0);
-        hint &= ~(MA_PAGE_SIZE-1);
-        ptr = mmap((void *)hint, ub, PROT_NONE,
+        ptr = mmap(NULL, ub, PROT_NONE,
             MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE, -1, 0);
         if (ptr == MAP_FAILED)
             return NULL;
-        if (ptr == (void *)hint)
-            break;
-        (void)munmap(ptr, ub);
-        ptr = NULL;
-    }
-    if (ptr == NULL)
-    {
-        errno = ENOMEM;
-        return NULL;
+        base = ptr;
+        own = true;
     }
 
     flags |= MAP_ANONYMOUS;
-    struct malloc_pool_s *pool = (struct malloc_pool_s *)ptr;
-    ptr = mmap(ptr, lb, PROT_READ | PROT_WRITE, flags | MAP_FIXED, -1, 0);
+    struct malloc_pool_s *pool = (struct malloc_pool_s *)base;
+    ptr = mmap(base, lb, PROT_READ | PROT_WRITE, flags | MAP_FIXED, -1, 0);
     if (ptr != (void *)pool)
     {
-        (void)munmap(ptr, ub);
+        if (own)
+            (void)munmap(ptr, ub);
         errno = ENOMEM;
         return NULL;
     }
