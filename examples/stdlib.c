@@ -1493,36 +1493,27 @@ static void mutex_settid(pid_t tid)
     );
 }
 
-static bool mutex_fast_lock(pid_t *x)
-{
-    pid_t self  = mutex_gettid();
-    pid_t owner = __sync_val_compare_and_swap(x, 0, self);
-    return (owner == 0);
-}
-
-static bool mutex_fast_unlock(pid_t *x)
-{
-    pid_t self = mutex_gettid();
-    return __sync_bool_compare_and_swap(x, self, 0);
-}
-
-static pid_t gettid(void)
-{
-    return mutex_gettid();
-}
-
 #else       /* MUTEX_SAFE */
 
-#define mutex_settid(tid)       /* NOP */
-#define mutex_fast_lock(x)      false
-#define mutex_fast_unlock(x)    false
-
-static pid_t gettid(void)
+static pid_t mutex_gettid(void)
 {
     return syscall(SYS_gettid);
 }
 
+#define mutex_settid(tid)       /* NOP */
+
 #endif      /* MUTEX_SAFE */
+
+static bool mutex_fast_lock(pid_t self, pid_t *x)
+{
+    pid_t owner = __sync_val_compare_and_swap(x, 0, self);
+    return (owner == 0);
+}
+
+static bool mutex_fast_unlock(pid_t self, pid_t *x)
+{
+    return __sync_bool_compare_and_swap(x, self, 0);
+}
 
 struct mutex_s
 {
@@ -1554,9 +1545,10 @@ static __attribute__((__noinline__, __warn_unused_result__))
     int mutex_lock(mutex_t *m)
 {
     pid_t *x = mutex_get_ptr(m);
-    if (mutex_fast_lock(x))
+    pid_t self = mutex_gettid();
+    if (mutex_fast_lock(self, x))
         return 0;
-    if (syscall(SYS_futex, x, FUTEX_LOCK_PI, 0, NULL, NULL, 0) < 0)
+    if (syscall(SYS_futex, x, FUTEX_LOCK_PI, 0, NULL, NULL, 0) != 0)
         return -1;
     if (*x & FUTEX_OWNER_DIED)
     {
@@ -1571,7 +1563,8 @@ static __attribute__((__noinline__, __warn_unused_result__))
 static __attribute__((__noinline__)) int mutex_trylock(mutex_t *m)
 {
     pid_t *x = mutex_get_ptr(m);
-    if (mutex_fast_lock(x))
+    pid_t self = mutex_gettid();
+    if (mutex_fast_lock(self, x))
         return 0;
     else
     {
@@ -1583,11 +1576,20 @@ static __attribute__((__noinline__)) int mutex_trylock(mutex_t *m)
 static __attribute__((__noinline__)) int mutex_unlock(mutex_t *m)
 {
     pid_t *x = mutex_get_ptr(m);
-    if (mutex_fast_unlock(x))
-        return 0;
-    if (syscall(SYS_futex, x, FUTEX_UNLOCK_PI, 0, NULL, NULL, 0) < 0)
-        return -1;
+    pid_t self = mutex_gettid();
+    while (!mutex_fast_unlock(self, x))
+    {
+        if (syscall(SYS_futex, x, FUTEX_UNLOCK_PI, 0, NULL, NULL, 0) != 0)
+            return -1;
+        if ((pid_t)(*x & ~FUTEX_WAITERS) != self)
+            break;
+    }
     return 0;                       // released
+}
+
+static pid_t gettid(void)
+{
+    return mutex_gettid();
 }
 
 static pid_t fork(void)
@@ -1738,25 +1740,18 @@ static struct malloc_pool_s *pool_create(int flags, void *base,
     ub += (ub % MA_PAGE_SIZE != 0? MA_PAGE_SIZE - ub % MA_PAGE_SIZE: 0);
     lb = (lb > ub? ub: lb);
 
-    void *ptr = NULL;
-    bool own = false;
-    if (base == NULL)
-    {
-        ptr = mmap(NULL, ub, PROT_NONE,
-            MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE, -1, 0);
-        if (ptr == MAP_FAILED)
-            return NULL;
-        base = ptr;
-        own = true;
-    }
+    int fixed = (base != NULL? MAP_FIXED: 0x0);
+    void *ptr = mmap(base, ub, PROT_NONE,
+            MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE | fixed, -1, 0);
+    if (ptr == MAP_FAILED)
+        return NULL;
 
     flags |= MAP_ANONYMOUS;
     struct malloc_pool_s *pool = (struct malloc_pool_s *)base;
     ptr = mmap(base, lb, PROT_READ | PROT_WRITE, flags | MAP_FIXED, -1, 0);
     if (ptr != (void *)pool)
     {
-        if (own)
-            (void)munmap(ptr, ub);
+        (void)munmap(ptr, ub);
         errno = ENOMEM;
         return NULL;
     }
