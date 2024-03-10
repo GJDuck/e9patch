@@ -973,7 +973,7 @@ int main_2(int argc, char **argv)
     for (const auto &entry: option_actions)
     {
         if (entry.match.size() == 0)
-            error("failed to parse action; the `--action' or `-A' option "
+            error("failed to parse action; the `--patch' or `-P' option "
                 "must be preceded by one or more `--match' or `-M' options");
         
         MatchExpr *match = nullptr;
