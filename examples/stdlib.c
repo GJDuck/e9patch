@@ -1524,6 +1524,13 @@ typedef struct mutex_s mutex_t;
 
 #define MUTEX_INITIALIZER       {{0}}
 
+static bool mutex_disabled = false;
+
+static void mutex_enable(bool enable)
+{
+    mutex_disabled = !enable;
+}
+
 static void mutex_init(mutex_t *m)
 {
     mutex_t m0 = MUTEX_INITIALIZER;
@@ -1544,6 +1551,8 @@ static pid_t *mutex_get_ptr(const mutex_t *m)
 static __attribute__((__noinline__, __warn_unused_result__))
     int mutex_lock(mutex_t *m)
 {
+    if (mutex_disabled)
+        return 0;
     pid_t *x = mutex_get_ptr(m);
     pid_t self = mutex_gettid();
     if (mutex_fast_lock(self, x))
@@ -1562,6 +1571,8 @@ static __attribute__((__noinline__, __warn_unused_result__))
 
 static __attribute__((__noinline__)) int mutex_trylock(mutex_t *m)
 {
+    if (mutex_disabled)
+        return 0;
     pid_t *x = mutex_get_ptr(m);
     pid_t self = mutex_gettid();
     if (mutex_fast_lock(self, x))
@@ -1575,6 +1586,8 @@ static __attribute__((__noinline__)) int mutex_trylock(mutex_t *m)
 
 static __attribute__((__noinline__)) int mutex_unlock(mutex_t *m)
 {
+    if (mutex_disabled)
+        return 0;
     pid_t *x = mutex_get_ptr(m);
     pid_t self = mutex_gettid();
     while (!mutex_fast_unlock(self, x))
