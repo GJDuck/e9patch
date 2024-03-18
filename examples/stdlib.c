@@ -5502,6 +5502,75 @@ static void pool_tdestroy(struct malloc_pool_s *pool, const void *root,
     tree_destroy(pool, n, free_node);
 }
 
+static void *tnext(void *node)
+{
+    if (node == NULL)
+        return NULL;
+    struct node_s *n = (struct node_s *)node;
+    if (TREE_RIGHT(n) != NULL)
+    {
+        n = TREE_RIGHT(n);
+        while (TREE_LEFT(n) != NULL)
+            n = TREE_LEFT(n);
+    }
+    else
+    {
+        if (TREE_PARENT(n) != NULL && n == TREE_LEFT(TREE_PARENT(n)))
+            n = TREE_PARENT(n);
+        else
+        {
+            while (TREE_PARENT(n) != NULL && n == TREE_RIGHT(TREE_PARENT(n)))
+                n = TREE_PARENT(n);
+            n = TREE_PARENT(n);
+        }
+    }
+    return n;
+}
+static void *tprev(void *node)
+{
+    if (node == NULL)
+        return NULL;
+    struct node_s *n = (struct node_s *)node;
+    if (TREE_LEFT(n) != NULL)
+    {
+        n = TREE_LEFT(n);
+        while (TREE_RIGHT(n) != NULL)
+            n = TREE_RIGHT(n);
+    }
+    else
+    {
+        if (TREE_PARENT(n) != NULL && n == TREE_RIGHT(TREE_PARENT(n)))
+            n = TREE_PARENT(n);
+        else
+        {
+            while (TREE_PARENT(n) != NULL && n == TREE_LEFT(TREE_PARENT(n)))
+                n = TREE_PARENT(n);
+            n = TREE_PARENT(n);
+        }
+    }
+    return n;
+}
+static void *tmin(void **root, int (*compare)(const void *, const void *))
+{
+    if (root == NULL)
+        return NULL;
+    struct tree_s *t = (struct tree_s *)root;
+    struct node_s *n = t->root;
+    while (n != NULL && TREE_LEFT(n) != NULL)
+        n = TREE_LEFT(n);
+    return n;
+}
+static void *tmax(void **root, int (*compare)(const void *, const void *))
+{
+    if (root == NULL)
+        return NULL;
+    struct tree_s *t = (struct tree_s *)root;
+    struct node_s *n = t->root;
+    while (n != NULL && TREE_RIGHT(n) != NULL)
+        n = TREE_RIGHT(n);
+    return n;
+}
+
 /****************************************************************************/
 /* QSORT                                                                    */
 /****************************************************************************/
