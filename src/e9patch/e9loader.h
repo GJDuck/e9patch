@@ -66,6 +66,10 @@ struct e9_config_s
     intptr_t mmap;                              // mmap(), or 0x0
     uint32_t num_maps[2];                       // # Mappings
     uint32_t maps[2];                           // Mappings offset
+    uint32_t num_preinits;                      // # Pre-init functions
+    uint32_t preinits;                          // Pre-init functions offset
+    uint32_t num_postinits;                     // # Post-init functions
+    uint32_t postinits;                         // Post-init functions offset
     uint32_t num_inits;                         // # Init functions
     uint32_t inits;                             // Init functions offset
     uint32_t num_finis;                         // # Fini functions

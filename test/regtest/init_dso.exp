@@ -1,2 +1,4 @@
+preinit
 init argv = "./test.pie" 
+postinit
 PASSED

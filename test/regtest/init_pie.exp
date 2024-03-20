@@ -1,2 +1,4 @@
+preinit
 init argv = "./init_pie.exe" 
+postinit
 PASSED

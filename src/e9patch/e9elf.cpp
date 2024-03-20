@@ -500,6 +500,39 @@ size_t emitElf(Binary *B, const MappingSet &mappings, size_t mapping_size)
         config->mmap  = BASE_ADDRESS(B->mmap);
         config->mmap |= (IS_ABSOLUTE(config->mmap)? E9_ABS_ADDR: 0);
     }
+    std::vector<uint32_t> preinits, postinits;
+    for (auto preinit: B->preinits)
+    {
+        assert(preinit.num_entries == 1 &&
+            preinit->entries[0].kind == ENTRY_BYTES);
+        preinits.push_back((uint32_t)(size - config_offset));
+        memcpy(data + size, preinit->entries[0].bytes,
+            preinit->entries[0].length);
+        size += preinit->entries[0].length;
+        data[size++] = 0xCC;        // int3
+    }
+    for (auto postinit: B->postinits)
+    {
+        assert(postinit.num_entries == 1 &&
+            postinit->entries[0].kind == ENTRY_BYTES);
+        postinits.push_back((uint32_t)(size - config_offset));
+        memcpy(data + size, postinit->entries[0].bytes,
+            postinit->entries[0].length);
+        size += postinit->entries[0].length;
+        data[size++] = 0xCC;        // int3
+    }
+    while (size % sizeof(uint32_t) != 0)
+        data[size++] = 0xCC;        // int3
+    config->preinits =
+        (B->preinits.size() > 0? (uint32_t)(size - config_offset): 0);
+    config->num_preinits = (uint32_t)preinits.size();
+    memcpy(data + size, preinits.data(), sizeof(uint32_t) * preinits.size());
+    size += sizeof(uint32_t) * preinits.size();
+    config->postinits =
+        (B->postinits.size() > 0? (uint32_t)(size - config_offset): 0);
+    config->num_postinits = (uint32_t)postinits.size();
+    memcpy(data + size, postinits.data(), sizeof(uint32_t) * postinits.size());
+    size += sizeof(uint32_t) * postinits.size();
     config->inits = (B->inits.size() > 0? (uint32_t)(size - config_offset): 0);
     for (auto init: B->inits)
     {

@@ -15,6 +15,32 @@ void *_mmap(void *addr, size_t length, int prot, int flags, int fd,
     return mmap(addr, length, prot, flags, fd, offset);
 }
 
+asm
+(
+    ".section .preinit, \"ax\"\n"
+    "mov $1,%eax\n"
+    "mov $2,%edi\n"
+    "lea .LPREINIT(%rip),%rsi\n"
+    "mov $8,%edx\n"
+    "syscall\n"
+    "retq\n"
+    ".LPREINIT:\n"
+    ".ascii \"preinit\\n\"\n"
+);
+
+asm
+(
+    ".section .postinit, \"ax\"\n"
+    "mov $1,%eax\n"
+    "mov $2,%edi\n"
+    "lea .LPOSTINIT(%rip),%rsi\n"
+    "mov $9,%edx\n"
+    "syscall\n"
+    "retq\n"
+    ".LPOSTINIT:\n"
+    ".ascii \"postinit\\n\"\n"
+);
+
 void init(int argc, char **argv, char **envp, void *dynamic)
 {
     fprintf(stderr, "init argv = ");

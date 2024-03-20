@@ -552,6 +552,8 @@ static bool validateParam(Method method, ParamName paramName)
                 case PARAM_INIT:
                 case PARAM_LENGTH:
                 case PARAM_MMAP:
+                case PARAM_POSTINIT:
+                case PARAM_PREINIT:
                 case PARAM_PROTECTION:
                     return true;
                 default:
@@ -1096,7 +1098,11 @@ static void parseParams(Parser &parser, Message &msg)
                     name = PARAM_OFFSET;
                 break;
             case 'p':
-                if (strcmp(parser.s, "protection") == 0)
+                if (strcmp(parser.s, "preinit") == 0)
+                    name = PARAM_PREINIT;
+                else if (strcmp(parser.s, "postinit") == 0)
+                    name = PARAM_POSTINIT;
+                else if (strcmp(parser.s, "protection") == 0)
                     name = PARAM_PROTECTION;
                 break;
             case 'm':
@@ -1179,6 +1185,8 @@ static void parseParams(Parser &parser, Message &msg)
                     value.integer = (intptr_t)prot;
                     break;
                 }
+                case PARAM_PREINIT:
+                case PARAM_POSTINIT:
                 case PARAM_BYTES:
                     value.trampoline = parseBytes(parser);
                     break;

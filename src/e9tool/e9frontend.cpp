@@ -372,8 +372,8 @@ unsigned e9tool::sendReserveMessage(FILE *out, intptr_t addr, size_t len,
  * Send a "reserve" message.
  */
 unsigned e9tool::sendReserveMessage(FILE *out, intptr_t addr,
-    const uint8_t *data, size_t len, int prot, intptr_t init, intptr_t fini,
-    intptr_t mmap, bool absolute)
+    const uint8_t *data, size_t len, int prot, intptr_t init,
+    intptr_t fini, intptr_t mmap, bool absolute)
 {
     sendMessageHeader(out, "reserve");
     sendParamHeader(out, "address");
@@ -1726,11 +1726,32 @@ void e9tool::sendELFFileMessage(FILE *out, const ELF *ptr, bool absolute)
         // Alternative name to avoid conflict with stdlib mmap()
         mmap = ::lookupSymbol(&elf, "_mmap", sig);
     }
+    const Elf64_Shdr *shdr = getELFSection(&elf, ".preinit");
+    const uint8_t *preinit = nullptr;
+    size_t preinit_len = 0;
+    if (shdr != nullptr && shdr->sh_size > 0 &&
+            (shdr->sh_flags & SHF_EXECINSTR) != 0 &&
+            shdr->sh_offset + shdr->sh_size <= getELFDataSize(&elf))
+    {
+        preinit = getELFData(&elf) + shdr->sh_offset;
+        preinit_len = shdr->sh_size;
+    }
+    shdr = getELFSection(&elf, ".postinit");
+    const uint8_t *postinit = nullptr;
+    size_t postinit_len = 0;
+    if (shdr != nullptr && shdr->sh_size > 0 &&
+            (shdr->sh_flags & SHF_EXECINSTR) != 0 &&
+            shdr->sh_offset + shdr->sh_size <= getELFDataSize(&elf))
+    {
+        postinit = getELFData(&elf) + shdr->sh_offset;
+        postinit_len = shdr->sh_size;
+    }
 
     /*
      * Send segments.
      */
     const Elf64_Phdr *phdrs = elf.phdrs;
+    bool first = true;
     for (size_t i = 0; i < elf.phnum; i++)
     {
         const Elf64_Phdr *phdr = phdrs + i;
@@ -1751,6 +1772,24 @@ void e9tool::sendELFFileMessage(FILE *out, const ELF *ptr, bool absolute)
         {
             sendParamHeader(out, "absolute");
             fprintf(out, "true");
+            sendSeparator(out);
+        }
+        if (first && preinit != nullptr)
+        {
+            sendParamHeader(out, "preinit");
+            fputc('[', out);
+            for (size_t j = 0; j < preinit_len; j++)
+                fprintf(out, "%s%u", (j == 0? "": ","), preinit[j]);
+            fputc(']', out);
+            sendSeparator(out);
+        }
+        if (first && postinit != nullptr)
+        {
+            sendParamHeader(out, "postinit");
+            fputc('[', out);
+            for (size_t j = 0; j < postinit_len; j++)
+                fprintf(out, "%s%u", (j == 0? "": ","), postinit[j]);
+            fputc(']', out);
             sendSeparator(out);
         }
         if ((phdr->p_flags & PF_X) != 0 && init >= phdr_base &&
@@ -1788,6 +1827,7 @@ void e9tool::sendELFFileMessage(FILE *out, const ELF *ptr, bool absolute)
         fputc(']', out);
         sendSeparator(out, /*last=*/true);
         sendMessageFooter(out, /*sync=*/true);
+        first = false;
     }
 }
 

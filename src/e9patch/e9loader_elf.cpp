@@ -345,8 +345,22 @@ void *e9init(int argc, char **argv, char **envp, const e9_config_s *config)
     const uint8_t *loader_base = (const uint8_t *)config;
     const uint8_t *loader_end  = loader_base + config->size;
     const uint8_t *elf_base    = loader_base - config->base;
+    const void *dynamic = NULL;
+    const struct e9_config_elf_s *config_elf =
+        (const struct e9_config_elf_s *)(config + 1);
+    if (config_elf->dynamic != 0x0)
+        dynamic = (const void *)(elf_base + config_elf->dynamic);
 
-    // Step (1): Find & open the binary:
+    // Step (1): Call the pre-initialization routine:
+    const uint32_t *preinits =
+        (const uint32_t *)(loader_base + config->preinits);
+    for (uint32_t i = 0; i < config->num_preinits; i++)
+    {
+        init_t preinit = (init_t)(loader_base + preinits[i]);
+        preinit(argc, argv, envp, dynamic, config);
+    }
+
+    // Step (2): Find & open the binary:
     char buf[BUFSIZ];
     const char *path = "/proc/self/exe";
     if ((config->flags & E9_FLAG_EXE) == 0)
@@ -367,7 +381,7 @@ void *e9init(int argc, char **argv, char **envp, const e9_config_s *config)
     if (fd < 0)
         e9panic("open(path=\"%s\") failed (errno=%u)", buf, -fd);
 
-    // Step (2): Setup dummy TLS (if necessary):
+    // Step (3): Setup dummy TLS (if necessary):
     struct e9scratch_s *scratch = NULL;
     uintptr_t tls = 0x0;
     intptr_t r = e9syscall(SYS_arch_prctl, ARCH_GET_FS, &tls);
@@ -384,7 +398,7 @@ void *e9init(int argc, char **argv, char **envp, const e9_config_s *config)
         asm volatile ("mov %0,%%fs:0x00" : : "r"(tls));
     }
 
-    // Step (3): Map in the trampoline code:
+    // Step (4): Map in the trampoline code:
     mmap_t mmap = e9mmap;
     const struct e9_map_s *maps =
         (const struct e9_map_s *)(loader_base + config->maps[0]);
@@ -394,19 +408,6 @@ void *e9init(int argc, char **argv, char **envp, const e9_config_s *config)
     maps = (const struct e9_map_s *)(loader_base + config->maps[1]);
     e9load_maps(maps, config->num_maps[1], elf_base, fd, mmap);
     e9syscall(SYS_close, fd);
-
-    // Step (4): Call the initialization routines:
-    const struct e9_config_elf_s *config_elf =
-        (const struct e9_config_elf_s *)(config + 1);
-    const void *dynamic = NULL;
-    if (config_elf->dynamic != 0x0)
-        dynamic = (const void *)(elf_base + config_elf->dynamic);
-    const intptr_t *inits = (const intptr_t *)(loader_base + config->inits);
-    for (uint32_t i = 0; i < config->num_inits; i++)
-    {
-        init_t init = (init_t)e9addr(inits[i], elf_base);
-        init(argc, argv, envp, dynamic, config);
-    }
 
     // Step (5): Setup SIGILL handler (if necessary):
     if (config->num_traps > 0)
@@ -427,7 +428,24 @@ void *e9init(int argc, char **argv, char **envp, const e9_config_s *config)
         e9filter(scratch);
     }
 
-    // Step (6): Return the entry point:
+    // Step (6): Call the initialization routines:
+    const intptr_t *inits = (const intptr_t *)(loader_base + config->inits);
+    for (uint32_t i = 0; i < config->num_inits; i++)
+    {
+        init_t init = (init_t)e9addr(inits[i], elf_base);
+        init(argc, argv, envp, dynamic, config);
+    }
+
+    // Step (7): Call the post-initialization routine:
+    const uint32_t *postinits =
+        (const uint32_t *)(loader_base + config->postinits);
+    for (uint32_t i = 0; i < config->num_postinits; i++)
+    {
+        init_t postinit = (init_t)(loader_base + postinits[i]);
+        postinit(argc, argv, envp, dynamic, config);
+    }
+
+    // Step (7): Return the entry point:
     void *entry = (void *)e9addr(config->entry, elf_base);
     return entry;
 }

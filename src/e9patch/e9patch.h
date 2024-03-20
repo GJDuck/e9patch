@@ -526,6 +526,7 @@ typedef std::map<const char *, Trampoline *, CStrCmp> TrampolineSet;
 typedef std::vector<intptr_t> FuncSet;
 typedef std::vector<JumpInfo> JumpSet;
 typedef std::vector<const Alloc *> TrapSet;
+typedef std::vector<Trampoline *> InitSet;
 struct Binary
 {
     const char *filename;               // The binary's path.
@@ -563,6 +564,8 @@ struct Binary
     Allocator allocator;                // Virtual address allocation.
     const uint8_t *targets = nullptr;   // All targets [optional].
 
+    InitSet preinits;                   // Pre-initialization functions.
+    InitSet postinits;                  // Post-initialization functions.
     FuncSet inits;                      // Initialization functions.
     FuncSet finis;                      // Finalization functions.
     intptr_t mmap = INTPTR_MIN;         // Mmap function.

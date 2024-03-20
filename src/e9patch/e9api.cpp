@@ -537,7 +537,7 @@ static void parseReserve(Binary *B, const Message &msg)
     intptr_t fini     = 0;
     intptr_t mmap     = 0;
     size_t length     = 0;
-    Trampoline *bytes = nullptr;
+    Trampoline *bytes = nullptr, *preinit = nullptr, *postinit = nullptr;
     int protection    = PROT_READ | PROT_EXEC;
     bool have_address = false, have_protection = false, have_init = false,
         have_fini = false, have_mmap = false, have_length = false,
@@ -580,6 +580,14 @@ static void parseReserve(Binary *B, const Message &msg)
                 mmap = (intptr_t)msg.params[i].value.integer;
                 have_mmap = true;
                 break;
+            case PARAM_POSTINIT:
+                dup = dup || (postinit != nullptr);
+                postinit = msg.params[i].value.trampoline;
+                break;
+            case PARAM_PREINIT:
+                dup = dup || (preinit != nullptr);
+                preinit = msg.params[i].value.trampoline;
+                break;
             case PARAM_PROTECTION:
                 dup = dup || have_protection;
                 protection = (int)msg.params[i].value.integer;
@@ -601,6 +609,10 @@ static void parseReserve(Binary *B, const Message &msg)
             msg.id);
     if (absolute && B->pic)
         address = ABSOLUTE_ADDRESS(address);
+    if (preinit != nullptr)
+        B->preinits.push_back(preinit);
+    if (postinit != nullptr)
+        B->postinits.push_back(postinit);
     if (have_init)
     {
         if (absolute && B->pic)
@@ -675,7 +687,7 @@ static void parseReserve(Binary *B, const Message &msg)
                 ADDRESS(addrs[i] + (intptr_t)lens[i]));
         }
     }
-    if (have_length)
+    if (have_length && length > 0)
     {
         if (!reserve(B, address, address + length))
             error("failed to reserve address space at address "
