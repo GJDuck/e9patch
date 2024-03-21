@@ -434,13 +434,16 @@ unsigned e9tool::sendReserveMessage(FILE *out, intptr_t addr,
         fprintf(out, "true");
         sendSeparator(out);
     }
-    sendParamHeader(out, "bytes");
-    fputc('[', out);
-    for (size_t i = 0; i+1 < len; i++)
-        fprintf(out, "%u,", data[i]);
-    if (len != 0)
-        fprintf(out, "%u", data[len-1]);
-    fputc(']', out);
+    if (data != nullptr)
+    {
+        sendParamHeader(out, "bytes");
+        sendBytes(out, data, len);
+    }
+    else
+    {
+        sendParamHeader(out, "length");
+        sendInteger(out, (intptr_t)len);
+    }
     sendSeparator(out, /*last=*/true);
     return sendMessageFooter(out, /*sync=*/true);
 }
