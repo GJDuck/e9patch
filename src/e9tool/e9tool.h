@@ -2406,6 +2406,7 @@ extern void sendDefinitionFooter(FILE *out, bool last = false);
 extern void sendInteger(FILE *out, intptr_t i);
 extern void sendString(FILE *out, const char *s);
 extern void sendCode(FILE *out, const char *code);
+extern void sendBytes(FILE *out, const uint8_t *bytes, size_t len);
 
 /*
  * High-level functions that send complete E9PATCH JSONRPC messages:
@@ -2417,7 +2418,9 @@ extern unsigned sendReserveMessage(FILE *out, intptr_t addr, size_t len,
     bool absolute = false);
 extern unsigned sendReserveMessage(FILE *out, intptr_t addr,
     const uint8_t *data, size_t len, int prot, intptr_t init = 0x0,
-    intptr_t fini = 0x0, intptr_t mmap = 0x0, bool absolute = false);
+    intptr_t fini = 0x0, intptr_t mmap = 0x0, bool absolute = false,
+    const uint8_t *preinit = nullptr, size_t preinit_len = 0,
+    const uint8_t *postinit = nullptr, size_t postinit_len = 0);
 extern void sendELFFileMessage(FILE *out, const ELF *elf,
     bool absolute = false);
 extern unsigned sendEmptyTrampolineMessage(FILE *out);

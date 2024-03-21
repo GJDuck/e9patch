@@ -1542,6 +1542,23 @@ Note that the finalization function will not be called if the program exits
 abnormally, such as a signal (`SIGSEGV`) or if the program calls "fast" exit
 (`_exit()`).
 
+The loader also supports low-level hooks that are called before (preinit)
+and after (postinit) initialization.
+These need to be defined in special `.preinit` and `.postinit` sections,
+e.g.:
+
+        asm
+        (
+            ".section .preinit, \"ax\"\n"
+            "int3\n"
+            "retq\n"
+        );
+
+If it exists, the loader will call this section before any other
+initialization occurs, causing the trap (`int3`) instruction to be executed.
+The preinit/postinit routines are very low-level, with no support for linkage
+to stdlib or other symbols.
+
 ---
 #### <a id="dynamic-loading">3.2.6 Call Trampoline Dynamic Loading</a>
 

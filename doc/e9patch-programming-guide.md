@@ -405,6 +405,10 @@ page level.
 * `"mmap"`: [optional] the address of a replacement implementation of
   `mmap()` that will be used during the patched program's initialization.
   This is for advanced applications only.
+* `"preinit"`: [optional] raw bytes to be called before loader
+  initialization.
+* `"postinit"` [optional] raw bytes to be called after loader
+  initialization.
 * `"protection"`: [optional] the page permissions represented as a
   string, e.g., `"rwx"`, `"r-x"`, `"r--"`, etc.
   The default is `"r-x"`.

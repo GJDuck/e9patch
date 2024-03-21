@@ -272,6 +272,17 @@ void e9tool::sendCode(FILE *out, const char *code)
 }
 
 /*
+ * Send raw bytes.
+ */
+void e9tool::sendBytes(FILE *out, const uint8_t *bytes, size_t len)
+{
+    fputc('[', out);
+    for (size_t i = 0; i < len; i++)
+        fprintf(out, "%s%u", (i == 0? "": ","), bytes[i]);
+    fputc(']', out);
+}
+
+/*
  * Send a "binary" message.
  */
 unsigned e9tool::sendBinaryMessage(FILE *out, const char *mode,
@@ -373,7 +384,9 @@ unsigned e9tool::sendReserveMessage(FILE *out, intptr_t addr, size_t len,
  */
 unsigned e9tool::sendReserveMessage(FILE *out, intptr_t addr,
     const uint8_t *data, size_t len, int prot, intptr_t init,
-    intptr_t fini, intptr_t mmap, bool absolute)
+    intptr_t fini, intptr_t mmap, bool absolute,
+    const uint8_t *preinit, size_t preinit_len,
+    const uint8_t *postinit, size_t postinit_len)
 {
     sendMessageHeader(out, "reserve");
     sendParamHeader(out, "address");
@@ -395,6 +408,18 @@ unsigned e9tool::sendReserveMessage(FILE *out, intptr_t addr,
     {
         sendParamHeader(out, "fini");
         sendInteger(out, fini);
+        sendSeparator(out);
+    }
+    if (preinit != nullptr && preinit_len > 0)
+    {
+        sendParamHeader(out, "preinit");
+        sendBytes(out, preinit, preinit_len);
+        sendSeparator(out);
+    }
+    if (postinit != nullptr && postinit_len > 0)
+    {
+        sendParamHeader(out, "postinit");
+        sendBytes(out, postinit, postinit_len);
         sendSeparator(out);
     }
     if (mmap != 0x0)
@@ -1777,19 +1802,13 @@ void e9tool::sendELFFileMessage(FILE *out, const ELF *ptr, bool absolute)
         if (first && preinit != nullptr)
         {
             sendParamHeader(out, "preinit");
-            fputc('[', out);
-            for (size_t j = 0; j < preinit_len; j++)
-                fprintf(out, "%s%u", (j == 0? "": ","), preinit[j]);
-            fputc(']', out);
+            sendBytes(out, preinit, preinit_len);
             sendSeparator(out);
         }
         if (first && postinit != nullptr)
         {
             sendParamHeader(out, "postinit");
-            fputc('[', out);
-            for (size_t j = 0; j < postinit_len; j++)
-                fprintf(out, "%s%u", (j == 0? "": ","), postinit[j]);
-            fputc(']', out);
+            sendBytes(out, postinit, postinit_len);
             sendSeparator(out);
         }
         if ((phdr->p_flags & PF_X) != 0 && init >= phdr_base &&
