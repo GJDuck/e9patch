@@ -193,19 +193,6 @@ void init(int argc, char **argv, char **envp)
 /*
  * Fini.
  */
-void print(const void *node, const VISIT which, const int depth)
-{
-    ENTRY *entry = *(ENTRY **)node;
-    switch (which)
-    {
-        case postorder: case leaf:
-            fprintf(stream, "%p,%p,%zu\n",
-                (void *)entry->from, (void *)entry->to, entry->count);
-            break;
-        default:
-            break;
-    }
-}
 void fini(void)
 {
     LOCK();
@@ -214,7 +201,12 @@ void fini(void)
         error("failed to open file \"%s%s%s\" for writing: %s",
             YELLOW, output, OFF, strerror(errno));
     fputs("from,to,count\n", stream);
-    twalk(COV, print);
+    for (void *node = tmin(&COV); node != NULL; node = tnext(node))
+    {
+        const ENTRY *entry = *(ENTRY **)node;
+        fprintf(stream, "%p,%p,%zu\n",
+            (void *)entry->from, (void *)entry->to, entry->count);
+    }
     fclose(stream);
     fprintf(stderr, "%sCOV%s: saved edge coverage information to "
         "\"%s%s%s\"\n", GREEN, OFF, YELLOW, output, OFF);

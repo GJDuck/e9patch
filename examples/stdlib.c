@@ -5550,7 +5550,7 @@ static void *tprev(void *node)
     }
     return n;
 }
-static void *tmin(void **root, int (*compare)(const void *, const void *))
+static void *tmin(void **root)
 {
     if (root == NULL)
         return NULL;
@@ -5560,7 +5560,7 @@ static void *tmin(void **root, int (*compare)(const void *, const void *))
         n = TREE_LEFT(n);
     return n;
 }
-static void *tmax(void **root, int (*compare)(const void *, const void *))
+static void *tmax(void **root)
 {
     if (root == NULL)
         return NULL;
