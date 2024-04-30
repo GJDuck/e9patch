@@ -17,11 +17,11 @@
 
 if [ -t 1 ]
 then
-    RED="\033[31m"
-    GREEN="\033[32m"
-    YELLOW="\033[33m"
-    BOLD="\033[1m"
-    OFF="\033[0m"
+    RED=$'\033[31m'
+    GREEN=$'\033[32m'
+    YELLOW=$'\033[33m'
+    BOLD=$'\033[1m'
+    OFF=$'\033[0m'
 else
     RED=
     GREEN=
@@ -51,25 +51,27 @@ case "$1" in
         ;;
     *)
         echo >&2
-        echo "${RED}error${OFF}: file $1 must have a .c/.cpp/.s extension" >&2
+        echo "${RED}error${OFF}: file ${1@Q} must have a .c/.cpp/.s extension" >&2
         echo >&2
         exit 1
         ;;
 esac
-BASENAME=`basename $1 .$EXTENSION`
-DIRNAME=`dirname $1`
+SOURCE="$1"
+BASENAME="$(basename "$1" .$EXTENSION)"
+DIRNAME="$(dirname "$1")"
 
 shift
 
-CFLAGS="-fno-stack-protector -fno-builtin -fno-exceptions \
-    -fpie -O2 -Wno-unused-function -U_FORTIFY_SOURCE \
-    -mno-mmx -mno-sse -mno-avx -mno-avx2 -mno-avx512f -msoft-float \
-    -mstringop-strategy=loop -fno-tree-vectorize -fomit-frame-pointer \
-    -I examples/"
-COMPILE="$CC $CFLAGS -c -Wall $@ \"$DIRNAME/$BASENAME.$EXTENSION\""
+CFLAGS=(
+    -fno-stack-protector -fno-builtin -fno-exceptions
+    -fpie -O2 -Wno-unused-function -U_FORTIFY_SOURCE
+    -mno-mmx -mno-sse -mno-avx -mno-avx2 -mno-avx512f -msoft-float
+    -mstringop-strategy=loop -fno-tree-vectorize -fomit-frame-pointer
+)
+COMPILE=("$CC" "${CFLAGS[@]}" -c -Wall "$@" "$SOURCE")
 
-echo "$COMPILE" | xargs
-if ! eval "$COMPILE"
+echo "${COMPILE[@]}"
+if ! "${COMPILE[@]}"
 then
     echo >&2
     echo "${RED}error${OFF}: compilation of (${YELLOW}$BASENAME${OFF}) failed" >&2
@@ -77,17 +79,19 @@ then
     exit 1
 fi
 
-CFLAGS="-pie -nostdlib \
-    -Wl,-z -Wl,max-page-size=4096 \
-    -Wl,-z -Wl,norelro \
-    -Wl,-z -Wl,stack-size=0 \
-    -Wl,--export-dynamic \
-    -Wl,--entry=0x0 \
-    -Wl,--strip-all"
-COMPILE="$CC \"$BASENAME.o\" -o \"$BASENAME\" $CFLAGS"
+CFLAGS=(
+    -pie -nostdlib
+    -Wl,-z -Wl,max-page-size=4096
+    -Wl,-z -Wl,norelro
+    -Wl,-z -Wl,stack-size=0
+    -Wl,--export-dynamic
+    -Wl,--entry=0x0
+    -Wl,--strip-all
+)
+COMPILE=("$CC" "$BASENAME.o" -o "$BASENAME" "${CFLAGS[@]}")
 
-echo "$COMPILE" | xargs
-if ! eval "$COMPILE"
+echo "${COMPILE[@]}"
+if ! "${COMPILE[@]}"
 then
     echo >&2
     echo "${RED}error${OFF}: linking (${YELLOW}$BASENAME${OFF}) failed" >&2
@@ -95,7 +99,7 @@ then
     exit 1
 fi
 
-RELOCS=`readelf -r "$BASENAME" | head -n 10 | grep 'R_X86_64_'`
+RELOCS=$(readelf -r "$BASENAME" | head -n 10 | grep 'R_X86_64_')
 if [ ! -z "$RELOCS" ]
 then
     echo >&2
@@ -122,7 +126,7 @@ fi
 
 if [ "$NO_SIMD_CHECK" = "" ]
 then
-    SIMD=`objdump -d "$BASENAME" | grep -E '%(x|y|z)mm[0-9]' | head -n 10`
+    SIMD=$(objdump -d "$BASENAME" | grep -E '%(x|y|z)mm[0-9]' | head -n 10)
     if [ ! -z "$SIMD" ]
     then
         echo >&2
