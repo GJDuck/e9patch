@@ -125,6 +125,9 @@ Some other projects that use E9Patch include:
   interception using static binary rewriting of `libc.so`.
 * [Hopper](https://github.com/FuzzAnything/hopper): Automatic fuzzing test
   cases generation for libraries.
+* [EFuzz+RRFuzz](https://github.com/GJDuck/RRFuzz): Program environment fuzzing.
+* [RFF](https://doi.org/10.6084/m9.figshare.23911299): Greybox fuzzing for
+  concurrency testing.
 
 ## Documentation
 
