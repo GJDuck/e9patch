@@ -55,5 +55,6 @@ extern bool option_targets;
 extern bool option_bbs;
 extern bool option_fs;
 extern bool option_trap_all;
+extern bool option_lines;
 
 #endif

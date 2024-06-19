@@ -25,6 +25,7 @@ E9TOOL_OBJS=\
     src/e9tool/e9cfg.o \
     src/e9tool/e9codegen.o \
     src/e9tool/e9csv.o \
+    src/e9tool/e9dwarf.o \
     src/e9tool/e9frontend.o \
     src/e9tool/e9metadata.o \
     src/e9tool/e9misc.o \

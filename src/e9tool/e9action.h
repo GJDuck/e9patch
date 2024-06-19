@@ -204,6 +204,9 @@ enum MatchKind
 
     MATCH_CSV,
 
+    MATCH_LINE,
+    MATCH_FILE,
+
     MATCH_BB_BEST,
     MATCH_BB_ENTRY,
     MATCH_BB_EXIT,

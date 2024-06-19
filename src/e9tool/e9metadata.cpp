@@ -1954,6 +1954,34 @@ static Type sendLoadArgumentMetadata(FILE *out, CallInfo &info,
                 *(int32_t *)&I->data[I->encoding.offset.imm], regno);
             t = TYPE_INT32;
             break;
+        case ARGUMENT_FILE:
+        {
+            auto i = elf->lines.lower_bound(I->address);
+            if (i != elf->lines.end())
+            {
+                std::string offset("{\"rel32\":\".Lfile@");
+                offset += name;
+                offset += "\"}";
+                sendLeaFromPCRelToR64(out, offset.c_str(), regno);
+                t = TYPE_CONST_CHAR_PTR;
+                break;
+            }
+            sendSExtFromI32ToR64(out, 0, regno);
+            t = TYPE_CONST_VOID_PTR;
+            break;
+        }
+        case ARGUMENT_LINE:
+        {
+            auto i = elf->lines.lower_bound(I->address);
+            if (i != elf->lines.end())
+            {
+                sendLoadValueMetadata(out, i->second.line, regno);
+                break;
+            }
+            sendSExtFromI32ToR64(out, 0, regno);
+            t = TYPE_CONST_VOID_PTR;
+            break;
+        }
         default:
             error("NYI argument (%d)", arg.kind);
     }
@@ -2027,6 +2055,16 @@ static void sendArgumentDataMetadata(FILE *out, const char *name,
                 return;
             fprintf(out, "\".Lfn%d@%s\",{\"string\":", regno, name);
             sendString(out, f->name);
+            fputs("},", out);
+            break;
+        }
+        case ARGUMENT_FILE:
+        {
+            auto i = elf->lines.lower_bound(I->address);
+            if (i == elf->lines.end())
+                return;
+            fprintf(out, "\".Lfile@%s\",{\"string\":", name);
+            sendString(out, i->second.file);
             fputs("},", out);
             break;
         }

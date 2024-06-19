@@ -449,6 +449,9 @@ static const MatchArg parseMatchArg(Parser &parser, bool val = false)
         case TOKEN_FALSE:
             if (seen_I) parser.unexpectedToken();
             match = MATCH_FALSE; break;
+        case TOKEN_FILE:
+            option_lines = true;
+            match = MATCH_FILE; break;
         case TOKEN_IMM:
             match = MATCH_IMM; break;
         case TOKEN_IMM32:
@@ -465,6 +468,9 @@ static const MatchArg parseMatchArg(Parser &parser, bool val = false)
             // Fallthrough:
         case TOKEN_JMP:
             match = MATCH_JUMP; break;
+        case TOKEN_LINE:
+            option_lines = true;
+            match = MATCH_LINE; break;
         case TOKEN_MEM:
             match = MATCH_MEM; break;
         case TOKEN_MNEMONIC:
@@ -971,6 +977,9 @@ static const Argument parsePatchArg(Parser &parser)
         case TOKEN_F:
             option_targets = option_fs = true;
             arg = ARGUMENT_F; break;
+        case TOKEN_FILE:
+            option_lines = true;
+            arg = ARGUMENT_FILE; break;
         case TOKEN_ID:
             arg = ARGUMENT_ID; break;
         case TOKEN_IMM:
@@ -980,6 +989,9 @@ static const Argument parsePatchArg(Parser &parser)
             // Fallthrough:
         case TOKEN_BYTES:
             arg = ARGUMENT_BYTES; break;
+        case TOKEN_LINE:
+            option_lines = true;
+            arg = ARGUMENT_LINE; break;
         case TOKEN_MEM:
             arg = ARGUMENT_MEM; break;
         case TOKEN_MEM8: case TOKEN_MEM16: case TOKEN_MEM32:
@@ -1628,12 +1640,16 @@ static void dumpExpr(const MatchExpr &expr, std::string &str, bool hex = false)
             str += "disp8"; break;
         case MATCH_DISP32:
             str += "disp32"; break;
+        case MATCH_FILE:
+            str += "file"; break;
         case MATCH_IMM8:
             str += "imm8"; break;
         case MATCH_IMM32:
             str += "imm32"; break;
         case MATCH_JUMP:
             str += "jmp"; break;
+        case MATCH_LINE:
+            str += "line"; break;
         case MATCH_MMX:
             str += "mmx"; break;
         case MATCH_MNEMONIC:
@@ -2213,6 +2229,24 @@ static MatchVal makeMatchValue(const MatchVar *var, const ELF *elf,
             result.i = (intptr_t)Is[f->lb].offset; return result;
         case MATCH_F_BEST:
             result.i = (idx == f->best); return result;
+        case MATCH_FILE:
+        {
+            auto i = elf->lines.lower_bound(I->address);
+            if (i == elf->lines.end())
+                goto undefined;
+            result.type = MATCH_TYPE_STRING;
+            result.str  = i->second.file;
+            return result;
+        }
+        case MATCH_LINE:
+        {
+            auto i = elf->lines.lower_bound(I->address);
+            if (i == elf->lines.end())
+                goto undefined;
+            result.type = MATCH_TYPE_INTEGER;
+            result.i    = (intptr_t)i->second.line;
+            return result;
+        }
         case MATCH_ASSEMBLY:
             result.type = MATCH_TYPE_STRING;
             result.str  = I->string.instr;

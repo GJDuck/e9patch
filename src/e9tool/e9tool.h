@@ -2309,6 +2309,9 @@ enum ArgumentKind : uint8_t
     ARGUMENT_CONFIG,                // Pointer to the e9_config_s struct
     ARGUMENT_NULL,                  // NULL pointer argument
 
+    ARGUMENT_FILE,                  // Filename
+    ARGUMENT_LINE,                  // Line #
+
     ARGUMENT_BB,                    // Basic block
     ARGUMENT_F,                     // Function
 
@@ -2390,6 +2393,18 @@ struct F
     }
 };
 typedef std::vector<F> Fs;
+
+struct Line
+{
+    const char * const file;            // Line filename
+    const unsigned line;                // Line number
+
+    Line(const char *file, unsigned line) : file(file), line(line)
+    {
+        ;
+    }
+};
+typedef std::map<intptr_t, Line> Lines;
 
 /*
  * Low-level functions that send fragments of JSONRPC messages:
@@ -2491,6 +2506,7 @@ extern void buildBBs(const ELF *elf, const Instr *Is, size_t size,
     const Targets &targets, BBs &bbs);
 extern void buildFs(const ELF *elf, const Instr *Is, size_t size,
     const Targets &targets, Fs &fs);
+extern void buildLines(const ELF *elf, Lines &Ls);
 extern intptr_t getSymbol(const ELF *elf, const char *symbol);
 extern void NO_RETURN error(const char *msg, ...);
 extern void warning(const char *msg, ...);

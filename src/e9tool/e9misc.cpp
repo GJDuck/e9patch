@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2022 National University of Singapore
+ * Copyright (C) 2024 National University of Singapore
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -41,6 +41,7 @@ bool option_targets      = false;
 bool option_bbs          = false;
 bool option_fs           = false;
 bool option_trap_all     = false;
+bool option_lines        = false;
 
 /*
  * Duplicate a string.
