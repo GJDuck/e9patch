@@ -148,11 +148,22 @@ extern void e9tool::buildLines(const ELF *elf, Lines &Ls)
                 continue;
             Ls.emplace(std::piecewise_construct,
                 std::forward_as_tuple((intptr_t)addr),
-                std::forward_as_tuple(file, (unsigned)lineno));
+                std::forward_as_tuple((intptr_t)addr, file, (unsigned)lineno));
         }
     }
 
     dwarf_end(dbg);
     dlclose(handle);
+}
+
+/*
+ * Find the line associated with the given address.
+ */
+extern const Line *e9tool::findLine(const Lines &Ls, intptr_t addr)
+{
+    auto i = Ls.lower_bound(addr);
+    if (i == Ls.end())
+        return nullptr;
+    return &i->second;
 }
 

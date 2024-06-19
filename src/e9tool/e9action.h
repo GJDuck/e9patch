@@ -207,6 +207,8 @@ enum MatchKind
     MATCH_LINE,
     MATCH_FILE,
 
+    MATCH_LINE_ENTRY,
+
     MATCH_BB_BEST,
     MATCH_BB_ENTRY,
     MATCH_BB_EXIT,

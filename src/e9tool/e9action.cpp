@@ -470,7 +470,20 @@ static const MatchArg parseMatchArg(Parser &parser, bool val = false)
             match = MATCH_JUMP; break;
         case TOKEN_LINE:
             option_lines = true;
-            match = MATCH_LINE; break;
+            if (parser.peekToken() == '.')
+            {
+                parser.getToken();
+                switch (parser.getToken())
+                {
+                    case TOKEN_ENTRY:
+                        match = MATCH_LINE_ENTRY; break;
+                    default:
+                        parser.unexpectedToken();
+                }
+            }
+            else
+                match = MATCH_LINE;
+            break;
         case TOKEN_MEM:
             match = MATCH_MEM; break;
         case TOKEN_MNEMONIC:
@@ -1368,10 +1381,7 @@ static bool shouldDumpHex(const MatchVar &var)
     switch (var.match)
     {
         case MATCH_ADDRESS: case MATCH_TARGET:
-        case MATCH_BB_BEST: case MATCH_BB_ENTRY:
-        case MATCH_BB_EXIT: case MATCH_BB_ADDR:
-        case MATCH_F_BEST: case MATCH_F_ENTRY:
-        case MATCH_F_ADDR:
+        case MATCH_BB_ADDR: case MATCH_F_ADDR:
             return true;
         case MATCH_OP: case MATCH_SRC:
         case MATCH_DST: case MATCH_MEM:
@@ -1945,8 +1955,9 @@ static MatchVal makeMatchValue(const MatchVar *var, const ELF *elf,
     const OpInfo *op = nullptr;
     OpType type = OPTYPE_INVALID;
     uint8_t access = 0;
-    const BB *bb = nullptr;
-    const F *f   = nullptr;
+    const BB *bb     = nullptr;
+    const F *f       = nullptr;
+    const Line *line = nullptr;
     InstrInfo info;
     uint8_t j = 0;
 
@@ -2005,6 +2016,11 @@ static MatchVal makeMatchValue(const MatchVar *var, const ELF *elf,
         case MATCH_F_OFFSET: case MATCH_F_NAME:
             f = findF(elf->fs, idx);
             if (f == nullptr)
+                goto undefined;
+            break;
+        case MATCH_FILE: case MATCH_LINE: case MATCH_LINE_ENTRY:
+            line = findLine(elf->lines, I->address);
+            if (line == nullptr)
                 goto undefined;
             break;
         default:
@@ -2230,23 +2246,15 @@ static MatchVal makeMatchValue(const MatchVar *var, const ELF *elf,
         case MATCH_F_BEST:
             result.i = (idx == f->best); return result;
         case MATCH_FILE:
-        {
-            auto i = elf->lines.lower_bound(I->address);
-            if (i == elf->lines.end())
-                goto undefined;
             result.type = MATCH_TYPE_STRING;
-            result.str  = i->second.file;
+            result.str  = line->file;
             return result;
-        }
         case MATCH_LINE:
-        {
-            auto i = elf->lines.lower_bound(I->address);
-            if (i == elf->lines.end())
-                goto undefined;
             result.type = MATCH_TYPE_INTEGER;
-            result.i    = (intptr_t)i->second.line;
+            result.i    = (intptr_t)line->line;
             return result;
-        }
+        case MATCH_LINE_ENTRY:
+            result.i = (I->address == line->address); return result;
         case MATCH_ASSEMBLY:
             result.type = MATCH_TYPE_STRING;
             result.str  = I->string.instr;

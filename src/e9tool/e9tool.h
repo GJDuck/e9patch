@@ -2396,10 +2396,12 @@ typedef std::vector<F> Fs;
 
 struct Line
 {
+    const intptr_t address;             // Line address
     const char * const file;            // Line filename
     const unsigned line;                // Line number
 
-    Line(const char *file, unsigned line) : file(file), line(line)
+    Line(intptr_t addr, const char *file, unsigned line) :
+        address(addr), file(file), line(line)
     {
         ;
     }
@@ -2500,6 +2502,7 @@ extern const char *getRegName(Register r);
 extern ssize_t findInstr(const Instr *Is, size_t size, intptr_t address);
 extern const BB *findBB(const BBs &bbs, size_t idx);
 extern const F *findF(const Fs &fs, size_t idx);
+extern const Line *findLine(const Lines &Ls, intptr_t address);
 extern void buildTargets(const ELF *elf, const Instr *Is, size_t size,
     Targets &targets);
 extern void buildBBs(const ELF *elf, const Instr *Is, size_t size,
