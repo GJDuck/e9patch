@@ -2396,12 +2396,13 @@ typedef std::vector<F> Fs;
 
 struct Line
 {
-    const intptr_t address;             // Line address
+    const intptr_t lb;                  // Line base address
+    const intptr_t ub;                  // Line end address
     const char * const file;            // Line filename
     const unsigned line;                // Line number
 
-    Line(intptr_t addr, const char *file, unsigned line) :
-        address(addr), file(file), line(line)
+    Line(intptr_t lb, intptr_t ub, const char *file, unsigned line) :
+        lb(lb), ub(ub), file(file), line(line)
     {
         ;
     }

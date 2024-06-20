@@ -16,6 +16,8 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include <cstddef>
+
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
@@ -45,6 +47,13 @@ typedef struct
     long int padding__;
 } Dwarf_Die;
 
+struct Range
+{
+    intptr_t lb;
+    intptr_t ub;
+};
+typedef std::map<intptr_t, Range> Ranges;
+
 typedef Dwarf *(*dwarf_begin_t)(int fildes, int cmd);
 typedef int (*dwarf_end_t)(Dwarf *dwarf);
 typedef int (*dwarf_nextcu_t)(Dwarf *dwarf, Dwarf_Off off, Dwarf_Off *next_off,
@@ -52,6 +61,9 @@ typedef int (*dwarf_nextcu_t)(Dwarf *dwarf, Dwarf_Off off, Dwarf_Off *next_off,
     uint8_t *address_sizep, uint8_t *offset_sizep);
 typedef Dwarf_Die *(*dwarf_offdie_t)(Dwarf *dbg, Dwarf_Off offset,
     Dwarf_Die *result);
+typedef ptrdiff_t (*dwarf_ranges_t)(Dwarf_Die *die,
+    ptrdiff_t offset, Dwarf_Addr *basep,
+    Dwarf_Addr *startp, Dwarf_Addr *endp);
 typedef int (*dwarf_getsrclines_t)(Dwarf_Die *cudie, Dwarf_Lines **lines,
     size_t *nlines);
 typedef Dwarf_Line *(*dwarf_onesrcline_t)(Dwarf_Lines *lines, size_t idx);
@@ -66,6 +78,7 @@ static dwarf_begin_t dwarf_begin             = nullptr;
 static dwarf_end_t dwarf_end                 = nullptr;
 static dwarf_nextcu_t dwarf_nextcu           = nullptr;
 static dwarf_offdie_t dwarf_offdie           = nullptr;
+static dwarf_ranges_t dwarf_ranges           = nullptr;
 static dwarf_getsrclines_t dwarf_getsrclines = nullptr;
 static dwarf_onesrcline_t dwarf_onesrcline   = nullptr;
 static dwarf_lineaddr_t dwarf_lineaddr       = nullptr;
@@ -91,23 +104,24 @@ static void *getSym(void *handle, const char *lib, const char *name)
  */
 extern void e9tool::buildLines(const ELF *elf, Lines &Ls)
 {
-    const char *libname = "libdw.so";
-    void *handle = dlopen(libname, RTLD_LAZY);
+    const char *lib = "libdw.so";
+    void *handle = dlopen(lib, RTLD_LAZY);
     if (handle == nullptr)
-        error("failed to load library \"%s\" (not installed?): %s", libname,
+        error("failed to load library \"%s\" (not installed?): %s", lib,
             dlerror());
 
-    dwarf_begin       = (dwarf_begin_t)      getSym(handle, libname, "dwarf_begin");
-    dwarf_end         = (dwarf_end_t)        getSym(handle, libname, "dwarf_end");
-    dwarf_nextcu      = (dwarf_nextcu_t)     getSym(handle, libname, "dwarf_nextcu");
-    dwarf_offdie      = (dwarf_offdie_t)     getSym(handle, libname, "dwarf_offdie");
-    dwarf_getsrclines = (dwarf_getsrclines_t)getSym(handle, libname, "dwarf_getsrclines");
-    dwarf_onesrcline  = (dwarf_onesrcline_t) getSym(handle, libname, "dwarf_onesrcline");
-    dwarf_lineaddr    = (dwarf_lineaddr_t)   getSym(handle, libname, "dwarf_lineaddr");
-    dwarf_lineno      = (dwarf_lineno_t)     getSym(handle, libname, "dwarf_lineno");
-    dwarf_linecol     = (dwarf_linecol_t)    getSym(handle, libname, "dwarf_linecol");
-    dwarf_linesrc     = (dwarf_linesrc_t)    getSym(handle, libname, "dwarf_linesrc");
-    dwarf_errmsg      = (dwarf_errmsg_t)     getSym(handle, libname, "dwarf_errmsg");
+    dwarf_begin       = (dwarf_begin_t)      getSym(handle, lib, "dwarf_begin");
+    dwarf_end         = (dwarf_end_t)        getSym(handle, lib, "dwarf_end");
+    dwarf_nextcu      = (dwarf_nextcu_t)     getSym(handle, lib, "dwarf_nextcu");
+    dwarf_offdie      = (dwarf_offdie_t)     getSym(handle, lib, "dwarf_offdie");
+    dwarf_ranges      = (dwarf_ranges_t)     getSym(handle, lib, "dwarf_ranges");
+    dwarf_getsrclines = (dwarf_getsrclines_t)getSym(handle, lib, "dwarf_getsrclines");
+    dwarf_onesrcline  = (dwarf_onesrcline_t) getSym(handle, lib, "dwarf_onesrcline");
+    dwarf_lineaddr    = (dwarf_lineaddr_t)   getSym(handle, lib, "dwarf_lineaddr");
+    dwarf_lineno      = (dwarf_lineno_t)     getSym(handle, lib, "dwarf_lineno");
+    dwarf_linecol     = (dwarf_linecol_t)    getSym(handle, lib, "dwarf_linecol");
+    dwarf_linesrc     = (dwarf_linesrc_t)    getSym(handle, lib, "dwarf_linesrc");
+    dwarf_errmsg      = (dwarf_errmsg_t)     getSym(handle, lib, "dwarf_errmsg");
 
     int fd = open(elf->filename, O_RDONLY, 0);
     if (fd < 0)
@@ -132,6 +146,15 @@ extern void e9tool::buildLines(const ELF *elf, Lines &Ls)
         size_t nlines = 0;
         if (dwarf_getsrclines(cudie, &lines, &nlines) != 0)
             continue;
+        Ranges Rs;
+        ptrdiff_t ptr = 0;
+        Dwarf_Addr base = 0x0, lb, ub;
+        while ((ptr = dwarf_ranges(cudie, ptr, &base, &lb, &ub)) != 0)
+        {
+            Range r = {(intptr_t)lb, (intptr_t)ub};
+            Rs.insert({(intptr_t)lb, r});
+        }
+        Lines Tmp;
         for (size_t i = 0; i < nlines; i++)
         {
             Dwarf_Line *line = dwarf_onesrcline(lines, i);
@@ -146,9 +169,32 @@ extern void e9tool::buildLines(const ELF *elf, Lines &Ls)
             int lineno;
             if (dwarf_lineno(line, &lineno) != 0)
                 continue;
-            Ls.emplace(std::piecewise_construct,
+            Tmp.emplace(std::piecewise_construct,
                 std::forward_as_tuple((intptr_t)addr),
-                std::forward_as_tuple((intptr_t)addr, file, (unsigned)lineno));
+                std::forward_as_tuple((intptr_t)addr, INTPTR_MAX, file,
+                    (unsigned)lineno));
+        }
+        for (auto i = Tmp.begin(), iend = Tmp.end(); i != iend; )
+        {
+            const Line &line = i->second;
+            for (++i; i != iend && i->second.line == line.line; ++i)
+                ;
+            intptr_t lb = line.lb;
+            intptr_t ub = (i != iend? i->second.lb: INTPTR_MAX);
+            auto j = Rs.lower_bound(lb);
+            if (j == Rs.end())
+            {
+            bad_range:
+                warning("line %u not in address range for %s; ignoring",
+                    line.line, line.file);
+                continue;
+            }
+            ub = std::min(ub, j->second.ub);
+            if (lb >= ub)
+                goto bad_range;
+            Ls.emplace(std::piecewise_construct,
+                std::forward_as_tuple(lb),
+                std::forward_as_tuple(lb, ub, line.file, line.line));
         }
     }
 

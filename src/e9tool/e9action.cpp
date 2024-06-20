@@ -2254,7 +2254,7 @@ static MatchVal makeMatchValue(const MatchVar *var, const ELF *elf,
             result.i    = (intptr_t)line->line;
             return result;
         case MATCH_LINE_ENTRY:
-            result.i = (I->address == line->address); return result;
+            result.i = (I->address == line->lb); return result;
         case MATCH_ASSEMBLY:
             result.type = MATCH_TYPE_STRING;
             result.str  = I->string.instr;
