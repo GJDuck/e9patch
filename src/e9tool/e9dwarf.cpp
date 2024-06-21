@@ -130,8 +130,15 @@ extern void e9tool::buildLines(const ELF *elf, Lines &Ls)
 
     Dwarf *dbg = dwarf_begin(fd, DWARF_C_READ);
     if (dbg == nullptr)
-        error("failed to read DWARF information from file \"%s\": %s",
-            elf->filename, dwarf_errmsg(0));
+    {
+        const char *err = dwarf_errmsg(0);
+        if (strcmp(err, "no DWARF information") != 0)
+            error("failed to read debug information (DWARF) from file "
+                "\"%s\": %s", elf->filename, err);
+        warning("no debug information (DWARF) found in \"%s\"; line/file "
+            "information is undefined", elf->filename);
+        return;
+    }
 
     Dwarf_Off offset = 0, last = 0;
     size_t hdr_size;
@@ -182,14 +189,15 @@ extern void e9tool::buildLines(const ELF *elf, Lines &Ls)
             intptr_t lb = line.lb;
             intptr_t ub = (i != iend? i->second.lb: INTPTR_MAX);
             auto j = Rs.lower_bound(lb);
-            if (j == Rs.end())
+            if (j == Rs.end() && ub == INTPTR_MAX)
             {
             bad_range:
-                warning("line %u not in address range for %s; ignoring",
+                warning("failed to find line %u in address range for %s",
                     line.line, line.file);
                 continue;
             }
-            ub = std::min(ub, j->second.ub);
+            if (j != Rs.end())
+                ub = std::min(ub, j->second.ub);
             if (lb >= ub)
                 goto bad_range;
             Ls.emplace(std::piecewise_construct,
