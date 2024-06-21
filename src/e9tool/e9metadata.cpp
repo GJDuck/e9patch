@@ -1973,13 +1973,24 @@ static Type sendLoadArgumentMetadata(FILE *out, CallInfo &info,
         case ARGUMENT_LINE:
         {
             auto i = elf->lines.lower_bound(I->address);
-            if (i != elf->lines.end())
+            if (i == elf->lines.end())
             {
-                sendLoadValueMetadata(out, i->second.line, regno);
+                sendSExtFromI32ToR64(out, 0, regno);
+                t = TYPE_CONST_VOID_PTR;
                 break;
             }
-            sendSExtFromI32ToR64(out, 0, regno);
-            t = TYPE_CONST_VOID_PTR;
+            const Line &line = i->second;
+            switch (arg.field)
+            {
+                case FIELD_NONE:
+                    sendLoadValueMetadata(out, line.line, regno);
+                    break;
+                case FIELD_SIZE:
+                    sendLoadValueMetadata(out, line.ub - line.lb, regno);
+                    break;
+                default:
+                    error("unknown field (%d)", arg.field);
+            }
             break;
         }
         default:
