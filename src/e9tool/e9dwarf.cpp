@@ -16,6 +16,8 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include <set>
+
 #include <cstddef>
 
 #include <sys/types.h>
@@ -25,6 +27,7 @@
 #include <elf.h>
 
 #include "e9elf.h"
+#include "e9misc.h"
 #include "e9tool.h"
 
 using namespace e9tool;
@@ -97,6 +100,20 @@ static void *getSym(void *handle, const char *lib, const char *name)
         error("failed to load symbol \"%s\" from library \"%s\": %s",
             name, lib, dlerror());
     return sym;
+}
+
+/*
+ * Get a persistent copy of a string.
+ */
+static const char *getStr(const char *s)
+{
+    static std::set<const char *, CStrCmp> cache;
+    auto i = cache.find(s);
+    if (i != cache.end())
+        return *i;
+    s = strDup(s);
+    cache.insert(s);
+    return s;
 }
 
 /*
@@ -176,6 +193,7 @@ extern void e9tool::buildLines(const ELF *elf, Lines &Ls)
             int lineno;
             if (dwarf_lineno(line, &lineno) != 0)
                 continue;
+            file = getStr(file);
             Tmp.emplace(std::piecewise_construct,
                 std::forward_as_tuple((intptr_t)addr),
                 std::forward_as_tuple((intptr_t)addr, INTPTR_MAX, file,
