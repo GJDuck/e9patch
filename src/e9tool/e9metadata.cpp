@@ -1954,12 +1954,31 @@ static Type sendLoadArgumentMetadata(FILE *out, CallInfo &info,
                 *(int32_t *)&I->data[I->encoding.offset.imm], regno);
             t = TYPE_INT32;
             break;
-        case ARGUMENT_FILE:
+        case ARGUMENT_FILENAME: case ARGUMENT_ABSNAME:
+        case ARGUMENT_BASENAME: case ARGUMENT_DIRNAME:
         {
             auto i = elf->lines.lower_bound(I->address);
             if (i != elf->lines.end())
             {
-                std::string offset("{\"rel32\":\".Lfile@");
+                const auto &line = i->second;
+                if (arg.kind == ARGUMENT_DIRNAME &&
+                    (line.dir == nullptr && strchr(line.file, '/') == nullptr))
+                {
+                    sendSExtFromI32ToR64(out, 0, regno);
+                    t = TYPE_NULL_PTR;
+                    break;
+                }
+                const char *kind = "file";
+                switch (arg.kind)
+                {
+                    case ARGUMENT_ABSNAME:  kind = "abs"; break;
+                    case ARGUMENT_BASENAME: kind = "base"; break;
+                    case ARGUMENT_DIRNAME:  kind = "dir"; break;
+                    default: break;
+                }
+                std::string offset("{\"rel32\":\".L");
+                offset += kind;
+                offset += '@';
                 offset += name;
                 offset += "\"}";
                 sendLeaFromPCRelToR64(out, offset.c_str(), regno);
@@ -1967,7 +1986,7 @@ static Type sendLoadArgumentMetadata(FILE *out, CallInfo &info,
                 break;
             }
             sendSExtFromI32ToR64(out, 0, regno);
-            t = TYPE_CONST_VOID_PTR;
+            t = TYPE_NULL_PTR;
             break;
         }
         case ARGUMENT_LINE:
@@ -2069,13 +2088,30 @@ static void sendArgumentDataMetadata(FILE *out, const char *name,
             fputs("},", out);
             break;
         }
-        case ARGUMENT_FILE:
+        case ARGUMENT_FILENAME: case ARGUMENT_ABSNAME:
+        case ARGUMENT_BASENAME: case ARGUMENT_DIRNAME:
         {
             auto i = elf->lines.lower_bound(I->address);
             if (i == elf->lines.end())
                 return;
-            fprintf(out, "\".Lfile@%s\",{\"string\":", name);
-            sendString(out, i->second.file);
+            const auto &line = i->second;
+            std::string tmp;
+            const char *file = line.file, *kind = "file";
+            switch (arg.kind)
+            {
+                case ARGUMENT_ABSNAME:
+                    getAbsname(line.dir, line.file, tmp);
+                    kind = "abs"; file = tmp.c_str(); break;
+                case ARGUMENT_BASENAME:
+                    kind = "base"; file = getBasename(line.file); break;
+                case ARGUMENT_DIRNAME:
+                    getDirname(line.dir, line.file, tmp);
+                    kind = "dir"; file = tmp.c_str(); break;
+                default:
+                    break;
+            }
+            fprintf(out, "\".L%s@%s\",{\"string\":", kind, name);
+            sendString(out, file);
             fputs("},", out);
             break;
         }

@@ -16,8 +16,6 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include <set>
-
 #include <cstddef>
 
 #include <sys/types.h>
@@ -42,6 +40,7 @@ typedef struct Dwarf_Abbrev Dwarf_Abbrev;
 typedef struct Dwarf_CU Dwarf_CU;
 typedef struct Dwarf_Lines_s Dwarf_Lines;
 typedef struct Dwarf_Line_s Dwarf_Line;
+typedef struct Dwarf_Files_s Dwarf_Files;
 typedef struct
 {
     void *addr;
@@ -69,12 +68,16 @@ typedef ptrdiff_t (*dwarf_ranges_t)(Dwarf_Die *die,
     Dwarf_Addr *startp, Dwarf_Addr *endp);
 typedef int (*dwarf_getsrclines_t)(Dwarf_Die *cudie, Dwarf_Lines **lines,
     size_t *nlines);
+typedef int (*dwarf_getsrcfiles_t)(Dwarf_Die *cudie, Dwarf_Files **files,
+    size_t *nfiles);
 typedef Dwarf_Line *(*dwarf_onesrcline_t)(Dwarf_Lines *lines, size_t idx);
 typedef int (*dwarf_lineaddr_t)(Dwarf_Line *line, Dwarf_Addr *addrp);
 typedef int (*dwarf_lineno_t)(Dwarf_Line *line, int *linep);
 typedef int (*dwarf_linecol_t)(Dwarf_Line *line, int *linep);
 typedef const char *(*dwarf_linesrc_t)(Dwarf_Line *line, Dwarf_Word *mtime,
     Dwarf_Word *length);
+typedef int (*dwarf_getsrcdirs_t)(Dwarf_Files *files,
+    const char *const **result, size_t *ndirs);
 typedef const char *(*dwarf_errmsg_t)(int err);
 
 static dwarf_begin_t dwarf_begin             = nullptr;
@@ -83,11 +86,13 @@ static dwarf_nextcu_t dwarf_nextcu           = nullptr;
 static dwarf_offdie_t dwarf_offdie           = nullptr;
 static dwarf_ranges_t dwarf_ranges           = nullptr;
 static dwarf_getsrclines_t dwarf_getsrclines = nullptr;
+static dwarf_getsrcfiles_t dwarf_getsrcfiles = nullptr;
 static dwarf_onesrcline_t dwarf_onesrcline   = nullptr;
 static dwarf_lineaddr_t dwarf_lineaddr       = nullptr;
 static dwarf_lineno_t dwarf_lineno           = nullptr;
 static dwarf_linecol_t dwarf_linecol         = nullptr;
 static dwarf_linesrc_t dwarf_linesrc         = nullptr;
+static dwarf_getsrcdirs_t dwarf_getsrcdirs   = nullptr;
 static dwarf_errmsg_t dwarf_errmsg           = nullptr;
 
 /*
@@ -100,20 +105,6 @@ static void *getSym(void *handle, const char *lib, const char *name)
         error("failed to load symbol \"%s\" from library \"%s\": %s",
             name, lib, dlerror());
     return sym;
-}
-
-/*
- * Get a persistent copy of a string.
- */
-static const char *getStr(const char *s)
-{
-    static std::set<const char *, CStrCmp> cache;
-    auto i = cache.find(s);
-    if (i != cache.end())
-        return *i;
-    s = strDup(s);
-    cache.insert(s);
-    return s;
 }
 
 /*
@@ -133,11 +124,13 @@ extern void e9tool::buildLines(const ELF *elf, Lines &Ls)
     dwarf_offdie      = (dwarf_offdie_t)     getSym(handle, lib, "dwarf_offdie");
     dwarf_ranges      = (dwarf_ranges_t)     getSym(handle, lib, "dwarf_ranges");
     dwarf_getsrclines = (dwarf_getsrclines_t)getSym(handle, lib, "dwarf_getsrclines");
+    dwarf_getsrcfiles = (dwarf_getsrcfiles_t)getSym(handle, lib, "dwarf_getsrcfiles");
     dwarf_onesrcline  = (dwarf_onesrcline_t) getSym(handle, lib, "dwarf_onesrcline");
     dwarf_lineaddr    = (dwarf_lineaddr_t)   getSym(handle, lib, "dwarf_lineaddr");
     dwarf_lineno      = (dwarf_lineno_t)     getSym(handle, lib, "dwarf_lineno");
     dwarf_linecol     = (dwarf_linecol_t)    getSym(handle, lib, "dwarf_linecol");
     dwarf_linesrc     = (dwarf_linesrc_t)    getSym(handle, lib, "dwarf_linesrc");
+    dwarf_getsrcdirs  = (dwarf_getsrcdirs_t) getSym(handle, lib, "dwarf_getsrcdirs");
     dwarf_errmsg      = (dwarf_errmsg_t)     getSym(handle, lib, "dwarf_errmsg");
 
     int fd = open(elf->filename, O_RDONLY, 0);
@@ -167,9 +160,16 @@ extern void e9tool::buildLines(const ELF *elf, Lines &Ls)
         if (cudie == nullptr)
             continue;
         Dwarf_Lines *lines = nullptr;
-        size_t nlines = 0;
+        Dwarf_Files *files = nullptr;
+        size_t nlines = 0, nfiles = 0, ndirs = 0;
         if (dwarf_getsrclines(cudie, &lines, &nlines) != 0)
             continue;
+        if (dwarf_getsrcfiles(cudie, &files, &nfiles) != 0)
+            continue;
+        const char *const *dirs = nullptr;
+        if (dwarf_getsrcdirs(files, &dirs, &ndirs) != 0)
+            continue;
+        const char *dir = (dirs[0] != nullptr? strCache(dirs[0]): nullptr);
         Ranges Rs;
         ptrdiff_t ptr = 0;
         Dwarf_Addr base = 0x0, lb, ub;
@@ -193,10 +193,11 @@ extern void e9tool::buildLines(const ELF *elf, Lines &Ls)
             int lineno;
             if (dwarf_lineno(line, &lineno) != 0)
                 continue;
-            file = getStr(file);
+            file = strCache(file);
+            const char *tmp = (dir != nullptr && file[0] != '/'? dir: nullptr);
             Tmp.emplace(std::piecewise_construct,
                 std::forward_as_tuple((intptr_t)addr),
-                std::forward_as_tuple((intptr_t)addr, INTPTR_MAX, file,
+                std::forward_as_tuple((intptr_t)addr, INTPTR_MAX, tmp, file,
                     (unsigned)lineno));
         }
         for (auto i = Tmp.begin(), iend = Tmp.end(); i != iend; )
@@ -220,7 +221,7 @@ extern void e9tool::buildLines(const ELF *elf, Lines &Ls)
                 goto bad_range;
             Ls.emplace(std::piecewise_construct,
                 std::forward_as_tuple(lb),
-                std::forward_as_tuple(lb, ub, line.file, line.line));
+                std::forward_as_tuple(lb, ub, line.dir, line.file, line.line));
         }
     }
 

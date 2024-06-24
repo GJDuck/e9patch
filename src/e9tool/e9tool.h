@@ -2309,7 +2309,10 @@ enum ArgumentKind : uint8_t
     ARGUMENT_CONFIG,                // Pointer to the e9_config_s struct
     ARGUMENT_NULL,                  // NULL pointer argument
 
-    ARGUMENT_FILE,                  // Filename
+    ARGUMENT_FILENAME,              // Filename (relative)
+    ARGUMENT_ABSNAME,               // Absolute filename
+    ARGUMENT_BASENAME,              // Basename
+    ARGUMENT_DIRNAME,               // Directory name
     ARGUMENT_LINE,                  // Line #
 
     ARGUMENT_BB,                    // Basic block
@@ -2398,11 +2401,13 @@ struct Line
 {
     const intptr_t lb;                  // Line base address
     const intptr_t ub;                  // Line end address
+    const char * const dir;             // Line directory
     const char * const file;            // Line filename
     const unsigned line;                // Line number
 
-    Line(intptr_t lb, intptr_t ub, const char *file, unsigned line) :
-        lb(lb), ub(ub), file(file), line(line)
+    Line(intptr_t lb, intptr_t ub, const char *dir, const char *file,
+            unsigned line) :
+        lb(lb), ub(ub), dir(dir), file(file), line(line)
     {
         ;
     }

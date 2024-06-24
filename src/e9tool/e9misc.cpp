@@ -15,6 +15,8 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include <set>
+
 #include <cstring>
 #include <cstdlib>
 #include <cstdint>
@@ -56,6 +58,20 @@ char *strDup(const char *old_str, size_t n)
 }
 
 /*
+ * Create a persistent copy of a string.
+ */
+const char *strCache(const char *s)
+{
+    static std::set<const char *, CStrCmp> cache;
+    auto i = cache.find(s);
+    if (i != cache.end())
+        return *i;
+    s = strDup(s);
+    cache.insert(s);
+    return s;
+}
+
+/*
  * Check for suffix.
  */
 bool hasSuffix(const std::string &str, const char *suffix)
@@ -63,6 +79,43 @@ bool hasSuffix(const std::string &str, const char *suffix)
     size_t len = strlen(suffix);
     return (str.size() < len? false: str.compare(str.size()-len,
         len, suffix, len) == 0);
+}
+
+/*
+ * Get the absolute source filename.
+ */
+void getAbsname(const char *dir, const char *file, std::string &tmp)
+{
+    if (dir != nullptr)
+    {
+        tmp += dir;
+        tmp += '/';
+    }
+    tmp += file;
+}
+
+/*
+ * Get the source directory name.
+ */
+bool getDirname(const char *dir, const char *file, std::string &tmp)
+{
+    getAbsname(dir, file, tmp);
+    size_t last = tmp.rfind('/');
+    if (last == std::string::npos)
+        return false;
+    tmp.resize(last+1);
+    return true;
+}
+
+/*
+ * Get the source base name.
+ */
+const char *getBasename(const char *file)
+{
+    const char *base = file;
+    for (size_t i = 0; file[i] != '\0'; i++)
+        base = (file[i] == '/'? file+i+1: base);
+    return base;
 }
 
 /*

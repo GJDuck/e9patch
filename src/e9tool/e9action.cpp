@@ -432,14 +432,23 @@ static const MatchArg parseMatchArg(Parser &parser, bool val = false)
     bool ptr = false;
     switch (t)
     {
+        case TOKEN_ABSNAME:
+            option_lines = true;
+            match = MATCH_ABSNAME; break;
         case TOKEN_ASM:
             match = MATCH_ASSEMBLY; break;
         case TOKEN_ADDR:
             match = MATCH_ADDRESS; break;
+        case TOKEN_BASENAME:
+            option_lines = true;
+            match = MATCH_BASENAME; break;
         case TOKEN_BYTES:
             match = MATCH_BYTES; break;
         case TOKEN_CALL:
             match = MATCH_CALL; break;
+        case TOKEN_DIRNAME:
+            option_lines = true;
+            match = MATCH_DIRNAME; break;
         case TOKEN_DISP32:
             match = MATCH_DISP32; break;
         case TOKEN_DISP8:
@@ -449,9 +458,9 @@ static const MatchArg parseMatchArg(Parser &parser, bool val = false)
         case TOKEN_FALSE:
             if (seen_I) parser.unexpectedToken();
             match = MATCH_FALSE; break;
-        case TOKEN_FILE:
+        case TOKEN_FILENAME:
             option_lines = true;
-            match = MATCH_FILE; break;
+            match = MATCH_FILENAME; break;
         case TOKEN_IMM:
             match = MATCH_IMM; break;
         case TOKEN_IMM32:
@@ -976,15 +985,24 @@ static const Argument parsePatchArg(Parser &parser)
         t = TOKEN_NAME;
     switch (t)
     {
+        case TOKEN_ABSNAME:
+            option_lines = true;
+            arg = ARGUMENT_ABSNAME; break;
         case TOKEN_ASM:
             arg = ARGUMENT_ASM; break;
         case TOKEN_ADDR:
             arg = ARGUMENT_ADDR; break;
         case TOKEN_BASE:
             arg = ARGUMENT_BASE; break;
+        case TOKEN_BASENAME:
+            option_lines = true;
+            arg = ARGUMENT_BASENAME; break;
         case TOKEN_BB:
             option_targets = option_bbs = true;
             arg = ARGUMENT_BB; break;
+        case TOKEN_DIRNAME:
+            option_lines = true;
+            arg = ARGUMENT_DIRNAME; break;
         case TOKEN_DST:
             arg = ARGUMENT_DST; break;
         case TOKEN_CONFIG:
@@ -992,9 +1010,9 @@ static const Argument parsePatchArg(Parser &parser)
         case TOKEN_F:
             option_targets = option_fs = true;
             arg = ARGUMENT_F; break;
-        case TOKEN_FILE:
+        case TOKEN_FILENAME:
             option_lines = true;
-            arg = ARGUMENT_FILE; break;
+            arg = ARGUMENT_FILENAME; break;
         case TOKEN_ID:
             arg = ARGUMENT_ID; break;
         case TOKEN_IMM:
@@ -1651,22 +1669,28 @@ static void dumpExpr(const MatchExpr &expr, std::string &str, bool hex = false)
             str += var.plugin->filename;
             str += "\").match()";
             break;
+        case MATCH_ABSNAME:
+            str += "absname"; break;
         case MATCH_ASSEMBLY:
             str += "asm"; break;
         case MATCH_ADDRESS:
             str += "addr"; break;
+        case MATCH_BASENAME:
+            str += "basename"; break;
         case MATCH_BYTES:
             str += "bytes"; break;
         case MATCH_CALL:
             str += "call"; break;
         case MATCH_CONDJUMP:
             str += "jcc"; break;
+        case MATCH_DIRNAME:
+            str += "dirname"; break;
         case MATCH_DISP8:
             str += "disp8"; break;
         case MATCH_DISP32:
             str += "disp32"; break;
-        case MATCH_FILE:
-            str += "file"; break;
+        case MATCH_FILENAME:
+            str += "filename"; break;
         case MATCH_IMM8:
             str += "imm8"; break;
         case MATCH_IMM32:
@@ -1960,7 +1984,7 @@ static intptr_t getNumOperands(const InstrInfo *I, OpType type, Access access)
  */
 static MatchVal makeMatchValue(const MatchVar *var, const ELF *elf,
     const std::vector<Instr> &Is, size_t idx, const InstrInfo *I,
-    MatchVal *buf)
+    MatchVal *buf, std::string &tmp)
 {
     MatchKind match  = var->match;
     MatchField field = var->field;
@@ -2033,7 +2057,8 @@ static MatchVal makeMatchValue(const MatchVar *var, const ELF *elf,
             if (f == nullptr)
                 goto undefined;
             break;
-        case MATCH_FILE: case MATCH_LINE: case MATCH_LINE_ENTRY:
+        case MATCH_FILENAME: case MATCH_ABSNAME: case MATCH_BASENAME:
+        case MATCH_DIRNAME: case MATCH_LINE: case MATCH_LINE_ENTRY:
         case MATCH_LINE_SIZE:
             line = findLine(elf->lines, I->address);
             if (line == nullptr)
@@ -2261,9 +2286,24 @@ static MatchVal makeMatchValue(const MatchVar *var, const ELF *elf,
             result.i = (intptr_t)Is[f->lb].offset; return result;
         case MATCH_F_BEST:
             result.i = (idx == f->best); return result;
-        case MATCH_FILE:
+        case MATCH_FILENAME:
             result.type = MATCH_TYPE_STRING;
             result.str  = line->file;
+            return result;
+        case MATCH_ABSNAME:
+            getAbsname(line->dir, line->file, tmp);
+            result.type = MATCH_TYPE_STRING;
+            result.str  = tmp.c_str();
+            return result;
+        case MATCH_DIRNAME:
+            if (!getDirname(line->dir, line->file, tmp))
+                goto undefined;
+            result.type = MATCH_TYPE_STRING;
+            result.str  = tmp.c_str();
+            return result;
+        case MATCH_BASENAME:
+            result.type = MATCH_TYPE_STRING;
+            result.str  = getBasename(line->file);
             return result;
         case MATCH_LINE:
             result.type = MATCH_TYPE_INTEGER;
@@ -2367,6 +2407,7 @@ static MatchVal matchDoEval(const MatchExpr *expr, const ELF &elf,
     MatchVal *buf)
 {
     MatchVal lhs, rhs, res;
+    std::string tmp;
     switch (expr->op)
     {
         case MATCH_OP_ARG:
@@ -2377,7 +2418,8 @@ static MatchVal matchDoEval(const MatchExpr *expr, const ELF &elf,
                     res = *expr->arg.val;
                     break;
                 case MATCH_INST_VAR:
-                    res = makeMatchValue(expr->arg.var, &elf, Is, idx, I, buf);
+                    res = makeMatchValue(expr->arg.var, &elf, Is, idx, I,
+                        buf, tmp);
                     if (option_debug)
                     {
                         std::string str_var, str_val;
