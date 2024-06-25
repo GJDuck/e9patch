@@ -391,7 +391,8 @@ void targetAnalysis(Binary *B)
             uint32_t nsyms = 0;
             for (uint32_t i = 0; i < hshtab->nbuckets; i++)
                 nsyms = std::max(nsyms, buckets[i]);
-            for (; (chain[nsyms - hshtab->symoffset] & 0x1) == 0; nsyms++)
+            for (; nsyms >= hshtab->symoffset &&
+                    (chain[nsyms - hshtab->symoffset] & 0x1) == 0; nsyms++)
                 ;
             for (uint32_t i = 0; i < nsyms; i++)
             {
