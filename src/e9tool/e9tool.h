@@ -2515,7 +2515,8 @@ extern void buildBBs(const ELF *elf, const Instr *Is, size_t size,
     const Targets &targets, BBs &bbs);
 extern void buildFs(const ELF *elf, const Instr *Is, size_t size,
     const Targets &targets, Fs &fs);
-extern void buildLines(const ELF *elf, Lines &Ls);
+extern void buildLines(const ELF *elf, const Instr *Is, size_t size,
+    Lines &Ls);
 extern intptr_t getSymbol(const ELF *elf, const char *symbol);
 extern void NO_RETURN error(const char *msg, ...);
 extern void warning(const char *msg, ...);

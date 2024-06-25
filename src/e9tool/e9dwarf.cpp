@@ -49,13 +49,6 @@ typedef struct
     long int padding__;
 } Dwarf_Die;
 
-struct Range
-{
-    intptr_t lb;
-    intptr_t ub;
-};
-typedef std::map<intptr_t, Range> Ranges;
-
 typedef Dwarf *(*dwarf_begin_t)(int fildes, int cmd);
 typedef int (*dwarf_end_t)(Dwarf *dwarf);
 typedef int (*dwarf_nextcu_t)(Dwarf *dwarf, Dwarf_Off off, Dwarf_Off *next_off,
@@ -63,9 +56,6 @@ typedef int (*dwarf_nextcu_t)(Dwarf *dwarf, Dwarf_Off off, Dwarf_Off *next_off,
     uint8_t *address_sizep, uint8_t *offset_sizep);
 typedef Dwarf_Die *(*dwarf_offdie_t)(Dwarf *dbg, Dwarf_Off offset,
     Dwarf_Die *result);
-typedef ptrdiff_t (*dwarf_ranges_t)(Dwarf_Die *die,
-    ptrdiff_t offset, Dwarf_Addr *basep,
-    Dwarf_Addr *startp, Dwarf_Addr *endp);
 typedef int (*dwarf_getsrclines_t)(Dwarf_Die *cudie, Dwarf_Lines **lines,
     size_t *nlines);
 typedef int (*dwarf_getsrcfiles_t)(Dwarf_Die *cudie, Dwarf_Files **files,
@@ -84,7 +74,6 @@ static dwarf_begin_t dwarf_begin             = nullptr;
 static dwarf_end_t dwarf_end                 = nullptr;
 static dwarf_nextcu_t dwarf_nextcu           = nullptr;
 static dwarf_offdie_t dwarf_offdie           = nullptr;
-static dwarf_ranges_t dwarf_ranges           = nullptr;
 static dwarf_getsrclines_t dwarf_getsrclines = nullptr;
 static dwarf_getsrcfiles_t dwarf_getsrcfiles = nullptr;
 static dwarf_onesrcline_t dwarf_onesrcline   = nullptr;
@@ -94,6 +83,25 @@ static dwarf_linecol_t dwarf_linecol         = nullptr;
 static dwarf_linesrc_t dwarf_linesrc         = nullptr;
 static dwarf_getsrcdirs_t dwarf_getsrcdirs   = nullptr;
 static dwarf_errmsg_t dwarf_errmsg           = nullptr;
+
+/*
+ * Check if lines are the same.
+ */
+static bool sameLine(const Line &line_1, const Line &line_2)
+{
+    if (line_1.line != line_2.line)
+        return false;
+    if (line_1.dir == nullptr && line_2.dir != nullptr)
+        return false;
+    if (line_1.dir != nullptr && line_2.dir == nullptr)
+        return false;
+    if (line_1.dir != nullptr && line_2.dir != nullptr &&
+            strcmp(line_1.dir, line_2.dir) != 0)
+        return false;
+    if (strcmp(line_1.file, line_2.file) != 0)
+        return false;
+    return true;
+}
 
 /*
  * Load a symbol from the library.
@@ -110,7 +118,8 @@ static void *getSym(void *handle, const char *lib, const char *name)
 /*
  * Build source line information.
  */
-extern void e9tool::buildLines(const ELF *elf, Lines &Ls)
+extern void e9tool::buildLines(const ELF *elf, const Instr *Is, size_t size,
+    Lines &Ls)
 {
     const char *lib = "libdw.so";
     void *handle = dlopen(lib, RTLD_LAZY);
@@ -122,7 +131,6 @@ extern void e9tool::buildLines(const ELF *elf, Lines &Ls)
     dwarf_end         = (dwarf_end_t)        getSym(handle, lib, "dwarf_end");
     dwarf_nextcu      = (dwarf_nextcu_t)     getSym(handle, lib, "dwarf_nextcu");
     dwarf_offdie      = (dwarf_offdie_t)     getSym(handle, lib, "dwarf_offdie");
-    dwarf_ranges      = (dwarf_ranges_t)     getSym(handle, lib, "dwarf_ranges");
     dwarf_getsrclines = (dwarf_getsrclines_t)getSym(handle, lib, "dwarf_getsrclines");
     dwarf_getsrcfiles = (dwarf_getsrcfiles_t)getSym(handle, lib, "dwarf_getsrcfiles");
     dwarf_onesrcline  = (dwarf_onesrcline_t) getSym(handle, lib, "dwarf_onesrcline");
@@ -152,6 +160,7 @@ extern void e9tool::buildLines(const ELF *elf, Lines &Ls)
 
     Dwarf_Off offset = 0, last = 0;
     size_t hdr_size;
+    Lines Tmp;
     while (dwarf_nextcu(dbg, offset, &offset, &hdr_size, 0, 0, 0) == 0)
     {
         Dwarf_Die cudie_obj, *cudie;
@@ -170,15 +179,6 @@ extern void e9tool::buildLines(const ELF *elf, Lines &Ls)
         if (dwarf_getsrcdirs(files, &dirs, &ndirs) != 0)
             continue;
         const char *dir = (dirs[0] != nullptr? strCache(dirs[0]): nullptr);
-        Ranges Rs;
-        ptrdiff_t ptr = 0;
-        Dwarf_Addr base = 0x0, lb, ub;
-        while ((ptr = dwarf_ranges(cudie, ptr, &base, &lb, &ub)) != 0)
-        {
-            Range r = {(intptr_t)lb, (intptr_t)ub};
-            Rs.insert({(intptr_t)lb, r});
-        }
-        Lines Tmp;
         for (size_t i = 0; i < nlines; i++)
         {
             Dwarf_Line *line = dwarf_onesrcline(lines, i);
@@ -200,30 +200,36 @@ extern void e9tool::buildLines(const ELF *elf, Lines &Ls)
                 std::forward_as_tuple((intptr_t)addr, INTPTR_MAX, tmp, file,
                     (unsigned)lineno));
         }
-        for (auto i = Tmp.begin(), iend = Tmp.end(); i != iend; )
-        {
-            const Line &line = i->second;
-            for (++i; i != iend && i->second.line == line.line; ++i)
-                ;
-            intptr_t lb = line.lb;
-            intptr_t ub = (i != iend? i->second.lb: INTPTR_MAX);
-            auto j = Rs.lower_bound(lb);
-            if (j == Rs.end() && ub == INTPTR_MAX)
-            {
-            bad_range:
-                warning("failed to find line %u in address range for %s",
-                    line.line, line.file);
-                continue;
-            }
-            if (j != Rs.end())
-                ub = std::min(ub, j->second.ub);
-            if (lb >= ub)
-                goto bad_range;
-            Ls.emplace(std::piecewise_construct,
-                std::forward_as_tuple(lb),
-                std::forward_as_tuple(lb, ub, line.dir, line.file, line.line));
-        }
     }
+    for (auto i = Tmp.begin(), iend = Tmp.end(); i != iend; )
+    {
+        const Line &line = i->second;
+        for (++i; i != iend && sameLine(i->second, line); ++i)
+            ;
+        intptr_t lb = line.lb;
+        intptr_t ub = (i != iend? i->second.lb: INTPTR_MAX);
+        if (ub == INTPTR_MAX)
+        {
+            // Alternative method for end-case
+            ub = lb;
+            for (ssize_t i = findInstr(Is, size, lb);
+                    i >= 0 && (size_t)i < size && Is[i].address == (size_t)ub;
+                    i++)
+                ub = Is[i].address + Is[i].size;
+        }
+        Ls.emplace(std::piecewise_construct,
+            std::forward_as_tuple(lb),
+            std::forward_as_tuple(lb, ub, line.dir, line.file, line.line));
+    }
+
+#if 0
+    for (const auto &E: Ls)
+    {
+        const Line &L = E.second;
+        fprintf(stderr, "0x%lx..0x%lx [%zu]: %s:%u\n", L.lb, L.ub,
+            L.ub - L.lb, L.file, L.line);
+    }
+#endif
 
     dwarf_end(dbg);
     dlclose(handle);
