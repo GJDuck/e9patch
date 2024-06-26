@@ -243,6 +243,15 @@ extern const Line *e9tool::findLine(const Lines &Ls, intptr_t addr)
     auto i = Ls.lower_bound(addr);
     if (i == Ls.end())
         return nullptr;
-    return &i->second;
+    if (i->second.lb == addr)
+        return &i->second;
+    auto j = Ls.begin();
+    if (i == j)
+        return nullptr;
+    i--;
+    if (i->second.lb <= addr && addr < i->second.ub)
+        return &i->second;
+    else
+        return nullptr;
 }
 

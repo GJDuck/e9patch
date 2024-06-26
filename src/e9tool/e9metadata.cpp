@@ -1957,12 +1957,12 @@ static Type sendLoadArgumentMetadata(FILE *out, CallInfo &info,
         case ARGUMENT_FILENAME: case ARGUMENT_ABSNAME:
         case ARGUMENT_BASENAME: case ARGUMENT_DIRNAME:
         {
-            auto i = elf->lines.lower_bound(I->address);
-            if (i != elf->lines.end())
+            const Line *line = findLine(elf->lines, I->address);
+            if (line != nullptr)
             {
-                const auto &line = i->second;
                 if (arg.kind == ARGUMENT_DIRNAME &&
-                    (line.dir == nullptr && strchr(line.file, '/') == nullptr))
+                    (line->dir == nullptr &&
+                        strchr(line->file, '/') == nullptr))
                 {
                     sendSExtFromI32ToR64(out, 0, regno);
                     t = TYPE_NULL_PTR;
@@ -1991,21 +1991,20 @@ static Type sendLoadArgumentMetadata(FILE *out, CallInfo &info,
         }
         case ARGUMENT_LINE:
         {
-            auto i = elf->lines.lower_bound(I->address);
-            if (i == elf->lines.end())
+            const Line *line = findLine(elf->lines, I->address);
+            if (line == nullptr)
             {
                 sendSExtFromI32ToR64(out, 0, regno);
                 t = TYPE_CONST_VOID_PTR;
                 break;
             }
-            const Line &line = i->second;
             switch (arg.field)
             {
                 case FIELD_NONE:
-                    sendLoadValueMetadata(out, line.line, regno);
+                    sendLoadValueMetadata(out, line->line, regno);
                     break;
                 case FIELD_SIZE:
-                    sendLoadValueMetadata(out, line.ub - line.lb, regno);
+                    sendLoadValueMetadata(out, line->ub - line->lb, regno);
                     break;
                 default:
                     error("unknown field (%d)", arg.field);
@@ -2091,21 +2090,20 @@ static void sendArgumentDataMetadata(FILE *out, const char *name,
         case ARGUMENT_FILENAME: case ARGUMENT_ABSNAME:
         case ARGUMENT_BASENAME: case ARGUMENT_DIRNAME:
         {
-            auto i = elf->lines.lower_bound(I->address);
-            if (i == elf->lines.end())
+            const Line *line = findLine(elf->lines, I->address);
+            if (line == nullptr)
                 return;
-            const auto &line = i->second;
             std::string tmp;
-            const char *file = line.file, *kind = "file";
+            const char *file = line->file, *kind = "file";
             switch (arg.kind)
             {
                 case ARGUMENT_ABSNAME:
-                    getAbsname(line.dir, line.file, tmp);
+                    getAbsname(line->dir, line->file, tmp);
                     kind = "abs"; file = tmp.c_str(); break;
                 case ARGUMENT_BASENAME:
-                    kind = "base"; file = getBasename(line.file); break;
+                    kind = "base"; file = getBasename(line->file); break;
                 case ARGUMENT_DIRNAME:
-                    getDirname(line.dir, line.file, tmp);
+                    getDirname(line->dir, line->file, tmp);
                     kind = "dir"; file = tmp.c_str(); break;
                 default:
                     break;
