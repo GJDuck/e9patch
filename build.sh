@@ -36,56 +36,6 @@ do
     shift
 done
 
-TARGET=`readlink zydis`
-if [ ! -d zydis ]
-then
-    ZYDIS_VERSION=3f5a3ad8e16658c62d7033e9373232d19480d3cc
-    ZYCORE_VERSION=5c341bf141fe9274c9037c542274ead19fb645d8
-
-    echo -e "${GREEN}$0${OFF}: downloading zydis-$ZYDIS_VERSION.zip..."
-    wget -O zydis-$ZYDIS_VERSION.zip https://github.com/zyantific/zydis/archive/$ZYDIS_VERSION.zip
-
-    echo -e "${GREEN}$0${OFF}: downloading zycore-$ZYCORE_VERSION.zip..."
-    wget -O zycore-$ZYCORE_VERSION.zip https://github.com/zyantific/zycore-c/archive/$ZYCORE_VERSION.zip
-
-    echo -e "${GREEN}$0${OFF}: extracting zydis-$ZYDIS_VERSION.zip..."
-    unzip zydis-$ZYDIS_VERSION.zip
-    rm -f zydis-$ZYDIS_VERSION.zip
-
-    echo -e "${GREEN}$0${OFF}: extracting zycore-$ZYCORE_VERSION.zip..."
-    unzip zycore-$ZYCORE_VERSION.zip
-    rm -f zycore-$ZYCORE_VERSION.zip
-
-    echo -e "${GREEN}$0${OFF}: building Zydis..."
-    mv zydis-$ZYDIS_VERSION zydis/
-    rm -rf zydis/dependencies/zycore/
-    mv zycore-c-$ZYCORE_VERSION zydis/dependencies/zycore/
-    rm -rf zycore-c-$ZYCORE_VERSION
-	cat << EOF > zydis/include/ZydisExportConfig.h
-#ifndef ZYDIS_EXPORT_H
-#define ZYDIS_EXPORT_H
-#define ZYDIS_EXPORT
-#define ZYDIS_NO_EXPORT
-#define ZYDIS_DEPRECATED __attribute__ ((__deprecated__))
-#define ZYDIS_DEPRECATED_EXPORT ZYDIS_EXPORT ZYDIS_DEPRECATED
-#define ZYDIS_DEPRECATED_NO_EXPORT ZYDIS_NO_EXPORT ZYDIS_DEPRECATED
-#define ZYDIS_NO_DEPRECATED
-#endif
-EOF
-	cat << EOF > zydis/include/ZycoreExportConfig.h
-#ifndef ZYCORE_EXPORT_H
-#define ZYCORE_EXPORT_H
-#define ZYCORE_EXPORT
-#define ZYCORE_NO_EXPORT
-#define ZYCORE_DEPRECATED __attribute__ ((__deprecated__))
-#define ZYCORE_DEPRECATED_EXPORT ZYCORE_EXPORT ZYCORE_DEPRECATED
-#define ZYCORE_DEPRECATED_NO_EXPORT ZYCORE_NO_EXPORT ZYCORE_DEPRECATED
-#define ZYCORE_NO_DEPRECATED
-#endif
-EOF
-    make -f Makefile.zydis -j `nproc`
-fi
-
 echo -e "${GREEN}$0${OFF}: building e9patch and e9tool..."
 make tool.clean clean
 make -j `nproc` tool release

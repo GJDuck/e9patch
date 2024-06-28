@@ -2,7 +2,7 @@
 #CXX=clang++
 
 CXXFLAGS = -std=c++11 -Wall -Wno-reorder -fPIC -pie -march=native \
-    -DVERSION=$(shell cat VERSION)
+    -DVERSION=$(shell cat VERSION) -Wl,-rpath=/usr/share/e9tool/lib/
 
 E9PATCH_OBJS=\
     src/e9patch/e9CFR.o \
@@ -33,10 +33,21 @@ E9TOOL_OBJS=\
     src/e9tool/e9tool.o \
     src/e9tool/e9types.o \
     src/e9tool/e9x86_64.o
+E9TOOL_LIBS=\
+    contrib/zydis/libZydis.a \
+    contrib/libdw/libdw.a
+E9TOOL_CXXFLAGS=\
+    -I src/e9tool/ -Wno-unused-function \
+    -I contrib/libdw/ \
+    -I contrib/zydis/include/ \
+    -I contrib/zydis/dependencies/zycore/include/
+E9TOOL_LDFLAGS=\
+    -Wl,--dynamic-list=src/e9tool/e9tool.syms \
+    -lpthread -ldl -lz
 
 release: CXXFLAGS += -O2 -D NDEBUG
 release: $(E9PATCH_OBJS)
-	$(CXX) $(CXXFLAGS) $(E9PATCH_OBJS) -o e9patch $(LDFLAGS)
+	$(CXX) $(CXXFLAGS) $(E9PATCH_OBJS) -o e9patch
 	strip e9patch
 
 debug: CXXFLAGS += -O0 -g
@@ -47,25 +58,21 @@ sanitize: CXXFLAGS += -O0 -g -fsanitize=address
 sanitize: $(E9PATCH_OBJS)
 	$(CXX) $(CXXFLAGS) $(E9PATCH_OBJS) -o e9patch
 
-tool: CXXFLAGS += -O2 -I src/e9tool/ -I zydis/include/ \
-    -I zydis/dependencies/zycore/include/ -Wno-unused-function
-tool: $(E9TOOL_OBJS) 
-	$(CXX) $(CXXFLAGS) $(E9TOOL_OBJS) -o e9tool libZydis.a \
-        -Wl,--dynamic-list=src/e9tool/e9tool.syms -ldl $(LDFLAGS)
+tool: CXXFLAGS += -O2 $(E9TOOL_CXXFLAGS)
+tool: $(E9TOOL_OBJS) $(E9TOOL_LIBS)
+	$(CXX) $(CXXFLAGS) $(E9TOOL_OBJS) $(E9TOOL_LIBS) -o e9tool \
+        $(E9TOOL_LDFLAGS) -Wl,-Map=output.map
 	strip e9tool
 
-tool.debug: CXXFLAGS += -O0 -g -I src/e9tool/ -I zydis/include/ \
-    -I zydis/dependencies/zycore/include/ -Wno-unused-function
-tool.debug: $(E9TOOL_OBJS)
-	$(CXX) $(CXXFLAGS) $(E9TOOL_OBJS) -o e9tool libZydis.a \
-        -Wl,--dynamic-list=src/e9tool/e9tool.syms -ldl
+tool.debug: CXXFLAGS += -O0 -g $(E9TOOL_CXXFLAGS)
+tool.debug: $(E9TOOL_OBJS) $(E9TOOL_LIBS)
+	$(CXX) $(CXXFLAGS) $(E9TOOL_OBJS) $(E9TOOL_LIBS) -o e9tool \
+        $(E9TOOL_LDFLAGS)
 
-tool.sanitize: CXXFLAGS += -O0 -g -I src/e9tool/ -I zydis/include/ \
-    -I zydis/dependencies/zycore/include/ -Wno-unused-function \
-    -fsanitize=address
-tool.sanitize: $(E9TOOL_OBJS)
-	$(CXX) $(CXXFLAGS) $(E9TOOL_OBJS) -o e9tool libZydis.a \
-        -Wl,--dynamic-list=src/e9tool/e9tool.syms -ldl
+tool.sanitize: CXXFLAGS += -O0 -g -fsanitize=address $(E9TOOL_CXXFLAGS)
+tool.sanitize: $(E9TOOL_OBJS) $(E9TOOL_LIBS)
+	$(CXX) $(CXXFLAGS) $(E9TOOL_OBJS) $(E9TOOL_LIBS) -o e9tool \
+        $(E9TOOL_LDFLAGS)
 
 tool.clean:
 	rm -rf $(E9TOOL_OBJS) e9tool
@@ -85,6 +92,12 @@ loader_pe:
 
 src/e9patch/e9elf.o: loader_elf
 src/e9patch/e9pe.o: loader_pe
+
+contrib/zydis/libZydis.a:
+	(cd contrib/zydis/; make)
+
+contrib/libdw/libdw.a:
+	(cd contrib/libdw/; make)
 
 clean:
 	rm -rf $(E9PATCH_OBJS) e9patch \

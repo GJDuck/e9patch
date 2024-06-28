@@ -28,61 +28,9 @@
 #include "e9misc.h"
 #include "e9tool.h"
 
+#include "libdw.h"
+
 using namespace e9tool;
-
-#define DWARF_C_READ    0
-
-typedef Elf64_Off Dwarf_Off;
-typedef Elf64_Addr Dwarf_Addr;
-typedef Elf64_Xword Dwarf_Word;
-typedef struct Dwarf Dwarf;
-typedef struct Dwarf_Abbrev Dwarf_Abbrev;
-typedef struct Dwarf_CU Dwarf_CU;
-typedef struct Dwarf_Lines_s Dwarf_Lines;
-typedef struct Dwarf_Line_s Dwarf_Line;
-typedef struct Dwarf_Files_s Dwarf_Files;
-typedef struct
-{
-    void *addr;
-    struct Dwarf_CU *cu;
-    Dwarf_Abbrev *abbrev;
-    long int padding__;
-} Dwarf_Die;
-
-typedef Dwarf *(*dwarf_begin_t)(int fildes, int cmd);
-typedef int (*dwarf_end_t)(Dwarf *dwarf);
-typedef int (*dwarf_nextcu_t)(Dwarf *dwarf, Dwarf_Off off, Dwarf_Off *next_off,
-    size_t *header_sizep, Dwarf_Off *abbrev_offsetp,
-    uint8_t *address_sizep, uint8_t *offset_sizep);
-typedef Dwarf_Die *(*dwarf_offdie_t)(Dwarf *dbg, Dwarf_Off offset,
-    Dwarf_Die *result);
-typedef int (*dwarf_getsrclines_t)(Dwarf_Die *cudie, Dwarf_Lines **lines,
-    size_t *nlines);
-typedef int (*dwarf_getsrcfiles_t)(Dwarf_Die *cudie, Dwarf_Files **files,
-    size_t *nfiles);
-typedef Dwarf_Line *(*dwarf_onesrcline_t)(Dwarf_Lines *lines, size_t idx);
-typedef int (*dwarf_lineaddr_t)(Dwarf_Line *line, Dwarf_Addr *addrp);
-typedef int (*dwarf_lineno_t)(Dwarf_Line *line, int *linep);
-typedef int (*dwarf_linecol_t)(Dwarf_Line *line, int *linep);
-typedef const char *(*dwarf_linesrc_t)(Dwarf_Line *line, Dwarf_Word *mtime,
-    Dwarf_Word *length);
-typedef int (*dwarf_getsrcdirs_t)(Dwarf_Files *files,
-    const char *const **result, size_t *ndirs);
-typedef const char *(*dwarf_errmsg_t)(int err);
-
-static dwarf_begin_t dwarf_begin             = nullptr;
-static dwarf_end_t dwarf_end                 = nullptr;
-static dwarf_nextcu_t dwarf_nextcu           = nullptr;
-static dwarf_offdie_t dwarf_offdie           = nullptr;
-static dwarf_getsrclines_t dwarf_getsrclines = nullptr;
-static dwarf_getsrcfiles_t dwarf_getsrcfiles = nullptr;
-static dwarf_onesrcline_t dwarf_onesrcline   = nullptr;
-static dwarf_lineaddr_t dwarf_lineaddr       = nullptr;
-static dwarf_lineno_t dwarf_lineno           = nullptr;
-static dwarf_linecol_t dwarf_linecol         = nullptr;
-static dwarf_linesrc_t dwarf_linesrc         = nullptr;
-static dwarf_getsrcdirs_t dwarf_getsrcdirs   = nullptr;
-static dwarf_errmsg_t dwarf_errmsg           = nullptr;
 
 /*
  * Check if lines are the same.
@@ -104,43 +52,11 @@ static bool sameLine(const Line &line_1, const Line &line_2)
 }
 
 /*
- * Load a symbol from the library.
- */
-static void *getSym(void *handle, const char *lib, const char *name)
-{
-    void *sym = dlsym(handle, name);
-    if (sym == nullptr)
-        error("failed to load symbol \"%s\" from library \"%s\": %s",
-            name, lib, dlerror());
-    return sym;
-}
-
-/*
  * Build source line information.
  */
 extern void e9tool::buildLines(const ELF *elf, const Instr *Is, size_t size,
     Lines &Ls)
 {
-    const char *lib = "libdw.so";
-    void *handle = dlopen(lib, RTLD_LAZY);
-    if (handle == nullptr)
-        error("failed to load library \"%s\" (not installed?): %s", lib,
-            dlerror());
-
-    dwarf_begin       = (dwarf_begin_t)      getSym(handle, lib, "dwarf_begin");
-    dwarf_end         = (dwarf_end_t)        getSym(handle, lib, "dwarf_end");
-    dwarf_nextcu      = (dwarf_nextcu_t)     getSym(handle, lib, "dwarf_nextcu");
-    dwarf_offdie      = (dwarf_offdie_t)     getSym(handle, lib, "dwarf_offdie");
-    dwarf_getsrclines = (dwarf_getsrclines_t)getSym(handle, lib, "dwarf_getsrclines");
-    dwarf_getsrcfiles = (dwarf_getsrcfiles_t)getSym(handle, lib, "dwarf_getsrcfiles");
-    dwarf_onesrcline  = (dwarf_onesrcline_t) getSym(handle, lib, "dwarf_onesrcline");
-    dwarf_lineaddr    = (dwarf_lineaddr_t)   getSym(handle, lib, "dwarf_lineaddr");
-    dwarf_lineno      = (dwarf_lineno_t)     getSym(handle, lib, "dwarf_lineno");
-    dwarf_linecol     = (dwarf_linecol_t)    getSym(handle, lib, "dwarf_linecol");
-    dwarf_linesrc     = (dwarf_linesrc_t)    getSym(handle, lib, "dwarf_linesrc");
-    dwarf_getsrcdirs  = (dwarf_getsrcdirs_t) getSym(handle, lib, "dwarf_getsrcdirs");
-    dwarf_errmsg      = (dwarf_errmsg_t)     getSym(handle, lib, "dwarf_errmsg");
-
     int fd = open(elf->filename, O_RDONLY, 0);
     if (fd < 0)
         error("failed to open file \"%s\" for reading: %s", elf->filename,
@@ -232,7 +148,6 @@ extern void e9tool::buildLines(const ELF *elf, const Instr *Is, size_t size,
 #endif
 
     dwarf_end(dbg);
-    dlclose(handle);
 }
 
 /*
