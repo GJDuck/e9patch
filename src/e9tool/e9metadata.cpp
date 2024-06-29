@@ -2092,22 +2092,27 @@ static void sendArgumentDataMetadata(FILE *out, const char *name,
         {
             const Line *line = findLine(elf->lines, I->address);
             if (line == nullptr)
-                return;
-            std::string tmp;
+            {
+            bad_line:
+                error("failed to construct metadata for line");
+            }
+            char buf[PATH_MAX+1], *tmp = buf;
             const char *file = line->file, *kind = "file";
             switch (arg.kind)
             {
                 case ARGUMENT_ABSNAME:
-                    getAbsname(line->dir, line->file, tmp);
-                    kind = "abs"; file = tmp.c_str(); break;
+                    file = getAbsname(line->dir, line->file, tmp, sizeof(buf));
+                    kind = "abs"; break;
                 case ARGUMENT_BASENAME:
                     kind = "base"; file = getBasename(line->file); break;
                 case ARGUMENT_DIRNAME:
-                    getDirname(line->dir, line->file, tmp);
-                    kind = "dir"; file = tmp.c_str(); break;
+                    file = getDirname(line->dir, line->file, tmp, sizeof(buf));
+                    kind = "dir"; break;
                 default:
                     break;
             }
+            if (file == nullptr)
+                goto bad_line;
             fprintf(out, "\".L%s@%s\",{\"string\":", kind, name);
             sendString(out, file);
             fputs("},", out);

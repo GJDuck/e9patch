@@ -1,0 +1,1 @@
+./test_c.debug -100 -M 'file=/(.*\.c)/ and (line.entry or BB.entry)' -P 'format("%s:%u\n",basename,line)@patch'

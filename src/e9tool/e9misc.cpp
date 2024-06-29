@@ -84,27 +84,39 @@ bool hasSuffix(const std::string &str, const char *suffix)
 /*
  * Get the absolute source filename.
  */
-void getAbsname(const char *dir, const char *file, std::string &tmp)
+const char *getAbsname(const char *dir, const char *file, char *tmp,
+    size_t size)
 {
-    if (dir != nullptr)
-    {
-        tmp += dir;
-        tmp += '/';
-    }
-    tmp += file;
+    if (dir == nullptr)
+        return file;
+    if (tmp == nullptr || size == 0)
+        return nullptr;
+    ssize_t r = snprintf(tmp, size-1, "%s/%s", dir, file);
+    if (r < 0 || (size_t)r >= size-1)
+        return nullptr;
+    return tmp;
 }
 
 /*
  * Get the source directory name.
  */
-bool getDirname(const char *dir, const char *file, std::string &tmp)
+const char *getDirname(const char *dir, const char *file, char *tmp,
+    size_t size)
 {
-    getAbsname(dir, file, tmp);
-    size_t last = tmp.rfind('/');
-    if (last == std::string::npos)
-        return false;
-    tmp.resize(last+1);
-    return true;
+    char *abs = (char *)getAbsname(dir, file, tmp, size);
+    if (abs == nullptr)
+        return nullptr;
+    char *last = strrchr((char *)abs, '/');
+    if (last == nullptr)
+        return nullptr;
+    size_t len = last-abs+1;
+    if (abs == file)
+    {
+        memcpy(tmp, file, len);
+        abs = tmp;
+    }
+    abs[len] = '\0';
+    return abs;
 }
 
 /*

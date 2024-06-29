@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2022 National University of Singapore
+ * Copyright (C) 2024 National University of Singapore
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -1984,8 +1984,11 @@ static intptr_t getNumOperands(const InstrInfo *I, OpType type, Access access)
  */
 static MatchVal makeMatchValue(const MatchVar *var, const ELF *elf,
     const std::vector<Instr> &Is, size_t idx, const InstrInfo *I,
-    MatchVal *buf, std::string &tmp)
+    uint8_t *scratch)
 {
+    MatchVal *buf = (MatchVal *)scratch;
+    char *tmp     = (char *)scratch;
+
     MatchKind match  = var->match;
     MatchField field = var->field;
     MatchVal result;
@@ -2291,15 +2294,18 @@ static MatchVal makeMatchValue(const MatchVar *var, const ELF *elf,
             result.str  = line->file;
             return result;
         case MATCH_ABSNAME:
-            getAbsname(line->dir, line->file, tmp);
-            result.type = MATCH_TYPE_STRING;
-            result.str  = tmp.c_str();
-            return result;
-        case MATCH_DIRNAME:
-            if (!getDirname(line->dir, line->file, tmp))
+            tmp = (char *)getAbsname(line->dir, line->file, tmp, PATH_MAX+1);
+            if (tmp == nullptr)
                 goto undefined;
             result.type = MATCH_TYPE_STRING;
-            result.str  = tmp.c_str();
+            result.str  = tmp;
+            return result;
+        case MATCH_DIRNAME:
+            tmp = (char *)getDirname(line->dir, line->file, tmp, PATH_MAX+1);
+            if (tmp == nullptr)
+                goto undefined;
+            result.type = MATCH_TYPE_STRING;
+            result.str  = tmp;
             return result;
         case MATCH_BASENAME:
             result.type = MATCH_TYPE_STRING;
@@ -2404,10 +2410,9 @@ static MatchVal matchCastToBool(MatchVal val)
  */
 static MatchVal matchDoEval(const MatchExpr *expr, const ELF &elf,
     const std::vector<Instr> &Is, size_t idx, const InstrInfo *I,
-    MatchVal *buf)
+    uint8_t *scratch)
 {
     MatchVal lhs, rhs, res;
-    std::string tmp;
     switch (expr->op)
     {
         case MATCH_OP_ARG:
@@ -2419,7 +2424,7 @@ static MatchVal matchDoEval(const MatchExpr *expr, const ELF &elf,
                     break;
                 case MATCH_INST_VAR:
                     res = makeMatchValue(expr->arg.var, &elf, Is, idx, I,
-                        buf, tmp);
+                        scratch);
                     if (option_debug)
                     {
                         std::string str_var, str_val;
@@ -2440,23 +2445,28 @@ static MatchVal matchDoEval(const MatchExpr *expr, const ELF &elf,
             break;
         }
         case MATCH_OP_NOT:
-            res = matchCastToBool(matchDoEval(expr->lhs, elf, Is, idx, I, buf));
+            res = matchCastToBool(matchDoEval(expr->lhs, elf, Is, idx, I,
+                scratch));
             res.i = (res.i == 0);
             break;
         case MATCH_OP_AND:
-            res = matchCastToBool(matchDoEval(expr->lhs, elf, Is, idx, I, buf));
+            res = matchCastToBool(matchDoEval(expr->lhs, elf, Is, idx, I,
+                scratch));
             if (res.i == false)
                 break;
-            res = matchCastToBool(matchDoEval(expr->rhs, elf, Is, idx, I, buf));
+            res = matchCastToBool(matchDoEval(expr->rhs, elf, Is, idx, I,
+                scratch));
             break;
         case MATCH_OP_OR:
-            res = matchCastToBool(matchDoEval(expr->lhs, elf, Is, idx, I, buf));
+            res = matchCastToBool(matchDoEval(expr->lhs, elf, Is, idx, I,
+                scratch));
             if (res.i == true)
                 break;
-            res = matchCastToBool(matchDoEval(expr->rhs, elf, Is, idx, I, buf));
+            res = matchCastToBool(matchDoEval(expr->rhs, elf, Is, idx, I,
+                scratch));
             break;
         case MATCH_OP_DEFINED:
-            lhs = matchDoEval(expr->lhs, elf, Is, idx, I, buf);
+            lhs = matchDoEval(expr->lhs, elf, Is, idx, I, scratch);
             res.type = MATCH_TYPE_INTEGER;
             res.i    = (lhs.type != MATCH_TYPE_UNDEFINED);
             break;
@@ -2467,11 +2477,11 @@ static MatchVal matchDoEval(const MatchExpr *expr, const ELF &elf,
         {
             res.type = MATCH_TYPE_INTEGER;
             res.i    = false;
-            lhs = matchDoEval(expr->lhs, elf, Is, idx, I, buf);
+            lhs = matchDoEval(expr->lhs, elf, Is, idx, I, scratch);
             if (lhs.type == MATCH_TYPE_UNDEFINED)
                 break;
-            MatchVal rbuf[64];
-            rhs = matchDoEval(expr->rhs, elf, Is, idx, I, rbuf);
+            uint8_t rscratch[PATH_MAX+1];
+            rhs = matchDoEval(expr->rhs, elf, Is, idx, I, rscratch);
             if (rhs.type == MATCH_TYPE_UNDEFINED)
                 break;
             switch (expr->op)
@@ -2509,10 +2519,10 @@ static MatchVal matchDoEval(const MatchExpr *expr, const ELF &elf,
         case MATCH_OP_LSHIFT: case MATCH_OP_RSHIFT:
         {
             res.type = MATCH_TYPE_UNDEFINED;
-            lhs = matchDoEval(expr->lhs, elf, Is, idx, I, buf);
+            lhs = matchDoEval(expr->lhs, elf, Is, idx, I, scratch);
             if (lhs.type != MATCH_TYPE_INTEGER)
                 break;
-            rhs = matchDoEval(expr->rhs, elf, Is, idx, I, buf);
+            rhs = matchDoEval(expr->rhs, elf, Is, idx, I, scratch);
             if (lhs.type != MATCH_TYPE_INTEGER)
                 break;
             res.type = MATCH_TYPE_INTEGER;
@@ -2570,7 +2580,7 @@ static MatchVal matchDoEval(const MatchExpr *expr, const ELF &elf,
         case MATCH_OP_NEG: case MATCH_OP_BIT_NOT:
         {
             res.type = MATCH_TYPE_UNDEFINED;
-            lhs = matchDoEval(expr->lhs, elf, Is, idx, I, buf);
+            lhs = matchDoEval(expr->lhs, elf, Is, idx, I, scratch);
             if (lhs.type != MATCH_TYPE_INTEGER)
                 break;
             res.type = MATCH_TYPE_INTEGER;
@@ -2606,8 +2616,11 @@ bool matchEval(const MatchExpr *expr, const ELF &elf,
             (option_is_tty? "\33[0m": ""), (option_is_tty? "\33[32m": ""),
             I->string.instr, (option_is_tty? "\33[0m": ""));
     }
-    MatchVal buf[64];
-    MatchVal result = matchCastToBool(matchDoEval(expr, elf, Is, idx, I, buf));
+    uint8_t scratch[PATH_MAX+1];
+    static_assert(sizeof(scratch) >= 64 * sizeof(MatchVal),
+        "scratch too small");
+    MatchVal result = matchCastToBool(matchDoEval(expr, elf, Is, idx, I,
+        scratch));
     bool pass = (result.i != 0);
     if (option_debug)
     {
