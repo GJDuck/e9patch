@@ -88,10 +88,12 @@ void error(int status, int errnum, const char *format, ...);
 #endif
 
 #if !HAVE_DECL_POWEROF2
+#undef powerof2
 #define powerof2(x) (((x) & ((x) - 1)) == 0)
 #endif
 
 #if !HAVE_DECL_MEMPCPY
+#undef mempcpy
 #define mempcpy(dest, src, n) \
     ((void *) ((char *) memcpy (dest, src, n) + (size_t) n))
 #endif
