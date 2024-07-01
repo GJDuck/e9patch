@@ -100,7 +100,7 @@ void error(int status, int errnum, const char *format, ...);
 
 #if !HAVE_DECL_REALLOCARRAY
 static inline void *
-reallocarray (void *ptr, size_t nmemb, size_t size)
+static_reallocarray (void *ptr, size_t nmemb, size_t size)
 {
   if (size > 0 && nmemb > SIZE_MAX / size)
     {
@@ -109,6 +109,9 @@ reallocarray (void *ptr, size_t nmemb, size_t size)
     }
   return realloc (ptr, nmemb * size);
 }
+#undef reallocarray
+#define reallocarray(ptr, nmemb, size)  \
+    static_reallocarray((ptr), (nmemb), (size))
 #endif
 
 /* Return TRUE if the start of STR matches PREFIX, FALSE otherwise.  */
