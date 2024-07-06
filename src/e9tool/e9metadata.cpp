@@ -1954,6 +1954,54 @@ static Type sendLoadArgumentMetadata(FILE *out, CallInfo &info,
                 *(int32_t *)&I->data[I->encoding.offset.imm], regno);
             t = TYPE_INT32;
             break;
+        case ARGUMENT_FILENAME: case ARGUMENT_ABSNAME:
+        case ARGUMENT_BASENAME: case ARGUMENT_DIRNAME:
+        {
+            const Line *line = findLine(elf->lines, I->address);
+            if (line != nullptr)
+            {
+                if (arg.kind == ARGUMENT_DIRNAME &&
+                    (line->dir == nullptr &&
+                        strchr(line->file, '/') == nullptr))
+                {
+                    sendSExtFromI32ToR64(out, 0, regno);
+                    t = TYPE_NULL_PTR;
+                    break;
+                }
+                const char *kind = "file";
+                switch (arg.kind)
+                {
+                    case ARGUMENT_ABSNAME:  kind = "abs"; break;
+                    case ARGUMENT_BASENAME: kind = "base"; break;
+                    case ARGUMENT_DIRNAME:  kind = "dir"; break;
+                    default: break;
+                }
+                std::string offset("{\"rel32\":\".L");
+                offset += kind;
+                offset += '@';
+                offset += name;
+                offset += "\"}";
+                sendLeaFromPCRelToR64(out, offset.c_str(), regno);
+                t = TYPE_CONST_CHAR_PTR;
+                break;
+            }
+            sendSExtFromI32ToR64(out, 0, regno);
+            t = TYPE_NULL_PTR;
+            break;
+        }
+        case ARGUMENT_LINE:
+        {
+            const Line *line = findLine(elf->lines, I->address);
+            if (line == nullptr)
+            {
+                sendSExtFromI32ToR64(out, 0, regno);
+                t = TYPE_CONST_VOID_PTR;
+                break;
+            }
+            sendLoadValueMetadata(out, line->line, regno);
+            t = TYPE_INT32;
+            break;
+        }
         default:
             error("NYI argument (%d)", arg.kind);
     }
@@ -2027,6 +2075,37 @@ static void sendArgumentDataMetadata(FILE *out, const char *name,
                 return;
             fprintf(out, "\".Lfn%d@%s\",{\"string\":", regno, name);
             sendString(out, f->name);
+            fputs("},", out);
+            break;
+        }
+        case ARGUMENT_FILENAME: case ARGUMENT_ABSNAME:
+        case ARGUMENT_BASENAME: case ARGUMENT_DIRNAME:
+        {
+            const Line *line = findLine(elf->lines, I->address);
+            if (line == nullptr)
+            {
+            bad_line:
+                error("failed to construct metadata for line");
+            }
+            char buf[PATH_MAX+1], *tmp = buf;
+            const char *file = line->file, *kind = "file";
+            switch (arg.kind)
+            {
+                case ARGUMENT_ABSNAME:
+                    file = getAbsname(line->dir, line->file, tmp, sizeof(buf));
+                    kind = "abs"; break;
+                case ARGUMENT_BASENAME:
+                    kind = "base"; file = getBasename(line->file); break;
+                case ARGUMENT_DIRNAME:
+                    file = getDirname(line->dir, line->file, tmp, sizeof(buf));
+                    kind = "dir"; break;
+                default:
+                    break;
+            }
+            if (file == nullptr)
+                goto bad_line;
+            fprintf(out, "\".L%s@%s\",{\"string\":", kind, name);
+            sendString(out, file);
             fputs("},", out);
             break;
         }

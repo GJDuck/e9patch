@@ -19,6 +19,7 @@ all:
 	gcc -O2 -fPIC $(FCF_NONE) -pie -o test_c test_c.c \
 		-Wl,--export-dynamic -U_FORTIFY_SOURCE
 	strip test_c
+	gcc -O0 -g -fPIC -pie -o test_c.debug test_c.c
 	../../e9compile.sh inst.c -I ../../examples/ 
 	../../e9compile.sh patch.cpp -std=c++11 -I ../../examples/ 
 	NO_SIMD_CHECK=1 ../../e9compile.sh dl.c -I ../../examples/

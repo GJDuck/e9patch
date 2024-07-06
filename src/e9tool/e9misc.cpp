@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2022 National University of Singapore
+ * Copyright (C) 2024 National University of Singapore
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -14,6 +14,8 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
+
+#include <set>
 
 #include <cstring>
 #include <cstdlib>
@@ -41,6 +43,7 @@ bool option_targets      = false;
 bool option_bbs          = false;
 bool option_fs           = false;
 bool option_trap_all     = false;
+bool option_lines        = false;
 
 /*
  * Duplicate a string.
@@ -55,6 +58,20 @@ char *strDup(const char *old_str, size_t n)
 }
 
 /*
+ * Create a persistent copy of a string.
+ */
+const char *strCache(const char *s)
+{
+    static std::set<const char *, CStrCmp> cache;
+    auto i = cache.find(s);
+    if (i != cache.end())
+        return *i;
+    s = strDup(s);
+    cache.insert(s);
+    return s;
+}
+
+/*
  * Check for suffix.
  */
 bool hasSuffix(const std::string &str, const char *suffix)
@@ -62,6 +79,55 @@ bool hasSuffix(const std::string &str, const char *suffix)
     size_t len = strlen(suffix);
     return (str.size() < len? false: str.compare(str.size()-len,
         len, suffix, len) == 0);
+}
+
+/*
+ * Get the absolute source filename.
+ */
+const char *getAbsname(const char *dir, const char *file, char *tmp,
+    size_t size)
+{
+    if (dir == nullptr)
+        return file;
+    if (tmp == nullptr || size == 0)
+        return nullptr;
+    ssize_t r = snprintf(tmp, size-1, "%s/%s", dir, file);
+    if (r < 0 || (size_t)r >= size-1)
+        return nullptr;
+    return tmp;
+}
+
+/*
+ * Get the source directory name.
+ */
+const char *getDirname(const char *dir, const char *file, char *tmp,
+    size_t size)
+{
+    char *abs = (char *)getAbsname(dir, file, tmp, size);
+    if (abs == nullptr)
+        return nullptr;
+    char *last = strrchr((char *)abs, '/');
+    if (last == nullptr)
+        return nullptr;
+    size_t len = last-abs+1;
+    if (abs == file)
+    {
+        memcpy(tmp, file, len);
+        abs = tmp;
+    }
+    abs[len] = '\0';
+    return abs;
+}
+
+/*
+ * Get the source base name.
+ */
+const char *getBasename(const char *file)
+{
+    const char *base = file;
+    for (size_t i = 0; file[i] != '\0'; i++)
+        base = (file[i] == '/'? file+i+1: base);
+    return base;
 }
 
 /*

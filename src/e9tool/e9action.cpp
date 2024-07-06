@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2022 National University of Singapore
+ * Copyright (C) 2024 National University of Singapore
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -432,14 +432,23 @@ static const MatchArg parseMatchArg(Parser &parser, bool val = false)
     bool ptr = false;
     switch (t)
     {
+        case TOKEN_ABSNAME:
+            option_lines = true;
+            match = MATCH_ABSNAME; break;
         case TOKEN_ASM:
             match = MATCH_ASSEMBLY; break;
         case TOKEN_ADDR:
             match = MATCH_ADDRESS; break;
+        case TOKEN_BASENAME:
+            option_lines = true;
+            match = MATCH_BASENAME; break;
         case TOKEN_BYTES:
             match = MATCH_BYTES; break;
         case TOKEN_CALL:
             match = MATCH_CALL; break;
+        case TOKEN_DIRNAME:
+            option_lines = true;
+            match = MATCH_DIRNAME; break;
         case TOKEN_DISP32:
             match = MATCH_DISP32; break;
         case TOKEN_DISP8:
@@ -449,6 +458,9 @@ static const MatchArg parseMatchArg(Parser &parser, bool val = false)
         case TOKEN_FALSE:
             if (seen_I) parser.unexpectedToken();
             match = MATCH_FALSE; break;
+        case TOKEN_FILENAME:
+            option_lines = true;
+            match = MATCH_FILENAME; break;
         case TOKEN_IMM:
             match = MATCH_IMM; break;
         case TOKEN_IMM32:
@@ -465,6 +477,22 @@ static const MatchArg parseMatchArg(Parser &parser, bool val = false)
             // Fallthrough:
         case TOKEN_JMP:
             match = MATCH_JUMP; break;
+        case TOKEN_LINE:
+            option_lines = true;
+            if (parser.peekToken() == '.')
+            {
+                parser.getToken();
+                switch (parser.getToken())
+                {
+                    case TOKEN_ENTRY:
+                        match = MATCH_LINE_ENTRY; break;
+                    default:
+                        parser.unexpectedToken();
+                }
+            }
+            else
+                match = MATCH_LINE;
+            break;
         case TOKEN_MEM:
             match = MATCH_MEM; break;
         case TOKEN_MNEMONIC:
@@ -955,15 +983,24 @@ static const Argument parsePatchArg(Parser &parser)
         t = TOKEN_NAME;
     switch (t)
     {
+        case TOKEN_ABSNAME:
+            option_lines = true;
+            arg = ARGUMENT_ABSNAME; break;
         case TOKEN_ASM:
             arg = ARGUMENT_ASM; break;
         case TOKEN_ADDR:
             arg = ARGUMENT_ADDR; break;
         case TOKEN_BASE:
             arg = ARGUMENT_BASE; break;
+        case TOKEN_BASENAME:
+            option_lines = true;
+            arg = ARGUMENT_BASENAME; break;
         case TOKEN_BB:
             option_targets = option_bbs = true;
             arg = ARGUMENT_BB; break;
+        case TOKEN_DIRNAME:
+            option_lines = true;
+            arg = ARGUMENT_DIRNAME; break;
         case TOKEN_DST:
             arg = ARGUMENT_DST; break;
         case TOKEN_CONFIG:
@@ -971,6 +1008,9 @@ static const Argument parsePatchArg(Parser &parser)
         case TOKEN_F:
             option_targets = option_fs = true;
             arg = ARGUMENT_F; break;
+        case TOKEN_FILENAME:
+            option_lines = true;
+            arg = ARGUMENT_FILENAME; break;
         case TOKEN_ID:
             arg = ARGUMENT_ID; break;
         case TOKEN_IMM:
@@ -980,6 +1020,9 @@ static const Argument parsePatchArg(Parser &parser)
             // Fallthrough:
         case TOKEN_BYTES:
             arg = ARGUMENT_BYTES; break;
+        case TOKEN_LINE:
+            option_lines = true;
+            arg = ARGUMENT_LINE; break;
         case TOKEN_MEM:
             arg = ARGUMENT_MEM; break;
         case TOKEN_MEM8: case TOKEN_MEM16: case TOKEN_MEM32:
@@ -1356,10 +1399,7 @@ static bool shouldDumpHex(const MatchVar &var)
     switch (var.match)
     {
         case MATCH_ADDRESS: case MATCH_TARGET:
-        case MATCH_BB_BEST: case MATCH_BB_ENTRY:
-        case MATCH_BB_EXIT: case MATCH_BB_ADDR:
-        case MATCH_F_BEST: case MATCH_F_ENTRY:
-        case MATCH_F_ADDR:
+        case MATCH_BB_ADDR: case MATCH_F_ADDR:
             return true;
         case MATCH_OP: case MATCH_SRC:
         case MATCH_DST: case MATCH_MEM:
@@ -1614,26 +1654,36 @@ static void dumpExpr(const MatchExpr &expr, std::string &str, bool hex = false)
             str += var.plugin->filename;
             str += "\").match()";
             break;
+        case MATCH_ABSNAME:
+            str += "absname"; break;
         case MATCH_ASSEMBLY:
             str += "asm"; break;
         case MATCH_ADDRESS:
             str += "addr"; break;
+        case MATCH_BASENAME:
+            str += "basename"; break;
         case MATCH_BYTES:
             str += "bytes"; break;
         case MATCH_CALL:
             str += "call"; break;
         case MATCH_CONDJUMP:
             str += "jcc"; break;
+        case MATCH_DIRNAME:
+            str += "dirname"; break;
         case MATCH_DISP8:
             str += "disp8"; break;
         case MATCH_DISP32:
             str += "disp32"; break;
+        case MATCH_FILENAME:
+            str += "filename"; break;
         case MATCH_IMM8:
             str += "imm8"; break;
         case MATCH_IMM32:
             str += "imm32"; break;
         case MATCH_JUMP:
             str += "jmp"; break;
+        case MATCH_LINE:
+            str += "line"; break;
         case MATCH_MMX:
             str += "mmx"; break;
         case MATCH_MNEMONIC:
@@ -1919,8 +1969,11 @@ static intptr_t getNumOperands(const InstrInfo *I, OpType type, Access access)
  */
 static MatchVal makeMatchValue(const MatchVar *var, const ELF *elf,
     const std::vector<Instr> &Is, size_t idx, const InstrInfo *I,
-    MatchVal *buf)
+    uint8_t *scratch)
 {
+    MatchVal *buf = (MatchVal *)scratch;
+    char *tmp     = (char *)scratch;
+
     MatchKind match  = var->match;
     MatchField field = var->field;
     MatchVal result;
@@ -1929,8 +1982,9 @@ static MatchVal makeMatchValue(const MatchVar *var, const ELF *elf,
     const OpInfo *op = nullptr;
     OpType type = OPTYPE_INVALID;
     uint8_t access = 0;
-    const BB *bb = nullptr;
-    const F *f   = nullptr;
+    const BB *bb     = nullptr;
+    const F *f       = nullptr;
+    const Line *line = nullptr;
     InstrInfo info;
     uint8_t j = 0;
 
@@ -1989,6 +2043,12 @@ static MatchVal makeMatchValue(const MatchVar *var, const ELF *elf,
         case MATCH_F_OFFSET: case MATCH_F_NAME:
             f = findF(elf->fs, idx);
             if (f == nullptr)
+                goto undefined;
+            break;
+        case MATCH_FILENAME: case MATCH_ABSNAME: case MATCH_BASENAME:
+        case MATCH_DIRNAME: case MATCH_LINE: case MATCH_LINE_ENTRY:
+            line = findLine(elf->lines, I->address);
+            if (line == nullptr)
                 goto undefined;
             break;
         default:
@@ -2213,6 +2273,34 @@ static MatchVal makeMatchValue(const MatchVar *var, const ELF *elf,
             result.i = (intptr_t)Is[f->lb].offset; return result;
         case MATCH_F_BEST:
             result.i = (idx == f->best); return result;
+        case MATCH_FILENAME:
+            result.type = MATCH_TYPE_STRING;
+            result.str  = line->file;
+            return result;
+        case MATCH_ABSNAME:
+            tmp = (char *)getAbsname(line->dir, line->file, tmp, PATH_MAX+1);
+            if (tmp == nullptr)
+                goto undefined;
+            result.type = MATCH_TYPE_STRING;
+            result.str  = tmp;
+            return result;
+        case MATCH_DIRNAME:
+            tmp = (char *)getDirname(line->dir, line->file, tmp, PATH_MAX+1);
+            if (tmp == nullptr)
+                goto undefined;
+            result.type = MATCH_TYPE_STRING;
+            result.str  = tmp;
+            return result;
+        case MATCH_BASENAME:
+            result.type = MATCH_TYPE_STRING;
+            result.str  = getBasename(line->file);
+            return result;
+        case MATCH_LINE:
+            result.type = MATCH_TYPE_INTEGER;
+            result.i    = (intptr_t)line->line;
+            return result;
+        case MATCH_LINE_ENTRY:
+            result.i = (I->address == line->lb); return result;
         case MATCH_ASSEMBLY:
             result.type = MATCH_TYPE_STRING;
             result.str  = I->string.instr;
@@ -2304,7 +2392,7 @@ static MatchVal matchCastToBool(MatchVal val)
  */
 static MatchVal matchDoEval(const MatchExpr *expr, const ELF &elf,
     const std::vector<Instr> &Is, size_t idx, const InstrInfo *I,
-    MatchVal *buf)
+    uint8_t *scratch)
 {
     MatchVal lhs, rhs, res;
     switch (expr->op)
@@ -2317,7 +2405,8 @@ static MatchVal matchDoEval(const MatchExpr *expr, const ELF &elf,
                     res = *expr->arg.val;
                     break;
                 case MATCH_INST_VAR:
-                    res = makeMatchValue(expr->arg.var, &elf, Is, idx, I, buf);
+                    res = makeMatchValue(expr->arg.var, &elf, Is, idx, I,
+                        scratch);
                     if (option_debug)
                     {
                         std::string str_var, str_val;
@@ -2338,23 +2427,28 @@ static MatchVal matchDoEval(const MatchExpr *expr, const ELF &elf,
             break;
         }
         case MATCH_OP_NOT:
-            res = matchCastToBool(matchDoEval(expr->lhs, elf, Is, idx, I, buf));
+            res = matchCastToBool(matchDoEval(expr->lhs, elf, Is, idx, I,
+                scratch));
             res.i = (res.i == 0);
             break;
         case MATCH_OP_AND:
-            res = matchCastToBool(matchDoEval(expr->lhs, elf, Is, idx, I, buf));
+            res = matchCastToBool(matchDoEval(expr->lhs, elf, Is, idx, I,
+                scratch));
             if (res.i == false)
                 break;
-            res = matchCastToBool(matchDoEval(expr->rhs, elf, Is, idx, I, buf));
+            res = matchCastToBool(matchDoEval(expr->rhs, elf, Is, idx, I,
+                scratch));
             break;
         case MATCH_OP_OR:
-            res = matchCastToBool(matchDoEval(expr->lhs, elf, Is, idx, I, buf));
+            res = matchCastToBool(matchDoEval(expr->lhs, elf, Is, idx, I,
+                scratch));
             if (res.i == true)
                 break;
-            res = matchCastToBool(matchDoEval(expr->rhs, elf, Is, idx, I, buf));
+            res = matchCastToBool(matchDoEval(expr->rhs, elf, Is, idx, I,
+                scratch));
             break;
         case MATCH_OP_DEFINED:
-            lhs = matchDoEval(expr->lhs, elf, Is, idx, I, buf);
+            lhs = matchDoEval(expr->lhs, elf, Is, idx, I, scratch);
             res.type = MATCH_TYPE_INTEGER;
             res.i    = (lhs.type != MATCH_TYPE_UNDEFINED);
             break;
@@ -2365,11 +2459,11 @@ static MatchVal matchDoEval(const MatchExpr *expr, const ELF &elf,
         {
             res.type = MATCH_TYPE_INTEGER;
             res.i    = false;
-            lhs = matchDoEval(expr->lhs, elf, Is, idx, I, buf);
+            lhs = matchDoEval(expr->lhs, elf, Is, idx, I, scratch);
             if (lhs.type == MATCH_TYPE_UNDEFINED)
                 break;
-            MatchVal rbuf[64];
-            rhs = matchDoEval(expr->rhs, elf, Is, idx, I, rbuf);
+            uint8_t rscratch[PATH_MAX+1];
+            rhs = matchDoEval(expr->rhs, elf, Is, idx, I, rscratch);
             if (rhs.type == MATCH_TYPE_UNDEFINED)
                 break;
             switch (expr->op)
@@ -2407,10 +2501,10 @@ static MatchVal matchDoEval(const MatchExpr *expr, const ELF &elf,
         case MATCH_OP_LSHIFT: case MATCH_OP_RSHIFT:
         {
             res.type = MATCH_TYPE_UNDEFINED;
-            lhs = matchDoEval(expr->lhs, elf, Is, idx, I, buf);
+            lhs = matchDoEval(expr->lhs, elf, Is, idx, I, scratch);
             if (lhs.type != MATCH_TYPE_INTEGER)
                 break;
-            rhs = matchDoEval(expr->rhs, elf, Is, idx, I, buf);
+            rhs = matchDoEval(expr->rhs, elf, Is, idx, I, scratch);
             if (lhs.type != MATCH_TYPE_INTEGER)
                 break;
             res.type = MATCH_TYPE_INTEGER;
@@ -2468,7 +2562,7 @@ static MatchVal matchDoEval(const MatchExpr *expr, const ELF &elf,
         case MATCH_OP_NEG: case MATCH_OP_BIT_NOT:
         {
             res.type = MATCH_TYPE_UNDEFINED;
-            lhs = matchDoEval(expr->lhs, elf, Is, idx, I, buf);
+            lhs = matchDoEval(expr->lhs, elf, Is, idx, I, scratch);
             if (lhs.type != MATCH_TYPE_INTEGER)
                 break;
             res.type = MATCH_TYPE_INTEGER;
@@ -2504,8 +2598,11 @@ bool matchEval(const MatchExpr *expr, const ELF &elf,
             (option_is_tty? "\33[0m": ""), (option_is_tty? "\33[32m": ""),
             I->string.instr, (option_is_tty? "\33[0m": ""));
     }
-    MatchVal buf[64];
-    MatchVal result = matchCastToBool(matchDoEval(expr, elf, Is, idx, I, buf));
+    uint8_t scratch[PATH_MAX+1];
+    static_assert(sizeof(scratch) >= 64 * sizeof(MatchVal),
+        "scratch too small");
+    MatchVal result = matchCastToBool(matchDoEval(expr, elf, Is, idx, I,
+        scratch));
     bool pass = (result.i != 0);
     if (option_debug)
     {

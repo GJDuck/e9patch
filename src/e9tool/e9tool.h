@@ -2309,6 +2309,12 @@ enum ArgumentKind : uint8_t
     ARGUMENT_CONFIG,                // Pointer to the e9_config_s struct
     ARGUMENT_NULL,                  // NULL pointer argument
 
+    ARGUMENT_FILENAME,              // Filename (relative)
+    ARGUMENT_ABSNAME,               // Absolute filename
+    ARGUMENT_BASENAME,              // Basename
+    ARGUMENT_DIRNAME,               // Directory name
+    ARGUMENT_LINE,                  // Line #
+
     ARGUMENT_BB,                    // Basic block
     ARGUMENT_F,                     // Function
 
@@ -2390,6 +2396,23 @@ struct F
     }
 };
 typedef std::vector<F> Fs;
+
+struct Line
+{
+    const intptr_t lb;                  // Line base address
+    const intptr_t ub;                  // Line end address
+    const char * const dir;             // Line directory
+    const char * const file;            // Line filename
+    const unsigned line;                // Line number
+
+    Line(intptr_t lb, intptr_t ub, const char *dir, const char *file,
+            unsigned line) :
+        lb(lb), ub(ub), dir(dir), file(file), line(line)
+    {
+        ;
+    }
+};
+typedef std::map<intptr_t, Line> Lines;
 
 /*
  * Low-level functions that send fragments of JSONRPC messages:
@@ -2485,12 +2508,15 @@ extern const char *getRegName(Register r);
 extern ssize_t findInstr(const Instr *Is, size_t size, intptr_t address);
 extern const BB *findBB(const BBs &bbs, size_t idx);
 extern const F *findF(const Fs &fs, size_t idx);
+extern const Line *findLine(const Lines &Ls, intptr_t address);
 extern void buildTargets(const ELF *elf, const Instr *Is, size_t size,
     Targets &targets);
 extern void buildBBs(const ELF *elf, const Instr *Is, size_t size,
     const Targets &targets, BBs &bbs);
 extern void buildFs(const ELF *elf, const Instr *Is, size_t size,
     const Targets &targets, Fs &fs);
+extern void buildLines(const ELF *elf, const Instr *Is, size_t size,
+    Lines &Ls);
 extern intptr_t getSymbol(const ELF *elf, const char *symbol);
 extern void NO_RETURN error(const char *msg, ...);
 extern void warning(const char *msg, ...);

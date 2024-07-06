@@ -503,7 +503,7 @@ size_t emitElf(Binary *B, const MappingSet &mappings, size_t mapping_size)
     std::vector<uint32_t> preinits, postinits;
     for (auto preinit: B->preinits)
     {
-        assert(preinit.num_entries == 1 &&
+        assert(preinit->num_entries == 1 &&
             preinit->entries[0].kind == ENTRY_BYTES);
         preinits.push_back((uint32_t)(size - config_offset));
         memcpy(data + size, preinit->entries[0].bytes,
@@ -513,7 +513,7 @@ size_t emitElf(Binary *B, const MappingSet &mappings, size_t mapping_size)
     }
     for (auto postinit: B->postinits)
     {
-        assert(postinit.num_entries == 1 &&
+        assert(postinit->num_entries == 1 &&
             postinit->entries[0].kind == ENTRY_BYTES);
         postinits.push_back((uint32_t)(size - config_offset));
         memcpy(data + size, postinit->entries[0].bytes,

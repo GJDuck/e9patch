@@ -26,6 +26,10 @@
 #define PAGE_SIZE   4096
 #endif
 
+#ifndef PATH_MAX
+#define PATH_MAX    4096
+#endif
+
 #define STRING(s)               STRING_2(s)
 #define STRING_2(s)             #s
 
@@ -36,7 +40,13 @@
                             (option_is_tty? "\33[0m": "")
 
 extern char *strDup(const char *old_str, size_t n = SIZE_MAX);
+extern const char *strCache(const char *old_str);
 extern bool hasSuffix(const std::string &str, const char *suffix);
+extern const char *getAbsname(const char *dir, const char *file, char *tmp,
+    size_t size);
+extern const char *getBasename(const char *file);
+extern const char *getDirname(const char *dir, const char *file, char *tmp,
+    size_t size);
 extern void getExePath(std::string &path);
 extern bool isLibraryFilename(const char *filename);
 extern const char *findBinary(const char *filename, bool exe = true,
@@ -55,5 +65,6 @@ extern bool option_targets;
 extern bool option_bbs;
 extern bool option_fs;
 extern bool option_trap_all;
+extern bool option_lines;
 
 #endif

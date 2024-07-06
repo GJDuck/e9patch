@@ -1407,6 +1407,8 @@ int main_2(int argc, char **argv)
         buildBBs(&elf, Is.data(), Is.size(), elf.targets, elf.bbs);
     if (option_fs)
         buildFs(&elf, Is.data(), Is.size(), elf.targets, elf.fs);
+    if (option_lines)
+        buildLines(&elf, Is.data(), Is.size(), elf.lines);
     if (option_dump_all)
         dumpInfo(option_output, Is.data(), Is.size(), elf.targets,
             elf.bbs, elf.fs);
