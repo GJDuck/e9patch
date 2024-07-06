@@ -553,6 +553,18 @@ The following `ATTRIBUTE`s (with corresponding types) are supported:
     <td>The number of instructions in the current function</td></tr>
 <tr><td><b><tt>F.name</tt></b></td><td><tt>String</tt></td>
     <td>The name of the function (if available)</td></tr>
+<tr><td><b><tt>file</tt></b></td><td><tt>String</tt></td>
+    <td>The source filename (if available)</td></tr>
+<tr><td><b><tt>absname</tt></b></td><td><tt>String</tt></td>
+    <td>The full path of <tt>file</tt> (if available)</td></tr>
+<tr><td><b><tt>basename</tt></b></td><td><tt>String</tt></td>
+    <td>The basename component of <tt>absname</tt> (if available)</td></tr>
+<tr><td><b><tt>dirname</tt></b></td><td><tt>String</tt></td>
+    <td>The directory component of <tt>absname</tt> (if available)</td></tr>
+<tr><td><b><tt>line</tt></b></td><td><tt>Integer</tt></td>
+    <td>The source line number (if available)</td></tr>
+<tr><td><b><tt>line.entry</tt></b></td><td><tt>Boolean</tt></td>
+    <td>True for the first instruction in each line (if available)</td></tr>
 <tr><td><b><tt>NAME[i]<tt></b></td><td><tt>Integer | String</tt></td>
     <td>The corresponding value from the <tt>NAME.csv</tt> file</td></tr>
 <tr><td><b><tt>plugin(NAME).match()</tt></b></td><td><tt>Integer</tt></td>
@@ -584,6 +596,10 @@ Thus the `Operand` type is the union of the `Integer`, `Register`, and
 `MemOp` types:
 
         Operand = Integer | Register | MemOp
+
+The `file`, `absname`, `basename`, `dirname`, `line`, and `line.entry`
+attributes are only defined if the binary was compiled with debug information
+(`-g`).
 
 ---
 ### <a id="definedness">2.2 Definedness</a>
@@ -1240,6 +1256,16 @@ The following arguments are supported:
     function</td></tr>
 <tr><td><b><tt>F.name</tt></b></td><td><tt>const char &#42;</tt></td>
     <td>The matching instruction's function name</td></tr>
+<tr><td><b><tt>file</tt></b></td><td><tt>const char &#42;</tt></td>
+    <td>The source filename of the matching instruction</td></tr>
+<tr><td><b><tt>absname</tt></b></td><td><tt>const char &#42;</tt></td>
+    <td>The full path of <tt>file</tt></td></tr>
+<tr><td><b><tt>basename</tt></b></td><td><tt>const char &#42;</tt></td>
+    <td>The basename component of <tt>absname</tt></td></tr>
+<tr><td><b><tt>dirname</tt></b></td><td><tt>const char &#42;</tt></td>
+    <td>The directory component of <tt>absname</tt></td></tr>
+<tr><td><b><tt>line</tt></b></td><td><tt>int32_t</tt></td>
+    <td>The source line number of the matching instruction</td></tr>
 <tr><td><b><tt>NAME[i]<tt></b></td><td><tt>int64_t/const char &#42;</tt></td>
     <td>The corresponding value from the <tt>NAME.csv</tt> file</td></tr>
 </table>

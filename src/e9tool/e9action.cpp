@@ -486,8 +486,6 @@ static const MatchArg parseMatchArg(Parser &parser, bool val = false)
                 {
                     case TOKEN_ENTRY:
                         match = MATCH_LINE_ENTRY; break;
-                    case TOKEN_SIZE:
-                        match = MATCH_LINE_SIZE; break;
                     default:
                         parser.unexpectedToken();
                 }
@@ -1158,19 +1156,6 @@ static const Argument parsePatchArg(Parser &parser)
                         if (arg != ARGUMENT_F)
                             parser.unexpectedToken();
                         field = FIELD_NAME; break;
-                    default:
-                        parser.unexpectedToken();
-                }
-            }
-            break;
-        case ARGUMENT_LINE:
-            if (parser.peekToken() == '.')
-            {
-                parser.getToken();
-                switch (parser.getToken())
-                {
-                    case TOKEN_SIZE:
-                        field = FIELD_SIZE; break;
                     default:
                         parser.unexpectedToken();
                 }
@@ -2062,7 +2047,6 @@ static MatchVal makeMatchValue(const MatchVar *var, const ELF *elf,
             break;
         case MATCH_FILENAME: case MATCH_ABSNAME: case MATCH_BASENAME:
         case MATCH_DIRNAME: case MATCH_LINE: case MATCH_LINE_ENTRY:
-        case MATCH_LINE_SIZE:
             line = findLine(elf->lines, I->address);
             if (line == nullptr)
                 goto undefined;
@@ -2317,8 +2301,6 @@ static MatchVal makeMatchValue(const MatchVar *var, const ELF *elf,
             return result;
         case MATCH_LINE_ENTRY:
             result.i = (I->address == line->lb); return result;
-        case MATCH_LINE_SIZE:
-            result.i = (line->ub - line->lb); return result;
         case MATCH_ASSEMBLY:
             result.type = MATCH_TYPE_STRING;
             result.str  = I->string.instr;

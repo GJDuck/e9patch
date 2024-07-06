@@ -1998,17 +1998,8 @@ static Type sendLoadArgumentMetadata(FILE *out, CallInfo &info,
                 t = TYPE_CONST_VOID_PTR;
                 break;
             }
-            switch (arg.field)
-            {
-                case FIELD_NONE:
-                    sendLoadValueMetadata(out, line->line, regno);
-                    break;
-                case FIELD_SIZE:
-                    sendLoadValueMetadata(out, line->ub - line->lb, regno);
-                    break;
-                default:
-                    error("unknown field (%d)", arg.field);
-            }
+            sendLoadValueMetadata(out, line->line, regno);
+            t = TYPE_INT32;
             break;
         }
         default:

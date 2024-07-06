@@ -109,6 +109,8 @@ extern void e9tool::buildLines(const ELF *elf, const Instr *Is, size_t size,
             int lineno;
             if (dwarf_lineno(line, &lineno) != 0)
                 continue;
+            if (lineno <= 0)
+                continue;
             file = strCache(file);
             const char *tmp = (dir != nullptr && file[0] != '/'? dir: nullptr);
             Tmp.emplace(std::piecewise_construct,
