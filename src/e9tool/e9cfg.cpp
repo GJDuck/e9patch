@@ -399,7 +399,7 @@ void e9tool::buildTargets(const ELF *elf, const Instr *Is, size_t size,
             bool stop = false;
             switch (I->mnemonic)
             {
-                case MNEMONIC_NOP: case MNEMONIC_ENDBR64:
+                case MNEMONIC_NOP:
                     break;
                 default:
                     stop = true;
