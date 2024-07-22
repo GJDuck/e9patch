@@ -3622,10 +3622,10 @@ static int fgetc(FILE *stream)
     return result;
 }
 
-static int fgets_unlocked(char *s, int size, FILE *stream)
+static char *fgets_unlocked(char *s, int size, FILE *stream)
 {
     if (stdio_stream_read_init(stream) < 0)
-        return EOF;
+        return NULL;
     int i;
     for (i = 0; i < size-1; i++)
     {
@@ -3638,7 +3638,7 @@ static int fgets_unlocked(char *s, int size, FILE *stream)
             if (feof_unlocked(stream))
                 break;
             if (ferror_unlocked(stream))
-                return EOF;
+                return NULL;
         }
         s[i] = c;
         if (c == '\n')
@@ -3648,13 +3648,13 @@ static int fgets_unlocked(char *s, int size, FILE *stream)
         }
     }
     s[i] = '\0';
-    return 0;
+    return s;
 }
 
-static int fgets(char *s, int size, FILE *stream)
+static char *fgets(char *s, int size, FILE *stream)
 {
-    stdio_lock(stream, EOF);
-    int result = fgets_unlocked(s, size, stream);
+    stdio_lock(stream, NULL);
+    char *result = fgets_unlocked(s, size, stream);
     stdio_unlock(stream);
     return result;
 }
