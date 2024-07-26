@@ -4400,13 +4400,29 @@ static __attribute__((__noinline__)) bool scanf_get_num(
             if (!scanf_get_oct(in, &width, &i, &overflow))
                 return false;
         }
-        else
+        else /* if (flags & SCANF_FLAG_HEX) */
+        {
             scanf_unget_char_n(c, in, &width);
+            if (!scanf_get_hex(in, &width, &i, &overflow))
+                return false;
+        }
     }
     else if (flags & SCANF_FLAG_DEC)
     {
         scanf_unget_char_n(c, in, &width);
         if (!scanf_get_dec(in, &width, &i, &overflow))
+            return false;
+    }
+    else if (flags & SCANF_FLAG_OCT)
+    {
+        scanf_unget_char_n(c, in, &width);
+        if (!scanf_get_oct(in, &width, &i, &overflow))
+            return false;
+    }
+    else if (flags & SCANF_FLAG_HEX)
+    {
+        scanf_unget_char_n(c, in, &width);
+        if (!scanf_get_hex(in, &width, &i, &overflow))
             return false;
     }
     else
