@@ -15,6 +15,8 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+set -e
+
 if [ -t 1 ]
 then
     RED="\033[31m"
@@ -95,8 +97,7 @@ then
     exit 1
 fi
 
-RELOCS=`readelf -r "$BASENAME" | head -n 10 | grep 'R_X86_64_'`
-if [ ! -z "$RELOCS" ]
+if readelf -r "$BASENAME" | head -n 10 | grep -q 'R_X86_64_'
 then
     echo >&2
     echo "${RED}warning${OFF}: the generated file (${YELLOW}$BASENAME${OFF}) contains relocations" >&2
