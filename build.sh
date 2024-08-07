@@ -15,29 +15,10 @@ else
     OFF=
 fi
 
-while [ $# -ge 1 ]
-do
-    case "$1" in
-        --help|-h)
-            echo "usage: $0 [OPTIONS]"
-            echo
-            echo "OPTIONS:"
-            echo
-            echo "    --help, -h"
-            echo "        Print this message"
-            echo
-            exit 0
-            ;;
-        *)
-            echo "unknown argument \"$1\"; try \`$0 --help' for more information"
-            exit 1
-            ;;
-    esac
-    shift
-done
-
 echo -e "${GREEN}$0${OFF}: building e9patch and e9tool..."
-make tool.clean clean
+(cd contrib/libdw; make clean; make -j `nproc`)
+(cd contrib/zydis; make clean; make -j `nproc`)
+make clean
 make -j `nproc` tool release
 
 echo -e "${GREEN}$0${OFF}: done...!"

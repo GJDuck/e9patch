@@ -1,5 +1,6 @@
-#CC=clang
-#CXX=clang++
+#########################################################################
+# BUILD COMMON
+#########################################################################
 
 CXXFLAGS = -std=c++11 -Wall -Wno-reorder -fPIC -pie -march=native \
     -DVERSION=$(shell cat VERSION) -Wl,-rpath=/usr/share/e9tool/lib/
@@ -38,44 +39,32 @@ E9TOOL_LIBS=\
     contrib/libdw/libdw.a
 E9TOOL_CXXFLAGS=\
     -I src/e9tool/ -Wno-unused-function \
-    -I contrib/libdw/ \
     -I contrib/zydis/include/ \
     -I contrib/zydis/dependencies/zycore/include/
 E9TOOL_LDFLAGS=\
     -Wl,--dynamic-list=src/e9tool/e9tool.syms \
-    -lpthread -ldl -lz
+    -ldl -lz
 
-release: CXXFLAGS += -O2 -D NDEBUG
-release: $(E9PATCH_OBJS)
+#########################################################################
+# CONVENTIONAL BUILD
+#########################################################################
+
+all: e9tool e9patch
+
+e9tool: CXXFLAGS += -O2 -DSYSTEM_LIBDW $(E9TOOL_CXXFLAGS)
+e9tool: contrib/zydis/libZydis.a $(E9TOOL_OBJS)
+	$(CXX) $(CXXFLAGS) $(E9TOOL_OBJS) contrib/zydis/libZydis.a -o e9tool \
+	    $(E9TOOL_LDFLAGS) -ldw
+	strip e9tool
+
+e9patch: CXXFLAGS += -O2 
+e9patch: $(E9PATCH_OBJS)
 	$(CXX) $(CXXFLAGS) $(E9PATCH_OBJS) -o e9patch
 	strip e9patch
 
-debug: CXXFLAGS += -O0 -g
-debug: $(E9PATCH_OBJS)
-	$(CXX) $(CXXFLAGS) $(E9PATCH_OBJS) -o e9patch
-
-sanitize: CXXFLAGS += -O0 -g -fsanitize=address
-sanitize: $(E9PATCH_OBJS)
-	$(CXX) $(CXXFLAGS) $(E9PATCH_OBJS) -o e9patch
-
-tool: CXXFLAGS += -O2 $(E9TOOL_CXXFLAGS)
-tool: $(E9TOOL_OBJS) $(E9TOOL_LIBS)
-	$(CXX) $(CXXFLAGS) $(E9TOOL_OBJS) $(E9TOOL_LIBS) -o e9tool \
-        $(E9TOOL_LDFLAGS) -Wl,-Map=output.map
-	strip e9tool
-
-tool.debug: CXXFLAGS += -O0 -g $(E9TOOL_CXXFLAGS)
-tool.debug: $(E9TOOL_OBJS) $(E9TOOL_LIBS)
-	$(CXX) $(CXXFLAGS) $(E9TOOL_OBJS) $(E9TOOL_LIBS) -o e9tool \
-        $(E9TOOL_LDFLAGS)
-
-tool.sanitize: CXXFLAGS += -O0 -g -fsanitize=address $(E9TOOL_CXXFLAGS)
-tool.sanitize: $(E9TOOL_OBJS) $(E9TOOL_LIBS)
-	$(CXX) $(CXXFLAGS) $(E9TOOL_OBJS) $(E9TOOL_LIBS) -o e9tool \
-        $(E9TOOL_LDFLAGS)
-
-tool.clean:
-	rm -rf $(E9TOOL_OBJS) e9tool
+clean:
+	rm -rf $(E9PATCH_OBJS) $(E9TOOL_OBJS) e9patch e9tool \
+        src/e9patch/e9loader.c e9loader.out e9loader.o e9loader.bin
 
 loader_elf:
 	$(CXX) -std=c++11 -Wall -fno-stack-protector -Wno-unused-function -fPIC \
@@ -99,7 +88,96 @@ contrib/zydis/libZydis.a:
 contrib/libdw/libdw.a:
 	(cd contrib/libdw/; make)
 
-clean:
-	rm -rf $(E9PATCH_OBJS) e9patch \
-        src/e9patch/e9loader.c e9loader.out e9loader.o e9loader.bin
+install: all
+	install -d "$(DESTDIR)/usr/bin"
+	install -m 755 e9patch "$(DESTDIR)/usr/bin/e9patch"
+	install -m 755 e9tool "$(DESTDIR)/usr/bin/e9tool"
+	install -m 755 e9compile.sh "$(DESTDIR)/usr/bin/e9compile"
+	sed \
+	    -e 's/-I example/-I \/usr\/share\/e9compile\/include/g' e9compile.sh > \
+	    "$(DESTDIR)/usr/bin/e9compile"
+	chmod 555 "$(DESTDIR)/usr/bin/e9compile"
+	install -d "$(DESTDIR)/usr/share/doc/e9patch/"
+	sed \
+	    -e 's/https:\/\/github.com\/GJDuck\/e9patch\/blob\/master\/doc\/e9tool-user-guide.md/file:\/\/\/usr\/share\/doc\/e9tool\/e9tool-user-guide.html/g' \
+	    -e 's/https:\/\/github.com\/GJDuck\/e9patch\/tree\/master\/examples/file:\/\/\/usr\/share\/e9tool\/examples/g' \
+		doc/e9patch-programming-guide.md | markdown > \
+	    "$(DESTDIR)/usr/share/doc/e9patch/e9patch-programming-guide.html"
+	install -m 444 LICENSE "$(DESTDIR)/usr/share/doc/e9patch/LICENSE"
+	install -d "$(DESTDIR)/usr/share/doc/e9tool/"
+	sed \
+        -e 's/https:\/\/github.com\/GJDuck\/e9patch\/blob\/master\/doc\/e9patch-programming-guide.md/file:\/\/\/usr\/share\/doc\/e9patch\/e9patch-programming-guide.html/g' \
+        doc/e9tool-user-guide.md | markdown > \
+        "$(DESTDIR)/usr/share/doc/e9tool/e9tool-user-guide.html"
+	install -m 444 LICENSE "$(DESTDIR)/usr/share/doc/e9tool/LICENSE"
+	install -d "$(DESTDIR)/usr/share/e9tool/include/"
+	install -m 444 src/e9tool/e9tool.h "$(DESTDIR)/usr/share/e9tool/include/e9tool.h"
+	install -m 444 src/e9tool/e9plugin.h "$(DESTDIR)/usr/share/e9tool/include/e9plugin.h"
+	install -d "$(DESTDIR)/usr/share/e9tool/examples/"
+	install -m 444 examples/bounds.c "$(DESTDIR)/usr/share/e9tool/examples/bounds.c"
+	sed \
+	    -e 's/.\/e9compile.sh examples\/bounds.c/e9compile \/usr\/share\/e9tool\/examples\/bounds.c/' \
+	    -e 's/\.\/e9tool/e9tool/' \
+        examples/bounds.sh > \
+	    "$(DESTDIR)/usr/share/e9tool/examples/bounds.sh"
+	chmod 555 "$(DESTDIR)/usr/share/e9tool/examples/bounds.sh"
+	install -m 444 examples/cfi.c "$(DESTDIR)/usr/share/e9tool/examples/cfi.c"
+	install -m 444 examples/count.c "$(DESTDIR)/usr/share/e9tool/examples/count.c"
+	install -m 444 examples/cov.c "$(DESTDIR)/usr/share/e9tool/examples/cov.c"
+	install -m 444 examples/delay.c "$(DESTDIR)/usr/share/e9tool/examples/delay.c"
+	install -m 444 examples/hello.c "$(DESTDIR)/usr/share/e9tool/examples/hello.c"
+	install -m 444 examples/limit.c "$(DESTDIR)/usr/share/e9tool/examples/limit.c"
+	install -m 444 examples/nop.c "$(DESTDIR)/usr/share/e9tool/examples/nop.c"
+	install -m 444 examples/print.c "$(DESTDIR)/usr/share/e9tool/examples/print.c"
+	install -m 444 examples/printf.c "$(DESTDIR)/usr/share/e9tool/examples/printf.c"
+	install -m 444 examples/skip.c "$(DESTDIR)/usr/share/e9tool/examples/skip.c"
+	install -m 444 examples/state.c "$(DESTDIR)/usr/share/e9tool/examples/state.c"
+	install -m 444 examples/trap.c "$(DESTDIR)/usr/share/e9tool/examples/trap.c"
+	install -m 444 examples/win64_demo.c "$(DESTDIR)/usr/share/e9tool/examples/win64_demo.c"
+	install -d "$(DESTDIR)/usr/share/e9tool/examples/plugins/"
+	install -m 444 examples/plugins/example.cpp "$(DESTDIR)/usr/share/e9tool/examples/plugins/example.cpp"
+	install -d "$(DESTDIR)/usr/share/e9compile/include/"
+	install -m 444 examples/stdlib.c "$(DESTDIR)/usr/share/e9compile/include/stdlib.c"
+	install -m 444 src/e9patch/e9loader.h "$(DESTDIR)/usr/share/e9compile/include/e9loader.h"
+	install -d "$(DESTDIR)/usr/share/man/man1/"
+	gzip --stdout doc/e9patch.1 > "$(DESTDIR)/usr/share/man/man1/e9patch.1.gz"
+	chmod 444 "$(DESTDIR)/usr/share/man/man1/e9patch.1.gz"
+	gzip --stdout doc/e9tool.1 > "$(DESTDIR)/usr/share/man/man1/e9tool.1.gz"
+	chmod 444 "$(DESTDIR)/usr/share/man/man1/e9tool.1.gz"
+	gzip --stdout doc/e9compile.1 > "$(DESTDIR)/usr/share/man/man1/e9compile.1.gz"
+	chmod 444 "$(DESTDIR)/usr/share/man/man1/e9compile.1.gz"
+
+#########################################################################
+# SPECIAL BUILD
+#########################################################################
+
+release: CXXFLAGS += -O2 -D NDEBUG
+release: $(E9PATCH_OBJS)
+	$(CXX) $(CXXFLAGS) $(E9PATCH_OBJS) -o e9patch
+	strip e9patch
+
+debug: CXXFLAGS += -O0 -g
+debug: $(E9PATCH_OBJS)
+	$(CXX) $(CXXFLAGS) $(E9PATCH_OBJS) -o e9patch
+
+sanitize: CXXFLAGS += -O0 -g -fsanitize=address
+sanitize: $(E9PATCH_OBJS)
+	$(CXX) $(CXXFLAGS) $(E9PATCH_OBJS) -o e9patch
+
+tool: CXXFLAGS += -O2 $(E9TOOL_CXXFLAGS) -I contrib/libdw/
+tool: $(E9TOOL_OBJS) $(E9TOOL_LIBS)
+	$(CXX) $(CXXFLAGS) $(E9TOOL_OBJS) $(E9TOOL_LIBS) -o e9tool \
+        $(E9TOOL_LDFLAGS)
+	strip e9tool
+
+tool.debug: CXXFLAGS += -O0 -g $(E9TOOL_CXXFLAGS) -I contrib/libdw/
+tool.debug: $(E9TOOL_OBJS) $(E9TOOL_LIBS)
+	$(CXX) $(CXXFLAGS) $(E9TOOL_OBJS) $(E9TOOL_LIBS) -o e9tool \
+        $(E9TOOL_LDFLAGS)
+
+tool.sanitize: CXXFLAGS += -O0 -g -fsanitize=address $(E9TOOL_CXXFLAGS) \
+	-I contrib/libdw/
+tool.sanitize: $(E9TOOL_OBJS) $(E9TOOL_LIBS)
+	$(CXX) $(CXXFLAGS) $(E9TOOL_OBJS) $(E9TOOL_LIBS) -o e9tool \
+        $(E9TOOL_LDFLAGS)
 

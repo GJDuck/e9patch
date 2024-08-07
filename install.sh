@@ -33,70 +33,17 @@ fi
 NAME=e9patch
 VERSION=`cat VERSION`
 
-if [ ! -x e9patch ]
-then
-    echo -e "${RED}$0${OFF}: run ./build.sh first" 1>&2
-    exit 1
-fi
-
 set -e
 
+./build.sh
 rm -rf install/
 mkdir -p install
-cd install/
-mkdir -p data
-mkdir -p control
+mkdir -p install/data
+mkdir -p install/control
 
-cd data/
-mkdir -p "./usr/bin/"
-cp "../../e9patch"      "./usr/bin/"
-cp "../../e9tool"       "./usr/bin/"
-cat "../../e9compile.sh" | \
-    sed 's/-I examples/-I \/usr\/share\/e9compile\/include/g' > \
-    "./usr/bin/e9compile"
-chmod a+x "./usr/bin/e9compile"
-mkdir -p "./usr/share/doc/e9patch/"
-cat "../../doc/e9patch-programming-guide.md" | \
-    sed 's/https:\/\/github.com\/GJDuck\/e9patch\/blob\/master\/doc\/e9tool-user-guide.md/file:\/\/\/usr\/share\/doc\/e9tool\/e9tool-user-guide.html/g' | \
-    sed 's/https:\/\/github.com\/GJDuck\/e9patch\/tree\/master\/examples/file:\/\/\/usr\/share\/e9tool\/examples/g' | \
-    markdown > "./usr/share/doc/e9patch/e9patch-programming-guide.html"
-cp "../../LICENSE" "./usr/share/doc/e9patch/"
-mkdir -p "./usr/share/doc/e9tool/"
-cat "../../doc/e9tool-user-guide.md" | \
-    sed 's/https:\/\/github.com\/GJDuck\/e9patch\/blob\/master\/doc\/e9patch-programming-guide.md/file:\/\/\/usr\/share\/doc\/e9patch\/e9patch-programming-guide.html/g' | \
-    markdown > "./usr/share/doc/e9tool/e9tool-user-guide.html"
-cp "../../LICENSE" "./usr/share/doc/e9tool/"
-mkdir -p "./usr/share/e9tool/include/"
-cp "../../src/e9tool/e9tool.h" "./usr/share/e9tool/include/"
-cp "../../src/e9tool/e9plugin.h" "./usr/share/e9tool/include/"
-mkdir -p "./usr/share/e9tool/examples/"
-cp "../../examples/bounds.c" "./usr/share/e9tool/examples/"
-cat "../../examples/bounds.sh" | \
-    sed 's/.\/e9compile.sh examples\/bounds.c/e9compile \/usr\/share\/e9tool\/examples\/bounds.c/' | \
-	sed 's/\.\/e9tool/e9tool/' > "./usr/share/e9tool/examples/bounds.sh"
-chmod a+x "./usr/share/e9tool/examples/bounds.sh"
-cp "../../examples/cfi.c" "./usr/share/e9tool/examples/"
-cp "../../examples/count.c" "./usr/share/e9tool/examples/"
-cp "../../examples/cov.c" "./usr/share/e9tool/examples/"
-cp "../../examples/delay.c" "./usr/share/e9tool/examples/"
-cp "../../examples/hello.c" "./usr/share/e9tool/examples/"
-cp "../../examples/limit.c" "./usr/share/e9tool/examples/"
-cp "../../examples/nop.c" "./usr/share/e9tool/examples/"
-cp "../../examples/print.c" "./usr/share/e9tool/examples/"
-cp "../../examples/printf.c" "./usr/share/e9tool/examples/"
-cp "../../examples/skip.c" "./usr/share/e9tool/examples/"
-cp "../../examples/state.c" "./usr/share/e9tool/examples/"
-cp "../../examples/trap.c" "./usr/share/e9tool/examples/"
-cp "../../examples/win64_demo.c" "./usr/share/e9tool/examples/"
-mkdir -p "./usr/share/e9tool/examples/plugins/"
-cp "../../examples/plugins/example.cpp" "./usr/share/e9tool/examples/plugins/"
-mkdir -p "./usr/share/e9compile/include/"
-cp "../../examples/stdlib.c" "./usr/share/e9compile/include/"
-cp "../../src/e9patch/e9loader.h" "./usr/share/e9compile/include/"
-mkdir -p "./usr/share/man/man1/"
-gzip --stdout ../../doc/e9patch.1   > ./usr/share/man/man1/e9patch.1.gz
-gzip --stdout ../../doc/e9tool.1    > ./usr/share/man/man1/e9tool.1.gz
-gzip --stdout ../../doc/e9compile.1 > ./usr/share/man/man1/e9compile.1.gz
+DESTDIR=install/data make install
+
+cd install/data
 tar cz --owner root --group root -f ../data.tar.gz .
 md5sum `find ../data/ -type f -printf "%P "` > ../control/md5sums
 

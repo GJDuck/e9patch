@@ -28,7 +28,11 @@
 #include "e9misc.h"
 #include "e9tool.h"
 
+#ifdef SYSTEM_LIBDW
+#include <elfutils/libdw.h>
+#else
 #include "libdw.h"
+#endif
 
 using namespace e9tool;
 

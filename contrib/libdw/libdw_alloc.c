@@ -154,3 +154,30 @@ __libdw_oom (void)
   while (1)
     error (EXIT_FAILURE, ENOMEM, "libdw");
 }
+
+int pthread_rwlock_init(pthread_rwlock_t *restrict rwlock,
+    const pthread_rwlockattr_t *restrict attr)
+{
+    return 0;
+}
+int pthread_rwlock_rdlock(pthread_rwlock_t *lock)
+{
+    return 0;
+}
+int pthread_rwlock_tryrdlock(pthread_rwlock_t *lock)
+{
+    return 0;
+}
+int pthread_rwlock_wrlock(pthread_rwlock_t *lock)
+{
+    return 0;
+}
+int pthread_rwlock_unlock(pthread_rwlock_t *lock)
+{
+    return 0;
+}
+int pthread_rwlock_destroy(pthread_rwlock_t *rwlock)
+{
+    return 0;
+}
+
