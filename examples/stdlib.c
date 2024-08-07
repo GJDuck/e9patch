@@ -4147,6 +4147,12 @@ static int asprintf(char **strp, const char *format, ...)
     return result;
 }
 
+#define PRINTF_BUF_ALLOC(buf, size)                                         \
+    char buf_0[((size) <= BUFSIZ? result: 0)],                              \
+        *buf = (size <= BUFSIZ? buf_0: (char *)malloc(size))
+#define PRINT_BUF_FREE(buf)                                                 \
+    if (buf != buf_0) free(buf)
+
 static int vfprintf(FILE *stream, const char *format, va_list ap)
 {
     va_list aq;
@@ -4154,12 +4160,17 @@ static int vfprintf(FILE *stream, const char *format, va_list ap)
     int result = vsnprintf(NULL, SIZE_MAX, format, ap);
     if (result >= 0)
     {
-        char buf[result+1];
-        result = vsnprintf(buf, result+1, format, aq);
-        if (result >= 0)
+        ssize_t size = result+1;
+        PRINTF_BUF_ALLOC(buf, size);
+        if (buf != NULL)
         {
-            if (fputs(buf, stream))
-                result = -1;
+            result = vsnprintf(buf, size, format, aq);
+            if (result >= 0)
+            {
+                if (fputs(buf, stream))
+                    result = -1;
+            }
+            PRINT_BUF_FREE(buf);
         }
     }
     va_end(aq);
@@ -4173,12 +4184,17 @@ static int vfprintf_unlocked(FILE *stream, const char *format, va_list ap)
     int result = vsnprintf(NULL, SIZE_MAX, format, ap);
     if (result >= 0)
     {
-        char buf[result+1];
-        result = vsnprintf(buf, result+1, format, aq);
-        if (result >= 0)
+        ssize_t size = result+1;
+        PRINTF_BUF_ALLOC(buf, size);
+        if (buf != NULL)
         {
-            if (fputs_unlocked(buf, stream))
-                result = -1;
+            result = vsnprintf(buf, result+1, format, aq);
+            if (result >= 0)
+            {
+                if (fputs_unlocked(buf, stream))
+                    result = -1;
+            }
+            PRINT_BUF_FREE(buf);
         }
     }
     va_end(aq);
