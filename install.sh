@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# Copyright (C) 2023 National University of Singapore
+# Copyright (C) National University of Singapore
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -17,11 +17,11 @@
 
 if [ -t 1 ]
 then
-    RED="\033[31m"
-    GREEN="\033[32m"
-    YELLOW="\033[33m"
-    BOLD="\033[1m"
-    OFF="\033[0m"
+    RED='\033[31m'
+    GREEN='\033[32m'
+    YELLOW='\033[33m'
+    BOLD='\033[1m'
+    OFF='\033[0m'
 else
     RED=
     GREEN=

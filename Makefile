@@ -94,7 +94,7 @@ install: all
 	install -m 755 e9tool "$(DESTDIR)/usr/bin/e9tool"
 	install -m 755 e9compile.sh "$(DESTDIR)/usr/bin/e9compile"
 	sed \
-	    -e 's/-I example/-I \/usr\/share\/e9compile\/include/g' e9compile.sh > \
+	    -e 's/-I examples/-I \/usr\/share\/e9compile\/include/g' e9compile.sh > \
 	    "$(DESTDIR)/usr/bin/e9compile"
 	chmod 555 "$(DESTDIR)/usr/bin/e9compile"
 	install -d "$(DESTDIR)/usr/share/doc/e9patch/"
