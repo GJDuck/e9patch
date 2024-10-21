@@ -2,10 +2,11 @@
 # BUILD COMMON
 #########################################################################
 
+VERSION ?= 1.0.0-rc10
 PREFIX ?= /usr
 CXXFLAGS ?= -march=native
 CXXFLAGS += -std=c++11 -Wall -Wno-reorder -fPIC -pie \
-    -DVERSION=$(shell cat VERSION) -Wl,-rpath=$(PREFIX)/share/e9tool/lib/
+    -DVERSION=$(VERSION) -Wl,-rpath=$(PREFIX)/share/e9tool/lib/
 
 E9PATCH_OBJS=\
     src/e9patch/e9CFR.o \
@@ -181,3 +182,34 @@ tool.sanitize: $(E9TOOL_OBJS) $(E9TOOL_LIBS)
 	$(CXX) $(CXXFLAGS) $(E9TOOL_OBJS) $(E9TOOL_LIBS) -o e9tool \
         $(E9TOOL_LDFLAGS)
 
+DEB := e9patch_$(VERSION)_amd64.deb
+deb: $(DEB)
+
+$(DEB): install/debian-binary install/control.tar.gz install/data.tar.gz
+	fakeroot ar cr $@ $^
+
+install/debian-binary: debian-dirs
+	echo 2.0 > $@
+
+install/control.tar.gz: install/control/md5sums install/control/control
+	(cd install/control;\
+		tar cz --owner root --group root -f ../control.tar.gz .)
+
+install/control/md5sums: install/data
+	find $< -type f | xargs md5sum | sed 's#$</##' > $@
+
+install/control/control: debian-binary-control.in
+	sed 's/\bVERSION\b/$(VERSION)/' $< > $@
+
+install/data.tar.gz: install/data
+	(cd $<; tar cz --owner root --group root -f ../data.tar.gz .)
+
+install/data: DESTDIR := install/data
+install/data: tool release install
+
+debian-dirs:
+	mkdir -p install/control
+
+.PHONY: all clean install\
+	release debug sanitize tool tool.debug tool.sanitize\
+	deb debian-dirs
