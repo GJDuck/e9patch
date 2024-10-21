@@ -2,7 +2,8 @@
 # BUILD COMMON
 #########################################################################
 
-CXXFLAGS = -std=c++11 -Wall -Wno-reorder -fPIC -pie -march=native \
+CXXFLAGS ?= -march=native
+CXXFLAGS += -std=c++11 -Wall -Wno-reorder -fPIC -pie \
     -DVERSION=$(shell cat VERSION) -Wl,-rpath=/usr/share/e9tool/lib/
 
 E9PATCH_OBJS=\
