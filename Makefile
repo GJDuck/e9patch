@@ -64,7 +64,7 @@ e9patch: $(E9PATCH_OBJS)
 
 clean:
 	rm -rf $(E9PATCH_OBJS) $(E9TOOL_OBJS) e9patch e9tool \
-        src/e9patch/e9loader.c e9loader.out e9loader.o e9loader.bin
+        src/e9patch/e9loader_*.c e9loader_*.o e9loader_*.bin
 
 loader_elf:
 	$(CXX) -std=c++11 -Wall -fno-stack-protector -Wno-unused-function -fPIC \
