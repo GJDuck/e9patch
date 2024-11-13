@@ -128,8 +128,20 @@ static bool runTest(const struct dirent *test, const std::string &options)
     command += " 2>&1";
     printf("\t%s\n", command.c_str());
     r = system(command.c_str());
-    if (r != 0 && /*Ignore signals=*/
-        !(WIFEXITED(r) && WEXITSTATUS(r) >= 128 && WEXITSTATUS(r) <= 128+32))
+    if (WIFEXITED(r) && WEXITSTATUS(r) >= 128 && WEXITSTATUS(r) <= 128+32)
+    {
+        FILE *OUT = fopen(out.c_str(), "a");
+        if (OUT == nullptr)
+            error("failed to open file \"%s\" for writing: %s", out.c_str(),
+                strerror(errno));
+        else
+        {
+            fputs(strsignal(WTERMSIG(WEXITSTATUS(r) - 128)), OUT);
+            fputc('\n', OUT);
+            fclose(OUT);
+        }
+    }
+    else if (r != 0)
     {
         printf("%s%s%s: %sFAILED%s (execution failed with status %d, see %s)\n",
             (option_tty? YELLOW: ""), basename.c_str(), (option_tty? WHITE: ""),
