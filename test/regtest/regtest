@@ -1,0 +1,32 @@
+#!/bin/sh
+fails=()
+for exe in $*
+do
+  tst=${exe%.exe}
+  cmd=$tst.cmd
+  out=$tst.out
+  exp=$tst.exp
+
+  if test -f $cmd
+  then env $(cat $cmd) 1>$out 2>&1
+  else ./$exe 1>$out 2>&1
+  fi 2>/dev/null
+  case $? in
+    "132") echo Illegal instruction;;
+    "133") echo Trace/breakpoint trap;;
+    "134") echo Aborted;;
+    "138") echo User defined signal 1;;
+    "139") echo Segmentation fault;;
+  esac >>$out
+
+  diff -u $out $exp
+  if test $? -ne 0
+  then fails+=($tst)
+  fi
+done
+
+if test "$fails"
+then
+  echo "Failing ${#fails[@]}/$# tests: ${fails[@]}"
+  exit 1
+fi
