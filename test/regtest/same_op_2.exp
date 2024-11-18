@@ -12,6 +12,7 @@ shl $0x7, %rdi
 sar $0x3, %rdi
 pxor %xmm0, %xmm0
 cvtsi2ss %rax, %xmm0
+sqrtss %xmm0, %xmm1
 xor %esi, %esi
 xor %eax, %eax
 PASSED
