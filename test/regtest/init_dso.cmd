@@ -1,1 +1,2 @@
-LD_PRELOAD=$PWD/init_dso.exe ./test.pie
+#!/bin/sh
+LD_PRELOAD=./init_dso.exe ./test.pie

@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+fails=()
+for exe in $*
+do
+  tst=${exe%.exe}
+  cmd=$tst.cmd
+  out=$tst.out
+  exp=$tst.exp
+
+  if test -f $cmd
+  then ./exec.sh ./$cmd 1>$out 2>&1
+  else ./exec.sh ./$exe 1>$out 2>&1
+  fi
+  sed -i 's/ (core dumped)$//' $out
+
+  diff -u $out $exp
+  if test $? -ne 0
+  then fails+=($tst)
+  fi
+done
+
+if test "$fails"
+then
+  echo "Failing ${#fails[@]}/$# tests: ${fails[@]}"
+  exit 1
+fi
