@@ -180,3 +180,8 @@ tool.sanitize: $(E9TOOL_OBJS) $(E9TOOL_LIBS)
 	$(CXX) $(CXXFLAGS) $(E9TOOL_OBJS) $(E9TOOL_LIBS) -o e9tool \
         $(E9TOOL_LDFLAGS)
 
+check: e9tool
+	$(MAKE) -C test/regtest
+
+.PHONY: all clean install check\
+	release debug sanitize tool tool.debug tool.sanitize
