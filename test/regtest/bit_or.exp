@@ -1,6 +1,6 @@
 rex=0x41, asm="push %r15"
 rex=0x48, asm="movq 0x5e(%rip), %rax"
-rex=0x48, asm="mov $0x8877665544332211, %rbx"
+rex=0x48, asm="mov $-0x778899aabbccddef, %rbx"
 rex=0x48, asm="cmp %rax, %rbx"
 rex=0x4C, asm="movq 0x28(%rip), %r8"
 rex=0x48, asm="movq 0x19a(%rip), %rcx"

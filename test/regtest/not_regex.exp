@@ -1,5 +1,4 @@
 push %r15
-mov $0x8877665544332211, %rbx
 nop
 cmp $0x33, %ebx
 movq 0x28(%rip), %r8
