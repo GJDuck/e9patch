@@ -24,14 +24,14 @@ jmp 0xa000163
 call 0xa000168
 jmp 0xa00016d
 jmp 0xa000177
-lea r10, [rip+0x14]
+lea r10, qword ptr [rip+0x14]
 push r10
 push r11
 mov rcx, 0xffffffffffff8889
 jmp qword ptr [rsp+rcx*1+0x777f]
 call 0xa0001b5
 add rsp, 0x8
-lea rdx, [rip+0x2]
+lea rdx, qword ptr [rip+0x2]
 call rdx
 pop r14
 add r9, 0x6
@@ -85,7 +85,7 @@ xor eax, eax
 inc eax
 mov edi, eax
 inc rdi
-lea rsi, [rip+0x54]
+lea rsi, qword ptr [rip+0x54]
 mov rdx, 0x7
 syscall
 PASSED
