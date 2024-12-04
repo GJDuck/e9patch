@@ -110,9 +110,8 @@ install: all
         doc/e9tool-user-guide.md | markdown > \
         "$(DESTDIR)/usr/share/doc/e9tool/e9tool-user-guide.html"
 	install -m 444 LICENSE "$(DESTDIR)/usr/share/doc/e9tool/LICENSE"
-	install -d "$(DESTDIR)/usr/share/e9tool/include/"
-	install -m 444 src/e9tool/e9tool.h "$(DESTDIR)/usr/share/e9tool/include/e9tool.h"
-	install -m 444 src/e9tool/e9plugin.h "$(DESTDIR)/usr/share/e9tool/include/e9plugin.h"
+	install -Dm 444 src/e9tool/e9tool.h "$(DESTDIR)/usr/include/e9tool/e9tool.h"
+	install -Dm 444 src/e9tool/e9plugin.h "$(DESTDIR)/usr/include/e9tool/e9plugin.h"
 	install -d "$(DESTDIR)/usr/share/e9tool/examples/"
 	install -m 444 examples/bounds.c "$(DESTDIR)/usr/share/e9tool/examples/bounds.c"
 	sed \
