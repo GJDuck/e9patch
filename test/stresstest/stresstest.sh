@@ -23,6 +23,8 @@ mkdir -p tmp
 g++ -std=c++11 -fPIC -shared -o example.so -O2 \
     ../../examples/plugins/example.cpp -I ../../src/e9tool/ 
 
+EXTRA=$@
+
 runtest()
 {
     MATCH=$1
@@ -62,25 +64,26 @@ runtest()
     # Step (3): Everything should be the same:
     if diff tmp/e9tool.patched tmp/e9tool.2.patched > /dev/null
     then
-        echo -e "${GREEN}PASSED${OFF}: e9tool  ${YELLOW}-M $MATCH -P $PATCH${OFF}"
+        echo -e "${GREEN}PASSED${OFF}: e9tool  ${YELLOW}-M $MATCH -P $PATCH $EXTRA${OFF}"
     else
-        echo -e "${RED}FAILED${OFF}: e9tool  ${YELLOW}-M $MATCH -P $PATCH${OFF}"
+        echo -e "${RED}FAILED${OFF}: e9tool  ${YELLOW}-M $MATCH -P $PATCH $EXTRA ${OFF}"
     fi
     if diff tmp/e9patch.patched tmp/e9patch.2.patched > /dev/null
     then
-        echo -e "${GREEN}PASSED${OFF}: e9patch ${YELLOW}-M $MATCH -P $PATCH${OFF}"
+        echo -e "${GREEN}PASSED${OFF}: e9patch ${YELLOW}-M $MATCH -P $PATCH $EXTRA${OFF}"
     else
-        echo -e "${RED}FAILED${OFF}: e9patch ${YELLOW}-M $MATCH -P $PATCH${OFF}"
+        echo -e "${RED}FAILED${OFF}: e9patch ${YELLOW}-M $MATCH -P $PATCH$ $EXTRA{OFF}"
     fi
 }
 
-runtest true empty
-runtest true 'entry<naked>()@nop'
-runtest true 'entry(asm,instr,rflags,rdi,rip,addr,target,next)@nop'
-runtest true 'entry(&rsp,&rax,&rsi,&rdi,&r8,&r15,(static)addr,0x1234)@nop'
-runtest true 'entry(BB,F,BB.size,F.size,BB.offset,F.offset,BB.len,F.name)@nop'
-runtest true 'entry(&op[0],&src[0],&dst[0],&op[1],&src[1],&dst[1],&dst[7],&src[7])@nop'
-runtest true 'entry(reg[0],&reg[0],imm[0],&imm[0],&mem[0],reg[1],&reg[1],imm[1])@nop'
-runtest 'plugin(example).match()' 'plugin(example).patch()' '--plugin=example:-limit=99999999999'
-runtest true print
+runtest true empty "$EXTRA"
+runtest 'random < 300000000' empty "$EXTRA"
+runtest true 'entry<naked>()@nop' "$EXTRA"
+runtest true 'entry(asm,instr,rflags,rdi,rip,addr,target,next)@nop' "$EXTRA"
+runtest true 'entry(&rsp,&rax,&rsi,&rdi,&r8,&r15,(static)addr,0x1234)@nop' "$EXTRA"
+runtest true 'entry(BB,F,BB.size,F.size,BB.offset,F.offset,BB.len,F.name)@nop' "$EXTRA"
+runtest true 'entry(&op[0],&src[0],&dst[0],&op[1],&src[1],&dst[1],&dst[7],&src[7])@nop' "$EXTRA"
+runtest true 'entry(reg[0],&reg[0],imm[0],&imm[0],&mem[0],reg[1],&reg[1],imm[1])@nop' "$EXTRA"
+runtest 'plugin(example).match()' 'plugin(example).patch()' "$EXTRA --plugin=example:-limit=99999999999"
+runtest true print "$EXTRA"
 

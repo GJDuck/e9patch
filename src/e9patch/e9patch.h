@@ -597,6 +597,7 @@ inline uint8_t *Instr::getState() const
 extern bool option_is_tty;
 extern bool option_debug;
 extern bool option_batch;
+extern bool option_Ocall;
 extern bool option_OCFR;
 extern bool option_OCFR_hacks;
 extern unsigned option_Oepilogue;

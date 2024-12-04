@@ -48,6 +48,7 @@ bool option_tactic_T1          = true;
 bool option_tactic_T2          = true;
 bool option_tactic_T3          = true;
 bool option_tactic_backward_T3 = true;
+bool option_Ocall              = false;
 bool option_OCFR               = false;
 bool option_OCFR_hacks         = false;
 unsigned option_Oepilogue      = 0;
@@ -234,6 +235,11 @@ static void usage(FILE *stream, const char *progname)
     fprintf(stream, "usage: %s [OPTIONS]\n\n"
         "OPTIONS:\n"
         "\n"
+        "\t-Ocall[=false]\n"
+        "\t\tRelocate any call instruction \"as is\" (do not correct the\n"
+        "\t\treturn address).  May break transparency for some binaries.\n"
+        "\t\tDefault: false (disabled)\n"
+        "\n"
         "\t-OCFR[=false]\n"
         "\t\tEnables [disables] heuristic-based \"Control-Flow Recovery\"\n"
         "\t\t(CRF) analysis and related optimizations.  This usually makes\n"
@@ -410,6 +416,7 @@ enum Option
     OPTION_MEM_MULTI_PAGE,
     OPTION_MEM_REBASE,
     OPTION_MEM_UB,
+    OPTION_OCALL,
     OPTION_OCFR,
     OPTION_OCFR_HACKS,
     OPTION_OEPILOGUE,
@@ -446,6 +453,7 @@ void parseOptions(char * const argv[], bool api)
               no_arg  = no_argument;
     static const struct option long_options[] =
     {
+        {"Ocall",              opt_arg, nullptr, OPTION_OCALL},
         {"OCFR",               opt_arg, nullptr, OPTION_OCFR},
         {"OCFR-hacks",         opt_arg, nullptr, OPTION_OCFR_HACKS},
         {"Oepilogue",          req_arg, nullptr, OPTION_OEPILOGUE},
@@ -518,6 +526,9 @@ void parseOptions(char * const argv[], bool api)
             case 'i':
             case OPTION_INPUT:
                 option_input = optarg;
+                break;
+            case OPTION_OCALL:
+                option_Ocall = parseBoolOptArg("-Ocall", optarg);
                 break;
             case OPTION_OCFR:
                 option_OCFR = parseBoolOptArg("-OCFR", optarg);

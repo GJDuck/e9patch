@@ -1,6 +1,6 @@
 /*
  * e9trampoline.cpp
- * Copyright (C) 2021 National University of Singapore
+ * Copyright (C) 2024 National University of Singapore
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -53,7 +53,7 @@
  *        part of the builtin "$break" macro.
  *
  * Ultimately, the prologue/epilogue aim reduce the number of jumps the
- * patched binary uses, which can translated into a significant performance
+ * patched binary uses, which can translate into a significant performance
  * gain.
  */
 
@@ -234,7 +234,8 @@ static int buildBreak(const Binary *B, const Instr *I, intptr_t addr,
         J = K;
         i++;
         cft = (J->is_patched && !J->is_evicted);
-        cft = cft || isCFT(J->ORIG, J->size, CFT_CALL | CFT_RET | CFT_JMP);
+        cft = cft || isCFT(J->ORIG, J->size,
+            (option_Ocall? 0x0: CFT_CALL) | CFT_RET | CFT_JMP);
         size += J->size;
     }
 

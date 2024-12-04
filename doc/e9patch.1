@@ -44,6 +44,11 @@ The final phase prints the physical memory utilization:
 .PP
 
 .SH OPTIONS
+.IP "\fB\-Ocall\fR[=\fI\,false\/\fR]" 4
+Relocate any call instruction "as-is" (do not correct the
+return address.  May break transparency for some binaries.
+.br
+Default: \fBfalse\fR (disabled)
 .IP "\fB\-OCFR\fR[=\fI\,false\/\fR]" 4
 Enables [disables] heuristic-based "Control-Flow Recovery"
 (CRF) analysis and related optimizations.  This usually makes

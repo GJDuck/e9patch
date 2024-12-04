@@ -1,6 +1,6 @@
 /*
  * e9x86_64.cpp
- * Copyright (C) 2020 National University of Singapore
+ * Copyright (C) 2024 National University of Singapore
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -209,6 +209,8 @@ static int decodeOpcode(const uint8_t *bytes, unsigned size, int i,
 static int pushReturnAddress(intptr_t addr, intptr_t offset, unsigned size,
     bool pic, Buffer *buf, size_t start)
 {
+    if (option_Ocall)
+        return 0;
     intptr_t target = addr + size;
     if (!pic && target >= INT32_MIN && target <= INT32_MAX)
     {
@@ -324,10 +326,11 @@ no_modification_necessary:
                             < 0 && !relax)
                         return -1;
 
-                    // Convert the call into a jmp:
+                    // Convert the call into a jmp if necessary:
                     size_t buf_size = buf->size(start);
                     buf->push(bytes, i);
-                    modRM = (modRM & ~0x38) | (0x04 << 3);  // jmp op
+                    if (!option_Ocall)
+                        modRM = (modRM & ~0x38) | (0x04 << 3);  // jmp op
 
                     // NASTY SPECIAL CASE:
                     // Check for calls that use %rsp & adjust
@@ -363,7 +366,8 @@ no_modification_necessary:
                             }
                             if (!ok)
                                 break;
-                            disp += sizeof(void *);     // Adjust for push
+                            if (!option_Ocall)
+                                disp += sizeof(void *);     // Adjust for push
                             if (disp == 0)
                                 modRM = (modRM & ~0xc0) | (0x0 << 6);
                             else if (disp >= INT8_MIN && disp <= INT8_MAX)
@@ -499,7 +503,7 @@ no_modification_necessary:
                         if (!relax && (diff < INT32_MIN || diff > INT32_MAX))
                             return -1;
                         int32_t diff32  = (int32_t)diff;
-                        buf->push(0xE9);
+                        buf->push(option_Ocall? 0xE8: 0xE9);
                         buf->push((const uint8_t *)&diff32, sizeof(diff32));
                         
                         return buf->commit(start);
