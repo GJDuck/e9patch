@@ -7,8 +7,14 @@ BASE ::= test test.pie bugs test.libc libtest.so test_c test_c.debug example.so
 TRAMPOLINE ::= inst patch dl init fini
 IN ::= $(wildcard *.in)
 EXE ::= $(IN:.in=.exe)
+# Some instructions leave certain rflags undefined:
+# https://github.com/GJDuck/e9patch/issues/96
+FLAKY ::= after example_12 rip_rsp_rflags xmm
 
-check: regtest $(EXE)
+check: regtest $(filter-out $(FLAKY:%=%.exe), $(EXE))
+	./$^
+
+check-flaky: regtest $(filter $(FLAKY:%=%.exe), $(EXE))
 	./$^
 
 %.exe: in=$(shell head -1 $<)
@@ -68,4 +74,4 @@ example.so:
 clean-check:
 	rm -f $(BASE) $(TRAMPOLINE) $(EXE)
 
-.PHONY: check clean-check
+.PHONY: check check-flaky clean-check
