@@ -36,8 +36,9 @@
 #include "e9elf.h"
 #include "e9tool.h"
 
-#define TARGET_ENTRY 0x08
-#define TARGET_ENDBR 0x10
+#define TARGET_ENTRY  0x08
+#define TARGET_ENDBR  0x10
+#define TARGET_CALLED 0x20
 
 using namespace e9tool;
 
@@ -224,7 +225,8 @@ static void CFGCodeAnalysis(const ELF *elf, bool pic, const Instr *Is,
             (intptr_t)I->op[0].imm;
         DEBUG(targets, target, "Target: %p%s", (void *)target,
             (call? " (F)": ""));
-        addTarget(target, TARGET_DIRECT | (call? TARGET_FUNCTION: 0), targets);
+        addTarget(target, TARGET_DIRECT |
+            (call? TARGET_FUNCTION | TARGET_CALLED: 0), targets);
     }
 
     // Symbols are assumed to be functions:
@@ -525,6 +527,7 @@ void e9tool::buildFs(const ELF *elf, const Instr *Is, size_t size,
     const Targets &targets, Fs &fs)
 {
     std::map<intptr_t, const char *> names;
+    bool stripped = true;
     for (unsigned i = 0; i < 2; i++)
     {
         const SymbolInfo &syms = (i == 0? getELFDynSymInfo(elf):
@@ -538,6 +541,7 @@ void e9tool::buildFs(const ELF *elf, const Instr *Is, size_t size,
             intptr_t target = sym->st_value;
             const char *name = entry.first;
             names.insert({target, name});
+            stripped = (stripped && i > 0? false: stripped);
         }
     }
     std::map<uint32_t, F> tmp;
@@ -546,6 +550,9 @@ void e9tool::buildFs(const ELF *elf, const Instr *Is, size_t size,
         if ((entry.second & TARGET_FUNCTION) == 0)
             continue;
         intptr_t target = entry.first;
+        if (!stripped && names.find(target) == names.end() &&
+                (entry.second & TARGET_CALLED) == 0)
+            continue;
         size_t i = findInstr(Is, size, target);
         if (i >= size)
             continue;
@@ -585,7 +592,9 @@ void e9tool::buildFs(const ELF *elf, const Instr *Is, size_t size,
             if (I->address + I->size != J->address)
                 break;
             auto j = targets.find(J->address);
-            if (j != targets.end() && (j->second & TARGET_FUNCTION) != 0)
+            if ((j != targets.end() && (j->second & TARGET_FUNCTION) != 0) &&
+                    (stripped || names.find(J->address) != names.end() ||
+                      (j->second & TARGET_CALLED) != 0))
                 break;
             ub++;
             if (!found && Is[best].size < /*sizeof(jmpq)=*/5 &&

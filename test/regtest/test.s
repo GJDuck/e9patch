@@ -17,7 +17,7 @@
 # "PASSED" to stderr and exitting.  It is used for testing E9Patch.
 
 .globl _start
-.type  _start, @function
+.type  _start, @object
 _start:
     # These setup some predicable state & are not to be instrumented:
  
