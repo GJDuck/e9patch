@@ -126,7 +126,7 @@ Some other projects that use E9Patch include:
 * [Hopper](https://github.com/FuzzAnything/hopper): Automatic fuzzing test
   cases generation for libraries.
 * [EnvFuzz](https://github.com/GJDuck/EnvFuzz): Program environment fuzzing.
-* [RFF](https://doi.org/10.6084/m9.figshare.23911299): Greybox fuzzing for
+* [RFF](https://github.com/dylanjwolff/RFF): Greybox fuzzing for
   concurrency testing.
 * [AutoTrace](https://github.com/GJDuck/AutoTrace): Simple source line-based
   tracing.
