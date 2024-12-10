@@ -37,10 +37,7 @@ E9TOOL_OBJS=\
 E9TOOL_LIBS=\
     contrib/zydis/libZydis.a \
     contrib/libdw/libdw.a
-E9TOOL_CXXFLAGS=\
-    -I src/e9tool/ -Wno-unused-function \
-    -I contrib/zydis/include/ \
-    -I contrib/zydis/dependencies/zycore/include/
+E9TOOL_CXXFLAGS= -I src/e9tool/ -Wno-unused-function
 E9TOOL_LDFLAGS=\
     -Wl,--dynamic-list=src/e9tool/e9tool.syms \
     -ldl -lz
@@ -52,9 +49,9 @@ E9TOOL_LDFLAGS=\
 all: e9tool e9patch
 
 e9tool: CXXFLAGS += -O2 -DSYSTEM_LIBDW $(E9TOOL_CXXFLAGS)
-e9tool: contrib/zydis/libZydis.a $(E9TOOL_OBJS)
-	$(CXX) $(CXXFLAGS) $(E9TOOL_OBJS) contrib/zydis/libZydis.a -o e9tool \
-	    $(E9TOOL_LDFLAGS) -ldw
+e9tool: $(E9TOOL_OBJS)
+	$(CXX) $(CXXFLAGS) $(E9TOOL_OBJS) -o e9tool \
+	    $(E9TOOL_LDFLAGS) -ldw -lZydis
 	strip e9tool
 
 e9patch: CXXFLAGS += -O2 

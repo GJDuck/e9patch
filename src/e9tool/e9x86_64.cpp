@@ -152,8 +152,7 @@ void e9tool::getInstrInfo(const ELF *elf, const Instr *I, InstrInfo *info,
     ZydisDecodedOperand operands[ZYDIS_MAX_OPERAND_COUNT];
 
     ZyanStatus result = ZydisDecoderDecodeFull(&decoder,
-        elf->data + I->offset, I->size, D, operands, ZYDIS_MAX_OPERAND_COUNT,
-        0);
+        elf->data + I->offset, I->size, D, operands);
     if (!ZYAN_SUCCESS(result) || I->size != D->length ||
             D->operand_count > sizeof(info->op) / sizeof(info->op[0]))
         error("failed to decompress instruction at address 0x%lx; decode "
@@ -336,7 +335,7 @@ void e9tool::getInstrInfo(const ELF *elf, const Instr *I, InstrInfo *info,
         info->string.section    = elf->strs + shdr->sh_name;
         result = ZydisFormatterFormatInstruction(&formatter, D, operands,
             D->operand_count_visible, info->string.instr,
-            sizeof(info->string.instr)-1, I->address);
+            sizeof(info->string.instr)-1, I->address, ZYAN_NULL);
         if (!ZYAN_SUCCESS(result))
             error("failed to decompress instruction at address 0x%lx; "
                 "formatting failed", I->address);
