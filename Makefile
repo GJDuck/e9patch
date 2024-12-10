@@ -94,19 +94,19 @@ install: all
 	install -m 755 e9tool "$(DESTDIR)/usr/bin/e9tool"
 	install -m 755 e9compile.sh "$(DESTDIR)/usr/bin/e9compile"
 	sed \
-	    -e 's/-I examples/-I \/usr\/share\/e9compile\/include/g' e9compile.sh > \
+	    -e 's#-I examples#-I /usr/share/e9compile/include#g' e9compile.sh > \
 	    "$(DESTDIR)/usr/bin/e9compile"
 	chmod 555 "$(DESTDIR)/usr/bin/e9compile"
 	install -d "$(DESTDIR)/usr/share/doc/e9patch/"
 	sed \
-	    -e 's/https:\/\/github.com\/GJDuck\/e9patch\/blob\/master\/doc\/e9tool-user-guide.md/file:\/\/\/usr\/share\/doc\/e9tool\/e9tool-user-guide.html/g' \
-	    -e 's/https:\/\/github.com\/GJDuck\/e9patch\/tree\/master\/examples/file:\/\/\/usr\/share\/e9tool\/examples/g' \
+	    -e 's#https://github.com/GJDuck/e9patch/blob/master/doc/e9tool-user-guide.md#file:///usr/share/doc/e9tool/e9tool-user-guide.html#g' \
+	    -e 's#https://github.com/GJDuck/e9patch/tree/master/examples#file:///usr/share/e9tool/examples#g' \
 		doc/e9patch-programming-guide.md | markdown > \
 	    "$(DESTDIR)/usr/share/doc/e9patch/e9patch-programming-guide.html"
 	install -m 444 LICENSE "$(DESTDIR)/usr/share/doc/e9patch/LICENSE"
 	install -d "$(DESTDIR)/usr/share/doc/e9tool/"
 	sed \
-        -e 's/https:\/\/github.com\/GJDuck\/e9patch\/blob\/master\/doc\/e9patch-programming-guide.md/file:\/\/\/usr\/share\/doc\/e9patch\/e9patch-programming-guide.html/g' \
+        -e 's#https://github.com/GJDuck/e9patch/blob/master/doc/e9patch-programming-guide.md#file:///usr/share/doc/e9patch/e9patch-programming-guide.html#g' \
         doc/e9tool-user-guide.md | markdown > \
         "$(DESTDIR)/usr/share/doc/e9tool/e9tool-user-guide.html"
 	install -m 444 LICENSE "$(DESTDIR)/usr/share/doc/e9tool/LICENSE"
@@ -115,8 +115,8 @@ install: all
 	install -d "$(DESTDIR)/usr/share/e9tool/examples/"
 	install -m 444 examples/bounds.c "$(DESTDIR)/usr/share/e9tool/examples/bounds.c"
 	sed \
-	    -e 's/.\/e9compile.sh examples\/bounds.c/e9compile \/usr\/share\/e9tool\/examples\/bounds.c/' \
-	    -e 's/\.\/e9tool/e9tool/' \
+	    -e 's#\./e9compile.sh examples/bounds.c#e9compile /usr/share/e9tool/examples/bounds.c#' \
+	    -e 's#\./e9tool#e9tool#' \
         examples/bounds.sh > \
 	    "$(DESTDIR)/usr/share/e9tool/examples/bounds.sh"
 	chmod 555 "$(DESTDIR)/usr/share/e9tool/examples/bounds.sh"
