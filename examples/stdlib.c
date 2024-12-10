@@ -3427,17 +3427,17 @@ static int setvbuf(FILE *stream, char *buf, int mode, size_t size)
 
 static mutex_t stdio_mutex = MUTEX_INITIALIZER;
 static FILE *stdio_stream[3] = {NULL};
-#define stdin   stdio_get_stream(STDIN_FILENO)
-#define stdout  stdio_get_stream(STDOUT_FILENO)
-#define stderr  stdio_get_stream(STDERR_FILENO)
+#define stdin   (*stdio_get_stream(STDIN_FILENO))
+#define stdout  (*stdio_get_stream(STDOUT_FILENO))
+#define stderr  (*stdio_get_stream(STDERR_FILENO))
 
-static __attribute__((__noinline__, __const__)) FILE *stdio_get_stream(int fd)
+static __attribute__((__noinline__, __const__)) FILE **stdio_get_stream(int fd)
 {
     if (fd != STDIN_FILENO && fd != STDOUT_FILENO && fd != STDERR_FILENO)
         return NULL;
 
     if (stdio_stream[fd] != NULL)
-        return stdio_stream[fd];
+        return &stdio_stream[fd];
 
     bool r = (fd == STDIN_FILENO);
     bool w = (fd == STDOUT_FILENO || fd == STDERR_FILENO);
@@ -3453,7 +3453,7 @@ static __attribute__((__noinline__, __const__)) FILE *stdio_get_stream(int fd)
     }
     mutex_unlock(&stdio_mutex);
     
-    return stdio_stream[fd];
+    return &stdio_stream[fd];
 }
 
 static int fputc_unlocked(int c, FILE *stream)
