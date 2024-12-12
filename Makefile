@@ -66,23 +66,22 @@ e9patch: $(E9PATCH_OBJS)
 
 clean:
 	rm -rf $(E9PATCH_OBJS) $(E9TOOL_OBJS) e9patch e9tool \
-        src/e9patch/e9loader.c e9loader.out e9loader.o e9loader.bin
+        src/e9patch/e9loader_*.c e9loader_*.o e9loader_*.bin
 
-loader_elf:
+src/e9patch/e9loader_elf.c: src/e9patch/e9loader_elf.cpp
 	$(CXX) -std=c++11 -Wall -fno-stack-protector -Wno-unused-function -fPIC \
-        -Os -c src/e9patch/e9loader_elf.cpp
+        -Os -c $<
 	$(CXX) -pie -nostdlib -o e9loader_elf.bin e9loader_elf.o -T e9loader.ld
-	xxd -i e9loader_elf.bin > src/e9patch/e9loader_elf.c
+	xxd -i e9loader_elf.bin > $@
 
-loader_pe:
+src/e9patch/e9loader_pe.c: src/e9patch/e9loader_pe.cpp
 	$(CXX) -std=c++11 -Wall -fno-stack-protector -fno-zero-initialized-in-bss \
-        -Wno-unused-function -fPIC -mabi=ms -fshort-wchar \
-        -Os -c src/e9patch/e9loader_pe.cpp
+        -Wno-unused-function -fPIC -mabi=ms -fshort-wchar -Os -c $<
 	$(CXX) -pie -nostdlib -o e9loader_pe.bin e9loader_pe.o -T e9loader.ld
-	xxd -i e9loader_pe.bin > src/e9patch/e9loader_pe.c
+	xxd -i e9loader_pe.bin > $@
 
-src/e9patch/e9elf.o: loader_elf
-src/e9patch/e9pe.o: loader_pe
+src/e9patch/e9elf.o: src/e9patch/e9loader_elf.c
+src/e9patch/e9pe.o: src/e9patch/e9loader_pe.c
 
 contrib/zydis/libZydis.a:
 	(cd contrib/zydis/; make)
