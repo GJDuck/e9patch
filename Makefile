@@ -45,6 +45,20 @@ E9TOOL_CXXFLAGS ::= -Isrc/e9tool -Wno-unused-function
 E9TOOL_LDFLAGS ::= -Wl,--dynamic-list=src/e9tool/e9tool.syms
 E9TOOL_LDLIBS ::= -ldl -lz
 
+BIN ::= e9tool e9patch e9compile
+INCLUDE ::= src/e9tool/e9tool.h src/e9tool/e9plugin.h
+MAN1 ::= $(wildcard doc/*.1)
+DOC ::= $(wildcard doc/e9*.md)
+EXAMPLE ::= $(wildcard examples/*.sh examples/*.c examples/*.cpp \
+	examples/plugins/*.cpp)
+INSTALL = $(DESTDIR)$(PREFIX)/share/doc/e9patch/LICENSE \
+	$(BIN:%=$(DESTDIR)$(PREFIX)/bin/%) \
+	$(DESTDIR)$(PREFIX)/share/e9compile/include/e9loader.h \
+	$(INCLUDE:src/%.h=$(DESTDIR)$(PREFIX)/include/%.h) \
+	$(MAN1:%.1=$(DESTDIR)$(PREFIX)/share/man/man1/%.1) \
+	$(DOC:doc/%.md=$(DESTDIR)$(PREFIX)/share/doc/e9patch/%.html) \
+	$(EXAMPLE:%=$(DESTDIR)$(PREFIX)/share/e9tool/%)
+
 #########################################################################
 # CONVENTIONAL BUILD
 #########################################################################
@@ -83,63 +97,46 @@ src/e9patch/e9loader_pe.c: src/e9patch/e9loader_pe.cpp
 src/e9patch/e9elf.o: src/e9patch/e9loader_elf.c
 src/e9patch/e9pe.o: src/e9patch/e9loader_pe.c
 
-install: all
-	install -d "$(DESTDIR)$(PREFIX)/bin"
-	install -m 755 e9patch "$(DESTDIR)$(PREFIX)/bin/e9patch"
-	install -m 755 e9tool "$(DESTDIR)$(PREFIX)/bin/e9tool"
-	install -m 755 e9compile.sh "$(DESTDIR)$(PREFIX)/bin/e9compile"
+install: $(INSTALL)
+
+$(DESTDIR)$(PREFIX)/share/doc/e9patch/LICENSE: LICENSE
+	install -Dm 644 $< "$@"
+
+e9compile: e9compile.sh
+	sed 's#-I examples#-I $(PREFIX)/share/e9compile/include#g' $< > $@
+
+$(DESTDIR)$(PREFIX)/bin/%: %
+	install -Dm 755 $< "$@"
+
+$(DESTDIR)$(PREFIX)/share/e9compile/include/e9loader.h: src/e9patch/e9loader.h
+	install -Dm 644 $< "$@"
+
+$(DESTDIR)$(PREFIX)/include/%.h: src/%.h
+	install -Dm 644 $< "$@"
+
+$(DESTDIR)$(PREFIX)/share/man/man1/%.1: %.1
+	install -Dm 644 $< "$@"
+
+$(DESTDIR)$(PREFIX)/share/doc/e9patch/%.html: doc/%.md
+	install -d $(DESTDIR)$(PREFIX)/share/doc/e9patch
 	sed \
-	    -e 's#-I examples#-I $(PREFIX)/share/e9compile/include#g' e9compile.sh > \
-	    "$(DESTDIR)$(PREFIX)/bin/e9compile"
-	chmod 555 "$(DESTDIR)$(PREFIX)/bin/e9compile"
-	install -d "$(DESTDIR)$(PREFIX)/share/doc/e9patch/"
+		-e 's#https://github.com/GJDuck/e9patch/blob/master/doc/e9patch-programming-guide.md#file://$(PREFIX)/share/doc/e9patch/e9patch-programming-guide.html#g' \
+		-e 's#https://github.com/GJDuck/e9patch/blob/master/doc/e9tool-user-guide.md#file://$(PREFIX)/share/doc/e9tool/e9tool-user-guide.html#g' \
+		-e 's#https://github.com/GJDuck/e9patch/tree/master/examples#file://$(PREFIX)/share/e9tool/examples#g' \
+		$< | markdown > $@
+
+$(DESTDIR)$(PREFIX)/share/e9tool/examples/%.c: examples/%.c
+	install -Dm 644 $< "$@"
+
+$(DESTDIR)$(PREFIX)/share/e9tool/examples/%.cpp: examples/%.cpp
+	install -Dm 644 $< "$@"
+
+$(DESTDIR)$(PREFIX)/share/e9tool/examples/bounds.sh: examples/bounds.sh
+	install -Dm 755 $< "$@"
 	sed \
-	    -e 's#https://github.com/GJDuck/e9patch/blob/master/doc/e9tool-user-guide.md#file://$(PREFIX)/share/doc/e9tool/e9tool-user-guide.html#g' \
-	    -e 's#https://github.com/GJDuck/e9patch/tree/master/examples#file://$(PREFIX)/share/e9tool/examples#g' \
-	    doc/e9patch-programming-guide.md | markdown > \
-	    "$(DESTDIR)$(PREFIX)/share/doc/e9patch/e9patch-programming-guide.html"
-	install -m 444 LICENSE "$(DESTDIR)$(PREFIX)/share/doc/e9patch/LICENSE"
-	install -d "$(DESTDIR)$(PREFIX)/share/doc/e9tool/"
-	sed \
-	    -e 's#https://github.com/GJDuck/e9patch/blob/master/doc/e9patch-programming-guide.md#file://$(PREFIX)/share/doc/e9patch/e9patch-programming-guide.html#g' \
-	    doc/e9tool-user-guide.md | markdown > \
-	    "$(DESTDIR)$(PREFIX)/share/doc/e9tool/e9tool-user-guide.html"
-	install -m 444 LICENSE "$(DESTDIR)$(PREFIX)/share/doc/e9tool/LICENSE"
-	install -Dm 444 src/e9tool/e9tool.h "$(DESTDIR)$(PREFIX)/include/e9tool/e9tool.h"
-	install -Dm 444 src/e9tool/e9plugin.h "$(DESTDIR)$(PREFIX)/include/e9tool/e9plugin.h"
-	install -d "$(DESTDIR)$(PREFIX)/share/e9tool/examples/"
-	install -m 444 examples/bounds.c "$(DESTDIR)$(PREFIX)/share/e9tool/examples/bounds.c"
-	sed \
-	    -e 's#\./e9compile.sh examples/bounds.c#e9compile $(PREFIX)/share/e9tool/examples/bounds.c#' \
-	    -e 's#\./e9tool#e9tool#' \
-	    examples/bounds.sh > \
-	    "$(DESTDIR)$(PREFIX)/share/e9tool/examples/bounds.sh"
-	chmod 555 "$(DESTDIR)$(PREFIX)/share/e9tool/examples/bounds.sh"
-	install -m 444 examples/cfi.c "$(DESTDIR)$(PREFIX)/share/e9tool/examples/cfi.c"
-	install -m 444 examples/count.c "$(DESTDIR)$(PREFIX)/share/e9tool/examples/count.c"
-	install -m 444 examples/cov.c "$(DESTDIR)$(PREFIX)/share/e9tool/examples/cov.c"
-	install -m 444 examples/delay.c "$(DESTDIR)$(PREFIX)/share/e9tool/examples/delay.c"
-	install -m 444 examples/hello.c "$(DESTDIR)$(PREFIX)/share/e9tool/examples/hello.c"
-	install -m 444 examples/limit.c "$(DESTDIR)$(PREFIX)/share/e9tool/examples/limit.c"
-	install -m 444 examples/nop.c "$(DESTDIR)$(PREFIX)/share/e9tool/examples/nop.c"
-	install -m 444 examples/print.c "$(DESTDIR)$(PREFIX)/share/e9tool/examples/print.c"
-	install -m 444 examples/printf.c "$(DESTDIR)$(PREFIX)/share/e9tool/examples/printf.c"
-	install -m 444 examples/skip.c "$(DESTDIR)$(PREFIX)/share/e9tool/examples/skip.c"
-	install -m 444 examples/state.c "$(DESTDIR)$(PREFIX)/share/e9tool/examples/state.c"
-	install -m 444 examples/trap.c "$(DESTDIR)$(PREFIX)/share/e9tool/examples/trap.c"
-	install -m 444 examples/win64_demo.c "$(DESTDIR)$(PREFIX)/share/e9tool/examples/win64_demo.c"
-	install -d "$(DESTDIR)$(PREFIX)/share/e9tool/examples/plugins/"
-	install -m 444 examples/plugins/example.cpp "$(DESTDIR)$(PREFIX)/share/e9tool/examples/plugins/example.cpp"
-	install -d "$(DESTDIR)$(PREFIX)/share/e9compile/include/"
-	install -m 444 examples/stdlib.c "$(DESTDIR)$(PREFIX)/share/e9compile/include/stdlib.c"
-	install -m 444 src/e9patch/e9loader.h "$(DESTDIR)$(PREFIX)/share/e9compile/include/e9loader.h"
-	install -d "$(DESTDIR)$(PREFIX)/share/man/man1/"
-	gzip --stdout doc/e9patch.1 > "$(DESTDIR)$(PREFIX)/share/man/man1/e9patch.1.gz"
-	chmod 444 "$(DESTDIR)$(PREFIX)/share/man/man1/e9patch.1.gz"
-	gzip --stdout doc/e9tool.1 > "$(DESTDIR)$(PREFIX)/share/man/man1/e9tool.1.gz"
-	chmod 444 "$(DESTDIR)$(PREFIX)/share/man/man1/e9tool.1.gz"
-	gzip --stdout doc/e9compile.1 > "$(DESTDIR)$(PREFIX)/share/man/man1/e9compile.1.gz"
-	chmod 444 "$(DESTDIR)$(PREFIX)/share/man/man1/e9compile.1.gz"
+		-e 's#\./e9compile.sh examples/bounds.c#e9compile $(PREFIX)/share/e9tool/examples/bounds.c#' \
+		-e 's#\./e9tool#e9tool#' \
+		-i "$@"
 
 #########################################################################
 # SPECIAL BUILD
