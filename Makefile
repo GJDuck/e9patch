@@ -138,6 +138,9 @@ $(DESTDIR)$(PREFIX)/share/e9tool/examples/bounds.sh: examples/bounds.sh
 		-e 's#\./e9tool#e9tool#' \
 		-i "$@"
 
+uninstall:
+	rm -fr $(INSTALL)
+
 #########################################################################
 # SPECIAL BUILD
 #########################################################################
