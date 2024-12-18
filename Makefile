@@ -63,6 +63,8 @@ e9patch: $(E9PATCH_OBJS)
 	$(CXX) $(CXXFLAGS) $^ -o $@ $(LDFLAGS) $(LDLIBS)
 
 clean:
+	$(MAKE) -C contrib/libdw clean
+	$(MAKE) -C contrib/zydis clean
 	rm -rf $(E9PATCH_OBJS) $(E9TOOL_OBJS) e9patch e9tool \
         src/e9patch/e9loader_*.c e9loader_*.o e9loader_*.bin
 
@@ -82,10 +84,10 @@ src/e9patch/e9elf.o: src/e9patch/e9loader_elf.c
 src/e9patch/e9pe.o: src/e9patch/e9loader_pe.c
 
 contrib/zydis/libZydis.a:
-	(cd contrib/zydis/; make)
+	$(MAKE) -C contrib/zydis
 
 contrib/libdw/libdw.a:
-	(cd contrib/libdw/; make)
+	$(MAKE) -C contrib/libdw
 
 install: all
 	install -d "$(DESTDIR)$(PREFIX)/bin"
