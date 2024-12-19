@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/sh
 #
 # Copyright (C) National University of Singapore
 #
@@ -31,10 +31,7 @@ else
 fi
 
 echo -e "${GREEN}$0${OFF}: building e9patch and e9tool..."
-(cd contrib/libdw; make clean; make -j `nproc`)
-(cd contrib/zydis; make clean; make -j `nproc`)
 make clean
-make -j `nproc` tool release
+make -j$(nproc) release
 
 echo -e "${GREEN}$0${OFF}: done...!"
-

@@ -1,5 +1,6 @@
 *.bin
 *.o
+*.a
 src/e9patch/e9loader_*.c
 e9patch
 e9tool

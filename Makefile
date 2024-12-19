@@ -1,3 +1,6 @@
+.PHONY: all clean install dev release debug sanitize
+.SECONDEXPANSION:
+
 #########################################################################
 # BUILD COMMON
 #########################################################################
@@ -36,35 +39,32 @@ E9TOOL_OBJS=\
     src/e9tool/e9tool.o \
     src/e9tool/e9types.o \
     src/e9tool/e9x86_64.o
-E9TOOL_LIBS=\
-    contrib/zydis/libZydis.a \
-    contrib/libdw/libdw.a
-E9TOOL_CXXFLAGS=\
-    -I src/e9tool/ -Wno-unused-function \
-    -I contrib/zydis/include/ \
-    -I contrib/zydis/dependencies/zycore/include/
-E9TOOL_LDFLAGS=\
-    -Wl,--dynamic-list=src/e9tool/e9tool.syms \
-    -ldl -lz
+
+E9TOOL_LIBS ::=
+E9TOOL_CXXFLAGS ::= -Isrc/e9tool -Wno-unused-function
+E9TOOL_LDFLAGS ::= -Wl,--dynamic-list=src/e9tool/e9tool.syms
+E9TOOL_LDLIBS ::= -ldl -lz
 
 #########################################################################
 # CONVENTIONAL BUILD
 #########################################################################
 
+all: CXXFLAGS += -DSYSTEM_LIBDW
+all: E9TOOL_LDLIBS += -ldw -lZydis
 all: e9tool e9patch
 
-e9tool: CXXFLAGS += -O2 -DSYSTEM_LIBDW $(E9TOOL_CXXFLAGS)
-e9tool: contrib/zydis/libZydis.a $(E9TOOL_OBJS)
-	$(CXX) $(CXXFLAGS) $(E9TOOL_OBJS) contrib/zydis/libZydis.a -o e9tool \
-	    $(E9TOOL_LDFLAGS) -ldw
-	strip e9tool
+e9tool: CXXFLAGS += $(E9TOOL_CXXFLAGS)
+e9tool: LDFLAGS += $(E9TOOL_LDFLAGS)
+e9tool: LDLIBS += $(E9TOOL_LDLIBS)
+e9tool: $(E9TOOL_OBJS) $$(E9TOOL_LIBS)
+	$(CXX) $(CXXFLAGS) $^ -o $@ $(LDFLAGS) $(LDLIBS)
 
-e9patch: CXXFLAGS += -O2 
 e9patch: $(E9PATCH_OBJS)
-	$(CXX) $(CXXFLAGS) $(E9PATCH_OBJS) -o e9patch
-	strip e9patch
+	$(CXX) $(CXXFLAGS) $^ -o $@ $(LDFLAGS) $(LDLIBS)
 
 clean:
+	$(MAKE) -C contrib/libdw clean
+	$(MAKE) -C contrib/zydis clean
 	rm -rf $(E9PATCH_OBJS) $(E9TOOL_OBJS) e9patch e9tool \
         src/e9patch/e9loader_*.c e9loader_*.o e9loader_*.bin
 
@@ -84,10 +84,10 @@ src/e9patch/e9elf.o: src/e9patch/e9loader_elf.c
 src/e9patch/e9pe.o: src/e9patch/e9loader_pe.c
 
 contrib/zydis/libZydis.a:
-	(cd contrib/zydis/; make)
+	$(MAKE) -C contrib/zydis
 
 contrib/libdw/libdw.a:
-	(cd contrib/libdw/; make)
+	$(MAKE) -C contrib/libdw
 
 install: all
 	install -d "$(DESTDIR)$(PREFIX)/bin"
@@ -151,33 +151,17 @@ install: all
 # SPECIAL BUILD
 #########################################################################
 
-release: CXXFLAGS += -O2 -D NDEBUG
-release: $(E9PATCH_OBJS)
-	$(CXX) $(CXXFLAGS) $(E9PATCH_OBJS) -o e9patch
-	strip e9patch
+dev: E9TOOL_CXXFLAGS += -Icontrib/libdw \
+	-Icontrib/zydis/include -Icontrib/zydis/dependencies/zycore/include
+dev: E9TOOL_LIBS += contrib/zydis/libZydis.a contrib/libdw/libdw.a
+dev: e9patch e9tool
+
+release: CXXFLAGS += -O2 -DNDEBUG
+release: dev
+	strip e9patch e9tool
 
 debug: CXXFLAGS += -O0 -g
-debug: $(E9PATCH_OBJS)
-	$(CXX) $(CXXFLAGS) $(E9PATCH_OBJS) -o e9patch
+debug: dev
 
 sanitize: CXXFLAGS += -O0 -g -fsanitize=address
-sanitize: $(E9PATCH_OBJS)
-	$(CXX) $(CXXFLAGS) $(E9PATCH_OBJS) -o e9patch
-
-tool: CXXFLAGS += -O2 $(E9TOOL_CXXFLAGS) -I contrib/libdw/
-tool: $(E9TOOL_OBJS) $(E9TOOL_LIBS)
-	$(CXX) $(CXXFLAGS) $(E9TOOL_OBJS) $(E9TOOL_LIBS) -o e9tool \
-        $(E9TOOL_LDFLAGS)
-	strip e9tool
-
-tool.debug: CXXFLAGS += -O0 -g $(E9TOOL_CXXFLAGS) -I contrib/libdw/
-tool.debug: $(E9TOOL_OBJS) $(E9TOOL_LIBS)
-	$(CXX) $(CXXFLAGS) $(E9TOOL_OBJS) $(E9TOOL_LIBS) -o e9tool \
-        $(E9TOOL_LDFLAGS)
-
-tool.sanitize: CXXFLAGS += -O0 -g -fsanitize=address $(E9TOOL_CXXFLAGS) \
-	-I contrib/libdw/
-tool.sanitize: $(E9TOOL_OBJS) $(E9TOOL_LIBS)
-	$(CXX) $(CXXFLAGS) $(E9TOOL_OBJS) $(E9TOOL_LIBS) -o e9tool \
-        $(E9TOOL_LDFLAGS)
-
+sanitize: dev
