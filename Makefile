@@ -55,8 +55,8 @@ all: e9tool e9patch
 
 e9tool: CXXFLAGS += $(E9TOOL_CXXFLAGS)
 e9tool: LDFLAGS += $(E9TOOL_LDFLAGS)
-e9tool: LDLIBS += $(E9TOOL_LDLIBS)
-e9tool: $(E9TOOL_OBJS) $$(E9TOOL_LIBS)
+e9tool: LDLIBS += $(E9TOOL_LIBS) $(E9TOOL_LDLIBS)
+e9tool: $(E9TOOL_OBJS)
 	$(CXX) $(CXXFLAGS) $^ -o $@ $(LDFLAGS) $(LDLIBS)
 
 e9patch: $(E9PATCH_OBJS)
@@ -82,12 +82,6 @@ src/e9patch/e9loader_pe.c: src/e9patch/e9loader_pe.cpp
 
 src/e9patch/e9elf.o: src/e9patch/e9loader_elf.c
 src/e9patch/e9pe.o: src/e9patch/e9loader_pe.c
-
-contrib/zydis/libZydis.a:
-	$(MAKE) -C contrib/zydis
-
-contrib/libdw/libdw.a:
-	$(MAKE) -C contrib/libdw
 
 install: all
 	install -d "$(DESTDIR)$(PREFIX)/bin"
@@ -151,10 +145,16 @@ install: all
 # SPECIAL BUILD
 #########################################################################
 
+contrib/zydis/libZydis.a:
+	$(MAKE) -C contrib/zydis
+
+contrib/libdw/libdw.a:
+	$(MAKE) -C contrib/libdw
+
 dev: E9TOOL_CXXFLAGS += -Icontrib/libdw \
 	-Icontrib/zydis/include -Icontrib/zydis/dependencies/zycore/include
 dev: E9TOOL_LIBS += contrib/zydis/libZydis.a contrib/libdw/libdw.a
-dev: e9patch e9tool
+dev: contrib/zydis/libZydis.a contrib/libdw/libdw.a e9patch e9tool
 
 release: CXXFLAGS += -O2 -DNDEBUG
 release: dev
