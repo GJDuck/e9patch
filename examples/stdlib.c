@@ -4254,6 +4254,7 @@ static void perror(const char *msg)
 #define SCANF_FLAG_16       0x0020
 #define SCANF_FLAG_64       0x0040
 #define SCANF_FLAG_SIGNED   0x0080
+#define SCANF_FLAG_SUPPRESS 0x0100
 
 struct scanf_stream_s
 {
@@ -4392,7 +4393,8 @@ static __attribute__((__noinline__)) bool scanf_get_num(
     size_t size = (flags & SCANF_FLAG_8?  sizeof(uint8_t):
                    flags & SCANF_FLAG_16? sizeof(uint16_t):
                    flags & SCANF_FLAG_64? sizeof(uint64_t): sizeof(uint32_t));
-    memset(ptr, 0, size);
+    if (ptr != NULL)
+        memset(ptr, 0, size);
     char c;
     while (isspace(c = scanf_get_char(in)))
         ;
@@ -4488,7 +4490,8 @@ static __attribute__((__noinline__)) bool scanf_get_num(
             i = ub;
         }
     }
-    memcpy(ptr, &i, size);
+    if (ptr != NULL)
+        memcpy(ptr, &i, size);
     if (overflow)
         errno = ERANGE;
     return true;
@@ -4525,6 +4528,13 @@ static int scanf_impl(struct scanf_stream_s *in, const char *format, va_list ap)
                 }
                 continue;
         }
+
+        unsigned flags = 0x0;
+        if (*format == '*')
+        {
+            format++;
+            flags |= SCANF_FLAG_SUPPRESS;
+        }
         
         size_t width = 0;
         for (; isdigit(*format); format++)
@@ -4535,7 +4545,6 @@ static int scanf_impl(struct scanf_stream_s *in, const char *format, va_list ap)
         }
         width = (width == 0? INT32_MAX: width);
 
-        unsigned flags = 0x0;
         switch (*format)
         {
             case 'l':
@@ -4560,26 +4569,36 @@ static int scanf_impl(struct scanf_stream_s *in, const char *format, va_list ap)
                 break;
         }
 
-        void *ptr = (void *)va_arg(ap, void *);
+        void *ptr = NULL;
+        if ((flags & SCANF_FLAG_SUPPRESS) == 0)
+            ptr = (void *)va_arg(ap, void *);
         char *ptr8 = (char *)ptr;
         switch (*format)
         {
             case 'c':
                 width = (width == INT32_MAX? 1: 0);
                 while ((c = scanf_get_char_n(in, &width)) != EOF)
-                    *ptr8++ = c;
+                {
+                    if (ptr8 != NULL)
+                        *ptr8++ = c;
+                }
                 if (width != 0)
                     return num;
                 break;
             case 's':
                 while (isspace(c = scanf_get_char_n(in, &width)))
                     ;
-                *ptr8++ = c;
+                if (ptr8 != NULL)
+                    *ptr8++ = c;
                 while ((c = scanf_get_char_n(in, &width)) != EOF &&
                         !isspace(c))
-                    *ptr8++ = c;
+                {
+                    if (ptr8 != NULL)
+                        *ptr8++ = c;
+                }
                 scanf_unget_char_n(c, in, &width);
-                *ptr8++ = '\0';
+                if (ptr8 != NULL)
+                    *ptr8++ = '\0';
                 break;
             case 'd':
                 flags |= SCANF_FLAG_DEC | SCANF_FLAG_SIGNED;
@@ -4615,7 +4634,8 @@ static int scanf_impl(struct scanf_stream_s *in, const char *format, va_list ap)
             default:
                 return num;
         }
-        num++;
+        if ((flags & SCANF_FLAG_SUPPRESS) == 0)
+            num++;
     }
     return num;
 }
