@@ -1,1 +1,1 @@
-./test -M 'addr == 0xa0001d9' -P 'test_stat("stat.in")@patch'
+./test -M 'addr == 0xa0001d9' -P 'test_stat("FILE.txt")@patch'

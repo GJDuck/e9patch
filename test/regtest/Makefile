@@ -28,6 +28,8 @@ all:
 	g++ -std=c++11 -fPIC -shared -o example.so -O2 \
         ../../examples/plugins/example.cpp -I ../../src/e9tool/
 	g++ -std=c++11 -pie -fPIC -o regtest regtest.cpp -O2
+	echo "XXX" > FILE.txt
+	chmod 0640 FILE.txt
 
 clean:
 	rm -f *.log *.out *.exe test test.pie test.libc libtest.so inst inst.o \
