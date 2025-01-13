@@ -78,6 +78,7 @@ then
     echo >&2
     exit 1
 fi
+trap "rm -f $BASENAME.o" EXIT HUP INT TERM
 
 CFLAGS="-pie -nostdlib \
     -Wl,-z -Wl,max-page-size=4096 \
