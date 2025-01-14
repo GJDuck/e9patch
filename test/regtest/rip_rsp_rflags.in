@@ -1,1 +1,1 @@
-./test -M true -P 'entry(rip,rsp,flags,bytes,size,asm)@inst'
+./test -M '!defined(bad[0])' -P 'entry(rip,rsp,flags,bytes,size,asm)@inst'

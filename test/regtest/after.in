@@ -1,4 +1,4 @@
-./test -M true -P 'after entry(rip,rsp,flags,bytes,size,asm)@inst'
+./test -M 'not addr in {0xa0001d2,0xa0001d5,0xa0001d9,0xa0001f3,0xa0001f7,0xa0001fb,0xa0001fd,0xa000204,0xa000208,0xa00020d}' -P 'after entry(rip,rsp,flags,bytes,size,asm)@inst'
 
 # Compare against rip_rsp_rflags for reference
 

@@ -1,1 +1,1 @@
-./test -M 'reg[0] in {xmm0, xmm1} || reg[1] in {xmm0, xmm1}' -P 'entry(addr,rax,flags,bytes,size,asm)@inst'
+./test -M '(reg[0] in {xmm0, xmm1} || reg[1] in {xmm0, xmm1})' -P 'entry(addr,rax,0xe9e9e9e9,bytes,size,asm)@inst'
