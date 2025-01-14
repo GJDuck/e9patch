@@ -1011,6 +1011,10 @@ static const Argument parsePatchArg(Parser &parser)
         case TOKEN_FILENAME:
             option_lines = true;
             arg = ARGUMENT_FILENAME; break;
+        case TOKEN_FLAGS:
+            value = REGISTER_FLAGS;
+            arg = ARGUMENT_REGISTER;
+            break;
         case TOKEN_ID:
             arg = ARGUMENT_ID; break;
         case TOKEN_IMM:
@@ -2321,7 +2325,7 @@ static MatchVal makeMatchValue(const MatchVar *var, const ELF *elf,
             return result;
         case MATCH_READS:
             if (I->flags.read != 0x0)
-                buf[j++] = REGISTER_EFLAGS;
+                buf[j++] = REGISTER_RFLAGS;
             for (uint8_t i = 0; I->regs.read[i] != REGISTER_INVALID; i++)
                 buf[j++] = MatchVal(I->regs.read[i]);
             for (uint8_t i = 0; I->regs.condread[i] != REGISTER_INVALID; i++)
@@ -2332,7 +2336,7 @@ static MatchVal makeMatchValue(const MatchVar *var, const ELF *elf,
             return result;
         case MATCH_WRITES:
             if (I->flags.write != 0x0)
-                buf[j++] = REGISTER_EFLAGS;
+                buf[j++] = REGISTER_RFLAGS;
             for (uint8_t i = 0; I->regs.write[i] != REGISTER_INVALID; i++)
                 buf[j++] = MatchVal(I->regs.write[i]);
             for (uint8_t i = 0; I->regs.condwrite[i] != REGISTER_INVALID; i++)
@@ -2343,7 +2347,7 @@ static MatchVal makeMatchValue(const MatchVar *var, const ELF *elf,
             return result;
         case MATCH_REGS:
             if ((I->flags.read | I->flags.write) != 0x0)
-                buf[j++] = REGISTER_EFLAGS;
+                buf[j++] = REGISTER_RFLAGS;
             for (uint8_t i = 0; I->regs.read[i] != REGISTER_INVALID; i++)
                 buf[j++] = MatchVal(I->regs.read[i]);
             for (uint8_t i = 0; I->regs.condread[i] != REGISTER_INVALID; i++)

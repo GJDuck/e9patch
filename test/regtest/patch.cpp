@@ -179,21 +179,33 @@ void zero(void *state_0, const char *_asm)
         state->r13 = state->r14 = state->r15 = 0x0;
 }
 
-void zero_flags(uint16_t *rflags, const char *_asm)
+void zero_flags(uint16_t *flags, const char *_asm)
 {
     fprintf(stderr, "%s\t# ZERO FLAGS %c%c%c%c%c\n", _asm,
-        (*rflags & 0x8000? 'S': '-'),
-        (*rflags & 0x4000? 'Z': '-'),
-        (*rflags & 0x1000? 'A': '-'),
-        (*rflags & 0x0400? 'P': '-'),
-        (*rflags & 0x0001? 'O': '-'));
-    *rflags = 0x0;
+        (*flags & FLAGS_SF? 'S': '-'),
+        (*flags & FLAGS_ZF? 'Z': '-'),
+        (*flags & FLAGS_AF? 'A': '-'),
+        (*flags & FLAGS_PF? 'P': '-'),
+        (*flags & FLAGS_OF? 'O': '-'));
+    *flags = 0x0;
+}
+
+void zero_rflags(uint64_t *rflags, const char *_asm)
+{
+    fprintf(stderr, "%s\t# ZERO FLAGS %c%c%c%c%c\n", _asm,
+        (*rflags & RFLAGS_SF? 'S': '-'),
+        (*rflags & RFLAGS_ZF? 'Z': '-'),
+        (*rflags & RFLAGS_AF? 'A': '-'),
+        (*rflags & RFLAGS_PF? 'P': '-'),
+        (*rflags & RFLAGS_OF? 'O': '-'));
+    *rflags &=
+        ~(RFLAGS_SF | RFLAGS_ZF | RFLAGS_AF | RFLAGS_PF | RFLAGS_OF);
 }
 
 void zero_flags(void *state_0, const char *_asm)
 {
     STATE *state = (STATE *)state_0;
-    zero_flags(&state->rflags, _asm);
+    zero_flags(&state->flags, _asm);
 }
 
 void sum(intptr_t x, const char *_asm)
@@ -1087,6 +1099,20 @@ void test_qsort(void)
             }
         }
         putchar('\n');
+    }
+}
+
+void check_flags(const char *_asm, uint64_t flags, uint64_t rflags)
+{
+    if (((flags & FLAGS_OF) != 0) != (((rflags & RFLAGS_OF) != 0)) ||
+        ((flags & FLAGS_CF) != 0) != (((rflags & RFLAGS_CF) != 0)) ||
+        ((flags & FLAGS_PF) != 0) != (((rflags & RFLAGS_PF) != 0)) ||
+        ((flags & FLAGS_AF) != 0) != (((rflags & RFLAGS_AF) != 0)) ||
+        ((flags & FLAGS_ZF) != 0) != (((rflags & RFLAGS_ZF) != 0)) ||
+        ((flags & FLAGS_SF) != 0) != (((rflags & RFLAGS_SF) != 0)))
+    {
+        fprintf(stderr, "%s: flag mismatch\n", _asm);
+        abort();
     }
 }
 

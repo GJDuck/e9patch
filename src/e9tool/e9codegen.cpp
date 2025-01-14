@@ -78,8 +78,8 @@ Register getReg(int regno)
             return REGISTER_R8;
         case R9_IDX:
             return REGISTER_R9;
-        case RFLAGS_IDX:
-            return REGISTER_EFLAGS;
+        case FLAGS_IDX:
+            return REGISTER_FLAGS;
         case RAX_IDX:
             return REGISTER_RAX;
         case R10_IDX:
@@ -245,12 +245,12 @@ int32_t getRegSize(Register reg)
         case REGISTER_R14B: case REGISTER_R15B:
             return sizeof(int8_t);
         
-        case REGISTER_EFLAGS: case REGISTER_AX: case REGISTER_BP:
-        case REGISTER_BX: case REGISTER_CX: case REGISTER_DX:
-        case REGISTER_DI: case REGISTER_IP: case REGISTER_SI:
-        case REGISTER_SP: case REGISTER_R8W: case REGISTER_R9W:
-        case REGISTER_R10W: case REGISTER_R11W: case REGISTER_R12W:
-        case REGISTER_R13W: case REGISTER_R14W: case REGISTER_R15W:
+        case REGISTER_AX: case REGISTER_BP: case REGISTER_BX:
+        case REGISTER_CX: case REGISTER_DX: case REGISTER_DI:
+        case REGISTER_IP: case REGISTER_SI: case REGISTER_SP:
+        case REGISTER_R8W: case REGISTER_R9W: case REGISTER_R10W:
+        case REGISTER_R11W: case REGISTER_R12W: case REGISTER_R13W:
+        case REGISTER_R14W: case REGISTER_R15W: case REGISTER_FLAGS:
             return sizeof(int16_t);
         
         case REGISTER_EAX: case REGISTER_EBP: case REGISTER_EBX:
@@ -266,7 +266,7 @@ int32_t getRegSize(Register reg)
         case REGISTER_RIP: case REGISTER_RSI: case REGISTER_RSP:
         case REGISTER_R8: case REGISTER_R9: case REGISTER_R10:
         case REGISTER_R11: case REGISTER_R12: case REGISTER_R13:
-        case REGISTER_R14: case REGISTER_R15:
+        case REGISTER_R14: case REGISTER_R15: case REGISTER_RFLAGS:
             return sizeof(int64_t);
 
         case REGISTER_XMM0: case REGISTER_XMM1: case REGISTER_XMM2:
@@ -353,12 +353,12 @@ Type getRegType(Register reg)
         case REGISTER_R14B: case REGISTER_R15B:
             return TYPE_INT8;
  
-        case REGISTER_EFLAGS: case REGISTER_AX: case REGISTER_BP:
-        case REGISTER_BX: case REGISTER_CX: case REGISTER_DX:
-        case REGISTER_DI: case REGISTER_IP: case REGISTER_SI:
-        case REGISTER_SP: case REGISTER_R8W: case REGISTER_R9W:
-        case REGISTER_R10W: case REGISTER_R11W: case REGISTER_R12W:
-        case REGISTER_R13W: case REGISTER_R14W: case REGISTER_R15W:
+        case REGISTER_AX: case REGISTER_BP: case REGISTER_BX:
+        case REGISTER_CX: case REGISTER_DX: case REGISTER_DI:
+        case REGISTER_IP: case REGISTER_SI: case REGISTER_SP:
+        case REGISTER_R8W: case REGISTER_R9W: case REGISTER_R10W:
+        case REGISTER_R11W: case REGISTER_R12W: case REGISTER_R13W:
+        case REGISTER_R14W: case REGISTER_R15W: case REGISTER_FLAGS:
             return TYPE_INT16;
  
         case REGISTER_EAX: case REGISTER_EBP: case REGISTER_EBX:
@@ -375,6 +375,7 @@ Type getRegType(Register reg)
         case REGISTER_RSP: case REGISTER_R8: case REGISTER_R9:
         case REGISTER_R10: case REGISTER_R11: case REGISTER_R12:
         case REGISTER_R13: case REGISTER_R14: case REGISTER_R15:
+        case REGISTER_RFLAGS:
             return TYPE_INT64;
  
         case REGISTER_XMM0: case REGISTER_XMM1: case REGISTER_XMM2:
@@ -486,7 +487,7 @@ const char *e9tool::getRegName(Register reg)
         case REGISTER_R13B:    return "%r13b";
         case REGISTER_R14B:    return "%r14b";
         case REGISTER_R15B:    return "%r15b";
-        case REGISTER_EFLAGS:  return "%rflags";
+        case REGISTER_RFLAGS:  return "%rflags";
         case REGISTER_AX:      return "%ax";
         case REGISTER_BP:      return "%bp";
         case REGISTER_BX:      return "%bx";
@@ -712,7 +713,7 @@ const int *getCallerSaveRegs(bool sysv, bool clean, bool state,
     {
         RAX_IDX, RCX_IDX, RDX_IDX, RBX_IDX, RBP_IDX, RSI_IDX, RDI_IDX, R8_IDX,
         R9_IDX, R10_IDX, R11_IDX, R12_IDX, R13_IDX, R14_IDX, R15_IDX,
-        RFLAGS_IDX, RSP_IDX, RIP_IDX, -1
+        FLAGS_IDX, RSP_IDX, RIP_IDX, -1
     };
     if (state)
         return state_save;
@@ -723,12 +724,12 @@ const int *getCallerSaveRegs(bool sysv, bool clean, bool state,
     // - %rax must be saved before %rflags.
     static const int clean_sysv_save[] =
     {
-        RCX_IDX, RAX_IDX, RFLAGS_IDX, R11_IDX, R10_IDX, R9_IDX, R8_IDX,
+        RCX_IDX, RAX_IDX, FLAGS_IDX, R11_IDX, R10_IDX, R9_IDX, R8_IDX,
         RDX_IDX, RSI_IDX, RDI_IDX, -1
     };
     static const int clean_win64_save[] =
     {
-        RCX_IDX, RAX_IDX, RFLAGS_IDX, R11_IDX, R10_IDX, R9_IDX, R8_IDX,
+        RCX_IDX, RAX_IDX, FLAGS_IDX, R11_IDX, R10_IDX, R9_IDX, R8_IDX,
         RDX_IDX, -1
     };
     const int *clean_save = (sysv? clean_sysv_save: clean_win64_save);
@@ -969,9 +970,9 @@ std::pair<bool, bool> sendPush(FILE *out, int32_t offset, bool before,
     {
         case REGISTER_RIP:
         case REGISTER_RSP:
-        case REGISTER_EFLAGS:
+        case REGISTER_FLAGS:
             scratch = getRegIdx(rscratch);
-            assert(scratch != RSP_IDX && scratch != RFLAGS_IDX &&
+            assert(scratch != RSP_IDX && scratch != FLAGS_IDX &&
                 scratch != RIP_IDX);
             if (scratch < 0)
             {
@@ -981,7 +982,7 @@ std::pair<bool, bool> sendPush(FILE *out, int32_t offset, bool before,
                 scratch = RAX_IDX;
                 rax_stack = true;
             }
-            if (reg == REGISTER_EFLAGS && scratch != RAX_IDX)
+            if (reg == REGISTER_FLAGS && scratch != RAX_IDX)
             {
                 // %rflags requires %rax as the scratch register:
                 sendMovFromR64ToR64(out, RAX_IDX, scratch);
@@ -1011,7 +1012,7 @@ std::pair<bool, bool> sendPush(FILE *out, int32_t offset, bool before,
             sendMovFromR64ToStack(out, scratch, offset - RSP_SLOT);
             break;
 
-       case REGISTER_EFLAGS:
+       case REGISTER_FLAGS:
             // seto %al
             // lahf
             assert(scratch == RAX_IDX);
@@ -1020,6 +1021,11 @@ std::pair<bool, bool> sendPush(FILE *out, int32_t offset, bool before,
             sendPush(out, offset + sizeof(int64_t), before, REGISTER_RAX);
             break;
 
+        case REGISTER_RFLAGS:
+            // pushfq
+            fprintf(out, "%u,", 0x9c);
+            return {true, false};
+
         default:
             break;
     }
@@ -1027,7 +1033,7 @@ std::pair<bool, bool> sendPush(FILE *out, int32_t offset, bool before,
     {
         case REGISTER_RIP:
         case REGISTER_RSP:
-        case REGISTER_EFLAGS:
+        case REGISTER_FLAGS:
             if (old_scratch >= 0)
                 sendMovFromR64ToR64(out, old_scratch, scratch);
             else if (rax_stack)
@@ -1076,7 +1082,7 @@ bool sendPop(FILE *out, bool preserve_rax, Register reg, Register rscratch)
     // Special cases:
     switch (reg)
     {
-        case REGISTER_EFLAGS:
+        case REGISTER_FLAGS:
         {
             int scratch = -1;
             if (preserve_rax)
@@ -1108,6 +1114,10 @@ bool sendPop(FILE *out, bool preserve_rax, Register reg, Register rscratch)
             }
             return false;
         }
+
+        case REGISTER_RFLAGS:
+            fprintf(out, "%u,", 0x9d);
+            return false;
 
         case REGISTER_RIP:
             // %rip is treated as read-only & stored in a special slot.

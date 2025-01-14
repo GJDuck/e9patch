@@ -1,1 +1,1 @@
-./test -M 'rflags in writes' -P 'entry(rflags,op[0],op[1],bytes,size,asm)@inst'
+./test -M 'rflags in writes' -P 'entry(flags,op[0],op[1],bytes,size,asm)@inst'

@@ -206,6 +206,8 @@ void e9tool::getInstrInfo(const ELF *elf, const Instr *I, InstrInfo *info,
                 info->flags.read |= FLAG_ZF;
             if (cpu_flags_read & ZYDIS_CPUFLAG_SF)
                 info->flags.read |= FLAG_SF;
+            if (cpu_flags_read & ZYDIS_CPUFLAG_OF)
+                info->flags.read |= FLAG_OF;
             uint32_t cpu_flags_written =
                 D->cpu_flags->modified |
                 D->cpu_flags->set_0 |
@@ -221,6 +223,8 @@ void e9tool::getInstrInfo(const ELF *elf, const Instr *I, InstrInfo *info,
                 info->flags.write |= FLAG_ZF;
             if (cpu_flags_written & ZYDIS_CPUFLAG_SF)
                 info->flags.write |= FLAG_SF;
+            if (cpu_flags_written & ZYDIS_CPUFLAG_OF)
+                info->flags.write |= FLAG_OF;
         }
 
         unsigned j = 0, k = 0, l = 0, m = 0, n = 0;
@@ -420,7 +424,7 @@ static Register convert(ZydisRegister reg)
         case ZYDIS_REGISTER_R14W:       return REGISTER_R14W;
         case ZYDIS_REGISTER_R15W:       return REGISTER_R15W;
 
-        case ZYDIS_REGISTER_EFLAGS:     return REGISTER_EFLAGS;
+        case ZYDIS_REGISTER_EFLAGS:     return REGISTER_RFLAGS;
         case ZYDIS_REGISTER_IP:         return REGISTER_IP;
 
         case ZYDIS_REGISTER_EAX:        return REGISTER_EAX;

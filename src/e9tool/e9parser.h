@@ -71,6 +71,7 @@ enum Token
     TOKEN_F,
     TOKEN_FALSE,
     TOKEN_FILENAME,
+    TOKEN_FLAGS,
     TOKEN_GEQ,
     TOKEN_GOTO,
     TOKEN_I,

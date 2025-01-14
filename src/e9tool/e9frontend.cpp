@@ -1888,7 +1888,7 @@ unsigned e9tool::sendCallTrampolineMessage(FILE *out, const char *name,
     bool clean = (call.abi == ABI_CLEAN);
     bool state = call.state;
     const int *rsave = getCallerSaveRegs(sysv, clean, state, conditional,
-        call.args.size());
+        call.nargs);
     int num_rsave = 0;
     Register rscratch = (clean || state? REGISTER_RAX: REGISTER_INVALID);
     int32_t offset = 0x4000;
@@ -1938,6 +1938,14 @@ unsigned e9tool::sendCallTrampolineMessage(FILE *out, const char *name,
     {
         if (rsave[i] == RSP_IDX || rsave[i] == RIP_IDX)
             continue;
+        if (rsave[i] == FLAGS_IDX && call.rflags)
+        {
+            // &%rflags takes precedence over saved flags:
+            // lea 8(%rsp),%rsp
+            fprintf(out, "%u,%u,%u,%u,{\"int8\":%d},",
+                0x48, 0x8d, 0x64, 0x24, 8);
+            continue;
+        }
         sendPop(out, preserve_rax, getReg(rsave[i]));
     }
 
@@ -2052,7 +2060,7 @@ static void checkCompatible(const ELF &elf, const ELF &target)
  */
 const Call &e9tool::makeCall(const ELF *elf, const char *filename,
     const char *entry, CallABI abi, CallJump jmp, PatchPos pos,
-    const std::vector<ArgumentKind> &args)
+    const std::vector<Argument> &args)
 {
     static std::map<const char *, ELF *, CStrCmp> files;
     static intptr_t file_addr = 0x70000000;
@@ -2078,15 +2086,30 @@ const Call &e9tool::makeCall(const ELF *elf, const char *filename,
         target = i->second;
     }
 
-    bool state = false;
-    for (auto arg: args)
+    bool state = false, rflags = false, warn = false;
+    for (const auto arg: args)
     {
-        if (arg == ARGUMENT_STATE)
-            state = true;
-        if (state)
-            break;
+        state  = (arg.kind == ARGUMENT_STATE? true: state);
+        rflags = (arg.ptr && arg.kind == ARGUMENT_REGISTER &&
+            arg.value == REGISTER_RFLAGS? true: rflags);
+        warn = (arg.kind == ARGUMENT_REGISTER &&
+            arg.value == REGISTER_RFLAGS? true: warn);
     }
-    Call *call = new Call(abi, jmp, pos, state, target, strDup(entry), args);
+    bool seen = false;
+    if (warn && !seen && getenv("E9TOOL_NEW_RFLAGS") == nullptr)
+    {
+        if (getenv("E9TOOL_NEW_RFLAGS") == nullptr)
+            warning("the semantics of the `rflags' argument has changed:\n"
+                "\t- the new `rflags' refers to the native %rflags register; "
+                    "and\n"
+                "\t- the old `rflags' has replaced by a new `flags' "
+                    "argument.\n"
+                "\tPlease see the e9tool-user-guide.md for more information.\n"
+                "\t(define E9TOOL_NEW_RFLAGS=1 to surpress this warning)");
+        seen = true;
+    }
+    Call *call = new Call(abi, jmp, pos, state, rflags, target, strDup(entry),
+        args.size());
     return *call;
 }
 

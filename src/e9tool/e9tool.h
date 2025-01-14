@@ -1752,6 +1752,7 @@ enum Mnemonic : int16_t
 enum Register : uint8_t
 {
     REGISTER_NONE,
+    REGISTER_FLAGS,     // Pseudo-register
 
     REGISTER_AH,
     REGISTER_CH,
@@ -1792,7 +1793,7 @@ enum Register : uint8_t
     REGISTER_R14W,
     REGISTER_R15W,
     
-    REGISTER_EFLAGS,
+    REGISTER_RFLAGS,
     REGISTER_IP,
     
     REGISTER_EAX,
@@ -2081,8 +2082,9 @@ struct OpInfo
 #define FLAG_AF                 0x04
 #define FLAG_ZF                 0x08
 #define FLAG_SF                 0x10
+#define FLAG_OF                 0x20
 #define FLAG_ALL                \
-    (FLAG_CF | FLAG_PF | FLAG_AF | FLAG_ZF | FLAG_SF)
+    (FLAG_CF | FLAG_PF | FLAG_AF | FLAG_ZF | FLAG_SF | FLAG_OF)
 
 /*
  * Compressed instruction representation.
@@ -2501,7 +2503,7 @@ extern intptr_t getELFObject(const ELF *elf, const char *name,
  */
 extern const Call &makeCall(const ELF *elf, const char *filename,
     const char *entry, CallABI abi, CallJump jmp, PatchPos pos,
-    const std::vector<ArgumentKind> &args);
+    const std::vector<Argument> &args);
 extern void getInstrInfo(const ELF *elf, const Instr *I, InstrInfo *info,
     void *raw = nullptr);
 extern const char *getRegName(Register r);

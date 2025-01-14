@@ -32,7 +32,7 @@
 #define RCX_IDX         3
 #define R8_IDX          4
 #define R9_IDX          5
-#define RFLAGS_IDX      6
+#define FLAGS_IDX       6
 #define RAX_IDX         7
 #define R10_IDX         8
 #define R11_IDX         9

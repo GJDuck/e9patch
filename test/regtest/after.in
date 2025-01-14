@@ -1,4 +1,4 @@
-./test -M true -P 'after entry(rip,rsp,rflags,bytes,size,asm)@inst'
+./test -M true -P 'after entry(rip,rsp,flags,bytes,size,asm)@inst'
 
 # Compare against rip_rsp_rflags for reference
 

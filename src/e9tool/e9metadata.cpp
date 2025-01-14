@@ -201,7 +201,7 @@ struct CallInfo
      */
     void use(Register reg)
     {
-        assert(reg != REGISTER_RAX && reg != REGISTER_EFLAGS);
+        assert(reg != REGISTER_RAX && reg != REGISTER_FLAGS);
         setUsed(reg, true);
     }
 
@@ -222,7 +222,7 @@ struct CallInfo
         for (const auto &entry: info)
         {
             int regno = getRegIdx(entry.first);
-            if (regno < 0 || regno == RFLAGS_IDX || regno == RSP_IDX ||
+            if (regno < 0 || regno == FLAGS_IDX || regno == RSP_IDX ||
                     regno == RIP_IDX)
                 continue;
             bool found = false;
@@ -253,7 +253,7 @@ struct CallInfo
         intptr_t reg_offset = 0;
         switch (reg)
         {
-            case REGISTER_EFLAGS:
+            case REGISTER_FLAGS:
                 rsp_offset += sizeof(int64_t);
                 reg_offset = rsp_offset;
                 break;
@@ -1608,10 +1608,10 @@ static Type sendLoadArgumentMetadata(FILE *out, CallInfo &info,
                 case REGISTER_RSP:
                     sendLeaFromStackToR64(out, info.rsp_offset, regno);
                     break;
-                case REGISTER_EFLAGS:
-                    if (info.isSaved(REGISTER_EFLAGS))
+                case REGISTER_FLAGS:
+                    if (info.isSaved(REGISTER_FLAGS))
                         sendMovFromStack16ToR64(out,
-                            info.getOffset(REGISTER_EFLAGS), regno);
+                            info.getOffset(REGISTER_FLAGS), regno);
                     else
                     {
                         Register exclude[] = {REGISTER_RAX, getReg(regno),
@@ -1627,6 +1627,18 @@ static Type sendLoadArgumentMetadata(FILE *out, CallInfo &info,
                         sendUndoTemporaryMovReg(out, REGISTER_RAX, scratch);
                     }
                     t = TYPE_INT16;
+                    break;
+                case REGISTER_RFLAGS:
+                    if (info.isSaved(REGISTER_RFLAGS))
+                        sendMovFromStack16ToR64(out,
+                            info.getOffset(REGISTER_RFLAGS), regno);
+                    else
+                    {
+                        // pushfq
+                        fprintf(out, "%u,", 0x9c);
+                        sendPop(out, false, getReg(regno));
+                    }
+                    t = TYPE_INT64;
                     break;
                 default:
                 {
@@ -1668,8 +1680,8 @@ static Type sendLoadArgumentMetadata(FILE *out, CallInfo &info,
         }
         case ARGUMENT_STATE:
         {
-            // State is saved starting from %rflags
-            Register reg = REGISTER_EFLAGS;
+            // State is saved starting from %flags
+            Register reg = REGISTER_FLAGS;
             sendLeaFromStackToR64(out, info.getOffset(reg), regno);
             t = TYPE_VOID | TYPE_PTR;
             break;
@@ -2157,15 +2169,12 @@ void e9tool::sendCallMetadata(FILE *out, const char *name, const ELF *elf,
     CallInfo info(sysv, (call.abi == ABI_CLEAN), call.state,
         (call.jmp != JUMP_NONE), args.size(), before, pic);
     TypeSig sig = TYPESIG_EMPTY;
-    if (args.size() != call.args.size())
+    if (args.size() != call.nargs)
         error("failed to emit call metadata; expected %zu arguments, "
-            "found %zu", call.args.size(), args.size());
+            "found %zu", call.nargs, args.size());
     size_t j = 0;
     for (const auto &arg: args)
     {
-        if (arg.kind != call.args[j])
-            error("failed to emit call metadata; type mismatch for argument "
-                "#%zu", j+1);
         j++;
         int regno = getArgRegIdx(sysv, argno);
         Type t = sendLoadArgumentMetadata(out, info, elf, name, call.pos, Is,

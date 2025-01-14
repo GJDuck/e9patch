@@ -1,1 +1,1 @@
-./test -M true -P 'entry(rip,rsp,rflags,bytes,size,asm)@inst'
+./test -M true -P 'entry(rip,rsp,flags,bytes,size,asm)@inst'

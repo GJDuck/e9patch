@@ -1,1 +1,1 @@
-./test -M true -P 'after zero_flags(&rflags,asm)@patch'
+./test -M true -P 'after zero_flags(&flags,asm)@patch'

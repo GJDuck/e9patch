@@ -1,0 +1,8 @@
+jnz 0xa0002ae	# ZERO FLAGS -Z-P-
+push %r15	# ZERO FLAGS -----
+js 0xa000106	# ZERO FLAGS -----
+movq 0x5e(%rip), %rax	# ZERO FLAGS -----
+mov $0x8877665544332211, %rbx	# ZERO FLAGS -----
+cmp %rax, %rbx	# ZERO FLAGS -Z-P-
+jz 0xa000122	# ZERO FLAGS -----
+Illegal instruction

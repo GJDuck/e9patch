@@ -5739,7 +5739,7 @@ struct STATE
 {
     union
     {
-        uint16_t rflags;
+        uint16_t flags;
         uint64_t __padding;
     };
     union
@@ -5879,17 +5879,27 @@ struct STATE
 };
 
 /*
- * Flags.
+ * Flags (E9Tool `flags' argument ordering)
  */
-#define OF      0x0001
-#define CF      0x0100
-#define PF      0x0400
-#define AF      0x1000
-#define ZF      0x4000
-#define SF      0x8000
+#define FLAGS_OF    0x0001
+#define FLAGS_CF    0x0100
+#define FLAGS_PF    0x0400
+#define FLAGS_AF    0x1000
+#define FLAGS_ZF    0x4000
+#define FLAGS_SF    0x8000
 
 /*
- * Jump to state (also restores %rip and %rip)
+ * Flags (native x86_64 %rflags ordering)
+ */
+#define RFLAGS_CF   0x0001
+#define RFLAGS_PF   0x0004
+#define RFLAGS_AF   0x0010
+#define RFLAGS_ZF   0x0040
+#define RFLAGS_SF   0x0080
+#define RFLAGS_OF   0x0800
+
+/*
+ * Jump to state (also restores %rip and %rsp)
  */
 static __attribute__((noreturn)) void jump(const struct STATE *state)
 {

@@ -1,0 +1,1 @@
+./test -M true -P 'after zero_rflags(&rflags,asm)@patch'

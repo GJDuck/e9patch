@@ -1245,11 +1245,9 @@ int main_2(int argc, char **argv)
                 case PATCH_CALL:
                 {
                     // Step (1): Create call object:
-                    std::vector<ArgumentKind> sig;
-                    for (const auto &arg: patch->args)
-                        sig.push_back(arg.kind);
                     const Call &call = makeCall(&elf, patch->filename,
-                        patch->entry, patch->abi, patch->jmp, patch->pos, sig);
+                        patch->entry, patch->abi, patch->jmp, patch->pos,
+                        patch->args);
                     patch->call = &call;
 
                     // Step (2): Create the trampoline:

@@ -1,1 +1,1 @@
-./test -M 'rflags in reads' -P 'entry(rflags,target,next,bytes,size,asm)@inst'
+./test -M 'rflags in reads' -P 'entry(flags,target,next,bytes,size,asm)@inst'

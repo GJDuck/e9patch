@@ -144,17 +144,16 @@ namespace e9tool
         const CallABI abi;
         const CallJump jmp;
         const PatchPos pos;
-        const bool state;
+        const bool state;               // Uses ARGUMENT_STATE?
+        const bool rflags;              // Writes to %rflags?
         const ELF * const target;
         const char *const entry;
-        const std::vector<ArgumentKind> args;
+        const size_t nargs;
 
-        Call(CallABI abi, CallJump jmp, PatchPos pos, bool state,
-                const ELF *target, const char *entry,
-                const std::vector<ArgumentKind> &args) :
-            abi(abi), jmp(jmp), pos(pos), state(state), target(target),
-            entry(entry),
-            args(args)      // copy
+        Call(CallABI abi, CallJump jmp, PatchPos pos, bool state, bool rflags,
+                const ELF *target, const char *entry, size_t nargs) :
+            abi(abi), jmp(jmp), pos(pos), state(state), rflags(rflags),
+            target(target), entry(entry), nargs(nargs)
         {
             ;
         }

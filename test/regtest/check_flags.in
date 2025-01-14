@@ -1,0 +1,1 @@
+./test -M true -P 'check_flags(asm,flags,rflags)@patch'

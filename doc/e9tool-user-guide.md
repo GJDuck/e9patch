@@ -1048,8 +1048,10 @@ The following arguments are supported:
     <td>The corresponding 32bit register</td></tr>
 <tr><td><b><tt>rax</tt></b>,...,<b><tt>r15</tt></b></td><td><tt>int64_t</tt></td>
     <td>The corresponding 64bit register</td></tr>
-<tr><td><b><tt>rflags</tt></b></td><td><tt>int16_t</tt></td>
-    <td>The <tt>%rflags</tt> register with format
+<tr><td><b><tt>rflags</tt></b></td><td><tt>int64_t</tt></td>
+    <td>The <tt>%rflags</tt> register</td></tr>
+<tr><td><b><tt>flags</tt></b></td><td><tt>int16_t</tt></td>
+    <td>The <tt>%rflags</tt> status flags with format
     <tt>SF:ZF:0:AF:0:PF:1:CF:0:0:0:0:0:0:0:OF</tt></td></tr>
 <tr><td><b><tt>rip</tt></b></td><td><tt>const void &#42;</tt></td>
     <td>The <tt>%rip</tt> register</td></tr>
@@ -1061,8 +1063,10 @@ The following arguments are supported:
     <td>The corresponding 32bit register (passed-by-pointer)</td></tr>
 <tr><td><b><tt>&amp;rax</tt></b>,...,<b><tt>&amp;r15</tt></b></td><td><tt>int64_t &#42;</tt></td>
     <td>The corresponding 64bit register (passed-by-pointer)</td></tr>
-<tr><td><b><tt>&amp;rflags</tt></b></td><td><tt>int16_t &#42;</tt></td>
+<tr><td><b><tt>&amp;rflags</tt></b></td><td><tt>int64_t &#42;</tt></td>
     <td>The <tt>%rflags</tt> register (passed-by-pointer)</td></tr>
+<tr><td><b><tt>&amp;flags</tt></b></td><td><tt>int16_t &#42;</tt></td>
+    <td>The status flags from <tt>%rflags</tt> (passed-by-pointer)</td></tr>
 <tr><td><b><tt>op[i]</tt></b></td><td><tt>int8/16/32/64_t</tt></td>
     <td>The matching instruction's <i>i</i><sup>th</sup> operand</td></tr>
 <tr><td><b><tt>src[i]</tt></b></td><td><tt>int8/16/32/64_t</tt></td>
@@ -1272,16 +1276,18 @@ The following arguments are supported:
 
 Notes:
 
-* The `rflags` argument differs from the native
-  `x86_64` layout in terms of the number of flags as well as the flag ordering.
-  The modified layout is used for efficiency reasons since preserving the
-  native layout is a relatively slow operation.
+* Accessing the `%rflags` register directly is relatively slow operation.
+  For performance, consider accessing *status flag* bits indirectly using the
+  alternative `flags` argument.
+  Note that the `flags` argument uses a special
+  <tt>SF:ZF:0:AF:0:PF:1:CF:0:0:0:0:0:0:0:OF</tt> layout (which differs from
+  the native `%rflags` layout).
 * For technical reasons, the `%rip` register is considered constant and cannot
   be modified.
   To implement jumps, use [conditional call trampolines](#conditional-calls) instead.
 * The `state` argument is a pointer to a structure containing all
-  general-purpose registers, the flag register (`%rflags`), the stack register
-  (`%rsp`) and the instruction pointer register (`%rip`).
+  general-purpose registers, the status flags (using the `flags` layout), the
+  stack register (`%rsp`) and the instruction pointer register (`%rip`).
   See `STATE` defined in `stdlib.c` for the structure layout.
   Except for `%rip`, the values in the structure can be modified, in which
   case the corresponding register will be updated accordingly.
