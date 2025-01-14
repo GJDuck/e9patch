@@ -1,5 +1,4 @@
 .PHONY: all clean install dev release debug sanitize
-.SECONDEXPANSION:
 
 #########################################################################
 # BUILD COMMON
