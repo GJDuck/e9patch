@@ -138,6 +138,10 @@ static bool runTest(const struct dirent *test, const std::string &options)
             r, out.c_str());
         return false;
     }
+    command.clear();
+    command = "sed -i 's/ (core dumped)//g' ";
+    command += out;
+    system(command.c_str());
 
     // Step (3): compare the output
     FILE *OUT = fopen(out.c_str(), "r");
