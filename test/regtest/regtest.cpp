@@ -112,6 +112,7 @@ static bool runTest(const struct dirent *test, const std::string &options)
     // Step (2): execute the EXE
     FILE *CMD = fopen(cmd.c_str(), "r");
     command.clear();
+    command += "./exec.sh ";
     if (CMD != NULL)
     {
         for (int i = 0; (c = getc(CMD)) != '\n' && isprint(c) && i < 1024; i++)
@@ -137,10 +138,6 @@ static bool runTest(const struct dirent *test, const std::string &options)
             r, out.c_str());
         return false;
     }
-    command.clear();
-    command = "sed -i 's/ (core dumped)//g' ";
-    command += out;
-    system(command.c_str());
 
     // Step (3): compare the output
     FILE *OUT = fopen(out.c_str(), "r");
