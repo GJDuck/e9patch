@@ -15,6 +15,13 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
   
-trap '' SIGILL SIGTRAP SIGSEGV
+trap "echo" SIGILL SIGTRAP SIGABRT 10 SIGSEGV
+
+while [[ "$1" == *=* ]]
+do
+    export $1
+    shift
+done
+
 "$@"
 
