@@ -317,7 +317,7 @@ Supported operators include:
     <td>Integer bitwise and</td></tr>
 <tr><td><b><tt>|</tt></b></td>
     <td>Integer bitwise or</td></tr>
-<tr><td><b><tt>|</tt></b></td>
+<tr><td><b><tt>^</tt></b></td>
     <td>Integer bitwise xor</td></tr>
 <tr><td><b><tt>~</tt></b></td>
     <td>Integer bitwise negation</td></tr>
