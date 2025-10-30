@@ -2095,10 +2095,7 @@ static void sendArgumentDataMetadata(FILE *out, const char *name,
         {
             const Line *line = findLine(elf->lines, I->address);
             if (line == nullptr)
-            {
-            bad_line:
-                error("failed to construct metadata for line");
-            }
+                return;
             char buf[PATH_MAX+1], *tmp = buf;
             const char *file = line->file, *kind = "file";
             switch (arg.kind)
@@ -2115,7 +2112,7 @@ static void sendArgumentDataMetadata(FILE *out, const char *name,
                     break;
             }
             if (file == nullptr)
-                goto bad_line;
+                error("failed to construct metadata for line");
             fprintf(out, "\".L%s@%s\",{\"string\":", kind, name);
             sendString(out, file);
             fputs("},", out);

@@ -1,0 +1,1 @@
+./test -100 -M 'addr == 0xa0001d9' -P 'format("file=%s\n",file)@patch'
