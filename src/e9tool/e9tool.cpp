@@ -431,7 +431,7 @@ struct Matching
 };
 struct MatchingCmp
 {
-    bool operator()(const Matching *m1, const Matching *m2)
+    bool operator()(const Matching *m1, const Matching *m2) const
     {
         for (size_t i = 0; ; i++)
         {
