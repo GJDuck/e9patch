@@ -1022,7 +1022,7 @@ ELF *e9tool::parseELF(const char *filename, intptr_t base)
         end = std::max(end, phdr_end);
         switch (phdr->p_type)
         {
-            case PT_INTERP:
+            case PT_DYNAMIC:
                 if (!exe && !isLibraryFilename(filename))
                     exe = true;
                 dynlink = true;
