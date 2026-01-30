@@ -64,52 +64,6 @@ For a full list of supported options and modes, see:
 
         $ ./e9tool --help
 
-### More Examples
-
-Patch all jump instructions with "empty" instrumentation:
-
-        $ ./e9tool -M 'asm=/j.*/' -P empty xterm
-        $ ./a.out
-
-Print all jump instructions with "print" instrumentation:
-
-        $ ./e9tool -M 'asm=/j.*/' -P print xterm
-        $ ./a.out
-
-Same as above, but use "Intel" syntax:
-
-        $ ./e9tool -M 'asm=/j.*/' -P print xterm --syntax=intel
-        $ ./a.out
-
-Patch all jump instructions with a call to an empty function:
-
-        $ ./e9compile.sh examples/nop.c
-        $ ./e9tool -M 'asm=/j.*/' -P 'entry()@nop' xterm
-        $ ./a.out
-
-Patch all jump instructions with instruction count instrumentation:
-
-        $ ./e9compile.sh examples/counter.c
-        $ ./e9tool -M 'asm=/j.*/' -P 'entry()@counter' xterm
-        $ FREQ=10000 ./a.out
-
-Patch all jump instructions with pretty print instrumentation:
-
-        $ ./e9compile.sh examples/print.c
-        $ ./e9tool -M 'asm=/j.*/' -P 'entry(addr,instr,size,asm)@print' xterm
-        $ ./a.out
-
-Patch all jump instructions with "delay" instrumentation to slow the
-program down:
-
-        $ ./e9compile.sh examples/delay.c
-        $ ./e9tool -M 'asm=/j.*/' -P 'entry()@delay' xterm
-        $ DELAY=100000 ./a.out
-
-*Notes*:
-
-* Tested for `XTerm(322)`
-
 ## Projects
 
 Some other projects that use E9Patch include:
