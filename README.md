@@ -1,6 +1,5 @@
 <h1 align="center">
-  <img src=".github/e9patch.png" width="48"/>
-  <br>
+  <img src=".github/e9patch.png" width="72"/>
   E9Patch - A Powerful Static Binary Rewriter
 </h1>
 
