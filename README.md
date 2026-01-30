@@ -1,4 +1,8 @@
-# E9Patch - A Powerful Static Binary Rewriter
+<h1 align="center">
+  <img src=".github/e9patch.png" width="48"/>
+  <br>
+  E9Patch - A Powerful Static Binary Rewriter
+</h1>
 
 E9Patch is a powerful static binary rewriting tool for `x86_64` Linux ELF
 binaries.
