@@ -166,13 +166,13 @@ preamble).
 
 ## Publication
 
-Please see our PLDI'2020 paper:
+For more information, please see our PLDI'2020 paper:
 
 * Gregory J. Duck, Xiang Gao, Abhik Roychoudhury, [Binary Rewriting without Control Flow Recovery](https://comp.nus.edu.sg/~gregory/papers/e9patch.pdf),
   Programming Language Design and Implementation (PLDI), 2020.
-  [PLDI'2020 Presentation](https://www.youtube.com/watch?v=qK2ZCEStoG0)
+* [PLDI'2020 presentation on Youtube](https://www.youtube.com/watch?v=qK2ZCEStoG0)
 
-To cite our paper, please use:
+Please cite our paper as follows:
 
 <pre>
     @inproceedings{e9patch
@@ -182,7 +182,7 @@ To cite our paper, please use:
         publisher = {Association for Computing Machinery},
         url = {https://doi.org/10.1145/3385412.3385972},
         doi = {10.1145/3385412.3385972},
-        booktitle = {Proceedings of the 41st ACM SIGPLAN Conference on Programming Language Design and Implementation},
+        booktitle = {Programming Language Design and Implementation (PLDI)}
     }
 </pre>
 
