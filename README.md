@@ -172,6 +172,20 @@ Please see our PLDI'2020 paper:
   Programming Language Design and Implementation (PLDI), 2020.
   [PLDI'2020 Presentation](https://www.youtube.com/watch?v=qK2ZCEStoG0)
 
+To cite our paper, please use:
+
+<pre>
+    @inproceedings{e9patch
+        author = {Duck, Gregory J. and Gao, Xiang and Roychoudhury, Abhik},
+        title = {Binary rewriting without control flow recovery},
+        year = {2020},
+        publisher = {Association for Computing Machinery},
+        url = {https://doi.org/10.1145/3385412.3385972},
+        doi = {10.1145/3385412.3385972},
+        booktitle = {Proceedings of the 41st ACM SIGPLAN Conference on Programming Language Design and Implementation},
+    }
+</pre>
+
 ## Acknowledgements
 
 This work was partially supported by the National Satellite of Excellence in
