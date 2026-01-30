@@ -1,6 +1,6 @@
 <h1 align="center">
   <img src=".github/e9patch.png" width="72"/>
-  E9Patch - A Powerful Static Binary Rewriter
+  &nbsp; E9Patch - A Powerful Static Binary Rewriter
 </h1>
 
 E9Patch is a powerful static binary rewriting tool for `x86_64` Linux ELF
@@ -22,12 +22,6 @@ E9Patch is:
 (ELF executable or shared object) and generates an output binary
 with some patch/modification applied to it.
 The patched binary can be used as a drop-in replacement of the original.
-
-For more information, please see our PLDI'2020 paper:
-
-* Gregory J. Duck, Xiang Gao, Abhik Roychoudhury, [Binary Rewriting without Control Flow Recovery](https://comp.nus.edu.sg/~gregory/papers/e9patch.pdf),
-  Programming Language Design and Implementation (PLDI), 2020.
-  [PLDI'2020 Presentation](https://www.youtube.com/watch?v=qK2ZCEStoG0)
 
 ## Release
 
@@ -169,6 +163,14 @@ This software has been released under the GNU Public License (GPL) Version 3.
 
 Some specific files are released under the MIT license (check the file
 preamble).
+
+## Publication
+
+Please see our PLDI'2020 paper:
+
+* Gregory J. Duck, Xiang Gao, Abhik Roychoudhury, [Binary Rewriting without Control Flow Recovery](https://comp.nus.edu.sg/~gregory/papers/e9patch.pdf),
+  Programming Language Design and Implementation (PLDI), 2020.
+  [PLDI'2020 Presentation](https://www.youtube.com/watch?v=qK2ZCEStoG0)
 
 ## Acknowledgements
 
