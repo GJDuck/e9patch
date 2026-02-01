@@ -1,4 +1,4 @@
-.PHONY: all clean install dev release debug sanitize
+.PHONY: all clean install check dev release debug sanitize check-debug
 
 #########################################################################
 # BUILD COMMON
@@ -66,6 +66,7 @@ clean:
 	$(MAKE) -C contrib/zydis clean
 	rm -rf $(E9PATCH_OBJS) $(E9TOOL_OBJS) e9patch e9tool \
         src/e9patch/e9loader_*.c e9loader_*.o e9loader_*.bin
+	$(MAKE) -C test/regtest clean-check
 
 src/e9patch/e9loader_elf.c: src/e9patch/e9loader_elf.cpp
 	$(CXX) -std=c++11 -Wall -fno-stack-protector -Wno-unused-function -fPIC \
@@ -81,6 +82,9 @@ src/e9patch/e9loader_pe.c: src/e9patch/e9loader_pe.cpp
 
 src/e9patch/e9elf.o: src/e9patch/e9loader_elf.c
 src/e9patch/e9pe.o: src/e9patch/e9loader_pe.c
+
+check: all
+	$(MAKE) -C test/regtest
 
 install: all
 	install -d "$(DESTDIR)$(PREFIX)/bin"
@@ -164,3 +168,6 @@ debug: dev
 
 sanitize: CXXFLAGS += -O0 -g -fsanitize=address
 sanitize: dev
+
+check-debug: debug
+	$(MAKE) -C test/regtest
