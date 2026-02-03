@@ -1,0 +1,17 @@
+name: Debugging build and test
+on:
+  - push
+  - pull_request
+jobs:
+  build:
+    runs-on: ubuntu-slim
+    steps:
+    - uses: actions/checkout@v4
+    - name: Build (debugging mode)
+      run: make debug
+    - name: Run make check
+      run: make check
+    - name: Build regression test runner
+      run: make -C test/regtest
+    - name: Run regression test suite
+      run: cd test/regtest && ./regtest
