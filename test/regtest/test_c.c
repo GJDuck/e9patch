@@ -2,12 +2,17 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/types.h>
 
 #ifndef putchar
 #undef putchar
 #endif
 
-asm (
+#ifndef __GNUC__
+#define __asm__ asm
+#endif
+
+__asm__ (
     ".globl entry\n"
     ".set entry,0x0\n"
 );
@@ -69,12 +74,12 @@ __attribute__((__noinline__)) void triforce(ssize_t n)
 void data_func_2(void)
 {
     printf("invoked data_func()\n");
-    asm volatile ("nop");
+    __asm__ volatile ("nop");
 }
 
 static void data_func(void)
 {
-    asm volatile (
+    __asm__ volatile (
         "xchg %r15, %r15\n"
         "callq data_func_2");
 }
