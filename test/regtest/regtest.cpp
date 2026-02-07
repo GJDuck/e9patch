@@ -23,6 +23,7 @@
 #include <cstdlib>
 #include <cstring>
 
+#include <sys/stat.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <dirent.h>
@@ -110,20 +111,10 @@ static bool runTest(const struct dirent *test, const std::string &options)
     }
 
     // Step (2): execute the EXE
-    FILE *CMD = fopen(cmd.c_str(), "r");
     command.clear();
-    command += "./exec.sh ";
-    if (CMD != NULL)
-    {
-        for (int i = 0; (c = getc(CMD)) != '\n' && isprint(c) && i < 1024; i++)
-            command += c;
-        fclose(CMD);
-    }
-    else
-    {
-        command += "./";
-        command += exe;
-    }
+    command += "./exec.sh ./";
+    struct stat cmd_stat;
+    command += (stat(cmd.c_str(), &cmd_stat) == 0) ? cmd : exe;
     command += " >";
     command += out;
     command += " 2>&1";
