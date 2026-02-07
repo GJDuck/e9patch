@@ -129,7 +129,7 @@ For more information, please see our PLDI'2020 paper:
 Please cite our paper as follows:
 
 <pre>
-    @inproceedings{e9patch
+    @inproceedings{e9patch,
         author = {Duck, Gregory J. and Gao, Xiang and Roychoudhury, Abhik},
         title = {Binary rewriting without control flow recovery},
         year = {2020},
