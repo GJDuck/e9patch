@@ -1,4 +1,4 @@
-.TH E9PATCH "1" "April 2023" "E9Patch" "E9Patch"
+.TH E9PATCH "1" "February 2026" "E9Patch" "E9Patch"
 .SH NAME
 E9Patch \- a powerful static binary rewriting tool
 .SH SYNOPSIS
@@ -51,9 +51,9 @@ return address).  May break transparency for some binaries.
 Default: \fBfalse\fR (disabled)
 .IP "\fB\-OCFR\fR[=\fI\,false\/\fR]" 4
 Enables [disables] heuristic-based "Control-Flow Recovery"
-(CRF) analysis and related optimizations.  This usually makes
+(CFR) analysis and related optimizations.  This usually makes
 the rewritten binary much faster, but may introduce rewriting
-bugs if the built-in CRF analysis is inaccurate.
+bugs if the built-in CFR analysis is inaccurate.
 .br
 Default: \fBfalse\fR (disabled)
 .IP "\fB\-OCFR-hacks\fR[=\fI\,false\/\fR]" 4
@@ -223,4 +223,4 @@ Disable CFR to resolve the issue.
 .SH "SEE ALSO"
 \fIe9tool\fR(1), \fIe9compile\fR(1), \fIe9afl\fR(1), \fIredfat\fR(1)
 .SH AUTHOR
-\fBe9patch\fR is written by Gregory J. Duck <gregory@comp.nus.edu.sg>.
+\fBe9patch\fR is maintained by Gregory J. Duck <gregory@comp.nus.edu.sg>.
