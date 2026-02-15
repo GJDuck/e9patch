@@ -30,6 +30,37 @@ else
     OFF=
 fi
 
+check_cmd()
+{
+    if which $1 >/dev/null 2>&1
+    then
+        return
+    fi
+    echo -e "${RED}error${OFF}: building E9Tool/E9Patch requires \"${YELLOW}$1${OFF}\"" >&2
+    echo -e "       (hint: try installing \"${YELLOW}$1${OFF}\" with \"${YELLOW}sudo apt install $2${OFF}\")" >&2
+    exit 1
+}
+
+check_hdr()
+{
+    if echo "#include <$1>" | gcc -E - >/dev/null 2>&1
+    then
+        return
+    fi
+    echo -e "${RED}error${OFF}: building E9Tool/E9Patch requires \"${YELLOW}$1${OFF}\"" >&2
+    echo -e "       (hint: try installing \"${YELLOW}$1${OFF}\" with \"${YELLOW}sudo apt install $2${OFF}\"" >&2
+    exit 1
+}
+
+check_cmd gcc    build-essential
+check_cmd g++    build-essential
+check_cmd make   build-essential
+check_cmd ar     build-essential
+check_cmd ld     build-essential
+check_cmd strip  build-essential
+check_cmd xxd    xxd
+check_hdr zlib.h zlib1g-dev
+
 echo -e "${GREEN}$0${OFF}: building e9patch and e9tool..."
 make clean
 make -j$(nproc) release
