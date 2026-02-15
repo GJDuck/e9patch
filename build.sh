@@ -52,14 +52,15 @@ check_hdr()
     exit 1
 }
 
-check_cmd gcc    build-essential
-check_cmd g++    build-essential
-check_cmd make   build-essential
-check_cmd ar     build-essential
-check_cmd ld     build-essential
-check_cmd strip  build-essential
-check_cmd xxd    xxd
-check_hdr zlib.h zlib1g-dev
+check_cmd gcc      build-essential
+check_cmd g++      build-essential
+check_cmd make     build-essential
+check_cmd ar       build-essential
+check_cmd ld       build-essential
+check_cmd strip    build-essential
+check_cmd xxd      xxd
+check_cmd markdown markdown
+check_hdr zlib.h   zlib1g-dev
 
 echo -e "${GREEN}$0${OFF}: building e9patch and e9tool..."
 make clean
