@@ -5,7 +5,6 @@
 #########################################################################
 
 PREFIX ?= /usr
-CXXFLAGS ?= -march=native
 CXXFLAGS += -std=c++11 -Wall -Wno-reorder -fPIC -pie \
     -DVERSION=$(shell cat VERSION) -Wl,-rpath=$(PREFIX)/share/e9tool/lib/
 
