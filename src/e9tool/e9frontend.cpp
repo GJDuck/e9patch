@@ -895,7 +895,7 @@ ELF *e9tool::parseELF(const char *filename, intptr_t base)
             strerror(errno));
 
     size_t size = (size_t)stat.st_size;
-    void *ptr = mmap(NULL, size, MAP_SHARED, PROT_READ, fd, 0);
+    void *ptr = mmap(NULL, size, PROT_READ, MAP_SHARED, fd, 0);
     if (ptr == MAP_FAILED)
         error("failed to map file \"%s\" into memory: %s", filename,
             strerror(errno));
@@ -1355,7 +1355,7 @@ ELF *e9tool::parsePE(const char *filename)
             strerror(errno));
 
     size_t size = (size_t)stat.st_size;
-    void *ptr = mmap(NULL, size, MAP_SHARED, PROT_READ, fd, 0);
+    void *ptr = mmap(NULL, size, PROT_READ, MAP_SHARED, fd, 0);
     if (ptr == MAP_FAILED)
         error("failed to map file \"%s\" into memory: %s", filename,
             strerror(errno));
