@@ -6,8 +6,8 @@ js 0xa000106
 js 0xa000106
 movq 0x5e(%rip), %rax
 movq 0x5e(%rip), %rax
-mov $0x8877665544332211, %rbx
-mov $0x8877665544332211, %rbx
+mov $-0x778899aabbccddef, %rbx
+mov $-0x778899aabbccddef, %rbx
 cmp %rax, %rbx
 cmp %rax, %rbx
 jz 0xa000122
