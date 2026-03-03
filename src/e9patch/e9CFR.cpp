@@ -241,7 +241,7 @@ void targetAnalysis(Binary *B)
                     uint8_t modRM = data[j+2];
                     uint8_t mod = (modRM & 0xc0) >> 6;
                     uint8_t rm  = modRM & 0x7;
-                    if (mod != 0x00 && rm != 0x05)
+                    if (mod != 0x00 || rm != 0x05)
                         continue;
                     target = j + 7 + *(int32_t *)(data + j + 3);
                     if (target >= 0 && target % sizeof(int32_t) == 0)
