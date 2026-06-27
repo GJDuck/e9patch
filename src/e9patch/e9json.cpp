@@ -207,7 +207,8 @@ static Trampoline *dupTrampoline(const std::vector<Entry> &entries)
     T->prot        = PROT_READ | PROT_EXEC;
     T->preload     = false;
     T->num_entries = num_entries;
-    memcpy(T->entries, &entries[0], num_entries * sizeof(Entry));
+    if (num_entries > 0)
+        memcpy(T->entries, entries.data(), num_entries * sizeof(Entry));
 
     static std::set<Trampoline *, TrampolineCmp> cache;
     auto i = cache.insert(T);
