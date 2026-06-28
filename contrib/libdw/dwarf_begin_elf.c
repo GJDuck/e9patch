@@ -277,7 +277,7 @@ __libdw_elfpath (int fd)
 {
   /* strlen ("/proc/self/fd/") = 14 + strlen (<MAXINT>) = 10 + 1 = 25.  */
   char devfdpath[25];
-  sprintf (devfdpath, "/proc/self/fd/%u", fd);
+  snprintf (devfdpath, sizeof (devfdpath), "/proc/self/fd/%u", fd);
   return realpath (devfdpath, NULL);
 }
 
