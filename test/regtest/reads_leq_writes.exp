@@ -1,5 +1,5 @@
 movq 0x5e(%rip), %rax
-mov $0x8877665544332211, %rbx
+mov $-0x778899aabbccddef, %rbx
 cmp %rax, %rbx
 nop
 cmp $0x33, %ebx
